@@ -11,6 +11,7 @@ import mage.constants.SubType;
 import mage.counters.CounterType;
 import mage.game.Game;
 import mage.game.permanent.Permanent;
+import mage.util.CardUtil;
 
 import java.util.UUID;
 
@@ -38,21 +39,29 @@ public final class FractalToken extends TokenImpl {
     }
 
     public static Effect getEffect(DynamicValue xValue, String text) {
-        return new FractalTokenEffect(xValue, text);
+        return getEffect(1, xValue, text);
+    }
+
+    public static Effect getEffect(int amount, DynamicValue xValue, String text) {
+        return new FractalTokenEffect(amount, xValue, text);
     }
 
     private static final class FractalTokenEffect extends OneShotEffect {
 
+        private final int amount;
         private final DynamicValue xValue;
 
-        private FractalTokenEffect(DynamicValue xValue, String text) {
+        private FractalTokenEffect(int amount, DynamicValue xValue, String text) {
             super(Outcome.Benefit);
+            this.amount = amount;
             this.xValue = xValue;
-            this.staticText = "create a 0/0 green and blue Fractal creature token" + text;
+            this.staticText = "create " + CardUtil.numberToText(amount, "a") +
+                    " 0/0 green and blue Fractal creature token" + (amount > 1 ? "s" : "") + text;
         }
 
         private FractalTokenEffect(final FractalTokenEffect effect) {
             super(effect);
+            this.amount = effect.amount;
             this.xValue = effect.xValue;
         }
 
@@ -64,7 +73,7 @@ public final class FractalToken extends TokenImpl {
         @Override
         public boolean apply(Game game, Ability source) {
             Token token = new FractalToken();
-            token.putOntoBattlefield(1, game, source, source.getControllerId());
+            token.putOntoBattlefield(amount, game, source, source.getControllerId());
             int value = xValue.calculate(game, source, this);
             if (value < 1) {
                 return true;

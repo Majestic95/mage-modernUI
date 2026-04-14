@@ -7,6 +7,7 @@ import mage.cards.CardImpl;
 import mage.cards.CardSetInfo;
 import mage.constants.CardType;
 import mage.constants.SubType;
+import mage.target.TargetPlayer;
 
 import java.util.UUID;
 
@@ -23,6 +24,7 @@ public final class DecorumDissertation extends CardImpl {
         // Target player draws two cards and loses 2 life.
         this.getSpellAbility().addEffect(new DrawCardTargetEffect(2));
         this.getSpellAbility().addEffect(new LoseLifeTargetEffect(2).withTargetDescription("and"));
+        this.getSpellAbility().addTarget(new TargetPlayer());
 
         // Paradigm
         this.addAbility(new ParadigmAbility());
