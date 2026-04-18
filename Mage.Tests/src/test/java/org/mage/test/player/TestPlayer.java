@@ -2437,7 +2437,7 @@ public class TestPlayer implements Player {
                     String[] targetList = targetDefinition.split("\\^");
                     boolean targetFound = false;
                     for (String targetName : targetList) {
-                        for (Card card : computerPlayer.getHand().getCards(((TargetCard) target.getOriginalTarget()).getFilter(), game)) {
+                        for (Card card : computerPlayer.getHand().getCards(((TargetCard) target.getOriginalTarget()).getFilter(), abilityControllerId, source, game)) {
                             if (hasObjectTargetNameOrAlias(card, targetName) || (card.getName() + '-' + card.getExpansionSetCode()).equals(targetName)) { // TODO: remove set code search?
                                 if (target.canTarget(abilityControllerId, card.getId(), source, game) && !target.contains(card.getId())) {
                                     target.addTarget(card.getId(), source, game);
@@ -2475,7 +2475,7 @@ public class TestPlayer implements Player {
                     String[] targetList = targetDefinition.split("\\^");
                     boolean targetFound = false;
                     for (String targetName : targetList) {
-                        for (Card card : game.getExile().getCards(filter, game)) {
+                        for (Card card : game.getExile().getCardsInRange(filter, abilityControllerId, source, game)) {
                             if (hasObjectTargetNameOrAlias(card, targetName) || (card.getName() + '-' + card.getExpansionSetCode()).equals(targetName)) { // TODO: remove set code search?
                                 if (target.canTarget(abilityControllerId, card.getId(), source, game) && !target.contains(card.getId())) {
                                     target.addTarget(card.getId(), source, game);
