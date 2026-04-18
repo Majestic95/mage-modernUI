@@ -53,14 +53,13 @@ import mage.util.RandomUtil;
 import mage.watchers.common.AttackedOrBlockedThisCombatWatcher;
 import org.apache.log4j.Logger;
 import org.junit.Assert;
+import static org.mage.test.serverside.base.impl.CardTestPlayerAPIImpl.*;
 
 import java.io.Serializable;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
-
-import static org.mage.test.serverside.base.impl.CardTestPlayerAPIImpl.*;
 
 /**
  * Basic implementation of testable player
@@ -2553,7 +2552,7 @@ public class TestPlayer implements Player {
                         IterateGraveyards:
                         for (UUID playerId : needPlayers) {
                             Player player = game.getPlayer(playerId);
-                            for (Card card : player.getGraveyard().getCards(targetFull.getFilter(), game)) {
+                            for (Card card : player.getGraveyard().getCards(targetFull.getFilter(), playerId, source, game)) {
                                 if (hasObjectTargetNameOrAlias(card, targetName) || (card.getName() + '-' + card.getExpansionSetCode()).equals(targetName)) { // TODO: remove set code search?
                                     if (target.canTarget(abilityControllerId, card.getId(), source, game) && !target.contains(card.getId())) {
                                         target.addTarget(card.getId(), source, game);

@@ -3,7 +3,6 @@ package org.mage.test.cards.single.sos;
 import mage.constants.PhaseStep;
 import mage.constants.Zone;
 import org.junit.Assert;
-import org.junit.Ignore;
 import org.junit.Test;
 import org.mage.test.player.TestPlayer;
 import org.mage.test.serverside.base.CardTestPlayerBase;
@@ -55,7 +54,6 @@ public class MoseoVeinsNewDeanTest extends CardTestPlayerBase {
         assertPermanentCount(playerA, "Craw Wurm", 0);
     }
 
-    @Ignore
     @Test
     public void test_Gain5_NoValidTarget_Attempt() {
         addCard(Zone.BATTLEFIELD, playerA, moseo, 1);
