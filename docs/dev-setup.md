@@ -8,13 +8,12 @@ This doc gets a contributor from a fresh clone to a running server + Swing clien
 
 ## Prerequisites
 
-> **Important — dual JDK setup:** build with JDK 17+, but **run upstream Java code with JDK 8.** JBoss Remoting (the network library Xmage uses) relies on pre-module-system reflection that JDK 9+ forbids by default; the client errors with *"Wrong java version"* if launched on JDK 17. Phase 0 ships with this dual-JDK approach. Phase 1 spike will evaluate whether `--add-opens` flags can let us run on a single modern JDK.
+> **Single JDK toolchain.** JDK 17+ for build *and* runtime. Phase 1 spike (2026-04-25) confirmed `--add-opens` flags let JBoss Remoting 2.5.4 work on JDK 17+ for both server and client launches; see [ADR 0003](decisions/0003-embedding-feasibility.md). The earlier Phase 0 dual-JDK note is superseded.
 
 | Tool | Required version | Notes |
 |---|---|---|
-| **Build JDK** | 17+ LTS | JDK 17 currently used (Eclipse Adoptium Temurin). JDK 21 fine. Compiles upstream's Java 8 modules via `--release 8`. Used for `mvn install package` and our future `Mage.Server.WebApi` module. |
-| **Runtime JDK** | 8 | JDK 8 (Adoptium Temurin 1.8.0_422 verified). **Required** to launch upstream `mage-server.jar` and `mage-client.jar`. Will revisit in Phase 1. |
-| **Maven** | 3.9+ | 3.9.10 verified. Must be on `PATH`. Maven works fine with JDK 17 even when the runtime target is Java 8. |
+| **JDK** | 17+ LTS | Eclipse Adoptium Temurin 17.0.12+7 verified. JDK 21 fine. Compiles upstream's Java 8 modules via `--release 8`. Runtime needs `--add-opens` flags (see below). |
+| **Maven** | 3.9+ | 3.9.10 verified. Must be on `PATH`. |
 | **Git** | 2.40+ | Standard. |
 | **Disk** | ~5 GB free | ~2 GB for `.m2` Maven cache + build artifacts; the rest for the H2 card DB and image cache. |
 | **RAM** | 8 GB minimum | The packaging step (assembly:single) needs at least `MAVEN_OPTS=-Xmx4g` or it OOMs on the client zip. |
@@ -38,18 +37,16 @@ git remote set-url --push upstream DISABLED_NEVER_PUSH_TO_UPSTREAM
 git remote add origin https://github.com/Majestic95/mage-modernUI.git
 ```
 
-### 2. Set `JAVA_HOME` per task
+### 2. Set `JAVA_HOME` for the session
 
-The build needs JDK 17+; the runtime needs JDK 8. Set `JAVA_HOME` to the right one before each task.
-
-**For building (JDK 17+):**
+Single JDK 17+ for everything.
 
 Bash (Git Bash on Windows):
 ```bash
 export JAVA_HOME="/c/Program Files/Eclipse Adoptium/jdk-17.0.12.7-hotspot"
 export PATH="$JAVA_HOME/bin:$PATH"
-java -version    # confirms 17.x
-mvn -version     # confirms Maven sees the same JDK 17
+java -version    # 17.x
+mvn -version     # Maven sees the same JDK 17
 ```
 
 PowerShell:
@@ -58,22 +55,23 @@ $env:JAVA_HOME = "C:\Program Files\Eclipse Adoptium\jdk-17.0.12.7-hotspot"
 $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 ```
 
-**For running (JDK 8):** use a separate terminal or re-export when you switch tasks:
+(For permanent settings, use System Environment Variables — but per-session is enough for dev work.)
 
-Bash:
-```bash
-export JAVA_HOME="/c/Program Files/Eclipse Adoptium/jdk-8.0.422.5-hotspot"
-export PATH="$JAVA_HOME/bin:$PATH"
-java -version    # confirms 1.8.x
+### `--add-opens` flag bundle for runtime launches
+
+Upstream JBoss Remoting needs these flags on JDK 17+. Re-use as-is for any `java -jar mage-{server,client}.jar` invocation:
+
+```
+--add-opens java.base/java.io=ALL-UNNAMED
+--add-opens java.base/java.lang=ALL-UNNAMED
+--add-opens java.base/java.lang.reflect=ALL-UNNAMED
+--add-opens java.base/java.util=ALL-UNNAMED
+--add-opens java.base/sun.nio.ch=ALL-UNNAMED
+--add-opens java.base/java.net=ALL-UNNAMED
+--add-opens java.base/sun.security.action=ALL-UNNAMED
 ```
 
-PowerShell:
-```powershell
-$env:JAVA_HOME = "C:\Program Files\Eclipse Adoptium\jdk-8.0.422.5-hotspot"
-$env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
-```
-
-(For permanent settings, use System Environment Variables — but per-session is the cleanest way to switch JDKs without polluting the global state.)
+Already wired into `Mage.Server.WebApi/pom.xml` for Maven test runs (via surefire `<argLine>`). Phase 2 will narrow to the minimum set.
 
 ### 3. Verify clean working tree
 
@@ -130,11 +128,19 @@ cd F:/xmage/deploy/client && unzip -q -o F:/xmage/Mage.Client/target/mage-client
 
 ### Launch the server
 
-> Use **JDK 8** for the runtime (see [Set JAVA_HOME per task](#2-set-java_home-per-task) above).
+> JDK 17+ runtime needs the `--add-opens` flag bundle (see [`--add-opens` flag bundle](#--add-opens-flag-bundle-for-runtime-launches) above).
 
 ```bash
 cd F:/xmage/deploy/server
-java -Xmx1024m -jar ./lib/mage-server-1.4.58.jar
+java \
+  --add-opens java.base/java.io=ALL-UNNAMED \
+  --add-opens java.base/java.lang=ALL-UNNAMED \
+  --add-opens java.base/java.lang.reflect=ALL-UNNAMED \
+  --add-opens java.base/java.util=ALL-UNNAMED \
+  --add-opens java.base/sun.nio.ch=ALL-UNNAMED \
+  --add-opens java.base/java.net=ALL-UNNAMED \
+  --add-opens java.base/sun.security.action=ALL-UNNAMED \
+  -Xmx1024m -jar ./lib/mage-server-1.4.58.jar
 ```
 
 Expected output ends with:
@@ -152,12 +158,21 @@ Default config lives in `F:/xmage/deploy/server/config/config.xml`. It allows an
 
 ### Launch the Swing client
 
-> Use **JDK 8** for the runtime. Launching the client on JDK 17 fails with a *"Wrong java version"* popup (JBoss Remoting reflection issue).
+> JDK 17+ runtime with the `--add-opens` bundle. Launching without these flags fails with a *"Wrong java version"* popup (JBoss Remoting module-system reflection).
 
 In a second terminal (or backgrounded):
 ```bash
 cd F:/xmage/deploy/client
-java -Xmx2000m -Dfile.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8 -Djava.net.preferIPv4Stack=true -jar ./lib/mage-client-1.4.58.jar
+java \
+  --add-opens java.base/java.io=ALL-UNNAMED \
+  --add-opens java.base/java.lang=ALL-UNNAMED \
+  --add-opens java.base/java.lang.reflect=ALL-UNNAMED \
+  --add-opens java.base/java.util=ALL-UNNAMED \
+  --add-opens java.base/sun.nio.ch=ALL-UNNAMED \
+  --add-opens java.base/java.net=ALL-UNNAMED \
+  --add-opens java.base/sun.security.action=ALL-UNNAMED \
+  -Xmx2000m -Dfile.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8 -Djava.net.preferIPv4Stack=true \
+  -jar ./lib/mage-client-1.4.58.jar
 ```
 
 **First run only:** the client builds its local H2 card database from upstream's per-card Java classes. This takes 1-2 minutes; the window is unresponsive during this time. Subsequent launches are fast (~2-3s).
@@ -206,8 +221,8 @@ Card images are not bundled. The first time you see a card, you can either:
 |---|---|
 | `java: command not found` | `JAVA_HOME` not set or not on `PATH`. Re-run the env exports. |
 | Maven uses wrong JDK | `mvn -version` shows the JDK it's actually using. If wrong, `JAVA_HOME` is stale or shadowed. |
-| **Client popup: *"Wrong java version - check your client running scripts and params"*** | Runtime is JDK 17 (or newer). Switch `JAVA_HOME` to JDK 8 and relaunch. Root cause is JBoss Remoting reflection rejected by the JDK 9+ module system. |
-| **Client logs `InaccessibleObjectException` on `java.io.ObjectOutputStream`** | Same root cause as above — running on JDK 17. Use JDK 8. |
+| **Client popup: *"Wrong java version - check your client running scripts and params"*** | Runtime is missing the `--add-opens` flag bundle. Add the flags shown in [Launch the Swing client](#launch-the-swing-client) and relaunch. |
+| **Client logs `InaccessibleObjectException` on `java.io.ObjectOutputStream`** | Same root cause as above — missing `--add-opens` flags. |
 | **Client auto-connects to `alpha-xmage.net` / `beta.xmage.today` and fails with *"Unable connect to server"*** | Cached prefs from a previous Xmage install. Pin to localhost via the PowerShell one-liner under [Launch the Swing client](#launch-the-swing-client). |
 | Client logs `JavaFX is not supported by your system. What's new page will be disabled` | Benign. Adoptium JDK 8 doesn't bundle JavaFX. Only the in-client "What's New" page is affected; gameplay is unaffected. |
 | `OutOfMemoryError: Java heap space` during `assembly:single` | Set `MAVEN_OPTS="-Xmx4g"` before the package command. |
@@ -222,16 +237,17 @@ Card images are not bundled. The first time you see a card, you can either:
 ## Toolchain summary (verified working as of 2026-04-25)
 
 ```
-Build JDK    : Eclipse Adoptium Temurin 17.0.12+7
-Runtime JDK  : Eclipse Adoptium Temurin 1.8.0_422 (required by JBoss Remoting)
-Maven        : Apache Maven 3.9.10
-Git          : Git for Windows (Git Bash)
-OS           : Windows 11 Home 10.0.26200
-Heap         : MAVEN_OPTS=-Xmx4g for packaging step
-First build  : ~5:15 (40 modules, 31,816 card sources, ~2 GB deps download)
+JDK            : Eclipse Adoptium Temurin 17.0.12+7 (build + runtime)
+Runtime flags  : --add-opens bundle (7 flags)
+Maven          : Apache Maven 3.9.10
+Git            : Git for Windows (Git Bash)
+OS             : Windows 11 Home 10.0.26200
+Heap           : MAVEN_OPTS=-Xmx4g for packaging step
+First build    : ~5:15 (40 modules, 31,816 card sources, ~2 GB deps download)
 ```
 
-**Phase 0 outcome:** built, packaged, launched, and played one game vs. AI end-to-end. The exit gate is met. Phase 1 begins.
+**Phase 0 outcome:** built, packaged, launched, played one game vs. AI end-to-end.
+**Phase 1 outcome:** single-JDK toolchain confirmed via `--add-opens`; embedding feasibility test (7 steps) green — see [ADR 0003](decisions/0003-embedding-feasibility.md).
 
 ---
 

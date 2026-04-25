@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!--
+        Standalone Maven project. NOT registered in the parent pom.xml on purpose:
+        keeping this fork's modifications scoped to new directories preserves
+        upstream rebase compatibility. Build with:
+            mvn -f Mage.Server.WebApi/pom.xml package
+        Test with:
+            mvn -f Mage.Server.WebApi/pom.xml test
+    -->
+
+    <groupId>org.mage</groupId>
+    <artifactId>mage-server-webapi</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+    <packaging>jar</packaging>
+
+    <name>Mage Server WebApi</name>
+    <description>JSON/WebSocket facade in front of the embedded Mage server.</description>
+
+    <properties>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <upstream.version>1.4.58</upstream.version>
+    </properties>
+
+    <dependencies>
+        <!-- Embeds the upstream server in-process. mage-server transitively
+             pulls in mage, mage-common, the player AI plugins, JBoss Remoting,
+             ORMLite, H2, etc. -->
+        <dependency>
+            <groupId>org.mage</groupId>
+            <artifactId>mage-server</artifactId>
+            <version>${upstream.version}</version>
+        </dependency>
+
+        <!-- Lightweight HTTP/WS framework (per ADR 0002). -->
+        <dependency>
+            <groupId>io.javalin</groupId>
+            <artifactId>javalin</artifactId>
+            <version>5.6.5</version>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>2.17.2</version>
+        </dependency>
+        <!-- SLF4J binding is provided transitively by mage-server (reload4j). -->
+
+        <!-- Tests -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.10.2</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.2.5</version>
+                <configuration>
+                    <!--
+                        JBoss Remoting 2.5.4 (transitively pulled in by mage-server)
+                        uses pre-module-system reflection that JDK 9+ rejects.
+                        These flags let the existing protocol work on JDK 17+ during
+                        test runs. Phase 1 spike confirmed these are sufficient for
+                        both server and client launches; narrowing the set is a
+                        Phase 2 concern.
+                    -->
+                    <argLine>
+                        --add-opens java.base/java.io=ALL-UNNAMED
+                        --add-opens java.base/java.lang=ALL-UNNAMED
+                        --add-opens java.base/java.lang.reflect=ALL-UNNAMED
+                        --add-opens java.base/java.util=ALL-UNNAMED
+                        --add-opens java.base/sun.nio.ch=ALL-UNNAMED
+                        --add-opens java.base/java.net=ALL-UNNAMED
+                        --add-opens java.base/sun.security.action=ALL-UNNAMED
+                    </argLine>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
