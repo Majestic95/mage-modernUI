@@ -26,7 +26,7 @@ Constraints:
 
 | Concern | Choice | Reasoning |
 |---|---|---|
-| Language | **Java 21 LTS** | Records, sealed types, pattern matching, `var`, text blocks. Major QoL improvement over Java 8 for DTO-heavy code. JDK 21 compiles upstream's Java 8 modules via `--release 8`, so one toolchain builds everything. |
+| Language | **Java 17+ LTS for build, Java 8 for runtime today** | **Build:** JDK 17 minimum, JDK 21 fine. Records, sealed types, pattern matching, `var`, text blocks all available in 17. JDK 17+ compiles upstream's Java 8 modules via `--release 8`. **Runtime today:** JDK 8 required to launch `mage-server.jar` / `mage-client.jar` because JBoss Remoting 2.5.4 uses pre-module-system reflection forbidden by JDK 9+. Verified 2026-04-25: JDK 17 client throws `InaccessibleObjectException` and shows *"Wrong java version"*. **Phase 1 will evaluate `--add-opens` JVM flags** to determine whether a single modern JDK can run both upstream code and our WebApi module. If `--add-opens` works, we collapse to one runtime; if not, WebApi targets Java 8 source level (still simpler than upstream because we're starting fresh) or runs in a separate process. |
 | HTTP/WS framework | **Javalin 5+** *(provisional — confirm Phase 1)* | Lightweight (~5MB), built on Jetty, native WebSocket, idiomatic Kotlin/Java API. Lower ceremony than Spring Boot; lower learning curve than Vert.x. Phase 1 spike re-evaluates if embedding `MageServerImpl` reveals constraints we didn't anticipate. |
 | JSON | **Jackson** | De facto Java standard. Already on classpath via upstream deps likely. **Auto-serialization of upstream classes is forbidden** — see DTO firewall. |
 | Logging | **SLF4J + Logback** | Aligns with upstream's stated migration direction (root `pom.xml` notes a log4j → logback TODO). No `System.out.println` in committed code. |
@@ -53,7 +53,7 @@ Constraints:
 
 ### Toolchain prerequisites
 
-- JDK 21 with `JAVA_HOME` pointed at it
+- JDK 17+ with `JAVA_HOME` pointed at it (JDK 17 currently used; JDK 21 acceptable)
 - Maven 3.9+
 - Node 20+ (Node 24 already installed locally)
 - pnpm via Corepack (`corepack enable && corepack prepare pnpm@latest --activate`)
@@ -95,7 +95,7 @@ Constraints:
 
 ### Negative
 - Two language ecosystems means two build systems, two test runners, two lint configs
-- JDK 21 requirement may surprise contributors used to Java 8; documented in `CLAUDE.md` and `docs/PATH_C_PLAN.md`
+- JDK 17+ requirement may surprise contributors used to Java 8; documented in `CLAUDE.md` and `docs/PATH_C_PLAN.md`
 - Tailwind v4 is recent; if a regression bites us, fallback is v3 with no other code changes
 - Javalin is provisional — Phase 1 spike may surface a reason to switch
 

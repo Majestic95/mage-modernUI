@@ -80,7 +80,7 @@ git checkout main && git merge master
 ## Tech Stack
 
 ### Server side (`Mage.Server.WebApi`)
-- **Java 21 LTS** for the WebApi module (overrides upstream's Java 8 target via module-local `pom.xml`). JDK 21 compiles Java 8 source for the upstream modules via `--release 8`, so the whole build works with one toolchain.
+- **Java 17+ LTS** for the WebApi module (overrides upstream's Java 8 target via module-local `pom.xml`). JDK 17 minimum, JDK 21 fine. JDK 17+ compiles Java 8 source for the upstream modules via `--release 8`, so the whole build works with one toolchain.
 - **[Javalin 5+](https://javalin.io/)** — lightweight web framework, native WebSocket, ~5MB. Built on Jetty.
 - **Jackson** for JSON. **No auto-serialization of upstream classes** — see DTO firewall.
 - **SLF4J + Logback** for logging (matches the migration upstream is moving toward).
@@ -97,7 +97,8 @@ git checkout main && git merge master
 - **Card rendering:** CSS transforms for tap/flip/counters, SVG for mana symbols.
 
 ### Toolchain prerequisites
-- JDK 21 (`JAVA_HOME` set to it)
+- **Build JDK 17+** (`JAVA_HOME` set to it; JDK 17 currently used). Used for `mvn` and our `Mage.Server.WebApi` module.
+- **Runtime JDK 8** for upstream `mage-server.jar` / `mage-client.jar`. JBoss Remoting (the network library) uses pre-module-system reflection that JDK 9+ rejects; client errors with *"Wrong java version"* on JDK 17. Phase 1 spike will evaluate `--add-opens` flags as a route to a single-JDK setup.
 - Maven 3.9+
 - Node 20+ (Node 24 currently installed)
 - pnpm (preferred over npm) — install via `corepack enable && corepack prepare pnpm@latest --activate`
@@ -163,7 +164,7 @@ cd webclient && pnpm typecheck && pnpm lint && pnpm test
 - **Effects are escape hatches, not the default.** If you reach for `useEffect`, ask whether the data should live in Zustand or be derived during render.
 
 ### Java (WebApi module only)
-- **Java 21 features encouraged:** records for DTOs, `var` for local inference, sealed types for closed hierarchies, pattern matching in switch, text blocks for SQL/JSON literals.
+- **Java 17+ features encouraged:** records for DTOs, `var` for local inference, sealed types for closed hierarchies, pattern matching in switch, text blocks for SQL/JSON literals.
 - **Naming:** `PascalCase` for classes/interfaces/records, `camelCase` for methods/fields, `UPPER_SNAKE_CASE` for constants.
 - **No raw types.** No `List` without generic; no `Object` return where a real type fits.
 - **No `System.out.println` in committed code.** Use SLF4J: `private static final Logger log = LoggerFactory.getLogger(MyClass.class);`
@@ -299,7 +300,8 @@ See `docs/PATH_C_PLAN.md` for full detail. High-level:
 
 ## Known Limitations & Pain Points
 
-- **Upstream uses Java 8** for everything else. Our WebApi module uses Java 21, but the build toolchain must be JDK 21 to compile both.
+- **Upstream uses Java 8** for everything else. Our WebApi module targets Java 17+; the build toolchain must be JDK 17+ to compile both. JDK 17+ compiles upstream's Java 8 modules via `--release 8`.
+- **Runtime requires JDK 8 today** for `mage-server.jar` / `mage-client.jar` because JBoss Remoting 2.5.4 uses reflection forbidden by the JDK 9+ module system. Verified 2026-04-25 — JDK 17 client throws `InaccessibleObjectException: Unable to make private void java.io.ObjectOutputStream.clear() accessible: module java.base does not "opens java.io" to unnamed module`. Phase 1 spike will evaluate whether `--add-opens` flags can keep us on a single modern JDK; if not, the WebApi module either runs on JDK 8 or in a separate process.
 - **JBoss Remoting / bisocket transport** is not human-readable. Our WebApi sits on top of `MageServerImpl` rather than the wire protocol.
 - **SwingX 1.6.1** is unmaintained upstream — we don't care, since we replace the Swing client.
 - **Three-person upstream bus factor** (theelk801, LevelX2, JayDi85). If upstream slows, our fork still works; we just stop getting new cards.

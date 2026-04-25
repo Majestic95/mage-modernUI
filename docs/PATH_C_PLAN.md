@@ -29,7 +29,7 @@ Each phase has a single exit gate. Don't move on until the gate is met. Estimate
 **Goal:** local environment is reproducible and the existing system works end-to-end before we touch anything.
 
 **Deliverables:**
-- [ ] JDK 21 installed, `JAVA_HOME` pointed at it
+- [ ] JDK 17+ installed, `JAVA_HOME` pointed at it (JDK 17 currently used; JDK 21 acceptable)
 - [ ] Maven 3.9+ verified
 - [ ] Node 20+ + pnpm verified
 - [ ] `make build` runs clean to completion
