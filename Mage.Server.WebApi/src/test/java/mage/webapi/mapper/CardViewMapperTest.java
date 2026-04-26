@@ -29,7 +29,7 @@ class CardViewMapperTest {
     private static final ObjectMapper JSON = new ObjectMapper();
 
     @Test
-    void cardView_jsonShape_locksTwentyFields() throws Exception {
+    void cardView_jsonShape_locksNineteenFields() throws Exception {
         WebCardView dto = new WebCardView(
                 "550e8400-e29b-41d4-a716-446655440000",
                 "Lightning Bolt",
@@ -49,48 +49,50 @@ class CardViewMapperTest {
                 "",
                 List.of("Lightning Bolt deals 3 damage to any target."),
                 false,
-                "",
                 Map.of()
         );
         JsonNode node = JSON.valueToTree(dto);
 
-        assertEquals(20, node.size(),
-                "WebCardView must have exactly 20 fields; got: " + node);
+        assertEquals(19, node.size(),
+                "WebCardView must have exactly 19 fields; got: " + node);
         // Snapshot the field set explicitly so adding a field forces
-        // a CHANGELOG bump.
+        // a CHANGELOG bump. tokenSetCode removed in 1.11 — never had
+        // upstream provenance; reintroduce only when token-art lookup
+        // semantics are firmed up.
         for (String field : List.of(
                 "id", "name", "displayName", "expansionSetCode",
                 "cardNumber", "manaCost", "manaValue", "typeLine",
                 "supertypes", "types", "subtypes", "colors", "rarity",
                 "power", "toughness", "startingLoyalty", "rules",
-                "faceDown", "tokenSetCode", "counters")) {
+                "faceDown", "counters")) {
             assertTrue(node.has(field), "missing field: " + field);
         }
     }
 
     @Test
-    void permanentView_jsonShape_locksTenFields() throws Exception {
+    void permanentView_jsonShape_locksElevenFields() throws Exception {
         WebCardView card = new WebCardView(
                 "id", "Forest", "Forest", "M21", "281", "", 0,
                 "Basic Land — Forest", List.of("BASIC"), List.of("LAND"),
                 List.of("Forest"), List.of(), "COMMON",
                 "", "", "", List.of("({T}: Add {G}.)"),
-                false, "", Map.of());
+                false, Map.of());
         WebPermanentView dto = new WebPermanentView(
                 card, "alice", false, false, false, true, false, 0,
-                List.of(), "");
+                List.of(), "", false);
         JsonNode node = JSON.valueToTree(dto);
 
-        assertEquals(10, node.size(),
-                "WebPermanentView must have exactly 10 fields; got: " + node);
+        assertEquals(11, node.size(),
+                "WebPermanentView must have exactly 11 fields; got: " + node);
         for (String field : List.of(
                 "card", "controllerName", "tapped", "flipped",
                 "transformed", "phasedIn", "summoningSickness",
-                "damage", "attachments", "attachedTo")) {
+                "damage", "attachments", "attachedTo",
+                "attachedToPermanent")) {
             assertTrue(node.has(field), "missing field: " + field);
         }
         // Composition: the nested card carries the full WebCardView shape.
-        assertEquals(20, node.get("card").size(),
+        assertEquals(19, node.get("card").size(),
                 "permanent.card must be a full WebCardView");
     }
 

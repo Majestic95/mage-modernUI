@@ -43,7 +43,6 @@ import java.util.Map;
  * @param rules           rules-text paragraphs (each entry is one
  *     paragraph, {@code <br>}-separated upstream)
  * @param faceDown        true for morph / face-down permanents
- * @param tokenSetCode    set code for token art; empty for non-tokens
  * @param counters        flattened counter map ("counter name" → count);
  *     populated for permanents on the battlefield
  */
@@ -66,7 +65,6 @@ public record WebCardView(
         String startingLoyalty,
         List<String> rules,
         boolean faceDown,
-        String tokenSetCode,
         Map<String, Integer> counters
 ) {
 }

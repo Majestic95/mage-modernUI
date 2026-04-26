@@ -34,8 +34,15 @@ import java.util.List;
  * @param damage             marked damage on creatures
  * @param attachments        IDs of equipment / auras / counters
  *     attached to this permanent
- * @param attachedTo         the permanent this one is attached to
- *     (equipment / aura), or empty if not attached
+ * @param attachedTo         the UUID this permanent is attached to
+ *     (equipment / aura target), or empty if not attached. May
+ *     reference either a permanent or a player — see
+ *     {@code attachedToPermanent} to disambiguate.
+ * @param attachedToPermanent true when {@code attachedTo} references
+ *     a permanent on the battlefield. False when it references a
+ *     player (player-targeting auras like Curse-of-Bloodletting), or
+ *     when {@code attachedTo} is empty. Mirrors upstream
+ *     {@code mage.view.PermanentView.attachedToPermanent}.
  */
 public record WebPermanentView(
         WebCardView card,
@@ -47,6 +54,7 @@ public record WebPermanentView(
         boolean summoningSickness,
         int damage,
         List<String> attachments,
-        String attachedTo
+        String attachedTo,
+        boolean attachedToPermanent
 ) {
 }

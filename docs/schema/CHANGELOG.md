@@ -19,6 +19,51 @@ minor mismatches.
 
 ---
 
+## 1.11 — 2026-04-26 — Audit fixes: drop tokenSetCode + add attachedToPermanent
+
+Two tier-1 wire-format fixes from the architectural review of Phase 3:
+
+### `WebCardView` — drop `tokenSetCode` (20 → 19 fields)
+
+Slice 4 introduced `tokenSetCode: String` as if there was an upstream
+`getTokenSetCode()` getter, but a search of the upstream tree
+(`grep -rn "getTokenSetCode" /f/xmage --include='*.java'`) returns only
+our own files. The field has been hardcoded empty since slice 4
+shipped — a permanently-empty wire field that promised data we never
+wired. Removed in 1.11.
+
+**Token art lookup remains an open problem.** Scryfall serves token
+images at `<setcode>t/<num>` (e.g., `m21t/1`) but constructing that
+key from upstream requires understanding the relationship between
+`expansionSetCode` / `cardNumber` / `imageFileName` / `imageNumber`
+on a `PermanentToken`. Slice 7+ research item; reintroduce
+`tokenSetCode` (or a renamed equivalent) once the semantics are
+firmed up.
+
+### `WebPermanentView` — add `attachedToPermanent: boolean` (10 → 11 fields)
+
+Mirrors upstream `mage.view.PermanentView.attachedToPermanent`
+(line 37). Without this, clients couldn't tell whether `attachedTo`
+referenced a permanent (Equipment / most Auras) or a player (Aura
+curses). Renderers handling attachment lines need this disambiguator.
+
+```diff
+   "attachments":         [...],
+   "attachedTo":          "<uuid>",
++  "attachedToPermanent": false,
+```
+
+`true` when `attachedTo` references a battlefield permanent;
+`false` when it's a player UUID **or** when `attachedTo` is empty.
+
+### Surfaced by
+
+[Architectural review checklist §3 + §12 self-checks](../decisions/0007-game-stream-protocol.md)
+— "hallucinated upstream internal" pattern hit on `tokenSetCode`;
+"happy-path bias" hit on missing `attachedToPermanent`.
+
+---
+
 ## 1.10 — 2026-04-26 — Dialog family + inbound playerAction / playerResponse (Phase 3 slice 6)
 
 Phase 3 exit gate. Slice 6 ships the input side of the WebSocket

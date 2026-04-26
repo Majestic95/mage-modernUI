@@ -27,7 +27,6 @@ const FOREST = webCardViewSchema.parse({
   startingLoyalty: '',
   rules: [],
   faceDown: false,
-  tokenSetCode: '',
   counters: {},
 });
 
@@ -62,7 +61,7 @@ function buildGameView(turn = 1) {
 
 function frame(method: string, data: unknown, messageId = 1) {
   return webStreamFrameSchema.parse({
-    schemaVersion: '1.10',
+    schemaVersion: '1.11',
     method,
     messageId,
     objectId: null,

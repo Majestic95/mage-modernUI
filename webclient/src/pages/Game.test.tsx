@@ -11,7 +11,7 @@ import {
 } from '../api/schemas';
 
 const ANON_SESSION = {
-  schemaVersion: '1.10',
+  schemaVersion: '1.11',
   token: 'tok-anon',
   username: 'alice',
   isAnonymous: true,
@@ -38,7 +38,6 @@ const FOREST = webCardViewSchema.parse({
   startingLoyalty: '',
   rules: [],
   faceDown: false,
-  tokenSetCode: '',
   counters: {},
 });
 
@@ -53,6 +52,7 @@ const TAPPED_FOREST_PERMANENT = webPermanentViewSchema.parse({
   damage: 0,
   attachments: [],
   attachedTo: '',
+  attachedToPermanent: false,
 });
 
 function buildGameView() {

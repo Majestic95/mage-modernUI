@@ -57,7 +57,6 @@ public final class CardViewMapper {
                 nullToEmpty(cv.getStartingLoyalty()),
                 cv.getRules() == null ? List.of() : List.copyOf(cv.getRules()),
                 cv.isFaceDown(),
-                "",
                 countersFlat(cv.getCounters())
         );
     }
@@ -83,7 +82,8 @@ public final class CardViewMapper {
                 pv.hasSummoningSickness(),
                 pv.getDamage(),
                 attachments,
-                pv.getAttachedTo() == null ? "" : pv.getAttachedTo().toString()
+                pv.getAttachedTo() == null ? "" : pv.getAttachedTo().toString(),
+                pv.isAttachedToPermanent()
         );
     }
 

@@ -232,7 +232,6 @@ export const webCardViewSchema = z.object({
   startingLoyalty: z.string(),
   rules: z.array(z.string()),
   faceDown: z.boolean(),
-  tokenSetCode: z.string(),
   counters: z.record(z.string(), z.number()),
 });
 export type WebCardView = z.infer<typeof webCardViewSchema>;
@@ -248,6 +247,7 @@ export const webPermanentViewSchema = z.object({
   damage: z.number(),
   attachments: z.array(z.string()),
   attachedTo: z.string(),
+  attachedToPermanent: z.boolean(),
 });
 export type WebPermanentView = z.infer<typeof webPermanentViewSchema>;
 
@@ -328,7 +328,7 @@ export type WebGameEndView = z.infer<typeof webGameEndViewSchema>;
 /* ---------- helpers ---------- */
 
 /**
- * Parse the {@code schemaVersion} string ("1.10") into its major + minor
+ * Parse the {@code schemaVersion} string ("1.11") into its major + minor
  * parts. Returns null on a malformed value (defensive — server only ever
  * sends well-formed versions, but a misconfigured proxy could mangle it).
  */
