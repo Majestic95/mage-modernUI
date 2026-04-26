@@ -371,4 +371,45 @@ describe('useGameStore', () => {
     useGameStore.getState().reset();
     expect(Object.keys(useGameStore.getState().chatMessages)).toHaveLength(0);
   });
+
+  /* ---------- slice 12: startGame auto-nav ---------- */
+
+  it('startGame frame stashes a pendingStartGame entry', () => {
+    const info = {
+      tableId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+      gameId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+      playerId: 'cccccccc-cccc-cccc-cccc-cccccccccccc',
+    };
+    useGameStore.getState().applyFrame(frame('startGame', info), info);
+    expect(useGameStore.getState().pendingStartGame).toEqual(info);
+  });
+
+  it('consumeStartGame clears the pending entry and returns the prior value', () => {
+    const info = {
+      tableId: 't',
+      gameId: 'g',
+      playerId: 'p',
+    };
+    useGameStore.getState().applyFrame(frame('startGame', info), info);
+
+    expect(useGameStore.getState().consumeStartGame()).toEqual(info);
+    expect(useGameStore.getState().pendingStartGame).toBeNull();
+    // Idempotent — second consume returns null.
+    expect(useGameStore.getState().consumeStartGame()).toBeNull();
+  });
+
+  it('a fresh startGame replaces a still-pending one', () => {
+    const a = { tableId: 't1', gameId: 'g1', playerId: 'p1' };
+    const b = { tableId: 't2', gameId: 'g2', playerId: 'p2' };
+    useGameStore.getState().applyFrame(frame('startGame', a), a);
+    useGameStore.getState().applyFrame(frame('startGame', b), b);
+    expect(useGameStore.getState().pendingStartGame).toEqual(b);
+  });
+
+  it('reset clears pendingStartGame', () => {
+    const info = { tableId: 't', gameId: 'g', playerId: 'p' };
+    useGameStore.getState().applyFrame(frame('startGame', info), info);
+    useGameStore.getState().reset();
+    expect(useGameStore.getState().pendingStartGame).toBeNull();
+  });
 });

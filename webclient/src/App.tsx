@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAuthStore } from './auth/store';
+import { useGameStore } from './game/store';
 import { CardSearch } from './pages/CardSearch';
 import { Decks } from './pages/Decks';
 import { Game } from './pages/Game';
@@ -46,10 +47,12 @@ function persistGameId(id: string | null): void {
  *
  * <p>Slice 4.1 had two screens; we used a tab switcher. Slice 5 adds
  * a full-screen game window that takes over the main area when
- * {@code activeGameId} is set. Auto-navigation from {@code startGame}
- * frames lands in slice 5B; for slice 5A the user opens a game by
- * pasting an ID into the dev-only entry on the Lobby and clicking
- * "Open game window."
+ * {@code activeGameId} is set. Slice 12 wires auto-navigation: when
+ * the LobbyChat's room WebSocket receives a {@code startGame} frame
+ * (upstream's {@code User.ccGameStarted}), the game store stashes a
+ * {@code pendingStartGame} entry, and this component routes into
+ * the Game window automatically. Manual override remains available
+ * via the dev-only {@code DevOpenGame} entry.
  */
 export function App() {
   const session = useAuthStore((s) => s.session);
@@ -69,6 +72,28 @@ export function App() {
   useEffect(() => {
     void verify();
   }, [verify]);
+
+  // Auto-navigate when the lobby's room WS reports that a game
+  // started for this user. We subscribe to the Zustand store as an
+  // external event source rather than reading pendingStartGame via
+  // React state — the setState lives in the subscription callback,
+  // which is the recommended pattern for external systems pushing
+  // into React (vs. synchronously reacting to React-driven state in
+  // the effect body, which the linter flags as a cascading render).
+  useEffect(() => {
+    return useGameStore.subscribe((state, prev) => {
+      if (
+        state.pendingStartGame !== null &&
+        state.pendingStartGame !== prev.pendingStartGame
+      ) {
+        const info = useGameStore.getState().consumeStartGame();
+        if (info && info.gameId) {
+          persistGameId(info.gameId);
+          setActiveGameIdState(info.gameId);
+        }
+      }
+    });
+  }, []);
 
   // Drop any persisted gameId when the session goes away (logout or
   // server-side token expiry) so the next login doesn't auto-jump

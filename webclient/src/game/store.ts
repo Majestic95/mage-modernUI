@@ -14,6 +14,7 @@ import type {
   WebGameClientMessage,
   WebGameEndView,
   WebGameView,
+  WebStartGameInfo,
   WebStreamFrame,
 } from '../api/schemas';
 
@@ -126,12 +127,28 @@ interface GameState {
    */
   chatMessages: Record<string, WebChatMessage[]>;
 
+  /**
+   * Pending {@code startGame} frame waiting to be picked up by the
+   * router. Set by {@link applyFrame} when upstream's
+   * {@code User.ccGameStarted} fires (table moves from waiting to
+   * running); cleared by {@link consumeStartGame} once the App has
+   * navigated into the game window. Stays null in the steady state
+   * — both before any game starts and after navigation completes.
+   */
+  pendingStartGame: WebStartGameInfo | null;
+
   /** Connection lifecycle setters (called by GameStream). */
   setConnection: (s: ConnectionState, reason?: string) => void;
   /** Apply an inbound frame. Returns true if the frame was handled. */
   applyFrame: (frame: WebStreamFrame, validatedData: unknown) => boolean;
   /** Clear the pending dialog — called when the player submits a response. */
   clearDialog: () => void;
+  /**
+   * Read and clear the pending startGame frame in one step. Returns
+   * the previous value (or null when none). Single-shot — a second
+   * call without a fresh startGame returns null.
+   */
+  consumeStartGame: () => WebStartGameInfo | null;
   /** Reset back to the pre-connect state — for navigating away. */
   reset: () => void;
 }
@@ -147,6 +164,7 @@ const INITIAL: Pick<
   | 'lastMessageId'
   | 'pendingDialog'
   | 'chatMessages'
+  | 'pendingStartGame'
 > = {
   connection: 'idle',
   closeReason: '',
@@ -157,6 +175,7 @@ const INITIAL: Pick<
   lastMessageId: 0,
   pendingDialog: null,
   chatMessages: {},
+  pendingStartGame: null,
 };
 
 export const useGameStore = create<GameState>()((set, get) => ({
@@ -208,6 +227,17 @@ export const useGameStore = create<GameState>()((set, get) => ({
       case 'streamHello':
         // Confirms auth at the WS layer; no game-state change.
         return true;
+
+      case 'startGame': {
+        // Server fires this when a table moves from waiting to
+        // running (upstream's User.ccGameStarted). Stash for the
+        // router to pick up — App.tsx will auto-navigate into the
+        // Game window. Don't open the game stream here — that's
+        // the Game component's job once it mounts.
+        const info = validatedData as WebStartGameInfo;
+        set({ pendingStartGame: info });
+        return true;
+      }
 
       case 'streamError': {
         const err = validatedData as { code: string; message: string };
@@ -272,6 +302,14 @@ export const useGameStore = create<GameState>()((set, get) => ({
   },
 
   clearDialog: () => set({ pendingDialog: null }),
+
+  consumeStartGame: () => {
+    const pending = get().pendingStartGame;
+    if (pending !== null) {
+      set({ pendingStartGame: null });
+    }
+    return pending;
+  },
 
   reset: () => set(INITIAL),
 }));
