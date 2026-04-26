@@ -2,10 +2,12 @@ package mage.webapi.mapper;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import mage.view.CommandObjectView;
 import mage.view.TableClientMessage;
 import mage.webapi.dto.stream.WebAbilityPickerView;
 import mage.webapi.dto.stream.WebChoice;
 import mage.webapi.dto.stream.WebCombatGroupView;
+import mage.webapi.dto.stream.WebCommandObjectView;
 import mage.webapi.dto.stream.WebGameClientMessage;
 import mage.webapi.dto.stream.WebGameEndView;
 import mage.webapi.dto.stream.WebManaPoolView;
@@ -188,6 +190,76 @@ class GameViewMapperTest {
     void toChoiceDto_nullInput_throws() {
         assertThrows(IllegalArgumentException.class,
                 () -> GameViewMapper.toChoiceDto(null));
+    }
+
+    /* ---------- slice 11: command zone ---------- */
+
+    @Test
+    void commandObjectView_jsonShape_locksSevenFields() throws Exception {
+        WebCommandObjectView dto = new WebCommandObjectView(
+                "11111111-1111-1111-1111-111111111111",
+                "commander",
+                "Atraxa, Praetors' Voice",
+                "C16",
+                "atraxa-praetors-voice",
+                1,
+                List.of("Flying, vigilance, deathtouch, lifelink",
+                        "At the beginning of your end step, proliferate."));
+        JsonNode node = JSON.valueToTree(dto);
+        assertEquals(7, node.size(),
+                "WebCommandObjectView must have exactly 7 fields; got: " + node);
+        for (String f : List.of("id", "kind", "name", "expansionSetCode",
+                "imageFileName", "imageNumber", "rules")) {
+            assertTrue(node.has(f), "missing field: " + f);
+        }
+    }
+
+    @Test
+    void toCommandList_nullInput_returnsEmptyList() {
+        assertEquals(List.of(), GameViewMapper.toCommandList(null));
+        assertEquals(List.of(), GameViewMapper.toCommandList(List.of()));
+    }
+
+    @Test
+    void toCommandList_unknownSubclass_defaultsToCommander() {
+        // Anonymous CommandObjectView impl doesn't extend any of the
+        // four upstream concrete classes — kindFor() must fall through
+        // to "commander" rather than throw, so the wire format degrades
+        // gracefully if upstream adds a fifth subclass later.
+        UUID id = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+        CommandObjectView mystery = new CommandObjectView() {
+            @Override public String getExpansionSetCode() { return "TST"; }
+            @Override public String getName() { return "Mystery thing"; }
+            @Override public UUID getId() { return id; }
+            @Override public String getImageFileName() { return ""; }
+            @Override public int getImageNumber() { return 0; }
+            @Override public List<String> getRules() { return List.of("does stuff"); }
+            @Override public boolean isPlayable() { return false; }
+            @Override public void setPlayableStats(mage.players.PlayableObjectStats s) {}
+            @Override public mage.players.PlayableObjectStats getPlayableStats() {
+                return new mage.players.PlayableObjectStats();
+            }
+            @Override public boolean isChoosable() { return false; }
+            @Override public void setChoosable(boolean v) {}
+            @Override public boolean isSelected() { return false; }
+            @Override public void setSelected(boolean v) {}
+        };
+
+        List<WebCommandObjectView> out = GameViewMapper.toCommandList(List.of(mystery));
+        assertEquals(1, out.size());
+        assertEquals("commander", out.get(0).kind());
+        assertEquals("Mystery thing", out.get(0).name());
+        assertEquals(id.toString(), out.get(0).id());
+        assertEquals(List.of("does stuff"), out.get(0).rules());
+    }
+
+    @Test
+    void toCommandList_nullEntries_areSkipped() {
+        // Defensive against upstream view drift — never null-out an
+        // entry on the wire.
+        List<CommandObjectView> input = new java.util.ArrayList<>();
+        input.add(null);
+        assertEquals(List.of(), GameViewMapper.toCommandList(input));
     }
 
     @Test

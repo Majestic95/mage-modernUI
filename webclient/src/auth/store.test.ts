@@ -9,7 +9,7 @@ function jsonResponse(status: number, body: unknown): Response {
 }
 
 const ANON_SESSION = {
-  schemaVersion: '1.12',
+  schemaVersion: '1.13',
   token: 'tok-abc',
   username: 'guest-deadbeef',
   isAnonymous: true,
@@ -38,7 +38,7 @@ describe('useAuthStore', () => {
       vi.fn(() =>
         Promise.resolve(
           jsonResponse(200, {
-            schemaVersion: '1.12',
+            schemaVersion: '1.13',
             token: 'tok-1234',
             username: 'alice',
             isAnonymous: false,
@@ -64,7 +64,7 @@ describe('useAuthStore', () => {
       vi.fn(() =>
         Promise.resolve(
           jsonResponse(401, {
-            schemaVersion: '1.12',
+            schemaVersion: '1.13',
             code: 'INVALID_CREDENTIALS',
             message: 'Login failed.',
           }),
@@ -85,7 +85,7 @@ describe('useAuthStore', () => {
   it('logout clears the session and calls the DELETE endpoint', async () => {
     useAuthStore.setState({
       session: {
-        schemaVersion: '1.12',
+        schemaVersion: '1.13',
         token: 'tok-zzz',
         username: 'alice',
         isAnonymous: false,
@@ -159,7 +159,7 @@ describe('useAuthStore', () => {
       vi.fn(() =>
         Promise.resolve(
           jsonResponse(401, {
-            schemaVersion: '1.12',
+            schemaVersion: '1.13',
             code: 'INVALID_TOKEN',
             message: 'Bearer token is invalid or expired.',
           }),

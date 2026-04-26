@@ -11,7 +11,7 @@ import {
 } from '../api/schemas';
 
 const ANON_SESSION = {
-  schemaVersion: '1.12',
+  schemaVersion: '1.13',
   token: 'tok-anon',
   username: 'alice',
   isAnonymous: true,

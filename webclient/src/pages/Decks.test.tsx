@@ -6,7 +6,7 @@ import { useAuthStore } from '../auth/store';
 import { useDecksStore } from '../decks/store';
 
 const ANON_SESSION = {
-  schemaVersion: '1.12',
+  schemaVersion: '1.13',
   token: 'tok-anon',
   username: 'guest-deadbeef',
   isAnonymous: true,
@@ -23,7 +23,7 @@ function jsonResponse(status: number, body: unknown): Response {
 
 function cardListing(name: string): Response {
   return jsonResponse(200, {
-    schemaVersion: '1.12',
+    schemaVersion: '1.13',
     cards: [
       {
         name,
@@ -111,7 +111,7 @@ describe('Decks page', () => {
       'fetch',
       vi.fn<typeof fetch>().mockResolvedValue(
         jsonResponse(200, {
-          schemaVersion: '1.12',
+          schemaVersion: '1.13',
           cards: [],
           truncated: false,
         }),

@@ -294,6 +294,23 @@ export const webCombatGroupViewSchema = z.object({
 });
 export type WebCombatGroupView = z.infer<typeof webCombatGroupViewSchema>;
 
+/**
+ * One entry in {@link WebPlayerView#commandList}. The {@code kind}
+ * discriminator selects render mode (commander / emblem / dungeon /
+ * plane); other fields are common metadata that line up with the
+ * upstream {@code CommandObjectView} interface. Schema 1.13.
+ */
+export const webCommandObjectViewSchema = z.object({
+  id: z.string(),
+  kind: z.string(),
+  name: z.string(),
+  expansionSetCode: z.string(),
+  imageFileName: z.string(),
+  imageNumber: z.number(),
+  rules: z.array(z.string()),
+});
+export type WebCommandObjectView = z.infer<typeof webCommandObjectViewSchema>;
+
 export const webPlayerViewSchema = z.object({
   playerId: z.string(),
   name: z.string(),
@@ -315,6 +332,10 @@ export const webPlayerViewSchema = z.object({
   monarch: z.boolean(),
   initiative: z.boolean(),
   designationNames: z.array(z.string()),
+  // Default to [] so older fixtures (and any 1.12 server in dev) parse
+  // cleanly — server is guaranteed to populate the field on schema
+  // 1.13+, but the wire is forward-compatible either way.
+  commandList: z.array(webCommandObjectViewSchema).default([]),
 });
 export type WebPlayerView = z.infer<typeof webPlayerViewSchema>;
 

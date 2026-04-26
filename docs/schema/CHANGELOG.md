@@ -19,6 +19,55 @@ minor mismatches.
 
 ---
 
+## 1.13 — 2026-04-26 — Audit tier-3: command-zone wire support
+
+Closes the last tier-3 gap from the architectural review:
+* §4 — `WebPlayerView.commandList` was missing; commander, emblem,
+  dungeon, and plane objects had no representation on the wire even
+  though upstream's `PlayerView.commandObjectList` populates all four.
+
+After this bump, Commander matches surface the actual commander card
+in the command zone (rather than vanishing into thin air), and
+non-commander formats correctly show emblems from cards like Sorin,
+Lord of Innistrad and dungeons from D&D-set effects.
+
+### `WebPlayerView` — added `commandList` field
+
+```diff
+   "designationNames": []
++  "commandList":      []
+ }
+```
+
+The new field is always present (empty list when unused). Forward-
+compatible: a 1.12 client parsing 1.13 simply ignores the unknown
+field; a 1.13 client parsing 1.12 sees `commandList: []` via Zod's
+default. No major bump.
+
+### New `WebCommandObjectView` record
+
+7 fields collapsing the 4 upstream `CommandObjectView` impls
+(`CommanderView`, `EmblemView`, `DungeonView`, `PlaneView`) behind a
+`kind` discriminator:
+
+```json
+{
+  "id":               "uuid",
+  "kind":             "commander | emblem | dungeon | plane",
+  "name":             "Atraxa, Praetors' Voice",
+  "expansionSetCode": "C16",
+  "imageFileName":    "atraxa-praetors-voice",
+  "imageNumber":      1,
+  "rules":            ["Flying, vigilance...", "..."]
+}
+```
+
+Unknown subclasses default to `commander` rather than throwing — keeps
+the wire format degrading gracefully if upstream adds a fifth
+subclass later.
+
+---
+
 ## 1.12 — 2026-04-26 — Audit tier-2: DFC support + 3 deferred dialog frames
 
 Closes the audit-tier-2 gaps from the architectural review:

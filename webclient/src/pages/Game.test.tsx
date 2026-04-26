@@ -11,7 +11,7 @@ import {
 } from '../api/schemas';
 
 const ANON_SESSION = {
-  schemaVersion: '1.12',
+  schemaVersion: '1.13',
   token: 'tok-anon',
   username: 'alice',
   isAnonymous: true,
@@ -193,6 +193,46 @@ describe('Game page', () => {
       });
     });
     expect(screen.getByRole('alert')).toHaveTextContent(/BAD_REQUEST/);
+  });
+
+  /* ---------- slice 11: command zone ---------- */
+
+  it('renders the command zone when a player has a commander', () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    const gv = buildGameView();
+    // Inject a commander into self's commandList. Schema parsing
+    // already happened in buildGameView, so we mutate via setState
+    // with the resulting plain object.
+    const commander = {
+      id: 'dddddddd-dddd-dddd-dddd-dddddddddddd',
+      kind: 'commander',
+      name: "Atraxa, Praetors' Voice",
+      expansionSetCode: 'C16',
+      imageFileName: 'atraxa-praetors-voice',
+      imageNumber: 1,
+      rules: ['Flying, vigilance, deathtouch, lifelink'],
+    };
+    const me = gv.players.find((p) => p.controlled)!;
+    me.commandList = [commander];
+
+    act(() => {
+      useGameStore.setState({ connection: 'open', gameView: gv });
+    });
+
+    const zones = screen.getAllByTestId('command-zone');
+    expect(zones).toHaveLength(1);
+    const chip = screen.getByTestId('command-chip');
+    expect(chip).toHaveAttribute('data-kind', 'commander');
+    expect(chip).toHaveTextContent(/Atraxa/);
+    expect(chip).toHaveTextContent(/commander/i);
+  });
+
+  it('hides the command zone when the player has no command-zone entries', () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    act(() => {
+      useGameStore.setState({ connection: 'open', gameView: buildGameView() });
+    });
+    expect(screen.queryByTestId('command-zone')).not.toBeInTheDocument();
   });
 
   it('Leave button invokes onLeave', async () => {

@@ -64,7 +64,7 @@ function buildGameView(turn = 1) {
 
 function frame(method: string, data: unknown, messageId = 1) {
   return webStreamFrameSchema.parse({
-    schemaVersion: '1.12',
+    schemaVersion: '1.13',
     method,
     messageId,
     objectId: null,
@@ -311,7 +311,7 @@ describe('useGameStore', () => {
 
   function chatFrame(chatId: string, payload: ReturnType<typeof chatPayload>, messageId = 1) {
     return webStreamFrameSchema.parse({
-      schemaVersion: '1.12',
+      schemaVersion: '1.13',
       method: 'chatMessage',
       messageId,
       objectId: chatId,
@@ -342,7 +342,7 @@ describe('useGameStore', () => {
 
   it('chatMessage with null objectId is dropped (no chatId bucket)', () => {
     const f = webStreamFrameSchema.parse({
-      schemaVersion: '1.12',
+      schemaVersion: '1.13',
       method: 'chatMessage',
       messageId: 1,
       objectId: null,

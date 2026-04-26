@@ -3,15 +3,21 @@ package mage.webapi.mapper;
 import mage.choices.Choice;
 import mage.view.AbilityPickerView;
 import mage.view.CombatGroupView;
+import mage.view.CommandObjectView;
+import mage.view.CommanderView;
+import mage.view.DungeonView;
+import mage.view.EmblemView;
 import mage.view.GameClientMessage;
 import mage.view.GameEndView;
 import mage.view.GameView;
 import mage.view.ManaPoolView;
+import mage.view.PlaneView;
 import mage.view.PlayerView;
 import mage.view.TableClientMessage;
 import mage.webapi.dto.stream.WebAbilityPickerView;
 import mage.webapi.dto.stream.WebChoice;
 import mage.webapi.dto.stream.WebCombatGroupView;
+import mage.webapi.dto.stream.WebCommandObjectView;
 import mage.webapi.dto.stream.WebGameClientMessage;
 import mage.webapi.dto.stream.WebGameEndView;
 import mage.webapi.dto.stream.WebGameView;
@@ -120,8 +126,56 @@ public final class GameViewMapper {
                 pv.isInitiative(),
                 pv.getDesignationNames() == null
                         ? List.of()
-                        : List.copyOf(pv.getDesignationNames())
+                        : List.copyOf(pv.getDesignationNames()),
+                toCommandList(pv.getCommandObjectList())
         );
+    }
+
+    /**
+     * Map the upstream {@code CommandObjectView} interface (4 concrete
+     * subclasses) into a flat list of {@link WebCommandObjectView}
+     * records with a {@code kind} discriminator. Empty input → empty
+     * output (never null) so the wire format is stable across the
+     * common no-commander 1v1 case.
+     */
+    static List<WebCommandObjectView> toCommandList(List<CommandObjectView> source) {
+        if (source == null || source.isEmpty()) {
+            return List.of();
+        }
+        List<WebCommandObjectView> out = new ArrayList<>(source.size());
+        for (CommandObjectView co : source) {
+            if (co == null) {
+                continue;
+            }
+            out.add(toCommandObjectDto(co));
+        }
+        return List.copyOf(out);
+    }
+
+    static WebCommandObjectView toCommandObjectDto(CommandObjectView co) {
+        return new WebCommandObjectView(
+                co.getId() == null ? "" : co.getId().toString(),
+                kindFor(co),
+                nullToEmpty(co.getName()),
+                nullToEmpty(co.getExpansionSetCode()),
+                nullToEmpty(co.getImageFileName()),
+                co.getImageNumber(),
+                co.getRules() == null ? List.of() : List.copyOf(co.getRules())
+        );
+    }
+
+    private static String kindFor(CommandObjectView co) {
+        // CommanderView extends CardView, so it must be checked
+        // before any superclass assumptions; the rest are flat
+        // implementations of the interface. Default lands as
+        // commander rather than throwing — forward-compat for any
+        // fifth subclass upstream may add later (better to render
+        // as a card than to drop the entry).
+        if (co instanceof CommanderView) return "commander";
+        if (co instanceof EmblemView) return "emblem";
+        if (co instanceof DungeonView) return "dungeon";
+        if (co instanceof PlaneView) return "plane";
+        return "commander";
     }
 
     public static WebManaPoolView toManaPoolDto(ManaPoolView mp) {

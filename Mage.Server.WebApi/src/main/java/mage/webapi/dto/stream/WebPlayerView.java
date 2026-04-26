@@ -47,6 +47,10 @@ import java.util.Map;
  * @param initiative      true if this player has the initiative
  * @param designationNames any active designations (Day/Night, City's
  *     Blessing, etc.) on this player
+ * @param commandList     entries in this player's command zone
+ *     (commander, emblems, dungeons, planes). Empty list when none —
+ *     never null. Each entry's {@code kind} field discriminates render
+ *     mode on the client. Added in schema 1.13.
  */
 public record WebPlayerView(
         String playerId,
@@ -68,6 +72,7 @@ public record WebPlayerView(
         boolean hasLeft,
         boolean monarch,
         boolean initiative,
-        List<String> designationNames
+        List<String> designationNames,
+        List<WebCommandObjectView> commandList
 ) {
 }
