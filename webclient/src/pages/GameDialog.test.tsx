@@ -48,6 +48,69 @@ describe('GameDialog', () => {
     expect(container.firstChild).toBeNull();
   });
 
+  it('renders <font color> highlights as styled spans, strips raw markup', () => {
+    const stream = fakeStream();
+    act(() => {
+      useGameStore.setState({
+        pendingDialog: {
+          method: 'gameAsk',
+          messageId: 1,
+          data: emptyDialog({
+            message: 'Mulligan <font color=#ffff00>down to 6 cards</font>?',
+          }),
+        },
+      });
+    });
+    render(<GameDialog stream={stream} />);
+    const msg = screen.getByTestId('dialog-message');
+    // Visible text has no leftover tags.
+    expect(msg.textContent).toBe('Mulligan down to 6 cards?');
+    // The highlight is rendered as a styled span.
+    const highlight = msg.querySelector('span');
+    expect(highlight).not.toBeNull();
+    expect(highlight?.textContent).toBe('down to 6 cards');
+    expect(highlight?.getAttribute('style')).toMatch(/color:\s*(#ffff00|rgb\(255,\s*255,\s*0\))/i);
+  });
+
+  it('strips unknown HTML tags safely (no innerHTML injection)', () => {
+    const stream = fakeStream();
+    act(() => {
+      useGameStore.setState({
+        pendingDialog: {
+          method: 'gameAsk',
+          messageId: 2,
+          data: emptyDialog({
+            message: 'hello <script>alert(1)</script> world <b>bold</b>',
+          }),
+        },
+      });
+    });
+    render(<GameDialog stream={stream} />);
+    const msg = screen.getByTestId('dialog-message');
+    expect(msg.textContent).toBe('hello alert(1) world bold');
+    expect(msg.querySelector('script')).toBeNull();
+    expect(msg.querySelector('b')).toBeNull();
+  });
+
+  it('handles <br> as a line break inside messages', () => {
+    const stream = fakeStream();
+    act(() => {
+      useGameStore.setState({
+        pendingDialog: {
+          method: 'gameAsk',
+          messageId: 3,
+          data: emptyDialog({
+            message: 'Line one<br>line two',
+          }),
+        },
+      });
+    });
+    render(<GameDialog stream={stream} />);
+    const msg = screen.getByTestId('dialog-message');
+    expect(msg.querySelector('br')).not.toBeNull();
+    expect(msg.textContent).toBe('Line oneline two');
+  });
+
   it('gameAsk: Yes button sends boolean=true and clears the dialog', async () => {
     const stream = fakeStream();
     const user = userEvent.setup();
