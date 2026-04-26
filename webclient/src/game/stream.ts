@@ -292,6 +292,22 @@ export class GameStream {
   }
 
   /**
+   * Free-priority object click — used when the player clicks a card
+   * in hand to cast it, or clicks a permanent on the battlefield to
+   * tap/activate it. Routes through the same upstream
+   * {@code sendPlayerUUID} method as a uuid dialog response, but
+   * carries {@code messageId: 0} so the server doesn't try to
+   * correlate it with an outstanding dialog frame.
+   *
+   * <p>Upstream's {@code Player.priorityPlay()} loop polls the latest
+   * UUID via {@code getPlayerResponse()}; the same dispatch handles
+   * both dialog answers and free-priority clicks.
+   */
+  sendObjectClick(objectId: string): void {
+    this.sendPlayerResponse(0, 'uuid', objectId);
+  }
+
+  /**
    * Send a {@code chatSend} envelope. Username is filled server-side
    * from the session; clients cannot spoof. {@code chatId} must
    * resolve to a chat the user is subscribed to.

@@ -3,6 +3,7 @@ import { act, render, screen } from '@testing-library/react';
 import { Game } from './Game';
 import { useAuthStore } from '../auth/store';
 import { useGameStore } from '../game/store';
+import { GameStream } from '../game/stream';
 import {
   webCardViewSchema,
   webGameViewSchema,
@@ -233,6 +234,81 @@ describe('Game page', () => {
       useGameStore.setState({ connection: 'open', gameView: buildGameView() });
     });
     expect(screen.queryByTestId('command-zone')).not.toBeInTheDocument();
+  });
+
+  /* ---------- slice 14: cast-from-hand + permanent click ---------- */
+
+  it('clicking a hand card calls stream.sendObjectClick with the card id', async () => {
+    const userEvent = (await import('@testing-library/user-event')).default;
+    const user = userEvent.setup();
+    const sendSpy = vi
+      .spyOn(GameStream.prototype, 'sendObjectClick')
+      .mockImplementation(() => {});
+
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: buildGameView(),
+      });
+    });
+
+    const handCard = screen.getByTestId('hand-card');
+    expect(handCard).not.toBeDisabled();
+    await user.click(handCard);
+
+    expect(sendSpy).toHaveBeenCalledTimes(1);
+    expect(sendSpy).toHaveBeenCalledWith(FOREST.id);
+    sendSpy.mockRestore();
+  });
+
+  it('hand cards are disabled when self does not have priority', () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    const gv = buildGameView();
+    const me = gv.players.find((p) => p.controlled)!;
+    me.hasPriority = false;
+    gv.priorityPlayerName = 'COMPUTER_MONTE_CARLO';
+    act(() => {
+      useGameStore.setState({ connection: 'open', gameView: gv });
+    });
+
+    expect(screen.getByTestId('hand-card')).toBeDisabled();
+    expect(screen.getByText(/waiting for priority/i)).toBeInTheDocument();
+  });
+
+  it('clicking a self-controlled permanent calls sendObjectClick', async () => {
+    const userEvent = (await import('@testing-library/user-event')).default;
+    const user = userEvent.setup();
+    const sendSpy = vi
+      .spyOn(GameStream.prototype, 'sendObjectClick')
+      .mockImplementation(() => {});
+
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: buildGameView(),
+      });
+    });
+
+    const perm = screen.getAllByTestId('permanent')[0]!;
+    expect(perm).not.toBeDisabled();
+    await user.click(perm);
+
+    expect(sendSpy).toHaveBeenCalledTimes(1);
+    expect(sendSpy).toHaveBeenCalledWith(TAPPED_FOREST_PERMANENT.card.id);
+    sendSpy.mockRestore();
+  });
+
+  it('permanents are disabled and tagged when no priority', () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    const gv = buildGameView();
+    const me = gv.players.find((p) => p.controlled)!;
+    me.hasPriority = false;
+    act(() => {
+      useGameStore.setState({ connection: 'open', gameView: gv });
+    });
+    expect(screen.getAllByTestId('permanent')[0]).toBeDisabled();
   });
 
   it('Leave button invokes onLeave', async () => {

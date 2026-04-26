@@ -87,7 +87,7 @@ export function Game({ gameId, onLeave }: Props) {
       )}
       <main className="flex-1 flex flex-col">
         {gameView ? (
-          <Battlefield gv={gameView} />
+          <Battlefield gv={gameView} stream={stream} />
         ) : (
           <Waiting connection={connection} />
         )}
@@ -184,7 +184,13 @@ function Centered({ children }: { children: React.ReactNode }) {
 
 /* ---------- battlefield ---------- */
 
-function Battlefield({ gv }: { gv: WebGameView }) {
+function Battlefield({
+  gv,
+  stream,
+}: {
+  gv: WebGameView;
+  stream: GameStream | null;
+}) {
   const me = useMemo(
     () => gv.players.find((p) => p.playerId === gv.myPlayerId) ?? null,
     [gv.players, gv.myPlayerId],
@@ -194,12 +200,28 @@ function Battlefield({ gv }: { gv: WebGameView }) {
     [gv.players, gv.myPlayerId],
   );
 
+  // Free-priority object clicks (cast from hand, tap/activate
+  // permanents) are gated on the player holding priority. Slice 14
+  // ships this gate via hasPriority alone — server still validates
+  // legality and surfaces gameError on bad clicks, so the worst
+  // failure mode is a no-op + transient banner.
+  const canAct = !!me?.hasPriority && stream != null;
+  const onObjectClick = (id: string) => {
+    if (canAct) stream?.sendObjectClick(id);
+  };
+
   return (
     <div className="flex-1 flex flex-col">
       {/* Opponents row(s) — top */}
       <section className="flex-1 border-b border-zinc-800 p-4 space-y-4 overflow-auto">
         {opponents.map((p) => (
-          <PlayerArea key={p.playerId} player={p} perspective="opponent" />
+          <PlayerArea
+            key={p.playerId}
+            player={p}
+            perspective="opponent"
+            canAct={canAct}
+            onObjectClick={onObjectClick}
+          />
         ))}
         {opponents.length === 0 && (
           <p className="text-zinc-500 italic">No opponents in this view.</p>
@@ -210,8 +232,17 @@ function Battlefield({ gv }: { gv: WebGameView }) {
       <section className="flex-1 p-4 space-y-4 overflow-auto">
         {me ? (
           <>
-            <PlayerArea player={me} perspective="self" />
-            <MyHand hand={gv.myHand} />
+            <PlayerArea
+              player={me}
+              perspective="self"
+              canAct={canAct}
+              onObjectClick={onObjectClick}
+            />
+            <MyHand
+              hand={gv.myHand}
+              canAct={canAct}
+              onObjectClick={onObjectClick}
+            />
           </>
         ) : (
           <p className="text-zinc-500 italic">
@@ -226,9 +257,13 @@ function Battlefield({ gv }: { gv: WebGameView }) {
 function PlayerArea({
   player,
   perspective,
+  canAct,
+  onObjectClick,
 }: {
   player: WebPlayerView;
   perspective: 'self' | 'opponent';
+  canAct: boolean;
+  onObjectClick: (id: string) => void;
 }) {
   const battlefield = Object.values(player.battlefield);
   return (
@@ -279,7 +314,12 @@ function PlayerArea({
           </span>
         ) : (
           battlefield.map((perm) => (
-            <PermanentChip key={perm.card.id} perm={perm} />
+            <PermanentChip
+              key={perm.card.id}
+              perm={perm}
+              canAct={canAct}
+              onClick={onObjectClick}
+            />
           ))
         )}
       </div>
@@ -367,55 +407,101 @@ function ManaPool({ player }: { player: WebPlayerView }) {
   );
 }
 
-function PermanentChip({ perm }: { perm: WebPermanentView }) {
+function PermanentChip({
+  perm,
+  canAct,
+  onClick,
+}: {
+  perm: WebPermanentView;
+  canAct: boolean;
+  onClick: (id: string) => void;
+}) {
   const tapped = perm.tapped;
   const sick = perm.summoningSickness;
+  const baseClasses =
+    'inline-flex items-baseline gap-1 px-2 py-1 rounded text-xs ' +
+    'border border-zinc-700 bg-zinc-900 ' +
+    (tapped ? 'opacity-60 rotate-3' : '') +
+    (sick ? ' italic' : '');
+  const clickableClasses =
+    canAct
+      ? ' cursor-pointer hover:border-fuchsia-500 hover:bg-zinc-800'
+      : ' cursor-default opacity-90';
   return (
-    <span
+    <button
+      type="button"
       data-testid="permanent"
       data-tapped={tapped}
-      className={
-        'inline-flex items-baseline gap-1 px-2 py-1 rounded text-xs ' +
-        'border border-zinc-700 bg-zinc-900 ' +
-        (tapped ? 'opacity-60 rotate-3' : '') +
-        (sick ? ' italic' : '')
+      disabled={!canAct}
+      onClick={() => onClick(perm.card.id)}
+      className={baseClasses + clickableClasses}
+      title={
+        canAct
+          ? `${perm.card.name} — click to tap/activate`
+          : perm.card.typeLine
       }
-      title={perm.card.typeLine}
     >
       <span className="font-medium text-zinc-100">{perm.card.name}</span>
       {tapped && <span className="text-zinc-500">(T)</span>}
       {perm.damage > 0 && (
         <span className="text-red-300">−{perm.damage}</span>
       )}
-    </span>
+    </button>
   );
 }
 
-function MyHand({ hand }: { hand: Record<string, WebCardView> }) {
+function MyHand({
+  hand,
+  canAct,
+  onObjectClick,
+}: {
+  hand: Record<string, WebCardView>;
+  canAct: boolean;
+  onObjectClick: (id: string) => void;
+}) {
   const cards = Object.values(hand);
   return (
     <div
       data-testid="my-hand"
       className="rounded border border-zinc-800 bg-zinc-900/40 p-3"
     >
-      <div className="text-xs text-zinc-500 mb-2 uppercase tracking-wide">
-        Your hand ({cards.length})
+      <div className="text-xs text-zinc-500 mb-2 uppercase tracking-wide flex items-baseline justify-between">
+        <span>Your hand ({cards.length})</span>
+        {!canAct && (
+          <span className="text-[10px] normal-case tracking-normal text-zinc-600">
+            waiting for priority
+          </span>
+        )}
       </div>
       <div className="flex flex-wrap gap-1.5">
         {cards.length === 0 ? (
           <span className="text-xs text-zinc-600 italic">Empty hand.</span>
         ) : (
           cards.map((card) => (
-            <span
+            <button
               key={card.id}
-              className="inline-flex items-baseline gap-1 px-2 py-1 rounded text-xs border border-zinc-700 bg-zinc-900"
-              title={card.typeLine}
+              type="button"
+              data-testid="hand-card"
+              disabled={!canAct}
+              onClick={() => onObjectClick(card.id)}
+              className={
+                'inline-flex items-baseline gap-1 px-2 py-1 rounded text-xs ' +
+                'border border-zinc-700 bg-zinc-900 ' +
+                (canAct
+                  ? 'cursor-pointer hover:border-fuchsia-500 hover:bg-zinc-800'
+                  : 'cursor-default opacity-70')
+              }
+              title={
+                canAct
+                  ? `${card.name} — click to play/cast`
+                  : card.typeLine
+              }
             >
               <span className="font-medium">{card.name}</span>
               {card.manaCost && (
                 <span className="text-zinc-500 font-mono">{card.manaCost}</span>
               )}
-            </span>
+            </button>
           ))
         )}
       </div>
