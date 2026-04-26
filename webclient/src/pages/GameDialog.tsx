@@ -1,6 +1,11 @@
 import { useState } from 'react';
 import type { GameStream } from '../game/stream';
-import { useGameStore, type PendingDialog } from '../game/store';
+import {
+  useGameStore,
+  type PendingDialog,
+  type PendingDialogAbilityPicker,
+  type PendingDialogClientMessage,
+} from '../game/store';
 
 interface Props {
   stream: GameStream | null;
@@ -11,10 +16,10 @@ interface Props {
  * Per ADR 0007 D6, each dialog method maps to a specific
  * {@code playerResponse.kind} on the inbound side.
  *
- * <p>Slice B covers the seven response/notice methods. The five
- * deferred methods (gameChooseAbility / gameChooseChoice /
- * gameChoosePile / gamePlayXMana / gameSelectMultiAmount) require
- * richer view DTOs not yet on the wire.
+ * <p>Slice 7 adds gamePlayXMana / gameChooseChoice / gameChooseAbility
+ * — completing the audit-tier-2 dialog set. Two methods remain
+ * deferred (gameChoosePile, gameSelectMultiAmount, userRequestDialog)
+ * pending richer view DTOs.
  */
 export function GameDialog({ stream }: Props) {
   const dialog = useGameStore((s) => s.pendingDialog);
@@ -48,10 +53,23 @@ function DialogContent({
   stream: GameStream | null;
   clearDialog: () => void;
 }) {
+  // gameChooseAbility branches first because its data shape is
+  // distinct (WebAbilityPickerView, not WebGameClientMessage). After
+  // this branch TypeScript narrows the rest to client-message shape.
+  if (dialog.method === 'gameChooseAbility') {
+    return (
+      <AbilityPickerDialog
+        dialog={dialog}
+        stream={stream}
+        clearDialog={clearDialog}
+      />
+    );
+  }
   switch (dialog.method) {
     case 'gameAsk':
       return <YesNoDialog dialog={dialog} stream={stream} clearDialog={clearDialog} />;
     case 'gamePlayMana':
+    case 'gamePlayXMana':
       return <YesNoDialog dialog={dialog} stream={stream} clearDialog={clearDialog} />;
     case 'gameTarget':
       return <TargetDialog dialog={dialog} stream={stream} clearDialog={clearDialog} />;
@@ -67,6 +85,10 @@ function DialogContent({
           stream={stream}
           clearDialog={clearDialog}
         />
+      );
+    case 'gameChooseChoice':
+      return (
+        <ChoiceDialog dialog={dialog} stream={stream} clearDialog={clearDialog} />
       );
     case 'gameInformPersonal':
       return <InformDialog dialog={dialog} clearDialog={clearDialog} title="Info" />;
@@ -212,6 +234,113 @@ function AmountDialog({ dialog, stream, clearDialog }: ContentProps) {
   );
 }
 
+function ChoiceDialog({ dialog, stream, clearDialog }: ContentProps) {
+  const choice = dialog.data.choice;
+  if (!choice) {
+    // Defensive: server should always populate choice on
+    // gameChooseChoice; if it doesn't, surface a textual fallback so
+    // the user isn't stuck on an empty modal.
+    return (
+      <>
+        <Header title="Choose" />
+        <Message text={dialog.data.message || '(no choice payload)'} />
+        <Buttons>
+          <SecondaryButton onClick={clearDialog}>Dismiss</SecondaryButton>
+        </Buttons>
+      </>
+    );
+  }
+  const submit = (key: string) => {
+    stream?.sendPlayerResponse(dialog.messageId, 'string', key);
+    clearDialog();
+  };
+  const entries = Object.entries(choice.choices);
+  return (
+    <>
+      <Header title="Choose one" />
+      <Message text={choice.message || dialog.data.message} />
+      {choice.subMessage && (
+        <p className="text-xs text-zinc-500" data-testid="choice-submessage">
+          {choice.subMessage}
+        </p>
+      )}
+      {entries.length === 0 ? (
+        <p className="text-zinc-500 italic text-sm">
+          No options available.
+        </p>
+      ) : (
+        <ul className="space-y-1 max-h-64 overflow-y-auto" data-testid="choice-list">
+          {entries.map(([key, label]) => (
+            <li key={key}>
+              <button
+                type="button"
+                onClick={() => submit(key)}
+                className="w-full text-left px-3 py-2 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-100 text-sm"
+              >
+                {label}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {!choice.required && (
+        <Buttons>
+          <SecondaryButton
+            onClick={() => {
+              // Optional choice — send empty string per upstream
+              // convention for "skip" on string-kind responses.
+              stream?.sendPlayerResponse(dialog.messageId, 'string', '');
+              clearDialog();
+            }}
+          >
+            Skip
+          </SecondaryButton>
+        </Buttons>
+      )}
+    </>
+  );
+}
+
+function AbilityPickerDialog({
+  dialog,
+  stream,
+  clearDialog,
+}: AbilityPickerProps) {
+  const submit = (abilityId: string) => {
+    stream?.sendPlayerResponse(dialog.messageId, 'uuid', abilityId);
+    clearDialog();
+  };
+  const entries = Object.entries(dialog.data.choices);
+  return (
+    <>
+      <Header title="Choose ability" />
+      <Message text={dialog.data.message} />
+      {entries.length === 0 ? (
+        <p className="text-zinc-500 italic text-sm">
+          No abilities available.
+        </p>
+      ) : (
+        <ul
+          className="space-y-1 max-h-64 overflow-y-auto"
+          data-testid="ability-list"
+        >
+          {entries.map(([abilityId, label]) => (
+            <li key={abilityId}>
+              <button
+                type="button"
+                onClick={() => submit(abilityId)}
+                className="w-full text-left px-3 py-2 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-100 text-sm"
+              >
+                {label}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+}
+
 function InformDialog({
   dialog,
   clearDialog,
@@ -235,7 +364,13 @@ function InformDialog({
 /* ---------- shared UI primitives ---------- */
 
 interface ContentProps {
-  dialog: PendingDialog;
+  dialog: PendingDialogClientMessage;
+  stream: GameStream | null;
+  clearDialog: () => void;
+}
+
+interface AbilityPickerProps {
+  dialog: PendingDialogAbilityPicker;
   stream: GameStream | null;
   clearDialog: () => void;
 }

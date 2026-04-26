@@ -19,6 +19,115 @@ minor mismatches.
 
 ---
 
+## 1.12 — 2026-04-26 — Audit tier-2: DFC support + 3 deferred dialog frames
+
+Closes the audit-tier-2 gaps from the architectural review:
+* §3 — `WebCardView` lacked transform / MDFC back-face data
+* §2 — three of the seven prompt types from
+  `Mage.Server/.../GameSessionPlayer.java` weren't yet on the wire
+
+After this bump, modal spells (every Charm cycle, Cryptic Command,
+mode-of-N picks), X-cost spells (Fireball, Walking Ballista),
+multi-ability cards (anything with two activated abilities), and
+transform / MDFC cards (every Innistrad / Zendikar Rising onward
+double-face card) all have the wire-format support they need.
+
+### `WebCardView` — DFC / MDFC back-face data (19 → 22 fields)
+
+```diff
+   "faceDown":         false,
+   "counters":         {},
++  "transformable":    false,
++  "transformed":      false,
++  "secondCardFace":   null
+```
+
+`transformable` is true when the card has a flippable back face
+(transformable cards from Innistrad onward AND modal-DFCs from
+Zendikar Rising onward). `transformed` is the current state — false
+= front face shown, true = back face shown. `secondCardFace`
+recursively carries a `WebCardView` for the back face; recursion is
+**capped at one level** — the back face's `secondCardFace` is always
+null on the wire. Mirrors upstream's recursive
+`mage.view.CardView.secondCardFace` which itself never recurses past
+the first back face.
+
+### New outbound methods (3)
+
+| `method` | `data` shape | When |
+|---|---|---|
+| `gamePlayXMana` | `WebGameClientMessage` | Upstream `GAME_PLAY_XMANA` — X-cost spell payment prompt |
+| `gameChooseChoice` | `WebGameClientMessage` (with `choice` field populated) | Upstream `GAME_CHOOSE_CHOICE` — modal-spell / replacement-effect picker |
+| `gameChooseAbility` | `WebAbilityPickerView` | Upstream `GAME_CHOOSE_ABILITY` — multi-ability picker; trigger-ordering |
+
+Inbound responses (per [ADR 0007 D6](../decisions/0007-game-stream-protocol.md#d6)):
+
+| Frame method | `playerResponse.kind` | `value` |
+|---|---|---|
+| `gamePlayXMana` | `boolean` | continue paying / cancel |
+| `gameChooseChoice` | `string` | the chosen key from `choice.choices` |
+| `gameChooseAbility` | `uuid` | the chosen ability's UUID |
+
+### `WebGameClientMessage` — adds `choice` (7 → 8 fields)
+
+```diff
+   "min": 0,
+   "max": 0,
+   "flag": false,
++  "choice": null
+```
+
+`choice: WebChoice | null` — populated only for `gameChooseChoice`
+frames; null on every other dialog frame.
+
+### New DTO `WebChoice`
+
+```json
+{
+  "message":    "Choose one —",
+  "subMessage": "",
+  "required":   true,
+  "choices":    {
+    "destroy": "Destroy target creature.",
+    "counter": "Counter target spell."
+  }
+}
+```
+
+Narrowed view of upstream `mage.choices.Choice` (4 fields). Flattens
+upstream's `getChoices(): Set<String>` + `getKeyChoices(): Map<String,
+String>` distinction into a single `Map<String, String>` — when
+upstream isn't in key-mode, the mapper synthesizes
+`key == label`. Slice 8+ adds the deferred UI hints
+(`isManaColorChoice`, `searchEnabled`, `sortEnabled`, `hintData`).
+
+### New DTO `WebAbilityPickerView`
+
+```json
+{
+  "gameView": { ... },
+  "message":  "Choose spell or ability to play",
+  "choices":  {
+    "<ability-uuid-1>": "1. Activate ability A",
+    "<ability-uuid-2>": "2. Activate ability B"
+  }
+}
+```
+
+Mirror of upstream `mage.view.AbilityPickerView` (3 fields). Distinct
+from `WebGameClientMessage` because upstream's `AbilityPickerView` is
+a separate class; the wire format reflects that. `choices` preserves
+upstream's `LinkedHashMap` insertion order so the renderer gets a
+stable list.
+
+### Surfaced by
+
+[Architectural review checklist §2 + §3](../decisions/0007-game-stream-protocol.md)
+— "happy-path bias" hit on all three deferred dialog frames; "view-
+object surface drift" hit on missing DFC fields.
+
+---
+
 ## 1.11 — 2026-04-26 — Audit fixes: drop tokenSetCode + add attachedToPermanent
 
 Two tier-1 wire-format fixes from the architectural review of Phase 3:

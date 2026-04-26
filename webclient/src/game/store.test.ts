@@ -28,6 +28,9 @@ const FOREST = webCardViewSchema.parse({
   rules: [],
   faceDown: false,
   counters: {},
+  transformable: false,
+  transformed: false,
+  secondCardFace: null,
 });
 
 function buildGameView(turn = 1) {
@@ -61,7 +64,7 @@ function buildGameView(turn = 1) {
 
 function frame(method: string, data: unknown, messageId = 1) {
   return webStreamFrameSchema.parse({
-    schemaVersion: '1.11',
+    schemaVersion: '1.12',
     method,
     messageId,
     objectId: null,
@@ -149,6 +152,7 @@ describe('useGameStore', () => {
       min: 0,
       max: 0,
       flag: false,
+      choice: null,
     });
     useGameStore.getState().applyFrame(frame('gameInform', wrap, 1), wrap);
     expect(useGameStore.getState().gameView?.turn).toBe(2);
@@ -166,6 +170,7 @@ describe('useGameStore', () => {
       min: 0,
       max: 0,
       flag: false,
+      choice: null,
     });
     useGameStore.getState().applyFrame(frame('gameInform', wrap, 2), wrap);
     expect(useGameStore.getState().gameView?.turn).toBe(1);
@@ -202,6 +207,7 @@ describe('useGameStore', () => {
       min: 0,
       max: 0,
       flag: false,
+      choice: null,
     });
   }
 
@@ -210,7 +216,9 @@ describe('useGameStore', () => {
     'gameTarget',
     'gameSelect',
     'gamePlayMana',
+    'gamePlayXMana',
     'gameSelectAmount',
+    'gameChooseChoice',
     'gameInformPersonal',
     'gameError',
   ])('%s captures pendingDialog with method, messageId, and data', (method) => {
@@ -221,6 +229,23 @@ describe('useGameStore', () => {
     expect(pending?.method).toBe(method);
     expect(pending?.messageId).toBe(99);
     expect(pending?.data.message).toBe(`${method} prompt`);
+  });
+
+  it('gameChooseAbility captures the AbilityPickerView shape (not GameClientMessage)', () => {
+    const payload = {
+      gameView: null,
+      message: 'Pick an ability',
+      choices: { 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa': 'Activate A' },
+    };
+    useGameStore.getState().applyFrame(frame('gameChooseAbility', payload, 100), payload);
+    const pending = useGameStore.getState().pendingDialog;
+    expect(pending?.method).toBe('gameChooseAbility');
+    expect(pending?.messageId).toBe(100);
+    if (pending?.method === 'gameChooseAbility') {
+      // Discriminated-union narrowing: data is WebAbilityPickerView here.
+      expect(pending.data.message).toBe('Pick an ability');
+      expect(Object.keys(pending.data.choices)).toHaveLength(1);
+    }
   });
 
   it('a fresh gameUpdate clears any pending dialog', () => {
@@ -243,6 +268,7 @@ describe('useGameStore', () => {
       min: 0,
       max: 0,
       flag: false,
+      choice: null,
     });
     useGameStore.getState().applyFrame(frame('gameOver', wrap, 2), wrap);
     expect(useGameStore.getState().pendingDialog).toBeNull();

@@ -22,6 +22,7 @@ function emptyDialog(overrides: Partial<{
     min: overrides.min ?? 0,
     max: overrides.max ?? 0,
     flag: overrides.flag ?? false,
+    choice: null,
   });
 }
 
@@ -109,6 +110,9 @@ describe('GameDialog', () => {
       rules: ['Bolt deals 3.'],
       faceDown: false,
       counters: {},
+  transformable: false,
+  transformed: false,
+  secondCardFace: null,
     };
     act(() => {
       useGameStore.setState({
@@ -242,5 +246,128 @@ describe('GameDialog', () => {
     expect(screen.getByTestId('dialog-title')).toHaveTextContent(/pay mana/i);
     await user.click(screen.getByRole('button', { name: /^yes$/i }));
     expect(stream.sendPlayerResponse).toHaveBeenCalledWith(33, 'boolean', true);
+  });
+
+  /* ---------- slice 7: 3 audit-tier-2 dialogs ---------- */
+
+  it('gamePlayXMana: reuses YesNo renderer and sends boolean', async () => {
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    act(() => {
+      useGameStore.setState({
+        pendingDialog: {
+          method: 'gamePlayXMana',
+          messageId: 50,
+          data: emptyDialog({ message: 'Add another to X?' }),
+        },
+      });
+    });
+    render(<GameDialog stream={stream} />);
+    expect(screen.getByTestId('game-dialog')).toHaveAttribute(
+      'data-method',
+      'gamePlayXMana',
+    );
+    await user.click(screen.getByRole('button', { name: /^yes$/i }));
+    expect(stream.sendPlayerResponse).toHaveBeenCalledWith(50, 'boolean', true);
+  });
+
+  it('gameChooseChoice: clicking a choice sends the chosen key as string', async () => {
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    act(() => {
+      useGameStore.setState({
+        pendingDialog: {
+          method: 'gameChooseChoice',
+          messageId: 60,
+          data: webGameClientMessageSchema.parse({
+            gameView: null,
+            message: 'Wrapper message',
+            targets: [],
+            cardsView1: {},
+            min: 0,
+            max: 0,
+            flag: false,
+            choice: {
+              message: 'Choose one —',
+              subMessage: '',
+              required: true,
+              choices: {
+                destroy: 'Destroy target creature.',
+                counter: 'Counter target spell.',
+              },
+            },
+          }),
+        },
+      });
+    });
+    render(<GameDialog stream={stream} />);
+    expect(screen.getByTestId('dialog-title')).toHaveTextContent(/choose one/i);
+    expect(screen.getByTestId('choice-list')).toBeInTheDocument();
+    await user.click(
+      screen.getByRole('button', { name: /destroy target creature/i }),
+    );
+    expect(stream.sendPlayerResponse).toHaveBeenCalledWith(60, 'string', 'destroy');
+    expect(useGameStore.getState().pendingDialog).toBeNull();
+  });
+
+  it('gameChooseChoice: optional choice shows Skip and sends empty string', async () => {
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    act(() => {
+      useGameStore.setState({
+        pendingDialog: {
+          method: 'gameChooseChoice',
+          messageId: 61,
+          data: webGameClientMessageSchema.parse({
+            gameView: null,
+            message: '',
+            targets: [],
+            cardsView1: {},
+            min: 0,
+            max: 0,
+            flag: false,
+            choice: {
+              message: 'Optionally choose',
+              subMessage: '',
+              required: false,
+              choices: { a: 'Option A' },
+            },
+          }),
+        },
+      });
+    });
+    render(<GameDialog stream={stream} />);
+    await user.click(screen.getByRole('button', { name: /skip/i }));
+    expect(stream.sendPlayerResponse).toHaveBeenCalledWith(61, 'string', '');
+  });
+
+  it('gameChooseAbility: clicking an ability sends uuid response', async () => {
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    act(() => {
+      useGameStore.setState({
+        pendingDialog: {
+          method: 'gameChooseAbility',
+          messageId: 70,
+          data: {
+            gameView: null,
+            message: 'Choose ability',
+            choices: {
+              'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa': '1. Activate ability A',
+              'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb': '2. Activate ability B',
+            },
+          },
+        },
+      });
+    });
+    render(<GameDialog stream={stream} />);
+    expect(screen.getByTestId('dialog-title')).toHaveTextContent(/choose ability/i);
+    expect(screen.getByTestId('ability-list')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /1. Activate ability A/ }));
+    expect(stream.sendPlayerResponse).toHaveBeenCalledWith(
+      70,
+      'uuid',
+      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+    );
   });
 });

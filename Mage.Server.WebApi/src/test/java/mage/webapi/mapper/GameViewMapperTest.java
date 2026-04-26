@@ -3,6 +3,8 @@ package mage.webapi.mapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import mage.view.TableClientMessage;
+import mage.webapi.dto.stream.WebAbilityPickerView;
+import mage.webapi.dto.stream.WebChoice;
 import mage.webapi.dto.stream.WebCombatGroupView;
 import mage.webapi.dto.stream.WebGameClientMessage;
 import mage.webapi.dto.stream.WebGameEndView;
@@ -124,14 +126,14 @@ class GameViewMapperTest {
     }
 
     @Test
-    void gameClientMessage_jsonShape_locksSevenFields() throws Exception {
+    void gameClientMessage_jsonShape_locksEightFields() throws Exception {
         WebGameClientMessage dto = new WebGameClientMessage(
-                null, "ggwp", List.of(), Map.of(), 0, 0, false);
+                null, "ggwp", List.of(), Map.of(), 0, 0, false, null);
         JsonNode node = JSON.valueToTree(dto);
-        assertEquals(7, node.size(),
-                "WebGameClientMessage must have exactly 7 fields (slice 6 extended); got: " + node);
+        assertEquals(8, node.size(),
+                "WebGameClientMessage must have exactly 8 fields (slice 7 added choice); got: " + node);
         for (String f : List.of("gameView", "message", "targets",
-                "cardsView1", "min", "max", "flag")) {
+                "cardsView1", "min", "max", "flag", "choice")) {
             assertTrue(node.has(f), "missing field: " + f);
         }
     }
@@ -145,6 +147,47 @@ class GameViewMapperTest {
         assertTrue(dto.cardsView1().isEmpty());
         assertEquals(0, dto.min());
         assertEquals(0, dto.max());
+        assertEquals(null, dto.choice());
+    }
+
+    @Test
+    void choice_jsonShape_locksFourFields() throws Exception {
+        WebChoice dto = new WebChoice(
+                "Choose one —",
+                "",
+                true,
+                Map.of("a", "Destroy target creature.",
+                        "b", "Counter target spell."));
+        JsonNode node = JSON.valueToTree(dto);
+        assertEquals(4, node.size(),
+                "WebChoice must have exactly 4 fields; got: " + node);
+        for (String f : List.of("message", "subMessage", "required", "choices")) {
+            assertTrue(node.has(f), "missing field: " + f);
+        }
+    }
+
+    @Test
+    void abilityPickerView_jsonShape_locksThreeFields() throws Exception {
+        WebAbilityPickerView dto = new WebAbilityPickerView(
+                null, "Choose ability", Map.of("uuid-1", "1. Activate A"));
+        JsonNode node = JSON.valueToTree(dto);
+        assertEquals(3, node.size(),
+                "WebAbilityPickerView must have exactly 3 fields; got: " + node);
+        for (String f : List.of("gameView", "message", "choices")) {
+            assertTrue(node.has(f), "missing field: " + f);
+        }
+    }
+
+    @Test
+    void toAbilityPickerDto_nullInput_throws() {
+        assertThrows(IllegalArgumentException.class,
+                () -> GameViewMapper.toAbilityPickerDto(null));
+    }
+
+    @Test
+    void toChoiceDto_nullInput_throws() {
+        assertThrows(IllegalArgumentException.class,
+                () -> GameViewMapper.toChoiceDto(null));
     }
 
     @Test

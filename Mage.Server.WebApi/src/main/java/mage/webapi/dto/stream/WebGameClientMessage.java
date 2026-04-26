@@ -30,6 +30,13 @@ import java.util.Map;
  *       response. Special case — upstream sends a bare String, not a
  *       GameClientMessage; the mapper synthesizes one with only
  *       {@code message} populated</li>
+ *   <li>{@code gamePlayXMana} — X-mana payment prompt (slice 7);
+ *       answered with {@code playerResponse{kind:"boolean"}} like
+ *       {@code gamePlayMana}</li>
+ *   <li>{@code gameChooseChoice} — modal-spell / replacement-effect
+ *       picker (slice 7). The {@code choice} field carries the key→
+ *       label map; answered with {@code playerResponse{kind:"string",
+ *       value:<chosen-key>}}</li>
  * </ul>
  *
  * <p>Optional fields default to empty / 0 / false when the underlying
@@ -52,6 +59,8 @@ import java.util.Map;
  * @param flag        upstream's "required" / boolean flag — for
  *     {@code gameTarget} this means the target is mandatory; false
  *     otherwise
+ * @param choice      modal-choice payload for {@code gameChooseChoice};
+ *     {@code null} for every other frame method
  */
 public record WebGameClientMessage(
         WebGameView gameView,
@@ -60,6 +69,7 @@ public record WebGameClientMessage(
         Map<String, WebCardView> cardsView1,
         int min,
         int max,
-        boolean flag
+        boolean flag,
+        WebChoice choice
 ) {
 }

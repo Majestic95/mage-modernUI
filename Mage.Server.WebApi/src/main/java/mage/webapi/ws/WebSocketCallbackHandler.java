@@ -3,6 +3,7 @@ package mage.webapi.ws;
 import io.javalin.websocket.WsContext;
 import mage.interfaces.callback.ClientCallback;
 import mage.interfaces.callback.ClientCallbackMethod;
+import mage.view.AbilityPickerView;
 import mage.view.ChatMessage;
 import mage.view.GameClientMessage;
 import mage.view.GameEndView;
@@ -214,7 +215,10 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
             case GAME_TARGET -> mapClientMessage(cc, "gameTarget");
             case GAME_SELECT -> mapClientMessage(cc, "gameSelect");
             case GAME_PLAY_MANA -> mapClientMessage(cc, "gamePlayMana");
+            case GAME_PLAY_XMANA -> mapClientMessage(cc, "gamePlayXMana");
             case GAME_GET_AMOUNT -> mapClientMessage(cc, "gameSelectAmount");
+            case GAME_CHOOSE_CHOICE -> mapClientMessage(cc, "gameChooseChoice");
+            case GAME_CHOOSE_ABILITY -> mapAbilityPicker(cc);
             case GAME_INFORM_PERSONAL -> mapClientMessage(cc, "gameInformPersonal");
             case GAME_ERROR -> mapGameError(cc);
             case END_GAME_INFO -> mapEndGame(cc);
@@ -318,6 +322,25 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
                 cc.getMessageId(),
                 cc.getObjectId() == null ? null : cc.getObjectId().toString(),
                 GameViewMapper.toGameEndDto(upstream)
+        );
+    }
+
+    private WebStreamFrame mapAbilityPicker(ClientCallback cc) {
+        // GAME_CHOOSE_ABILITY is the one dialog whose data is an
+        // AbilityPickerView, not a GameClientMessage. Distinct frame
+        // shape; renderer-side dispatched via a discriminated union.
+        Object data = cc.getData();
+        if (!(data instanceof AbilityPickerView upstream)) {
+            LOG.warn("GAME_CHOOSE_ABILITY callback with unexpected data type: {}",
+                    data == null ? "null" : data.getClass().getName());
+            return null;
+        }
+        return new WebStreamFrame(
+                SchemaVersion.CURRENT,
+                "gameChooseAbility",
+                cc.getMessageId(),
+                cc.getObjectId() == null ? null : cc.getObjectId().toString(),
+                GameViewMapper.toAbilityPickerDto(upstream)
         );
     }
 

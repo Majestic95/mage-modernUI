@@ -1,5 +1,7 @@
 package mage.webapi.mapper;
 
+import mage.choices.Choice;
+import mage.view.AbilityPickerView;
 import mage.view.CombatGroupView;
 import mage.view.GameClientMessage;
 import mage.view.GameEndView;
@@ -7,6 +9,8 @@ import mage.view.GameView;
 import mage.view.ManaPoolView;
 import mage.view.PlayerView;
 import mage.view.TableClientMessage;
+import mage.webapi.dto.stream.WebAbilityPickerView;
+import mage.webapi.dto.stream.WebChoice;
 import mage.webapi.dto.stream.WebCombatGroupView;
 import mage.webapi.dto.stream.WebGameClientMessage;
 import mage.webapi.dto.stream.WebGameEndView;
@@ -16,7 +20,9 @@ import mage.webapi.dto.stream.WebPlayerView;
 import mage.webapi.dto.stream.WebStartGameInfo;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -157,6 +163,7 @@ public final class GameViewMapper {
                 if (id != null) targets.add(id.toString());
             }
         }
+        WebChoice choice = gcm.getChoice() == null ? null : toChoiceDto(gcm.getChoice());
         return new WebGameClientMessage(
                 wrapped,
                 nullToEmpty(gcm.getMessage()),
@@ -164,7 +171,8 @@ public final class GameViewMapper {
                 CardViewMapper.toCardMap(gcm.getCardsView1()),
                 gcm.getMin(),
                 gcm.getMax(),
-                gcm.isFlag()
+                gcm.isFlag(),
+                choice
         );
     }
 
@@ -179,10 +187,76 @@ public final class GameViewMapper {
                 null,
                 text == null ? "" : text,
                 List.of(),
-                java.util.Map.of(),
+                Map.of(),
                 0,
                 0,
-                false
+                false,
+                null
+        );
+    }
+
+    /**
+     * Map upstream {@link Choice} to the wire-format {@link WebChoice}.
+     * Flattens upstream's {@code getChoices(): Set<String>} +
+     * {@code getKeyChoices(): Map<String, String>} into a single
+     * {@code Map<String, String>} — when upstream is in non-key mode
+     * the synthesized map uses {@code key == label}.
+     */
+    public static WebChoice toChoiceDto(Choice c) {
+        if (c == null) {
+            throw new IllegalArgumentException("Choice must not be null");
+        }
+        Map<String, String> choices;
+        if (c.isKeyChoice() && c.getKeyChoices() != null) {
+            choices = new LinkedHashMap<>(c.getKeyChoices().size());
+            c.getKeyChoices().forEach((k, v) -> {
+                if (k != null) {
+                    choices.put(k, v == null ? k : v);
+                }
+            });
+        } else if (c.getChoices() != null) {
+            choices = new LinkedHashMap<>(c.getChoices().size());
+            for (String entry : c.getChoices()) {
+                if (entry != null) choices.put(entry, entry);
+            }
+        } else {
+            choices = Map.of();
+        }
+        return new WebChoice(
+                nullToEmpty(c.getMessage()),
+                nullToEmpty(c.getSubMessage()),
+                c.isRequired(),
+                choices
+        );
+    }
+
+    /**
+     * Map upstream {@link AbilityPickerView} to the wire-format
+     * {@link WebAbilityPickerView}. Carries the embedded {@code GameView}
+     * (recursively mapped) plus the picker-specific message + choices
+     * map. Insertion order from upstream's {@code LinkedHashMap} is
+     * preserved.
+     */
+    public static WebAbilityPickerView toAbilityPickerDto(AbilityPickerView apv) {
+        if (apv == null) {
+            throw new IllegalArgumentException("AbilityPickerView must not be null");
+        }
+        WebGameView wrapped = apv.getGameView() == null ? null : toDto(apv.getGameView());
+        Map<String, String> choices;
+        if (apv.getChoices() == null || apv.getChoices().isEmpty()) {
+            choices = Map.of();
+        } else {
+            choices = new LinkedHashMap<>(apv.getChoices().size());
+            apv.getChoices().forEach((k, v) -> {
+                if (k != null) {
+                    choices.put(k.toString(), v == null ? "" : v);
+                }
+            });
+        }
+        return new WebAbilityPickerView(
+                wrapped,
+                nullToEmpty(apv.getMessage()),
+                choices
         );
     }
 

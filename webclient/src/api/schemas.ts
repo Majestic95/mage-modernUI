@@ -213,28 +213,62 @@ export const webManaPoolViewSchema = z.object({
 });
 export type WebManaPoolView = z.infer<typeof webManaPoolViewSchema>;
 
-export const webCardViewSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  displayName: z.string(),
-  expansionSetCode: z.string(),
-  cardNumber: z.string(),
-  manaCost: z.string(),
-  manaValue: z.number(),
-  typeLine: z.string(),
-  supertypes: z.array(z.string()),
-  types: z.array(z.string()),
-  subtypes: z.array(z.string()),
-  colors: z.array(z.string()),
-  rarity: z.string(),
-  power: z.string(),
-  toughness: z.string(),
-  startingLoyalty: z.string(),
-  rules: z.array(z.string()),
-  faceDown: z.boolean(),
-  counters: z.record(z.string(), z.number()),
-});
-export type WebCardView = z.infer<typeof webCardViewSchema>;
+/**
+ * WebCardView with recursive secondCardFace. Recursion is capped at
+ * one level on the wire (server-side guarantees the back face's
+ * secondCardFace is null) so {@link z.lazy} is safe — the schema
+ * graph is acyclic in practice.
+ */
+export type WebCardView = {
+  id: string;
+  name: string;
+  displayName: string;
+  expansionSetCode: string;
+  cardNumber: string;
+  manaCost: string;
+  manaValue: number;
+  typeLine: string;
+  supertypes: string[];
+  types: string[];
+  subtypes: string[];
+  colors: string[];
+  rarity: string;
+  power: string;
+  toughness: string;
+  startingLoyalty: string;
+  rules: string[];
+  faceDown: boolean;
+  counters: Record<string, number>;
+  transformable: boolean;
+  transformed: boolean;
+  secondCardFace: WebCardView | null;
+};
+export const webCardViewSchema: z.ZodType<WebCardView> = z.lazy(() =>
+  z.object({
+    id: z.string(),
+    name: z.string(),
+    displayName: z.string(),
+    expansionSetCode: z.string(),
+    cardNumber: z.string(),
+    manaCost: z.string(),
+    manaValue: z.number(),
+    typeLine: z.string(),
+    supertypes: z.array(z.string()),
+    types: z.array(z.string()),
+    subtypes: z.array(z.string()),
+    colors: z.array(z.string()),
+    rarity: z.string(),
+    power: z.string(),
+    toughness: z.string(),
+    startingLoyalty: z.string(),
+    rules: z.array(z.string()),
+    faceDown: z.boolean(),
+    counters: z.record(z.string(), z.number()),
+    transformable: z.boolean(),
+    transformed: z.boolean(),
+    secondCardFace: webCardViewSchema.nullable(),
+  }),
+);
 
 export const webPermanentViewSchema = z.object({
   card: webCardViewSchema,
@@ -303,6 +337,14 @@ export const webGameViewSchema = z.object({
 });
 export type WebGameView = z.infer<typeof webGameViewSchema>;
 
+export const webChoiceSchema = z.object({
+  message: z.string(),
+  subMessage: z.string(),
+  required: z.boolean(),
+  choices: z.record(z.string(), z.string()),
+});
+export type WebChoice = z.infer<typeof webChoiceSchema>;
+
 export const webGameClientMessageSchema = z.object({
   gameView: webGameViewSchema.nullable(),
   message: z.string(),
@@ -311,8 +353,16 @@ export const webGameClientMessageSchema = z.object({
   min: z.number(),
   max: z.number(),
   flag: z.boolean(),
+  choice: webChoiceSchema.nullable(),
 });
 export type WebGameClientMessage = z.infer<typeof webGameClientMessageSchema>;
+
+export const webAbilityPickerViewSchema = z.object({
+  gameView: webGameViewSchema.nullable(),
+  message: z.string(),
+  choices: z.record(z.string(), z.string()),
+});
+export type WebAbilityPickerView = z.infer<typeof webAbilityPickerViewSchema>;
 
 export const webGameEndViewSchema = z.object({
   gameInfo: z.string(),
@@ -328,7 +378,7 @@ export type WebGameEndView = z.infer<typeof webGameEndViewSchema>;
 /* ---------- helpers ---------- */
 
 /**
- * Parse the {@code schemaVersion} string ("1.11") into its major + minor
+ * Parse the {@code schemaVersion} string ("1.12") into its major + minor
  * parts. Returns null on a malformed value (defensive — server only ever
  * sends well-formed versions, but a misconfigured proxy could mangle it).
  */

@@ -9,6 +9,7 @@
  */
 import { create } from 'zustand';
 import type {
+  WebAbilityPickerView,
   WebGameClientMessage,
   WebGameEndView,
   WebGameView,
@@ -28,13 +29,21 @@ export type ConnectionState =
  * and {@code gameError} are also dialog-like (server pushes them at
  * the player) but require no response — the modal just shows an OK
  * button.
+ *
+ * <p>{@code gameChooseAbility} is the only dialog whose data shape is
+ * {@link WebAbilityPickerView} rather than {@link WebGameClientMessage};
+ * the {@link PendingDialog} type discriminates so renderers narrow
+ * automatically.
  */
 export type DialogMethod =
   | 'gameAsk'
   | 'gameTarget'
   | 'gameSelect'
   | 'gamePlayMana'
+  | 'gamePlayXMana'
   | 'gameSelectAmount'
+  | 'gameChooseChoice'
+  | 'gameChooseAbility'
   | 'gameInformPersonal'
   | 'gameError';
 
@@ -43,19 +52,33 @@ const DIALOG_METHODS = new Set<string>([
   'gameTarget',
   'gameSelect',
   'gamePlayMana',
+  'gamePlayXMana',
   'gameSelectAmount',
+  'gameChooseChoice',
+  'gameChooseAbility',
   'gameInformPersonal',
   'gameError',
 ]);
 
-export interface PendingDialog {
-  /** Wire-method discriminator — drives modal renderer choice. */
-  method: DialogMethod;
-  /** messageId of the dialog frame; carried in the playerResponse. */
+/**
+ * Discriminated union over dialog method. The 9 GameClientMessage-
+ * shaped dialogs land in the first variant; gameChooseAbility (which
+ * upstream emits as a separate AbilityPickerView class) lands in the
+ * second. Renderers narrow on {@code dialog.method}.
+ */
+export type PendingDialogClientMessage = {
+  method: Exclude<DialogMethod, 'gameChooseAbility'>;
   messageId: number;
-  /** Decoded payload — same WebGameClientMessage shape across dialogs. */
   data: WebGameClientMessage;
-}
+};
+
+export type PendingDialogAbilityPicker = {
+  method: 'gameChooseAbility';
+  messageId: number;
+  data: WebAbilityPickerView;
+};
+
+export type PendingDialog = PendingDialogClientMessage | PendingDialogAbilityPicker;
 
 interface GameState {
   /** Connection lifecycle. {@code 'idle'} before any connect attempt. */
@@ -134,16 +157,30 @@ export const useGameStore = create<GameState>()((set, get) => ({
     }
 
     if (DIALOG_METHODS.has(frame.method)) {
+      // gameChooseAbility uses WebAbilityPickerView; every other dialog
+      // uses WebGameClientMessage. Both shapes carry an optional
+      // gameView nested field, so the snapshot-update path is uniform
+      // — read .gameView from whichever shape arrived.
+      const isAbilityPicker = frame.method === 'gameChooseAbility';
+      const pending: PendingDialog = isAbilityPicker
+        ? {
+            method: 'gameChooseAbility',
+            messageId: frame.messageId,
+            data: validatedData as WebAbilityPickerView,
+          }
+        : {
+            method: frame.method as Exclude<
+              DialogMethod,
+              'gameChooseAbility'
+            >,
+            messageId: frame.messageId,
+            data: validatedData as WebGameClientMessage,
+          };
+      const wrappedGv = (validatedData as { gameView?: WebGameView | null })
+        .gameView;
       set({
-        pendingDialog: {
-          method: frame.method as DialogMethod,
-          messageId: frame.messageId,
-          data: validatedData as WebGameClientMessage,
-        },
-        // gameError carries no gameView; keep the previous snapshot.
-        // gameInformPersonal carries gameView; update it.
-        gameView:
-          (validatedData as WebGameClientMessage).gameView ?? get().gameView,
+        pendingDialog: pending,
+        gameView: wrappedGv ?? get().gameView,
       });
       return true;
     }

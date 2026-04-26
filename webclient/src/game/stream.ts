@@ -12,6 +12,7 @@
  * outbound {@code chatSend} / {@code playerAction} senders.
  */
 import {
+  webAbilityPickerViewSchema,
   webChatMessageSchema,
   webGameClientMessageSchema,
   webGameEndViewSchema,
@@ -55,15 +56,18 @@ const DATA_VALIDATORS: Record<string, (raw: unknown) => unknown> = {
   gameOver: (raw) => webGameClientMessageSchema.parse(raw),
   endGameInfo: (raw) => webGameEndViewSchema.parse(raw),
   chatMessage: (raw) => webChatMessageSchema.parse(raw),
-  // Dialog frames (gameAsk / gameTarget / ...) reuse
-  // WebGameClientMessage. Slice C adds explicit dispatch.
+  // Dialog frames that reuse WebGameClientMessage as the data shape.
   gameAsk: (raw) => webGameClientMessageSchema.parse(raw),
   gameTarget: (raw) => webGameClientMessageSchema.parse(raw),
   gameSelect: (raw) => webGameClientMessageSchema.parse(raw),
   gamePlayMana: (raw) => webGameClientMessageSchema.parse(raw),
+  gamePlayXMana: (raw) => webGameClientMessageSchema.parse(raw),
   gameSelectAmount: (raw) => webGameClientMessageSchema.parse(raw),
+  gameChooseChoice: (raw) => webGameClientMessageSchema.parse(raw),
   gameInformPersonal: (raw) => webGameClientMessageSchema.parse(raw),
   gameError: (raw) => webGameClientMessageSchema.parse(raw),
+  // Distinct shape — WebAbilityPickerView, not GameClientMessage.
+  gameChooseAbility: (raw) => webAbilityPickerViewSchema.parse(raw),
 };
 
 export interface GameStreamOptions {

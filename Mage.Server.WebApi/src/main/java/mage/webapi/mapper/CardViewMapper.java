@@ -35,8 +35,40 @@ public final class CardViewMapper {
     }
 
     public static WebCardView toCardDto(CardView cv) {
+        return toCardDto(cv, true);
+    }
+
+    /**
+     * Internal entry point for the recursive secondCardFace mapping.
+     * {@code allowSecondFace} is true on the top-level call and false
+     * when mapping the back face — caps recursion at one level so the
+     * wire format never carries a third-tier face. Mirrors upstream
+     * {@code CardView.secondCardFace} which itself never recurses past
+     * the first back face.
+     */
+    private static WebCardView toCardDto(CardView cv, boolean allowSecondFace) {
         if (cv == null) {
             throw new IllegalArgumentException("CardView must not be null");
+        }
+        WebCardView secondFace = null;
+        boolean transformable = false;
+        boolean transformed = false;
+        if (allowSecondFace) {
+            try {
+                transformable = cv.canTransform();
+                transformed = cv.isTransformed();
+                CardView upstreamSecond = cv.getSecondCardFace();
+                if (upstreamSecond != null) {
+                    secondFace = toCardDto(upstreamSecond, false);
+                }
+            } catch (RuntimeException ex) {
+                // Defensive: some upstream code paths NPE when reading
+                // transform state on a card mid-event. Fall through with
+                // the default (no-op) values.
+                secondFace = null;
+                transformable = false;
+                transformed = false;
+            }
         }
         return new WebCardView(
                 cv.getId() == null ? "" : cv.getId().toString(),
@@ -57,7 +89,10 @@ public final class CardViewMapper {
                 nullToEmpty(cv.getStartingLoyalty()),
                 cv.getRules() == null ? List.of() : List.copyOf(cv.getRules()),
                 cv.isFaceDown(),
-                countersFlat(cv.getCounters())
+                countersFlat(cv.getCounters()),
+                transformable,
+                transformed,
+                secondFace
         );
     }
 

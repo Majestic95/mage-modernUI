@@ -11,7 +11,7 @@ import {
 } from '../api/schemas';
 
 const ANON_SESSION = {
-  schemaVersion: '1.11',
+  schemaVersion: '1.12',
   token: 'tok-anon',
   username: 'alice',
   isAnonymous: true,
@@ -39,6 +39,9 @@ const FOREST = webCardViewSchema.parse({
   rules: [],
   faceDown: false,
   counters: {},
+  transformable: false,
+  transformed: false,
+  secondCardFace: null,
 });
 
 const TAPPED_FOREST_PERMANENT = webPermanentViewSchema.parse({

@@ -45,6 +45,20 @@ import java.util.Map;
  * @param faceDown        true for morph / face-down permanents
  * @param counters        flattened counter map ("counter name" → count);
  *     populated for permanents on the battlefield
+ * @param transformable   true if this card has a back face that can
+ *     be flipped to (transformable cards from Innistrad onward AND
+ *     modal-DFCs from Zendikar Rising onward). When true,
+ *     {@link #secondCardFace} is populated.
+ * @param transformed     when {@link #transformable} is true, this is
+ *     the current state of the card: {@code false} = front face shown,
+ *     {@code true} = back face shown. The {@code secondCardFace} stays
+ *     populated either way so the renderer can preview the other side.
+ * @param secondCardFace  the other face of a transformable card, or
+ *     {@code null} for non-transformable cards. Recursion is capped at
+ *     one level: the second face's {@code secondCardFace} is always
+ *     {@code null} on the wire, mirroring upstream's recursive
+ *     {@code CardView.secondCardFace} which itself holds a
+ *     {@code CardView} but never a third level.
  */
 public record WebCardView(
         String id,
@@ -65,6 +79,9 @@ public record WebCardView(
         String startingLoyalty,
         List<String> rules,
         boolean faceDown,
-        Map<String, Integer> counters
+        Map<String, Integer> counters,
+        boolean transformable,
+        boolean transformed,
+        WebCardView secondCardFace
 ) {
 }

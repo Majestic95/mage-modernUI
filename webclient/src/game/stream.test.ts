@@ -110,7 +110,7 @@ describe('GameStream', () => {
     FakeWebSocket.instances[0]!._open();
     FakeWebSocket.instances[0]!._message(
       JSON.stringify({
-        schemaVersion: '1.11',
+        schemaVersion: '1.12',
         method: 'streamHello',
         messageId: 0,
         objectId: FAKE_GAME_ID,
@@ -131,7 +131,7 @@ describe('GameStream', () => {
     FakeWebSocket.instances[0]!._open();
     FakeWebSocket.instances[0]!._message(
       JSON.stringify({
-        schemaVersion: '1.11',
+        schemaVersion: '1.12',
         method: 'streamError',
         messageId: 0,
         objectId: null,
