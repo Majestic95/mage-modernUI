@@ -22,6 +22,41 @@ export type ConnectionState =
   | 'closed'
   | 'error';
 
+/**
+ * Outbound dialog method names that prompt for a {@code playerResponse}.
+ * Slice B renders these as modal overlays. {@code gameInformPersonal}
+ * and {@code gameError} are also dialog-like (server pushes them at
+ * the player) but require no response — the modal just shows an OK
+ * button.
+ */
+export type DialogMethod =
+  | 'gameAsk'
+  | 'gameTarget'
+  | 'gameSelect'
+  | 'gamePlayMana'
+  | 'gameSelectAmount'
+  | 'gameInformPersonal'
+  | 'gameError';
+
+const DIALOG_METHODS = new Set<string>([
+  'gameAsk',
+  'gameTarget',
+  'gameSelect',
+  'gamePlayMana',
+  'gameSelectAmount',
+  'gameInformPersonal',
+  'gameError',
+]);
+
+export interface PendingDialog {
+  /** Wire-method discriminator — drives modal renderer choice. */
+  method: DialogMethod;
+  /** messageId of the dialog frame; carried in the playerResponse. */
+  messageId: number;
+  /** Decoded payload — same WebGameClientMessage shape across dialogs. */
+  data: WebGameClientMessage;
+}
+
 interface GameState {
   /** Connection lifecycle. {@code 'idle'} before any connect attempt. */
   connection: ConnectionState;
@@ -32,17 +67,31 @@ interface GameState {
 
   /** Latest game-state snapshot. */
   gameView: WebGameView | null;
-  /** Last gameOver / gameInform wrapper. Slice B will render. */
+  /** Last gameInform / gameOver wrapper. */
   lastWrapped: WebGameClientMessage | null;
   /** Match-end summary, set when endGameInfo arrives. */
   gameEnd: WebGameEndView | null;
   /** Largest messageId seen — feeds reconnect via ?since=. */
   lastMessageId: number;
 
+  /**
+   * The dialog frame currently awaiting a player response, if any.
+   * Set by {@link applyFrame} when a {@code DialogMethod} arrives;
+   * cleared by {@link clearDialog} when the player submits a response
+   * (or dismisses an info-only dialog).
+   *
+   * <p>Server-side, upstream waits on the response before issuing the
+   * next callback — so a new dialog never arrives while one is
+   * pending. Defensively, if it does, the latest replaces the prior.
+   */
+  pendingDialog: PendingDialog | null;
+
   /** Connection lifecycle setters (called by GameStream). */
   setConnection: (s: ConnectionState, reason?: string) => void;
   /** Apply an inbound frame. Returns true if the frame was handled. */
   applyFrame: (frame: WebStreamFrame, validatedData: unknown) => boolean;
+  /** Clear the pending dialog — called when the player submits a response. */
+  clearDialog: () => void;
   /** Reset back to the pre-connect state — for navigating away. */
   reset: () => void;
 }
@@ -56,6 +105,7 @@ const INITIAL: Pick<
   | 'lastWrapped'
   | 'gameEnd'
   | 'lastMessageId'
+  | 'pendingDialog'
 > = {
   connection: 'idle',
   closeReason: '',
@@ -64,6 +114,7 @@ const INITIAL: Pick<
   lastWrapped: null,
   gameEnd: null,
   lastMessageId: 0,
+  pendingDialog: null,
 };
 
 export const useGameStore = create<GameState>()((set, get) => ({
@@ -82,6 +133,21 @@ export const useGameStore = create<GameState>()((set, get) => ({
       set({ lastMessageId: frame.messageId });
     }
 
+    if (DIALOG_METHODS.has(frame.method)) {
+      set({
+        pendingDialog: {
+          method: frame.method as DialogMethod,
+          messageId: frame.messageId,
+          data: validatedData as WebGameClientMessage,
+        },
+        // gameError carries no gameView; keep the previous snapshot.
+        // gameInformPersonal carries gameView; update it.
+        gameView:
+          (validatedData as WebGameClientMessage).gameView ?? get().gameView,
+      });
+      return true;
+    }
+
     switch (frame.method) {
       case 'streamHello':
         // Confirms auth at the WS layer; no game-state change.
@@ -97,8 +163,11 @@ export const useGameStore = create<GameState>()((set, get) => ({
       case 'gameUpdate':
         set({
           gameView: validatedData as WebGameView,
-          // Clear any stale dialog wrapper on a fresh state push.
+          // Clear any stale dialog state on a fresh non-dialog push —
+          // the server has moved on, any previously open dialog has
+          // been resolved.
           protocolError: null,
+          pendingDialog: null,
         });
         return true;
 
@@ -107,24 +176,25 @@ export const useGameStore = create<GameState>()((set, get) => ({
         const wrapped = validatedData as WebGameClientMessage;
         set({
           lastWrapped: wrapped,
-          // gameInform / gameOver wrap a GameView too; keep it as the
-          // latest snapshot so the renderer doesn't go stale on these
-          // frames.
           gameView: wrapped.gameView ?? get().gameView,
+          pendingDialog: null,
         });
         return true;
       }
 
       case 'endGameInfo':
-        set({ gameEnd: validatedData as WebGameEndView });
+        set({
+          gameEnd: validatedData as WebGameEndView,
+          pendingDialog: null,
+        });
         return true;
 
-      // Slice B: chatMessage, dialog frames (gameAsk/gameTarget/etc.),
-      // startGame routing. For slice A we acknowledge and ignore.
       default:
         return false;
     }
   },
+
+  clearDialog: () => set({ pendingDialog: null }),
 
   reset: () => set(INITIAL),
 }));

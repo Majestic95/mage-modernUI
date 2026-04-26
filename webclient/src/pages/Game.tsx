@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useAuthStore } from '../auth/store';
 import { GameStream } from '../game/stream';
 import { useGameStore } from '../game/store';
@@ -8,6 +8,8 @@ import type {
   WebPermanentView,
   WebPlayerView,
 } from '../api/schemas';
+import { ActionPanel } from './ActionPanel';
+import { GameDialog } from './GameDialog';
 
 interface Props {
   gameId: string;
@@ -36,19 +38,22 @@ export function Game({ gameId, onLeave }: Props) {
   const gameView = useGameStore((s) => s.gameView);
   const reset = useGameStore((s) => s.reset);
 
-  const streamRef = useRef<GameStream | null>(null);
+  // Memoized so children that need to send (ActionPanel, GameDialog)
+  // get a stable reference. useMemo computes pre-render so the
+  // lifecycle effect doesn't have to setState.
+  const stream = useMemo(
+    () => (session ? new GameStream({ gameId, token: session.token }) : null),
+    [gameId, session],
+  );
 
   useEffect(() => {
-    if (!session) return;
-    const stream = new GameStream({ gameId, token: session.token });
-    streamRef.current = stream;
+    if (!stream) return;
     stream.open();
     return () => {
       stream.close();
-      streamRef.current = null;
       reset();
     };
-  }, [gameId, session, reset]);
+  }, [stream, reset]);
 
   if (!session) {
     return (
@@ -86,6 +91,8 @@ export function Game({ gameId, onLeave }: Props) {
           <Waiting connection={connection} />
         )}
       </main>
+      {gameView && <ActionPanel stream={stream} />}
+      <GameDialog stream={stream} />
     </div>
   );
 }

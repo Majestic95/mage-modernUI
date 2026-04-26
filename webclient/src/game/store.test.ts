@@ -190,4 +190,80 @@ describe('useGameStore', () => {
     );
     expect(handled).toBe(false);
   });
+
+  /* ---------- slice B: dialog frames ---------- */
+
+  function dialogPayload(message = 'Q?') {
+    return webGameClientMessageSchema.parse({
+      gameView: null,
+      message,
+      targets: [],
+      cardsView1: {},
+      min: 0,
+      max: 0,
+      flag: false,
+    });
+  }
+
+  it.each([
+    'gameAsk',
+    'gameTarget',
+    'gameSelect',
+    'gamePlayMana',
+    'gameSelectAmount',
+    'gameInformPersonal',
+    'gameError',
+  ])('%s captures pendingDialog with method, messageId, and data', (method) => {
+    const payload = dialogPayload(`${method} prompt`);
+    useGameStore.getState().applyFrame(frame(method, payload, 99), payload);
+    const pending = useGameStore.getState().pendingDialog;
+    expect(pending).not.toBeNull();
+    expect(pending?.method).toBe(method);
+    expect(pending?.messageId).toBe(99);
+    expect(pending?.data.message).toBe(`${method} prompt`);
+  });
+
+  it('a fresh gameUpdate clears any pending dialog', () => {
+    const dialog = dialogPayload();
+    useGameStore.getState().applyFrame(frame('gameAsk', dialog, 1), dialog);
+    expect(useGameStore.getState().pendingDialog).not.toBeNull();
+    const gv = buildGameView(2);
+    useGameStore.getState().applyFrame(frame('gameUpdate', gv, 2), gv);
+    expect(useGameStore.getState().pendingDialog).toBeNull();
+  });
+
+  it('a fresh gameOver clears any pending dialog', () => {
+    const dialog = dialogPayload();
+    useGameStore.getState().applyFrame(frame('gameAsk', dialog, 1), dialog);
+    const wrap = webGameClientMessageSchema.parse({
+      gameView: null,
+      message: 'GG',
+      targets: [],
+      cardsView1: {},
+      min: 0,
+      max: 0,
+      flag: false,
+    });
+    useGameStore.getState().applyFrame(frame('gameOver', wrap, 2), wrap);
+    expect(useGameStore.getState().pendingDialog).toBeNull();
+  });
+
+  it('clearDialog() removes the pending dialog without touching gameView', () => {
+    const gv = buildGameView(1);
+    useGameStore.getState().applyFrame(frame('gameInit', gv, 1), gv);
+    const dialog = dialogPayload();
+    useGameStore.getState().applyFrame(frame('gameAsk', dialog, 2), dialog);
+    expect(useGameStore.getState().pendingDialog).not.toBeNull();
+    useGameStore.getState().clearDialog();
+    expect(useGameStore.getState().pendingDialog).toBeNull();
+    expect(useGameStore.getState().gameView).not.toBeNull();
+  });
+
+  it('a new dialog while one is pending replaces the prior one', () => {
+    const a = dialogPayload('first');
+    const b = dialogPayload('second');
+    useGameStore.getState().applyFrame(frame('gameAsk', a, 1), a);
+    useGameStore.getState().applyFrame(frame('gameAsk', b, 2), b);
+    expect(useGameStore.getState().pendingDialog?.data.message).toBe('second');
+  });
 });

@@ -136,6 +136,73 @@ export class GameStream {
     return this.socket?.readyState === WebSocket.OPEN;
   }
 
+  /**
+   * Send a {@code playerAction} envelope. Per ADR 0007 D6 — toggles,
+   * pass-priority modes, lifecycle. Server validates the action
+   * against {@code PlayerActionAllowList}; rejection arrives as a
+   * {@code streamError} frame.
+   */
+  sendPlayerAction(action: string, data: unknown = null): void {
+    this.sendEnvelope({ type: 'playerAction', action, data });
+  }
+
+  /**
+   * Send a {@code playerResponse} envelope answering a server-side
+   * dialog. Per ADR 0007 D6 — kind ∈ {uuid, string, boolean, integer,
+   * manaType}. Caller is responsible for picking the right kind for
+   * the dialog method (see {@code GameDialog} for the mapping).
+   *
+   * @param messageId echoes the dialog frame's messageId (server
+   *     uses this for correlation)
+   * @param kind discriminator selecting the upstream {@code sendPlayerXxx}
+   *     dispatch
+   * @param value typed per kind: string for uuid/string, boolean for
+   *     boolean, number for integer, {playerId, manaType} object for
+   *     manaType
+   */
+  sendPlayerResponse(
+    messageId: number,
+    kind: 'uuid' | 'string' | 'boolean' | 'integer' | 'manaType',
+    value: unknown,
+  ): void {
+    this.sendEnvelope({ type: 'playerResponse', messageId, kind, value });
+  }
+
+  /**
+   * Send a {@code chatSend} envelope. Username is filled server-side
+   * from the session; clients cannot spoof. {@code chatId} must
+   * resolve to a chat the user is subscribed to.
+   */
+  sendChat(chatId: string, message: string): void {
+    this.sendEnvelope({ type: 'chatSend', chatId, message });
+  }
+
+  /**
+   * Best-effort send. If the socket isn't open, the call is dropped
+   * with a console warning rather than throwing — UI code can fire
+   * sends optimistically and rely on the connection-state UI to
+   * surface a disconnect, instead of every callsite checking
+   * {@link isOpen}.
+   */
+  private sendEnvelope(envelope: object): void {
+    if (!this.isOpen()) {
+      if (typeof console !== 'undefined') {
+        console.warn(
+          'GameStream: dropping send — socket not open',
+          envelope,
+        );
+      }
+      return;
+    }
+    try {
+      this.socket?.send(JSON.stringify(envelope));
+    } catch (err) {
+      if (typeof console !== 'undefined') {
+        console.warn('GameStream: send failed', err);
+      }
+    }
+  }
+
   /** Caller-initiated close flag — exposed for tests / future reconnect logic. */
   wasClosedByCaller(): boolean {
     return this.closedByCaller;

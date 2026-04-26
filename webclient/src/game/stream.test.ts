@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GameStream } from './stream';
 import { useGameStore } from './store';
 
@@ -37,6 +37,12 @@ class FakeWebSocket {
   close(code = 1000, reason = ''): void {
     this.readyState = FakeWebSocket.CLOSED;
     this._close(code, reason);
+  }
+
+  send(data: string): void {
+    // Stub — spied on by send-related tests. Reference data so the
+    // arg isn't optimized out / flagged unused-vars.
+    void data;
   }
 
   _open(): void {
@@ -170,5 +176,82 @@ describe('GameStream', () => {
     stream.open();
     expect(FakeWebSocket.lastUrl).toContain('a%2Fb');
     expect(FakeWebSocket.lastUrl).toContain('a%20b');
+  });
+
+  /* ---------- slice B: outbound sends ---------- */
+
+  it('sendPlayerAction serializes the envelope and writes to the socket', () => {
+    const stream = new GameStream({
+      gameId: FAKE_GAME_ID,
+      token: 'tok-1',
+      webSocketCtor: FakeWebSocket as unknown as typeof WebSocket,
+    });
+    stream.open();
+    const fake = FakeWebSocket.instances[0]!;
+    fake._open();
+    const sendSpy = vi.spyOn(fake, 'send' as never);
+    stream.sendPlayerAction('PASS_PRIORITY_UNTIL_NEXT_TURN');
+    expect(sendSpy).toHaveBeenCalledTimes(1);
+    const body = JSON.parse(sendSpy.mock.calls[0]![0] as string);
+    expect(body).toEqual({
+      type: 'playerAction',
+      action: 'PASS_PRIORITY_UNTIL_NEXT_TURN',
+      data: null,
+    });
+  });
+
+  it('sendPlayerResponse encodes kind + value + messageId', () => {
+    const stream = new GameStream({
+      gameId: FAKE_GAME_ID,
+      token: 'tok-1',
+      webSocketCtor: FakeWebSocket as unknown as typeof WebSocket,
+    });
+    stream.open();
+    const fake = FakeWebSocket.instances[0]!;
+    fake._open();
+    const sendSpy = vi.spyOn(fake, 'send' as never);
+    stream.sendPlayerResponse(42, 'boolean', true);
+    const body = JSON.parse(sendSpy.mock.calls[0]![0] as string);
+    expect(body).toEqual({
+      type: 'playerResponse',
+      messageId: 42,
+      kind: 'boolean',
+      value: true,
+    });
+  });
+
+  it('sendChat encodes chatId and message', () => {
+    const stream = new GameStream({
+      gameId: FAKE_GAME_ID,
+      token: 'tok-1',
+      webSocketCtor: FakeWebSocket as unknown as typeof WebSocket,
+    });
+    stream.open();
+    const fake = FakeWebSocket.instances[0]!;
+    fake._open();
+    const sendSpy = vi.spyOn(fake, 'send' as never);
+    stream.sendChat('00000000-0000-0000-0000-000000000000', 'gg');
+    const body = JSON.parse(sendSpy.mock.calls[0]![0] as string);
+    expect(body).toEqual({
+      type: 'chatSend',
+      chatId: '00000000-0000-0000-0000-000000000000',
+      message: 'gg',
+    });
+  });
+
+  it('send drops silently when socket is not open', () => {
+    const stream = new GameStream({
+      gameId: FAKE_GAME_ID,
+      token: 'tok-1',
+      webSocketCtor: FakeWebSocket as unknown as typeof WebSocket,
+    });
+    stream.open();
+    // Note: never call _open() — readyState stays 0 (CONNECTING).
+    const fake = FakeWebSocket.instances[0]!;
+    const sendSpy = vi.spyOn(fake, 'send' as never);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    stream.sendPlayerAction('CONCEDE');
+    expect(sendSpy).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalled();
   });
 });
