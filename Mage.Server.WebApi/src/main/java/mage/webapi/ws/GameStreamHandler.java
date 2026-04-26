@@ -141,7 +141,7 @@ public final class GameStreamHandler implements Consumer<WsConfig> {
         try {
             UUID chatId = embedded.server().chatFindByGame(gameId);
             if (chatId != null) {
-                ctx.attribute(WebSocketCallbackHandler.ATTR_GAME_CHAT_ID, chatId);
+                ctx.attribute(WebSocketCallbackHandler.ATTR_BOUND_CHAT_ID, chatId);
             }
         } catch (Exception ex) {
             // Game does not exist yet (synthetic gameId in tests, or

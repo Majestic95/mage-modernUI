@@ -10,11 +10,15 @@
 import { create } from 'zustand';
 import type {
   WebAbilityPickerView,
+  WebChatMessage,
   WebGameClientMessage,
   WebGameEndView,
   WebGameView,
   WebStreamFrame,
 } from '../api/schemas';
+
+/** Maximum chat history retained per chatId. Older messages drop. */
+const CHAT_HISTORY_CAP = 200;
 
 export type ConnectionState =
   | 'idle'
@@ -109,6 +113,19 @@ interface GameState {
    */
   pendingDialog: PendingDialog | null;
 
+  /**
+   * Chat history keyed by chatId. The Lobby page filters to the
+   * main-room chatId; the Game page filters to the game's chatId.
+   * Each entry's array is capped at {@link CHAT_HISTORY_CAP}; older
+   * messages drop when the cap is hit.
+   *
+   * <p>The {@code chatId} key comes from {@code WebStreamFrame.objectId}
+   * on incoming {@code chatMessage} frames. Sender-side, the webclient
+   * passes the chatId on the {@code chatSend} envelope so the upstream
+   * broadcast lands in the right chat session.
+   */
+  chatMessages: Record<string, WebChatMessage[]>;
+
   /** Connection lifecycle setters (called by GameStream). */
   setConnection: (s: ConnectionState, reason?: string) => void;
   /** Apply an inbound frame. Returns true if the frame was handled. */
@@ -129,6 +146,7 @@ const INITIAL: Pick<
   | 'gameEnd'
   | 'lastMessageId'
   | 'pendingDialog'
+  | 'chatMessages'
 > = {
   connection: 'idle',
   closeReason: '',
@@ -138,6 +156,7 @@ const INITIAL: Pick<
   gameEnd: null,
   lastMessageId: 0,
   pendingDialog: null,
+  chatMessages: {},
 };
 
 export const useGameStore = create<GameState>()((set, get) => ({
@@ -225,6 +244,27 @@ export const useGameStore = create<GameState>()((set, get) => ({
           pendingDialog: null,
         });
         return true;
+
+      case 'chatMessage': {
+        const msg = validatedData as WebChatMessage;
+        // chatId comes from the envelope's objectId (per slice 2).
+        // Server pushes the same chatId on every chat callback for a
+        // given chat. If a frame arrives without a chatId we drop it
+        // — there's no sensible bucket to file it under.
+        const chatId = frame.objectId;
+        if (!chatId) {
+          return true;
+        }
+        const buckets = get().chatMessages;
+        const prior = buckets[chatId] ?? [];
+        const next = prior.length >= CHAT_HISTORY_CAP
+          ? [...prior.slice(prior.length - CHAT_HISTORY_CAP + 1), msg]
+          : [...prior, msg];
+        set({
+          chatMessages: { ...buckets, [chatId]: next },
+        });
+        return true;
+      }
 
       default:
         return false;

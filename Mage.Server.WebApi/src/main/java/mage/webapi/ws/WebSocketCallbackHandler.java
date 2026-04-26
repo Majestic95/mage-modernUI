@@ -58,15 +58,20 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
     static final int BUFFER_CAPACITY = 64;
 
     /**
-     * Per-WsContext attribute key — the chatId of the game this socket
-     * is bound to, resolved at connect time via
-     * {@code MageServerImpl.chatFindByGame}. When present, only
+     * Per-WsContext attribute key — the chatId this socket is bound
+     * to. Resolved at connect time via
+     * {@code MageServerImpl.chatFindByGame} (game stream) or
+     * {@code chatFindByRoom} (lobby/room stream). When present, only
      * {@code chatMessage} frames whose {@code objectId} matches are
      * forwarded to that socket. When absent (game does not exist or
      * lookup failed), chat fans out to every registered socket — same
-     * behavior as slice 2.
+     * fallback behavior as slice 2.
+     *
+     * <p>Renamed from {@code ATTR_GAME_CHAT_ID} in slice 8 when the
+     * room WebSocket route landed and the attribute was no longer
+     * game-specific.
      */
-    public static final String ATTR_GAME_CHAT_ID = "webapi.gameChatId";
+    public static final String ATTR_BOUND_CHAT_ID = "webapi.boundChatId";
 
     private final String username;
     private final Set<WsContext> sockets = ConcurrentHashMap.newKeySet();
@@ -386,7 +391,7 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
      * for the case where the game does not yet exist at connect time.
      */
     private static boolean shouldDeliverChat(WsContext ctx, UUID frameChatId) {
-        Object bound = ctx.attribute(ATTR_GAME_CHAT_ID);
+        Object bound = ctx.attribute(ATTR_BOUND_CHAT_ID);
         if (!(bound instanceof UUID boundChatId)) {
             return true;
         }

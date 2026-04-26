@@ -27,6 +27,7 @@ import mage.webapi.mapper.MatchOptionsBuilder;
 import mage.webapi.mapper.ServerStateMapper;
 import mage.webapi.mapper.VersionMapper;
 import mage.webapi.ws.GameStreamHandler;
+import mage.webapi.ws.RoomStreamHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -108,8 +109,9 @@ public final class WebApiServer {
         registerRoutes(app);
         // WebSocket routes do not run through BearerAuthMiddleware —
         // browsers cannot set custom headers on the upgrade. Auth is
-        // enforced inside GameStreamHandler.onConnect via ?token=.
+        // enforced inside each handler's onConnect via ?token=.
         app.ws("/api/games/{gameId}/stream", new GameStreamHandler(authService, embedded));
+        app.ws("/api/rooms/{roomId}/stream", new RoomStreamHandler(authService, embedded));
 
         app.start(port);
         LOG.info("WebApi listening on port {}", app.port());

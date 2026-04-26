@@ -70,9 +70,27 @@ const DATA_VALIDATORS: Record<string, (raw: unknown) => unknown> = {
   gameChooseAbility: (raw) => webAbilityPickerViewSchema.parse(raw),
 };
 
+/**
+ * Endpoint kind. {@code 'game'} → {@code /api/games/{id}/stream};
+ * {@code 'room'} → {@code /api/rooms/{id}/stream}. Both share the
+ * envelope contract; different server-side handlers wire the
+ * specifics (game-state dispatch vs lobby chat). Defaults to
+ * {@code 'game'} when unspecified, preserving the slice 5A constructor
+ * shape for callers that don't care.
+ */
+export type StreamEndpoint = 'game' | 'room';
+
 export interface GameStreamOptions {
   gameId: string;
   token: string;
+  /**
+   * Which WS route to connect to. {@code 'game'} (default) hits the
+   * game-stream handler at {@code /api/games/{gameId}/stream}.
+   * {@code 'room'} hits the lobby/room handler at
+   * {@code /api/rooms/{gameId}/stream} — the {@code gameId} field
+   * carries the roomId in that case (overloaded for symmetry).
+   */
+  endpoint?: StreamEndpoint;
   /** Test-only WebSocket constructor injection. Defaults to global. */
   webSocketCtor?: typeof WebSocket;
 }
@@ -81,12 +99,14 @@ export class GameStream {
   private socket: WebSocket | null = null;
   private readonly gameId: string;
   private readonly token: string;
+  private readonly endpoint: StreamEndpoint;
   private readonly Ctor: typeof WebSocket;
   private closedByCaller = false;
 
   constructor(options: GameStreamOptions) {
     this.gameId = options.gameId;
     this.token = options.token;
+    this.endpoint = options.endpoint ?? 'game';
     this.Ctor = options.webSocketCtor ?? WebSocket;
   }
 
@@ -95,8 +115,9 @@ export class GameStream {
       return;
     }
     const wsBase = toWsBase(httpBase);
+    const path = this.endpoint === 'room' ? 'rooms' : 'games';
     const url =
-      `${wsBase}/api/games/${encodeURIComponent(this.gameId)}/stream` +
+      `${wsBase}/api/${path}/${encodeURIComponent(this.gameId)}/stream` +
       `?token=${encodeURIComponent(this.token)}`;
 
     useGameStore.getState().setConnection('connecting');

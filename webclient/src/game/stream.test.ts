@@ -178,6 +178,28 @@ describe('GameStream', () => {
     expect(FakeWebSocket.lastUrl).toContain('a%20b');
   });
 
+  it('endpoint=room hits /api/rooms/{id}/stream instead of /api/games/...', () => {
+    const stream = new GameStream({
+      gameId: FAKE_GAME_ID, // overloaded as roomId for room mode
+      token: 'tok-1',
+      endpoint: 'room',
+      webSocketCtor: FakeWebSocket as unknown as typeof WebSocket,
+    });
+    stream.open();
+    expect(FakeWebSocket.lastUrl).toContain('/api/rooms/' + FAKE_GAME_ID + '/stream');
+    expect(FakeWebSocket.lastUrl).not.toContain('/api/games/');
+  });
+
+  it('endpoint defaults to game when unspecified', () => {
+    const stream = new GameStream({
+      gameId: FAKE_GAME_ID,
+      token: 'tok-1',
+      webSocketCtor: FakeWebSocket as unknown as typeof WebSocket,
+    });
+    stream.open();
+    expect(FakeWebSocket.lastUrl).toContain('/api/games/' + FAKE_GAME_ID + '/stream');
+  });
+
   /* ---------- slice B: outbound sends ---------- */
 
   it('sendPlayerAction serializes the envelope and writes to the socket', () => {

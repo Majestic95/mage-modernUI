@@ -189,8 +189,10 @@ describe('useGameStore', () => {
   });
 
   it('unknown method returns false from applyFrame', () => {
+    // chatMessage became a known method in slice 8; pick something
+    // that genuinely isn't routed yet.
     const handled = useGameStore.getState().applyFrame(
-      frame('chatMessage', { username: 'alice', message: 'hi', time: '', turnInfo: '', color: '', messageType: '', soundToPlay: '' }),
+      frame('replayUpdate', null),
       null,
     );
     expect(handled).toBe(false);
@@ -291,5 +293,82 @@ describe('useGameStore', () => {
     useGameStore.getState().applyFrame(frame('gameAsk', a, 1), a);
     useGameStore.getState().applyFrame(frame('gameAsk', b, 2), b);
     expect(useGameStore.getState().pendingDialog?.data.message).toBe('second');
+  });
+
+  /* ---------- slice 8: chatMessage buffer ---------- */
+
+  function chatPayload(message: string, username = 'alice') {
+    return {
+      username,
+      message,
+      time: '',
+      turnInfo: '',
+      color: '',
+      messageType: 'TALK',
+      soundToPlay: '',
+    };
+  }
+
+  function chatFrame(chatId: string, payload: ReturnType<typeof chatPayload>, messageId = 1) {
+    return webStreamFrameSchema.parse({
+      schemaVersion: '1.12',
+      method: 'chatMessage',
+      messageId,
+      objectId: chatId,
+      data: payload,
+    });
+  }
+
+  it('chatMessage frame appends to chatMessages keyed by chatId', () => {
+    const chatId = '11111111-1111-1111-1111-111111111111';
+    const payload = chatPayload('hello');
+    useGameStore.getState().applyFrame(chatFrame(chatId, payload), payload);
+    const buckets = useGameStore.getState().chatMessages;
+    expect(buckets[chatId]).toHaveLength(1);
+    expect(buckets[chatId]?.[0]?.message).toBe('hello');
+  });
+
+  it('chat from different chatIds is buffered separately', () => {
+    const lobbyChat = '22222222-2222-2222-2222-222222222222';
+    const gameChat = '33333333-3333-3333-3333-333333333333';
+    useGameStore.getState().applyFrame(chatFrame(lobbyChat, chatPayload('lobby msg')), chatPayload('lobby msg'));
+    useGameStore.getState().applyFrame(chatFrame(gameChat, chatPayload('game msg')), chatPayload('game msg'));
+    const buckets = useGameStore.getState().chatMessages;
+    expect(buckets[lobbyChat]?.[0]?.message).toBe('lobby msg');
+    expect(buckets[gameChat]?.[0]?.message).toBe('game msg');
+    expect(buckets[lobbyChat]).toHaveLength(1);
+    expect(buckets[gameChat]).toHaveLength(1);
+  });
+
+  it('chatMessage with null objectId is dropped (no chatId bucket)', () => {
+    const f = webStreamFrameSchema.parse({
+      schemaVersion: '1.12',
+      method: 'chatMessage',
+      messageId: 1,
+      objectId: null,
+      data: chatPayload('orphan'),
+    });
+    useGameStore.getState().applyFrame(f, chatPayload('orphan'));
+    expect(Object.keys(useGameStore.getState().chatMessages)).toHaveLength(0);
+  });
+
+  it('chatMessage history caps at 200 entries per chatId (older drop)', () => {
+    const chatId = '44444444-4444-4444-4444-444444444444';
+    for (let i = 0; i < 250; i++) {
+      const p = chatPayload(`msg-${i}`);
+      useGameStore.getState().applyFrame(chatFrame(chatId, p, i), p);
+    }
+    const bucket = useGameStore.getState().chatMessages[chatId] ?? [];
+    expect(bucket).toHaveLength(200);
+    expect(bucket[0]?.message).toBe('msg-50');
+    expect(bucket[bucket.length - 1]?.message).toBe('msg-249');
+  });
+
+  it('reset clears chatMessages along with everything else', () => {
+    const chatId = '55555555-5555-5555-5555-555555555555';
+    useGameStore.getState().applyFrame(chatFrame(chatId, chatPayload('hi')), chatPayload('hi'));
+    expect(useGameStore.getState().chatMessages[chatId]).toHaveLength(1);
+    useGameStore.getState().reset();
+    expect(Object.keys(useGameStore.getState().chatMessages)).toHaveLength(0);
   });
 });

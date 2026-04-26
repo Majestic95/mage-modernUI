@@ -4,6 +4,7 @@ import { CardSearch } from './pages/CardSearch';
 import { Decks } from './pages/Decks';
 import { Game } from './pages/Game';
 import { Lobby } from './pages/Lobby';
+import { LobbyChat } from './pages/LobbyChat';
 import { Login } from './pages/Login';
 
 type Tab = 'lobby' | 'decks' | 'cards';
@@ -85,6 +86,7 @@ export function App() {
         {tab === 'lobby' && (
           <>
             <Lobby />
+            <LobbyChat />
             <DevOpenGame onOpen={setActiveGameId} />
           </>
         )}
