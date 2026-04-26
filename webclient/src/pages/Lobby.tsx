@@ -6,10 +6,12 @@ import {
   webTableListingSchema,
   type WebRoomRef,
   type WebServerState,
+  type WebTable,
   type WebTableListing,
 } from '../api/schemas';
 import { useAuthStore } from '../auth/store';
 import { CreateTableModal } from './CreateTableModal';
+import { JoinTableModal } from './JoinTableModal';
 
 const POLL_INTERVAL_MS = 5_000;
 
@@ -30,6 +32,27 @@ export function Lobby() {
   const requestImmediateRefresh = useCallback(() => {
     setPollNonce((n) => n + 1);
   }, []);
+
+  const [joinTarget, setJoinTarget] = useState<WebTable | null>(null);
+  const [leaveError, setLeaveError] = useState<string | null>(null);
+
+  const onLeave = useCallback(
+    async (table: WebTable) => {
+      if (!session || !room) return;
+      setLeaveError(null);
+      try {
+        await request(
+          `/api/rooms/${room.roomId}/tables/${table.tableId}/seat`,
+          null,
+          { token: session.token, method: 'DELETE' },
+        );
+        requestImmediateRefresh();
+      } catch (err) {
+        setLeaveError(err instanceof ApiError ? err.message : 'Leave failed.');
+      }
+    },
+    [session, room, requestImmediateRefresh],
+  );
 
   useEffect(() => {
     if (!session) {
@@ -140,9 +163,24 @@ export function Lobby() {
         />
       )}
 
+      {joinTarget && (
+        <JoinTableModal
+          roomId={room.roomId}
+          tableId={joinTarget.tableId}
+          tableName={joinTarget.tableName}
+          onClose={() => setJoinTarget(null)}
+          onJoined={requestImmediateRefresh}
+        />
+      )}
+
       {error && (
         <p role="alert" className="text-sm text-red-400">
           {error}
+        </p>
+      )}
+      {leaveError && (
+        <p role="alert" className="text-sm text-red-400">
+          {leaveError}
         </p>
       )}
 
@@ -152,24 +190,55 @@ export function Lobby() {
 
       {listing && listing.tables.length > 0 && (
         <ul className="divide-y divide-zinc-800 border border-zinc-800 rounded">
-          {listing.tables.map((t) => (
-            <li key={t.tableId} className="p-3 flex items-center justify-between gap-4">
-              <div className="space-y-1 min-w-0">
-                <p className="font-medium truncate">{t.tableName}</p>
-                <p className="text-xs text-zinc-400 truncate">
-                  {t.gameType} · {t.deckType} · {t.controllerName}
-                </p>
-              </div>
-              <div className="text-right flex-shrink-0">
-                <p className="text-sm">
-                  <span className={stateColor(t.tableState)}>{t.tableState}</span>
-                </p>
-                <p className="text-xs text-zinc-500">
-                  {t.seats.filter((s) => s.occupied).length}/{t.seats.length} seated
-                </p>
-              </div>
-            </li>
-          ))}
+          {listing.tables.map((t) => {
+            const username = session?.username ?? '';
+            const seated = t.seats.some(
+              (s) => s.occupied && s.playerName === username,
+            );
+            const hasOpenHumanSeat = t.seats.some(
+              (s) => !s.occupied && (s.playerType === '' || s.playerType === 'HUMAN'),
+            );
+            const canJoin = !seated && t.tableState === 'WAITING' && hasOpenHumanSeat;
+            const canLeave = seated && t.tableState === 'WAITING';
+            return (
+              <li key={t.tableId} className="p-3 flex items-center justify-between gap-4">
+                <div className="space-y-1 min-w-0">
+                  <p className="font-medium truncate">{t.tableName}</p>
+                  <p className="text-xs text-zinc-400 truncate">
+                    {t.gameType} · {t.deckType} · {t.controllerName}
+                  </p>
+                </div>
+                <div className="flex items-center gap-3 flex-shrink-0">
+                  <div className="text-right">
+                    <p className="text-sm">
+                      <span className={stateColor(t.tableState)}>{t.tableState}</span>
+                    </p>
+                    <p className="text-xs text-zinc-500">
+                      {t.seats.filter((s) => s.occupied).length}/{t.seats.length} seated
+                    </p>
+                  </div>
+                  {canJoin && (
+                    <button
+                      type="button"
+                      onClick={() => setJoinTarget(t)}
+                      className="bg-fuchsia-600 hover:bg-fuchsia-500 text-white text-sm font-medium rounded px-3 py-1.5"
+                    >
+                      Join
+                    </button>
+                  )}
+                  {canLeave && (
+                    <button
+                      type="button"
+                      onClick={() => void onLeave(t)}
+                      className="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-sm font-medium rounded px-3 py-1.5"
+                    >
+                      Leave
+                    </button>
+                  )}
+                </div>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

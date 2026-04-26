@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useAuthStore } from './auth/store';
 import { CardSearch } from './pages/CardSearch';
+import { Decks } from './pages/Decks';
 import { Lobby } from './pages/Lobby';
 import { Login } from './pages/Login';
 
-type Tab = 'lobby' | 'cards';
+type Tab = 'lobby' | 'decks' | 'cards';
 
 /**
  * Auth-gated tab shell. No router yet — slice 4.1 has just two
@@ -40,6 +41,9 @@ export function App() {
           <TabButton current={tab} value="lobby" onClick={setTab}>
             Lobby
           </TabButton>
+          <TabButton current={tab} value="decks" onClick={setTab}>
+            Decks
+          </TabButton>
           <TabButton current={tab} value="cards" onClick={setTab}>
             Cards
           </TabButton>
@@ -68,6 +72,7 @@ export function App() {
 
       <main className="max-w-4xl mx-auto p-6">
         {tab === 'lobby' && <Lobby />}
+        {tab === 'decks' && <Decks />}
         {tab === 'cards' && <CardSearch />}
       </main>
     </div>
