@@ -110,4 +110,28 @@ class EmbeddedServerTest {
         assertNotNull(embedded.server().getServerState(),
                 "getServerState() returned null on the embedded server");
     }
+
+    @Test
+    @Order(8)
+    void step8_serverStateExposesLoadedPlugins() throws Exception {
+        // boot() is idempotent — this call returns the instance from step7.
+        EmbeddedServer embedded = EmbeddedServer.boot(CONFIG_PATH);
+        var state = embedded.server().getServerState();
+
+        assertNotNull(state.getGameTypes(), "gameTypes list is null");
+        assertNotNull(state.getPlayerTypes(), "playerTypes array is null");
+        assertNotNull(state.getDeckTypes(), "deckTypes array is null");
+
+        // If plugin classes weren't on the classpath, the lists would be
+        // empty — this assertion catches that case loudly.
+        assertTrue(state.getGameTypes().size() >= 1,
+                "expected at least one game type loaded, got "
+                        + state.getGameTypes().size());
+        assertTrue(state.getPlayerTypes().length >= 1,
+                "expected at least one player type loaded, got "
+                        + state.getPlayerTypes().length);
+        assertTrue(state.getDeckTypes().length >= 1,
+                "expected at least one deck type loaded, got "
+                        + state.getDeckTypes().length);
+    }
 }
