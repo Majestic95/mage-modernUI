@@ -19,6 +19,73 @@ minor mismatches.
 
 ---
 
+## 1.1 — 2026-04-25 — Add `/api/server/state` (Phase 2 slice 3)
+
+Additive change: new endpoint and new DTO records. Existing endpoints
+unchanged in shape; the schemaVersion field they report bumps to
+`"1.1"` because that is the global wire-format version.
+
+### New endpoint
+
+- `GET /api/server/state` → `WebServerState`
+
+### New DTOs
+
+#### `WebServerState` (top-level — carries `schemaVersion`)
+
+```json
+{
+  "schemaVersion":    "1.1",
+  "gameTypes":        [ <WebGameType>, ... ],
+  "tournamentTypes":  [ <WebTournamentType>, ... ],
+  "playerTypes":      [ "Human", "Computer - simple", ... ],
+  "deckTypes":        [ "Constructed - Standard", ... ],
+  "draftCubes":       [ "Cube - Vintage 2017", ... ],
+  "testMode":         false
+}
+```
+
+#### `WebGameType` (nested — no `schemaVersion`)
+
+```json
+{
+  "name":            "Two Player Duel",
+  "minPlayers":      2,
+  "maxPlayers":      2,
+  "numTeams":        0,
+  "playersPerTeam":  0,
+  "useRange":        false,
+  "useAttackOption": false
+}
+```
+
+#### `WebTournamentType` (nested — no `schemaVersion`)
+
+```json
+{
+  "name":          "Booster Draft",
+  "minPlayers":    2,
+  "maxPlayers":    8,
+  "numBoosters":   3,
+  "draft":         true,
+  "limited":       true,
+  "cubeBooster":   false,
+  "elimination":   false,
+  "random":        false,
+  "reshuffled":    false,
+  "richMan":       false,
+  "jumpstart":     false
+}
+```
+
+### Convention
+
+**Top-level response DTOs carry `schemaVersion`. Nested DTOs do not.**
+Schema version is a wire-format concept; repeating it on every nested
+object would bloat the payload without adding info.
+
+---
+
 ## 1.0 — 2026-04-25 — Initial baseline (Phase 2 slice 1)
 
 First slice of the WebApi facade. Two endpoints, two DTOs.

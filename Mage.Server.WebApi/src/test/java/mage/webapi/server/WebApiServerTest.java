@@ -3,6 +3,7 @@ package mage.webapi.server;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import mage.webapi.SchemaVersion;
+import mage.webapi.embed.EmbeddedServer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -19,28 +20,32 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Integration tests for the Phase 2 first-slice routes: every WebApi route
- * has at least one test that hits the real Javalin instance, per CLAUDE.md.
- * Mocks lie; integration tests don't.
+ * Integration tests for the WebApi routes. Boots an embedded Mage server
+ * once for the test class (idempotent — reuses the JVM-singleton) and
+ * exercises every route via real HTTP, per CLAUDE.md.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class WebApiServerTest {
 
+    private static final String CONFIG_PATH = "../Mage.Server/config/config.xml";
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final HttpClient HTTP = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(2))
             .build();
 
-    private final WebApiServer server = new WebApiServer();
+    private WebApiServer server;
 
     @BeforeAll
     void start() {
-        server.start(0); // bind to a random free port
+        EmbeddedServer embedded = EmbeddedServer.boot(CONFIG_PATH);
+        server = new WebApiServer(embedded).start(0); // bind to random free port
     }
 
     @AfterAll
     void stop() {
-        server.stop();
+        if (server != null) {
+            server.stop();
+        }
     }
 
     @Test
@@ -67,6 +72,29 @@ class WebApiServerTest {
     }
 
     @Test
+    void getServerState_returnsLoadedTypes() throws Exception {
+        // getServerState() in MageServerImpl sleeps 1 second for DDoS
+        // protection. Allow extra time for this call.
+        HttpResponse<String> resp = HTTP.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create("http://localhost:" + server.port() + "/api/server/state"))
+                        .timeout(Duration.ofSeconds(10))
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, resp.statusCode());
+
+        JsonNode body = JSON.readTree(resp.body());
+        assertEquals(SchemaVersion.CURRENT, body.get("schemaVersion").asText());
+        assertTrue(body.get("gameTypes").size() >= 1,
+                "expected at least one game type, got " + body.get("gameTypes").size());
+        assertTrue(body.get("playerTypes").size() >= 1,
+                "expected at least one player type, got " + body.get("playerTypes").size());
+        assertTrue(body.get("deckTypes").size() >= 1,
+                "expected at least one deck type, got " + body.get("deckTypes").size());
+    }
+
+    @Test
     void unknownRoute_returns404() throws Exception {
         HttpResponse<String> resp = get("/api/does-not-exist");
         assertEquals(404, resp.statusCode());
@@ -74,7 +102,7 @@ class WebApiServerTest {
 
     @Test
     void doubleStart_throws() {
-        WebApiServer second = new WebApiServer();
+        WebApiServer second = new WebApiServer(EmbeddedServer.boot(CONFIG_PATH));
         try {
             second.start(0);
             second.start(0);
