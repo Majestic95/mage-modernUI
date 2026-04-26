@@ -34,7 +34,12 @@ export function CreateTableModal({ roomId, serverState, onClose, onCreated }: Pr
   const [deckType, setDeckType] = useState(initialDeckType);
   const [winsNeeded, setWinsNeeded] = useState(1);
   const [addAi, setAddAi] = useState(true);
-  const [aiType, setAiType] = useState<AiType>('COMPUTER_MONTE_CARLO');
+  // Default to MAD — upstream's MCTS player has a known
+  // null-ability crash that ends the game (mage.MageException:
+  // "Error in unit tests" → FATAL: Game end on critical error).
+  // Mad is the rule-based AI and is much more stable for everyday
+  // testing. Reorder + warning copy lives in the dropdown below.
+  const [aiType, setAiType] = useState<AiType>('COMPUTER_MAD');
 
   // Advanced options — defaults align with MatchOptionsBuilder.build().
   const [tableName, setTableName] = useState('');
@@ -224,14 +229,25 @@ export function CreateTableModal({ roomId, serverState, onClose, onCreated }: Pr
             </span>
           </label>
           {aiAllowed && addAi && (
-            <select
-              value={aiType}
-              onChange={(e) => setAiType(e.target.value as AiType)}
-              className={selectClasses + ' mt-2'}
-            >
-              <option value="COMPUTER_MONTE_CARLO">Computer — Monte Carlo</option>
-              <option value="COMPUTER_MAD">Computer — Mad</option>
-            </select>
+            <>
+              <select
+                value={aiType}
+                onChange={(e) => setAiType(e.target.value as AiType)}
+                className={selectClasses + ' mt-2'}
+              >
+                <option value="COMPUTER_MAD">Computer — Mad</option>
+                <option value="COMPUTER_MONTE_CARLO">
+                  Computer — Monte Carlo (may crash)
+                </option>
+              </select>
+              {aiType === 'COMPUTER_MONTE_CARLO' && (
+                <p className="text-[11px] text-amber-300/80 mt-1">
+                  ⚠ Upstream MCTS player has a known crash that ends
+                  the match (null-ability fatal during simulation).
+                  Mad is the rule-based AI — more stable.
+                </p>
+              )}
+            </>
           )}
           {!aiAllowed && (
             <p className="text-xs text-zinc-500">

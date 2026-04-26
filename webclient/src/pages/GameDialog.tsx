@@ -27,6 +27,18 @@ export function GameDialog({ stream }: Props) {
 
   if (!dialog) return null;
 
+  // gameSelect is upstream's "free priority — do something" prompt,
+  // not a question that needs a modal. The user interacts with the
+  // board (click a hand card to cast, click a permanent to
+  // tap/activate) and slice 14's button handlers send the response
+  // via sendObjectClick. A modal here would just block those
+  // clicks. The pendingDialog stays in the store so the clear-on-
+  // gameUpdate path still fires once the engine processes the
+  // action, but no overlay is rendered.
+  if (dialog.method === 'gameSelect') {
+    return null;
+  }
+
   return (
     <div
       role="dialog"

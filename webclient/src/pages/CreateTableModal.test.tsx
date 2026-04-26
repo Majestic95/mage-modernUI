@@ -136,7 +136,7 @@ describe('CreateTableModal', () => {
       gameType: 'Two Player Duel',
       deckType: 'Constructed - Vintage',
       winsNeeded: 1,
-      seats: ['HUMAN', 'COMPUTER_MONTE_CARLO'],
+      seats: ['HUMAN', 'COMPUTER_MAD'],
     });
 
     const aiCall = fetchMock.mock.calls[1];
@@ -145,10 +145,34 @@ describe('CreateTableModal', () => {
     const aiBody = aiCall?.[1]
       ? JSON.parse(aiCall[1].body as string) as Record<string, unknown>
       : null;
-    expect(aiBody).toEqual({ playerType: 'COMPUTER_MONTE_CARLO' });
+    expect(aiBody).toEqual({ playerType: 'COMPUTER_MAD' });
 
     expect(onCreated).toHaveBeenCalled();
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it('shows MCTS crash warning only when Monte Carlo is selected', async () => {
+    const user = userEvent.setup();
+    render(
+      <CreateTableModal
+        roomId={ROOM_ID}
+        serverState={SERVER_STATE}
+        onClose={() => {}}
+        onCreated={() => {}}
+      />,
+    );
+
+    // Default is Mad — no warning visible.
+    expect(screen.queryByText(/MCTS player has a known crash/i)).not.toBeInTheDocument();
+
+    // Switch to Monte Carlo — warning surfaces.
+    await user.selectOptions(
+      screen.getAllByRole('combobox').find((el) =>
+        (el as HTMLSelectElement).value === 'COMPUTER_MAD',
+      )!,
+      'COMPUTER_MONTE_CARLO',
+    );
+    expect(screen.getByText(/MCTS player has a known crash/i)).toBeInTheDocument();
   });
 
   it('keeps modal open with warning when AI add fails after create', async () => {
