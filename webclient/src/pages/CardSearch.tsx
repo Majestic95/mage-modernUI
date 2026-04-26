@@ -92,40 +92,72 @@ export function CardSearch() {
 }
 
 function CardCard({ card }: { card: WebCardInfo }) {
+  const isCreature = card.types.includes('CREATURE');
+  const isPlaneswalker = card.types.includes('PLANESWALKER');
+  // Scryfall's named-lookup endpoint redirects to a normal-art image.
+  // Doesn't always match the WebApi's specific printing, but works for
+  // every card name in the DB without dealing with collector-number
+  // quirks like the asterisk in "1638*".
+  const imageUrl = `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(
+    card.name,
+  )}&format=image&version=normal`;
+
   return (
-    <article className="border border-zinc-800 rounded p-4 space-y-3 bg-zinc-900">
-      <header className="flex items-baseline justify-between gap-3">
-        <h3 className="text-lg font-semibold">{card.name}</h3>
-        <span className="text-sm text-zinc-400 flex gap-1 items-center">
-          {card.manaCosts.map((m, i) => (
-            <code key={i} className="bg-zinc-800 px-1 rounded">{m}</code>
-          ))}
-        </span>
-      </header>
+    <article className="border border-zinc-800 rounded p-4 bg-zinc-900 flex gap-4">
+      <CardImage src={imageUrl} alt={card.name} />
+      <div className="flex-1 space-y-3 min-w-0">
+        <header className="flex items-baseline justify-between gap-3">
+          <h3 className="text-lg font-semibold truncate">{card.name}</h3>
+          <span className="text-sm text-zinc-400 flex gap-1 items-center flex-shrink-0">
+            {card.manaCosts.map((m, i) => (
+              <code key={i} className="bg-zinc-800 px-1 rounded">{m}</code>
+            ))}
+          </span>
+        </header>
 
-      <p className="text-xs text-zinc-500">
-        {card.types.join(' ')}
-        {card.subtypes.length > 0 && ` — ${card.subtypes.join(' ')}`}
-        {' · '}
-        <span className="uppercase">{card.rarity}</span>
-        {' · '}
-        {card.setCode} #{card.cardNumber}
-      </p>
-
-      {card.power && card.toughness && (
-        <p className="text-sm">
-          <span className="font-mono">{card.power}/{card.toughness}</span>
+        <p className="text-xs text-zinc-500">
+          {card.types.join(' ')}
+          {card.subtypes.length > 0 && ` — ${card.subtypes.join(' ')}`}
+          {' · '}
+          <span className="uppercase">{card.rarity}</span>
+          {' · '}
+          {card.setCode} #{card.cardNumber}
         </p>
-      )}
-      {card.startingLoyalty && (
-        <p className="text-sm">Loyalty {card.startingLoyalty}</p>
-      )}
 
-      <div className="text-sm space-y-1">
-        {card.rules.map((line, i) => (
-          <p key={i}>{line}</p>
-        ))}
+        {isCreature && (
+          <p className="text-sm">
+            <span className="font-mono">{card.power}/{card.toughness}</span>
+          </p>
+        )}
+        {isPlaneswalker && card.startingLoyalty && (
+          <p className="text-sm">Loyalty {card.startingLoyalty}</p>
+        )}
+
+        <div className="text-sm space-y-1">
+          {card.rules.map((line, i) => (
+            <p key={i}>{line}</p>
+          ))}
+        </div>
       </div>
     </article>
+  );
+}
+
+function CardImage({ src, alt }: { src: string; alt: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return (
+      <div className="w-32 h-44 flex-shrink-0 rounded bg-zinc-800 flex items-center justify-center text-xs text-zinc-500 text-center px-2">
+        no image
+      </div>
+    );
+  }
+  return (
+    <img
+      src={src}
+      alt={alt}
+      onError={() => setFailed(true)}
+      className="w-32 h-44 flex-shrink-0 rounded object-cover"
+    />
   );
 }

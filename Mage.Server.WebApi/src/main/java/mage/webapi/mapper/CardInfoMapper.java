@@ -38,8 +38,9 @@ public final class CardInfoMapper {
     }
 
     private static WebCardInfo toDto(CardInfo c) {
+        String name = c.getName();
         return new WebCardInfo(
-                c.getName(),
+                name,
                 c.getSetCode(),
                 c.getCardNumber(),
                 c.getManaValue(),
@@ -52,8 +53,20 @@ public final class CardInfoMapper {
                 emptyIfNull(c.getPower()),
                 emptyIfNull(c.getToughness()),
                 emptyIfNull(c.getStartingLoyalty()),
-                nonNull(c.getRules())
+                substituteThis(nonNull(c.getRules()), name)
         );
+    }
+
+    /**
+     * Upstream uses {@code {this}} as a placeholder for the card's own
+     * name in rules text — e.g. "{this} deals 3 damage to any target."
+     * Substitute here so every client gets readable rules without
+     * repeating the substitution logic.
+     */
+    private static List<String> substituteThis(List<String> rules, String cardName) {
+        return rules.stream()
+                .map(line -> line.replace("{this}", cardName))
+                .toList();
     }
 
     private static List<String> colorsOf(ObjectColor color) {

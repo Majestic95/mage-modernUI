@@ -100,6 +100,20 @@ class CardInfoMapperTest {
     }
 
     @Test
+    void single_lightningBolt_substitutesThisPlaceholderInRules() {
+        var card = CardRepository.instance.findCard("Lightning Bolt");
+        WebCardListing listing = CardInfoMapper.single(card);
+        WebCardInfo info = listing.cards().get(0);
+
+        // Upstream uses {this} as a placeholder for the card name.
+        // Mapper substitutes; clients must not see raw {this} on the wire.
+        for (String line : info.rules()) {
+            assertFalse(line.contains("{this}"),
+                    "rules line should not contain raw {this}: " + line);
+        }
+    }
+
+    @Test
     void many_marksTruncatedFlagWhenLimitHit() {
         // "Forest" has hundreds of printings; cap at 5 to force truncation.
         var cards = CardRepository.instance.findCards("Forest", 5);
