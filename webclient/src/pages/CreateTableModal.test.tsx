@@ -102,9 +102,12 @@ describe('CreateTableModal', () => {
     expect(screen.getByRole('button', { name: /create/i })).toBeInTheDocument();
   });
 
-  it('submits with HUMAN+COMPUTER seats when AI is checked', async () => {
+  it('submits HUMAN+COMPUTER seats then auto-fills the AI seat', async () => {
     const user = userEvent.setup();
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(tableResponse());
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(tableResponse()) // POST /tables
+      .mockResolvedValueOnce(new Response(null, { status: 204 })); // POST /ai
     vi.stubGlobal('fetch', fetchMock);
 
     const onClose = vi.fn();
@@ -118,22 +121,70 @@ describe('CreateTableModal', () => {
       />,
     );
 
-    // AI checkbox defaults to checked for 2-seat games. Click Create.
     await user.click(screen.getByRole('button', { name: /^create$/i }));
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const call = fetchMock.mock.calls[0];
-    expect(call).toBeDefined();
-    const init = call?.[1];
-    const body = init ? JSON.parse(init.body as string) as Record<string, unknown> : null;
-    expect(body).toMatchObject({
+    // Two sequential calls: create-table then add-ai.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    const createCall = fetchMock.mock.calls[0];
+    const createUrl = String(createCall?.[0] ?? '');
+    expect(createUrl).toMatch(/\/api\/rooms\/[^/]+\/tables$/);
+    const createBody = createCall?.[1]
+      ? JSON.parse(createCall[1].body as string) as Record<string, unknown>
+      : null;
+    expect(createBody).toMatchObject({
       gameType: 'Two Player Duel',
       deckType: 'Constructed - Vintage',
       winsNeeded: 1,
       seats: ['HUMAN', 'COMPUTER_MONTE_CARLO'],
     });
+
+    const aiCall = fetchMock.mock.calls[1];
+    const aiUrl = String(aiCall?.[0] ?? '');
+    expect(aiUrl).toMatch(/\/tables\/[^/]+\/ai$/);
+    const aiBody = aiCall?.[1]
+      ? JSON.parse(aiCall[1].body as string) as Record<string, unknown>
+      : null;
+    expect(aiBody).toEqual({ playerType: 'COMPUTER_MONTE_CARLO' });
+
     expect(onCreated).toHaveBeenCalled();
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it('keeps modal open with warning when AI add fails after create', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(tableResponse())
+      .mockResolvedValueOnce(
+        jsonResponse(422, {
+          schemaVersion: '1.4',
+          code: 'UPSTREAM_REJECTED',
+          message: 'Server rejected the AI seat.',
+        }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const onClose = vi.fn();
+    const onCreated = vi.fn();
+    render(
+      <CreateTableModal
+        roomId={ROOM_ID}
+        serverState={SERVER_STATE}
+        onClose={onClose}
+        onCreated={onCreated}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: /^create$/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      /AI failed to join/i,
+    );
+    // Lobby refresh fires so user sees the partial table.
+    expect(onCreated).toHaveBeenCalled();
+    // Modal stays open so the user can react.
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it('omits the seats field when AI checkbox is unchecked', async () => {

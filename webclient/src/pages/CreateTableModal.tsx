@@ -65,17 +65,48 @@ export function CreateTableModal({ roomId, serverState, onClose, onCreated }: Pr
     };
     if (seats) body['seats'] = seats;
 
+    let created;
     try {
-      await request(`/api/rooms/${roomId}/tables`, webTableSchema, {
+      created = await request(`/api/rooms/${roomId}/tables`, webTableSchema, {
         token: session.token,
         body,
       });
-      onCreated();
-      onClose();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to create table.');
       setSubmitting(false);
+      return;
     }
+
+    // If the user asked for an AI opponent, fill the declared COMPUTER
+    // seat now. Any failure here is a partial-success state: the table
+    // exists, but the AI didn't join. Surface a warning and let the
+    // user retry / leave / kill the table from the lobby.
+    if (aiAllowed && addAi) {
+      try {
+        await request(
+          `/api/rooms/${roomId}/tables/${created.tableId}/ai`,
+          null,
+          {
+            token: session.token,
+            method: 'POST',
+            body: { playerType: aiType },
+          },
+        );
+      } catch (err) {
+        setError(
+          err instanceof ApiError
+            ? `Table created but AI failed to join: ${err.message}`
+            : 'Table created but AI failed to join.',
+        );
+        setSubmitting(false);
+        // Refresh the lobby anyway so the user sees the partial table.
+        onCreated();
+        return;
+      }
+    }
+
+    onCreated();
+    onClose();
   };
 
   return (
