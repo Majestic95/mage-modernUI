@@ -2,26 +2,28 @@ import { useEffect, useState } from 'react';
 import { useAuthStore } from './auth/store';
 import { CardSearch } from './pages/CardSearch';
 import { Decks } from './pages/Decks';
+import { Game } from './pages/Game';
 import { Lobby } from './pages/Lobby';
 import { Login } from './pages/Login';
 
 type Tab = 'lobby' | 'decks' | 'cards';
 
 /**
- * Auth-gated tab shell. No router yet — slice 4.1 has just two
- * authenticated screens, so a tab switch is enough. React Router
- * comes when the screen count justifies it.
+ * Auth-gated tab shell.
  *
- * <p>On mount, the persisted session (if any) is verified against
- * the server. Stale tokens are cleared so the user lands on Login;
- * valid tokens stay in place and the user lands directly on the
- * lobby (slice 4.2 — persistent session).
+ * <p>Slice 4.1 had two screens; we used a tab switcher. Slice 5 adds
+ * a full-screen game window that takes over the main area when
+ * {@code activeGameId} is set. Auto-navigation from {@code startGame}
+ * frames lands in slice 5B; for slice 5A the user opens a game by
+ * pasting an ID into the dev-only entry on the Lobby and clicking
+ * "Open game window."
  */
 export function App() {
   const session = useAuthStore((s) => s.session);
   const logout = useAuthStore((s) => s.logout);
   const verify = useAuthStore((s) => s.verify);
   const [tab, setTab] = useState<Tab>('lobby');
+  const [activeGameId, setActiveGameId] = useState<string | null>(null);
 
   useEffect(() => {
     void verify();
@@ -29,6 +31,15 @@ export function App() {
 
   if (!session) {
     return <Login />;
+  }
+
+  if (activeGameId) {
+    return (
+      <Game
+        gameId={activeGameId}
+        onLeave={() => setActiveGameId(null)}
+      />
+    );
   }
 
   return (
@@ -70,8 +81,13 @@ export function App() {
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto p-6">
-        {tab === 'lobby' && <Lobby />}
+      <main className="max-w-4xl mx-auto p-6 space-y-4">
+        {tab === 'lobby' && (
+          <>
+            <Lobby />
+            <DevOpenGame onOpen={setActiveGameId} />
+          </>
+        )}
         {tab === 'decks' && <Decks />}
         {tab === 'cards' && <CardSearch />}
       </main>
@@ -104,6 +120,39 @@ function TabButton({
     >
       {children}
     </button>
+  );
+}
+
+/**
+ * Slice 5A entry-point: paste a gameId, click Open. Slice 5B will
+ * auto-navigate when a {@code startGame} frame arrives.
+ */
+function DevOpenGame({ onOpen }: { onOpen: (id: string) => void }) {
+  const [value, setValue] = useState('');
+  const valid = /^[0-9a-f-]{36}$/i.test(value);
+  return (
+    <section className="rounded border border-zinc-800 p-3 text-sm">
+      <div className="text-xs text-zinc-500 mb-2 uppercase tracking-wide">
+        Dev — open game window
+      </div>
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder="game UUID"
+          className="flex-1 bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-zinc-100 font-mono text-xs"
+        />
+        <button
+          type="button"
+          disabled={!valid}
+          onClick={() => onOpen(value.trim())}
+          className="px-3 py-1 rounded bg-fuchsia-600 hover:bg-fuchsia-500 disabled:bg-zinc-700 text-white"
+        >
+          Open
+        </button>
+      </div>
+    </section>
   );
 }
 
