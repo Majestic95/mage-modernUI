@@ -467,9 +467,35 @@ class GameStreamHandlerTest {
             assertTrue(initData.get("players").isArray());
             assertEquals(2, initData.get("players").size(),
                     "two-player duel must have exactly 2 PlayerView entries");
+
+            // Slice 4: myPlayerId + myHand are present in the
+            // envelope. Whether the opening hand is already drawn at
+            // the FIRST gameInit is engine-timing-dependent (some
+            // GAME_INIT callbacks fire before the mulligan draw); the
+            // shape contract is what slice 4 locks.
+            assertNotNull(initData.get("myPlayerId"),
+                    "gameInit must carry myPlayerId field");
+            JsonNode myHand = initData.get("myHand");
+            assertTrue(myHand.isObject(),
+                    "myHand must be an object keyed by card UUID");
+            // If the hand is populated, lock the WebCardView shape on
+            // any one card. Otherwise wait for a later frame to verify
+            // (slice 5 will tighten this once gameInform / gameOver
+            // wrappers carry richer ordering guarantees).
+            if (myHand.size() > 0) {
+                JsonNode anyCard = myHand.elements().next();
+                assertEquals("Forest", anyCard.get("name").asText(),
+                        "60-Forest deck → hand should be all Forests");
+                assertEquals("LAND", anyCard.get("types").get(0).asText());
+            }
+
             JsonNode firstPlayer = initData.get("players").get(0);
             assertTrue(firstPlayer.get("life").asInt() > 0,
                     "starting life must be positive");
+            // battlefield is now a map (slice 4 promoted it from a
+            // count). Empty before any land is played.
+            assertTrue(firstPlayer.get("battlefield").isObject(),
+                    "battlefield must be an object map keyed by permanent UUID");
             assertTrue(firstPlayer.get("libraryCount").asInt() > 0,
                     "library must have cards after the opening hand draw");
         } finally {

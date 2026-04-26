@@ -13,20 +13,22 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Maps upstream game-state views to wire DTOs. Slice 3 covers the
- * lifecycle subset:
+ * Maps upstream game-state views to wire DTOs.
  *
  * <ul>
  *   <li>{@link GameView} → {@link WebGameView} — top-level scalars +
- *       per-player summaries; zones counted-only (cards mapped in
- *       slice 4 once {@code WebCardView} lands).</li>
+ *       per-player summaries + the controlling player's hand (slice 4
+ *       added {@code myPlayerId} + {@code myHand}).</li>
  *   <li>{@link PlayerView} → {@link WebPlayerView} — life / counts /
- *       mana pool / state flags.</li>
+ *       mana pool / state flags + battlefield map (slice 4).</li>
  *   <li>{@link ManaPoolView} → {@link WebManaPoolView} — six color
  *       buckets.</li>
  *   <li>{@link TableClientMessage} → {@link WebStartGameInfo} — the
  *       slim subset populated by {@code ccGameStarted}.</li>
  * </ul>
+ *
+ * <p>Stack, exile, revealed/looked-at, combat groups, and full
+ * graveyard/exile/sideboard card maps stay deferred to slice 5+.
  *
  * <p>Pure record-to-record translation. Defensive on null fields so
  * an in-flight engine state with partial data can still serialize.
@@ -44,6 +46,9 @@ public final class GameViewMapper {
         for (PlayerView pv : gv.getPlayers()) {
             players.add(toPlayerDto(pv));
         }
+        PlayerView me = gv.getMyPlayer();
+        String myPlayerId = (me == null || me.getPlayerId() == null)
+                ? "" : me.getPlayerId().toString();
         return new WebGameView(
                 gv.getTurn(),
                 gv.getPhase() == null ? "" : gv.getPhase().name(),
@@ -55,6 +60,8 @@ public final class GameViewMapper {
                 gv.getTotalErrorsCount(),
                 gv.getTotalEffectsCount(),
                 gv.getGameCycle(),
+                myPlayerId,
+                CardViewMapper.toCardMap(gv.getMyHand()),
                 players
         );
     }
@@ -74,7 +81,7 @@ public final class GameViewMapper {
                 pv.getGraveyard() == null ? 0 : pv.getGraveyard().size(),
                 pv.getExile() == null ? 0 : pv.getExile().size(),
                 pv.getSideboard() == null ? 0 : pv.getSideboard().size(),
-                pv.getBattlefield() == null ? 0 : pv.getBattlefield().size(),
+                CardViewMapper.toPermanentMap(pv.getBattlefield()),
                 toManaPoolDto(pv.getManaPool()),
                 pv.getControlled(),
                 pv.isHuman(),

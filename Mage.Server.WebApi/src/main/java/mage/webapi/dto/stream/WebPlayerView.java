@@ -1,12 +1,16 @@
 package mage.webapi.dto.stream;
 
 import java.util.List;
+import java.util.Map;
 
 /**
- * Per-player state inside a {@link WebGameView}. Slice 3 carries the
- * top-level scalars + zone counts only. Full card-by-card battlefield
- * / graveyard / exile / hand mapping lands in slice 4 alongside
- * {@code WebCardView} and {@code WebPermanentView}.
+ * Per-player state inside a {@link WebGameView}.
+ *
+ * <p>Slice 3 carried zone counts only. Slice 4 promotes
+ * {@code battlefield} from a count to a full
+ * {@code Map<UUID, WebPermanentView>} — the battlefield is what the
+ * game window actually renders. Graveyard, exile, and sideboard remain
+ * counts; slice 5 promotes them to card-detail maps.
  *
  * @param playerId        upstream player UUID
  * @param name            display name
@@ -15,12 +19,15 @@ import java.util.List;
  * @param winsNeeded      target win count for this match
  * @param libraryCount    cards remaining in library
  * @param handCount       cards in hand (face-down — opponents see only
- *     the count)
+ *     the count; the controlling player gets card detail via
+ *     {@link WebGameView#myHand})
  * @param graveyardCount  cards in graveyard
  * @param exileCount      cards exiled by this player
  * @param sideboardCount  cards in sideboard (only populated for
  *     {@code controlled = true} or AI players upstream-side)
- * @param battlefieldCount permanents this player controls
+ * @param battlefield     permanents this player controls, keyed by
+ *     UUID. Insertion order matches upstream's {@code LinkedHashMap}
+ *     traversal so the webclient gets a stable layout.
  * @param manaPool        per-color mana totals
  * @param controlled      true if this {@link WebGameView} was rendered
  *     from this player's perspective ("you")
@@ -44,7 +51,7 @@ public record WebPlayerView(
         int graveyardCount,
         int exileCount,
         int sideboardCount,
-        int battlefieldCount,
+        Map<String, WebPermanentView> battlefield,
         WebManaPoolView manaPool,
         boolean controlled,
         boolean isHuman,

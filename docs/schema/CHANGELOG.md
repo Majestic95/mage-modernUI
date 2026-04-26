@@ -19,6 +19,131 @@ minor mismatches.
 
 ---
 
+## 1.8 — 2026-04-26 — Battlefield + hand rendering (Phase 3 slice 4)
+
+Slice 4 lands the card-detail mappers — the wire format finally
+carries individual cards on permanents and in the controlling player's
+hand. The battlefield + hand are the two zones the game window needs
+to render before slice 5 fills in stack, exile, graveyard maps, and
+combat. Existing payloads keep their shape; their reported
+`schemaVersion` value bumps to `"1.8"`.
+
+### New DTOs
+
+#### `WebCardView` (nested)
+
+```json
+{
+  "id":               "550e8400-...",
+  "name":             "Lightning Bolt",
+  "displayName":      "Lightning Bolt",
+  "expansionSetCode": "LEA",
+  "cardNumber":       "161",
+  "manaCost":         "{R}",
+  "manaValue":        1,
+  "typeLine":         "Instant",
+  "supertypes":       [],
+  "types":            ["INSTANT"],
+  "subtypes":         [],
+  "colors":           ["R"],
+  "rarity":           "COMMON",
+  "power":            "",
+  "toughness":        "",
+  "startingLoyalty":  "",
+  "rules":            ["Lightning Bolt deals 3 damage to any target."],
+  "faceDown":         false,
+  "tokenSetCode":     "",
+  "counters":         {}
+}
+```
+
+20 fields — **deliberately narrowed** from upstream's 1626-LOC
+`CardView` per [ADR 0007 D7a](../decisions/0007-game-stream-protocol.md#d7a).
+Adding a field is a deliberate decision tracked here. Slice 5 may add
+transform/flip second-face data, ability lists, and split-card halves
+once the renderer needs them.
+
+| Field | Type | Note |
+|---|---|---|
+| `id` | string | Card UUID |
+| `name` / `displayName` | string | Display differs for face-down, transformed, morph |
+| `expansionSetCode` / `cardNumber` | string | Scryfall art lookup keys |
+| `manaCost` | string | Rendered (e.g. `"{2}{R}{R}"`) |
+| `manaValue` | int | Converted mana cost |
+| `typeLine` | string | Rendered type line (supertype — type — subtype) |
+| `supertypes` / `types` / `subtypes` | string[] | Upstream enum names + subtype display strings |
+| `colors` | string[] | WUBRG single-letter codes |
+| `rarity` | string | Upstream `Rarity` enum name |
+| `power` / `toughness` / `startingLoyalty` | string | Strings allow `*` / `X` |
+| `rules` | string[] | Rules-text paragraphs |
+| `faceDown` | bool | Morph / face-down |
+| `tokenSetCode` | string | Token art set; empty for non-tokens |
+| `counters` | object | `{ "+1/+1": 3 }` — flattened by counter name |
+
+#### `WebPermanentView` (nested in `WebPlayerView.battlefield`)
+
+```json
+{
+  "card":              { ... WebCardView ... },
+  "controllerName":    "alice",
+  "tapped":            false,
+  "flipped":           false,
+  "transformed":       false,
+  "phasedIn":          true,
+  "summoningSickness": false,
+  "damage":            0,
+  "attachments":       [],
+  "attachedTo":        ""
+}
+```
+
+Composes a `WebCardView` (Java records can't extend) plus
+battlefield-only state. Combat state (`attacking`, `blocking`) and
+combat groups are deferred to slice 5.
+
+### Updated DTOs
+
+#### `WebPlayerView` — `battlefieldCount` → `battlefield`
+
+```diff
+-  "battlefieldCount": 0,
++  "battlefield":      { "<uuid>": <WebPermanentView>, ... },
+```
+
+`battlefield` is keyed by permanent UUID and preserves upstream's
+`LinkedHashMap` insertion order. Other zone fields (`graveyardCount`,
+`exileCount`, `sideboardCount`) remain counts; slice 5 promotes them
+to card-detail maps.
+
+#### `WebGameView` — adds `myPlayerId` + `myHand`
+
+```diff
++  "myPlayerId":     "550e8400-...",
++  "myHand":         { "<uuid>": <WebCardView>, ... },
+   "players":        [ ... ]
+```
+
+`myPlayerId` identifies which player this snapshot was rendered for
+(empty for spectator views — slice 7+). `myHand` contains the
+controlling player's hand only; opponents' hands stay as `handCount`
+on each `WebPlayerView`. Stack, exile, revealed/looked-at zones, and
+combat groups stay deferred to slice 5.
+
+### Known limitations (slice 5)
+
+- **Stack rendering** — `WebGameView.stack` still absent; spells and
+  abilities on the stack are not visible to the client.
+- **Graveyard / exile / sideboard maps** — still counts, not
+  card-detail maps.
+- **Combat groups** — `WebCombatGroupView` deferred; webclient cannot
+  render attackers + blockers yet.
+- **`gameInform` / `gameOver` / `endGameInfo` outbound** — upstream
+  callbacks for these still drop in slice 4.
+- **Transform / flip second face** — `WebCardView` exposes the front
+  face only.
+
+---
+
 ## 1.7 — 2026-04-26 — Game lifecycle frames + reconnect (Phase 3 slice 3)
 
 Adds the game lifecycle outbound mappings and the reconnect-via-`?since=`
