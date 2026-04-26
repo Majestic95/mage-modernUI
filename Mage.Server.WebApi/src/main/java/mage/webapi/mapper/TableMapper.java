@@ -42,7 +42,7 @@ public final class TableMapper {
                 emptyIfNull(v.getDeckType()),
                 v.getTableState() == null ? "" : v.getTableState().name(),
                 isoOrEmpty(v.getCreateTime()),
-                emptyIfNull(v.getControllerName()),
+                cleanControllerName(v.getControllerName()),
                 v.getSkillLevel() == null ? "" : v.getSkillLevel().name(),
                 v.isTournament(),
                 v.isPassworded(),
@@ -52,6 +52,24 @@ public final class TableMapper {
                 v.getSeats() == null ? List.of()
                         : v.getSeats().stream().map(TableMapper::seat).toList()
         );
+    }
+
+    /**
+     * Upstream's {@link TableView} constructor mutates
+     * {@code controllerName} to {@code "<controller>, <opp1>, <opp2>"}
+     * for the Swing client's table-list rendering (see TableView.java
+     * L86-100). The webclient gets seat names separately via the
+     * {@code seats} array, so we strip the suffix and expose just the
+     * controller's username — that's what client code needs to compare
+     * against {@code session.username} when deciding whether to show
+     * a Start button.
+     */
+    static String cleanControllerName(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "";
+        }
+        int comma = raw.indexOf(", ");
+        return comma >= 0 ? raw.substring(0, comma) : raw;
     }
 
     private static WebSeat seat(SeatView s) {
