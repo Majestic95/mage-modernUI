@@ -129,11 +129,15 @@ describe('Game page', () => {
     vi.unstubAllGlobals();
   });
 
-  it('renders waiting state when no gameView is present', () => {
+  it('renders waiting state when no gameView is present', async () => {
     render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
-    // Two "Connecting" matches exist (header dot label + centered
-    // status); the centered message ends with the ellipsis char.
-    expect(screen.getByText(/Connecting…/)).toBeInTheDocument();
+    // open() is deferred via setTimeout(0) (StrictMode fix), so the
+    // connection state transitions from 'idle' → 'connecting' on
+    // the next tick. waitFor handles the async transition.
+    const { waitFor } = await import('@testing-library/react');
+    await waitFor(() => {
+      expect(screen.getByText(/Connecting…/)).toBeInTheDocument();
+    });
   });
 
   it('renders both player areas when a gameView is set', () => {

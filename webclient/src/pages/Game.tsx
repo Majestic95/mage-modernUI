@@ -49,8 +49,28 @@ export function Game({ gameId, onLeave }: Props) {
 
   useEffect(() => {
     if (!stream) return;
-    stream.open();
+    // React 19 StrictMode dev runs effects setup → cleanup → setup
+    // in quick succession. A naive synchronous open() fires a real
+    // WebSocket connect on the first mount. The connect triggers
+    // upstream's joinGame on the server, the cleanup immediately
+    // closes the socket (EofException + 1006), and upstream is left
+    // in a half-joined state until its 10-second recovery timer
+    // fires "Forced join" — by which time the AI has played its
+    // turn assuming the user is unresponsive, leaving the user
+    // staring at someone else's Turn 1.
+    //
+    // Defer open() with setTimeout(0) so the StrictMode cleanup
+    // cancels the timer before the network call ever happens. Only
+    // the second mount actually opens the socket, and the server
+    // sees exactly one joinGame.
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      if (cancelled) return;
+      stream.open();
+    }, 0);
     return () => {
+      cancelled = true;
+      clearTimeout(timer);
       stream.close();
       reset();
     };
