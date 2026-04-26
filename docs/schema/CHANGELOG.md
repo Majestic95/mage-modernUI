@@ -19,6 +19,63 @@ minor mismatches.
 
 ---
 
+## 1.2 — 2026-04-25 — Add `/api/cards` lookup endpoints (Phase 2 slice 4)
+
+Additive change: two new endpoints, two new DTOs. Existing endpoints
+unchanged in shape.
+
+### New endpoints
+
+- `GET /api/cards?name=<name>` → `WebCardListing` with 0 or 1 cards
+- `GET /api/cards/printings?name=<name>&limit=<N>` → `WebCardListing` with
+  up to `N` printings (default `50`, hard cap `200`).
+
+Both endpoints return `400 Bad Request` if the `name` query parameter is
+missing. `limit` is clamped to `[1, 200]`; non-integer values return 400.
+
+### New DTOs
+
+#### `WebCardListing` (top-level — carries `schemaVersion`)
+
+```json
+{
+  "schemaVersion": "1.2",
+  "cards":         [ <WebCardInfo>, ... ],
+  "truncated":     false
+}
+```
+
+`truncated` is `true` if and only if the result set hit the `limit`
+parameter on `/api/cards/printings`. For `/api/cards` it is always
+`false` (single-card endpoint).
+
+#### `WebCardInfo` (nested — no `schemaVersion`)
+
+```json
+{
+  "name":            "Lightning Bolt",
+  "setCode":         "LEA",
+  "cardNumber":      "161",
+  "manaValue":       1,
+  "manaCosts":       ["{R}"],
+  "rarity":          "COMMON",
+  "types":           ["INSTANT"],
+  "subtypes":        [],
+  "supertypes":      [],
+  "colors":          ["R"],
+  "power":           "",
+  "toughness":       "",
+  "startingLoyalty": "",
+  "rules":           ["Lightning Bolt deals 3 damage to any target."]
+}
+```
+
+`colors` uses single-letter codes (subset of `W`, `U`, `B`, `R`, `G`).
+`rarity`, `types`, `supertypes` are upstream enum names (e.g. `COMMON`,
+`INSTANT`, `LEGENDARY`).
+
+---
+
 ## 1.1 — 2026-04-25 — Add `/api/server/state` (Phase 2 slice 3)
 
 Additive change: new endpoint and new DTO records. Existing endpoints
