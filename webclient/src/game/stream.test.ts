@@ -276,4 +276,182 @@ describe('GameStream', () => {
     expect(sendSpy).not.toHaveBeenCalled();
     expect(warnSpy).toHaveBeenCalled();
   });
+
+  /* ---------- slice 9: auto-reconnect ---------- */
+
+  /**
+   * Test scheduler that records pending timers and lets us fire them
+   * synchronously. Vitest fake timers would also work, but the
+   * injected scheduler keeps the test isolated from any global timer
+   * state and matches the production injection contract.
+   */
+  function makeFakeScheduler() {
+    const queued: { cb: () => void; ms: number; cancelled: boolean }[] = [];
+    return {
+      queued,
+      scheduler: {
+        set: (cb: () => void, ms: number) => {
+          const entry = { cb, ms, cancelled: false };
+          queued.push(entry);
+          return entry;
+        },
+        clear: (handle: unknown) => {
+          (handle as { cancelled: boolean }).cancelled = true;
+        },
+      },
+      fireNext: () => {
+        const next = queued.find((q) => !q.cancelled);
+        if (!next) throw new Error('No pending timer to fire');
+        next.cancelled = true;
+        next.cb();
+      },
+    };
+  }
+
+  it('auto-reconnects on unexpected close with backoff', () => {
+    const sched = makeFakeScheduler();
+    const stream = new GameStream({
+      gameId: FAKE_GAME_ID,
+      token: 'tok-1',
+      webSocketCtor: FakeWebSocket as unknown as typeof WebSocket,
+      scheduler: sched.scheduler,
+    });
+    stream.open();
+    FakeWebSocket.instances[0]!._open();
+    expect(useGameStore.getState().connection).toBe('open');
+
+    // Server-side close (not caller-initiated, not auth code).
+    FakeWebSocket.instances[0]!._close(1006, 'connection lost');
+    expect(useGameStore.getState().connection).toBe('closed');
+    expect(sched.queued).toHaveLength(1);
+    expect(sched.queued[0]!.ms).toBe(500);
+
+    sched.fireNext();
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    expect(useGameStore.getState().connection).toBe('connecting');
+  });
+
+  it('reconnect URL carries ?since=<lastMessageId> on game endpoint', () => {
+    const sched = makeFakeScheduler();
+    const stream = new GameStream({
+      gameId: FAKE_GAME_ID,
+      token: 'tok-1',
+      webSocketCtor: FakeWebSocket as unknown as typeof WebSocket,
+      scheduler: sched.scheduler,
+    });
+    stream.open();
+    const first = FakeWebSocket.instances[0]!;
+    first._open();
+    // Simulate a few frames so lastMessageId advances. We send a
+    // streamHello (messageId 0) and a synthetic gameUpdate at id 7.
+    first._message(
+      JSON.stringify({
+        schemaVersion: '1.12',
+        method: 'gameUpdate',
+        messageId: 7,
+        objectId: FAKE_GAME_ID,
+        data: { /* gameUpdate validation may fail; ok — store still bumps id */ },
+      }),
+    );
+    expect(useGameStore.getState().lastMessageId).toBe(7);
+
+    first._close(1011, 'server crash');
+    sched.fireNext();
+    expect(FakeWebSocket.lastUrl).toContain('since=7');
+  });
+
+  it('does not retry on 4001 auth-failure close', () => {
+    const sched = makeFakeScheduler();
+    const stream = new GameStream({
+      gameId: FAKE_GAME_ID,
+      token: 'tok-1',
+      webSocketCtor: FakeWebSocket as unknown as typeof WebSocket,
+      scheduler: sched.scheduler,
+    });
+    stream.open();
+    FakeWebSocket.instances[0]!._open();
+    FakeWebSocket.instances[0]!._close(4001, 'INVALID_TOKEN');
+
+    expect(sched.queued).toHaveLength(0);
+    expect(useGameStore.getState().connection).toBe('error');
+    expect(FakeWebSocket.instances).toHaveLength(1);
+  });
+
+  it('caller-initiated close cancels pending reconnect', () => {
+    const sched = makeFakeScheduler();
+    const stream = new GameStream({
+      gameId: FAKE_GAME_ID,
+      token: 'tok-1',
+      webSocketCtor: FakeWebSocket as unknown as typeof WebSocket,
+      scheduler: sched.scheduler,
+    });
+    stream.open();
+    FakeWebSocket.instances[0]!._open();
+    FakeWebSocket.instances[0]!._close(1006, 'lost');
+    expect(sched.queued).toHaveLength(1);
+
+    stream.close();
+    // Pending timer cancelled — firing it would no-op via the cancel
+    // flag, but we also expect attemptCount to reset; the safer
+    // assertion is that no new socket is created after caller close.
+    expect(sched.queued[0]!.cancelled).toBe(true);
+  });
+
+  it('autoReconnect=false suppresses reconnect attempts', () => {
+    const sched = makeFakeScheduler();
+    const stream = new GameStream({
+      gameId: FAKE_GAME_ID,
+      token: 'tok-1',
+      autoReconnect: false,
+      webSocketCtor: FakeWebSocket as unknown as typeof WebSocket,
+      scheduler: sched.scheduler,
+    });
+    stream.open();
+    FakeWebSocket.instances[0]!._open();
+    FakeWebSocket.instances[0]!._close(1006, 'lost');
+    expect(sched.queued).toHaveLength(0);
+  });
+
+  it('successful reopen resets attempt counter (next failure starts at 500ms)', () => {
+    const sched = makeFakeScheduler();
+    const stream = new GameStream({
+      gameId: FAKE_GAME_ID,
+      token: 'tok-1',
+      webSocketCtor: FakeWebSocket as unknown as typeof WebSocket,
+      scheduler: sched.scheduler,
+    });
+    stream.open();
+    FakeWebSocket.instances[0]!._open();
+    FakeWebSocket.instances[0]!._close(1006, 'lost');
+    expect(sched.queued[0]!.ms).toBe(500);
+
+    sched.fireNext();
+    FakeWebSocket.instances[1]!._open();
+    expect(useGameStore.getState().connection).toBe('open');
+
+    FakeWebSocket.instances[1]!._close(1006, 'lost again');
+    // Counter reset on successful open — next backoff starts at 500ms.
+    expect(sched.queued[1]!.ms).toBe(500);
+  });
+
+  it('gives up after 4 attempts', () => {
+    const sched = makeFakeScheduler();
+    const stream = new GameStream({
+      gameId: FAKE_GAME_ID,
+      token: 'tok-1',
+      webSocketCtor: FakeWebSocket as unknown as typeof WebSocket,
+      scheduler: sched.scheduler,
+    });
+    stream.open();
+    // Loop 4 retries: each one fires immediately on close, never
+    // reaches _open(), so the attempt counter keeps climbing.
+    for (let i = 0; i < 4; i += 1) {
+      FakeWebSocket.instances[i]!._close(1006, 'fail');
+      sched.fireNext();
+    }
+    // 5th close: 4 retries already used, no further timer scheduled.
+    FakeWebSocket.instances[4]!._close(1006, 'final');
+    const activePending = sched.queued.filter((q) => !q.cancelled);
+    expect(activePending).toHaveLength(0);
+  });
 });

@@ -10,6 +10,38 @@ import { Login } from './pages/Login';
 type Tab = 'lobby' | 'decks' | 'cards';
 
 /**
+ * localStorage key for persisting the user's active game across page
+ * reloads. The Swing client achieves the same outcome via
+ * {@code User.reconnect()} pushing GAME_INIT back to the existing
+ * session; the webclient remembers the gameId locally and re-opens
+ * the WebSocket on next boot — the server's {@code joinGame}
+ * idempotently re-initializes the session. Cleared on explicit
+ * Leave or auth signout.
+ */
+const ACTIVE_GAME_STORAGE_KEY = 'xmage.activeGameId';
+
+function readStoredGameId(): string | null {
+  try {
+    return window.localStorage.getItem(ACTIVE_GAME_STORAGE_KEY);
+  } catch {
+    // localStorage may throw in private-browsing or denied contexts.
+    return null;
+  }
+}
+
+function persistGameId(id: string | null): void {
+  try {
+    if (id) {
+      window.localStorage.setItem(ACTIVE_GAME_STORAGE_KEY, id);
+    } else {
+      window.localStorage.removeItem(ACTIVE_GAME_STORAGE_KEY);
+    }
+  } catch {
+    // Ignore — at worst, a reload won't auto-resume.
+  }
+}
+
+/**
  * Auth-gated tab shell.
  *
  * <p>Slice 4.1 had two screens; we used a tab switcher. Slice 5 adds
@@ -24,11 +56,29 @@ export function App() {
   const logout = useAuthStore((s) => s.logout);
   const verify = useAuthStore((s) => s.verify);
   const [tab, setTab] = useState<Tab>('lobby');
-  const [activeGameId, setActiveGameId] = useState<string | null>(null);
+  const [activeGameId, setActiveGameIdState] = useState<string | null>(
+    () => readStoredGameId(),
+  );
+
+  // Wrap setter so every transition writes localStorage.
+  const setActiveGameId = (id: string | null) => {
+    persistGameId(id);
+    setActiveGameIdState(id);
+  };
 
   useEffect(() => {
     void verify();
   }, [verify]);
+
+  // Drop any persisted gameId when the session goes away (logout or
+  // server-side token expiry) so the next login doesn't auto-jump
+  // into a stale game window. Pure side effect — no setState — so
+  // it's safe inside an effect.
+  useEffect(() => {
+    if (!session) {
+      persistGameId(null);
+    }
+  }, [session]);
 
   if (!session) {
     return <Login />;

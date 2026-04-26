@@ -6,10 +6,12 @@
  * {@link useGameStore}, and surfaces connection lifecycle + protocol
  * errors as store state for the React tree to consume.
  *
- * <p>Slice A scope: connect / disconnect, envelope validation, frame
- * dispatch, basic reconnect attempt on close (1 retry). Slice B will
- * add per-method data validation, {@code ?since=} reconnect, and
- * outbound {@code chatSend} / {@code playerAction} senders.
+ * <p>Auto-reconnect: on unexpected close (close code other than the
+ * caller-initiated 1000 and the permanent-failure codes 4001/4003),
+ * the stream retries with exponential backoff (500/1000/2000/4000ms,
+ * 4 attempts max). On the game endpoint the resume URL carries
+ * {@code ?since=<lastMessageId>}; the server replays buffered frames
+ * past that point. Caller-initiated close cancels any pending retry.
  */
 import {
   webAbilityPickerViewSchema,
@@ -91,23 +93,60 @@ export interface GameStreamOptions {
    * carries the roomId in that case (overloaded for symmetry).
    */
   endpoint?: StreamEndpoint;
+  /**
+   * Disable auto-reconnect. Defaults to {@code true} (reconnect on
+   * unexpected close). Tests that drive lifecycle manually pass
+   * {@code false} to keep close events terminal.
+   */
+  autoReconnect?: boolean;
   /** Test-only WebSocket constructor injection. Defaults to global. */
   webSocketCtor?: typeof WebSocket;
+  /**
+   * Test-only timer hook. Defaults to {@link setTimeout} /
+   * {@link clearTimeout} on globalThis. Tests can advance Vitest fake
+   * timers without monkey-patching globals.
+   */
+  scheduler?: {
+    set: (cb: () => void, ms: number) => unknown;
+    clear: (handle: unknown) => void;
+  };
 }
+
+const RECONNECT_BACKOFF_MS = [500, 1000, 2000, 4000] as const;
+
+/**
+ * Close codes that are permanent failures — retrying won't help and
+ * usually re-attempts will hit the same wall (auth still bad,
+ * gameId still malformed). Surface the close to the user instead.
+ *
+ * <p>{@code 4001} — auth failed at upgrade (token missing, unknown,
+ * or expired). {@code 4003} — request well-formed but rejected
+ * (gameId malformed, room chat not registered).
+ */
+const NO_RETRY_CLOSE_CODES = new Set<number>([4001, 4003]);
 
 export class GameStream {
   private socket: WebSocket | null = null;
   private readonly gameId: string;
   private readonly token: string;
   private readonly endpoint: StreamEndpoint;
+  private readonly autoReconnect: boolean;
   private readonly Ctor: typeof WebSocket;
+  private readonly scheduler: NonNullable<GameStreamOptions['scheduler']>;
   private closedByCaller = false;
+  private reconnectAttempt = 0;
+  private reconnectTimer: unknown = null;
 
   constructor(options: GameStreamOptions) {
     this.gameId = options.gameId;
     this.token = options.token;
     this.endpoint = options.endpoint ?? 'game';
+    this.autoReconnect = options.autoReconnect ?? true;
     this.Ctor = options.webSocketCtor ?? WebSocket;
+    this.scheduler = options.scheduler ?? {
+      set: (cb, ms) => setTimeout(cb, ms),
+      clear: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+    };
   }
 
   open(): void {
@@ -116,9 +155,19 @@ export class GameStream {
     }
     const wsBase = toWsBase(httpBase);
     const path = this.endpoint === 'room' ? 'rooms' : 'games';
+    // Resume from the last seen messageId on the game endpoint —
+    // server replays buffered frames past that point so dialogs and
+    // late updates aren't lost across the disconnect window. The
+    // room endpoint has no replay buffer, so the param is harmless
+    // there but skipped to avoid noise in server logs.
+    const since =
+      this.endpoint === 'game' && this.reconnectAttempt > 0
+        ? useGameStore.getState().lastMessageId
+        : 0;
+    const sinceQuery = since > 0 ? `&since=${since}` : '';
     const url =
       `${wsBase}/api/${path}/${encodeURIComponent(this.gameId)}/stream` +
-      `?token=${encodeURIComponent(this.token)}`;
+      `?token=${encodeURIComponent(this.token)}${sinceQuery}`;
 
     useGameStore.getState().setConnection('connecting');
     let socket: WebSocket;
@@ -127,11 +176,13 @@ export class GameStream {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'WebSocket open failed';
       useGameStore.getState().setConnection('error', message);
+      this.maybeScheduleReconnect();
       return;
     }
     this.socket = socket;
 
     socket.addEventListener('open', () => {
+      this.reconnectAttempt = 0;
       useGameStore.getState().setConnection('open');
     });
 
@@ -148,12 +199,56 @@ export class GameStream {
       useGameStore
         .getState()
         .setConnection('closed', ev.reason || `code ${ev.code}`);
+      if (this.closedByCaller) {
+        return;
+      }
+      if (NO_RETRY_CLOSE_CODES.has(ev.code)) {
+        // Permanent failure — surface as connection error so the UI
+        // shows a clear message rather than 'closed' (which looks
+        // like a normal hangup).
+        useGameStore
+          .getState()
+          .setConnection('error', ev.reason || `auth failed (${ev.code})`);
+        return;
+      }
+      this.maybeScheduleReconnect();
     });
   }
 
   close(code = 1000, reason = 'client navigation'): void {
     this.closedByCaller = true;
+    this.cancelReconnect();
     this.socket?.close(code, reason);
+  }
+
+  /**
+   * Schedule the next reconnect attempt with exponential backoff.
+   * No-op once the attempt cap is hit — the user must reload (or a
+   * future "Reconnect" button trigger another open()) to retry past
+   * that point. Auto-reconnect can be globally disabled via the
+   * constructor option.
+   */
+  private maybeScheduleReconnect(): void {
+    if (!this.autoReconnect || this.closedByCaller) {
+      return;
+    }
+    if (this.reconnectAttempt >= RECONNECT_BACKOFF_MS.length) {
+      return;
+    }
+    const delay = RECONNECT_BACKOFF_MS[this.reconnectAttempt]!;
+    this.reconnectAttempt += 1;
+    this.reconnectTimer = this.scheduler.set(() => {
+      this.reconnectTimer = null;
+      this.open();
+    }, delay);
+  }
+
+  private cancelReconnect(): void {
+    if (this.reconnectTimer != null) {
+      this.scheduler.clear(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    this.reconnectAttempt = 0;
   }
 
   /** True when the underlying socket is connected and accepting sends. */

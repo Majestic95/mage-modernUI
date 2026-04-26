@@ -40,6 +40,8 @@ public final class WebApiMain {
         int port = readPort();
         List<String> corsOrigins = readCorsOrigins();
 
+        UpstreamVersionCheck.runAtBoot();
+
         LOG.info("Booting embedded Mage server (config: {})", configPath);
         EmbeddedServer embedded = EmbeddedServer.boot(configPath);
 
