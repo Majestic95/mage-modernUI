@@ -156,6 +156,9 @@ export class GameStream {
     if (this.socket) {
       return;
     }
+    // Reset the caller-close flag — open() is the explicit "I want a
+    // live connection" signal, even after a previous close().
+    this.closedByCaller = false;
     const wsBase = toWsBase(httpBase);
     const path = this.endpoint === 'room' ? 'rooms' : 'games';
     // Resume from the last seen messageId on the game endpoint —
@@ -184,20 +187,31 @@ export class GameStream {
     }
     this.socket = socket;
 
+    // All event listeners guard on `this.socket === socket`. React 19
+    // StrictMode dev runs effects setup → cleanup → setup, so a
+    // freshly-opened stream may have its socket replaced before the
+    // OS-level close of the prior socket actually fires its async
+    // close event. Without the guard, that stale event would clobber
+    // the new socket's connection state and leave the user staring
+    // at "Connection closed."
     socket.addEventListener('open', () => {
+      if (this.socket !== socket) return;
       this.reconnectAttempt = 0;
       useGameStore.getState().setConnection('open');
     });
 
     socket.addEventListener('message', (ev: MessageEvent) => {
+      if (this.socket !== socket) return;
       this.handleMessage(typeof ev.data === 'string' ? ev.data : '');
     });
 
     socket.addEventListener('error', () => {
+      if (this.socket !== socket) return;
       useGameStore.getState().setConnection('error', 'WebSocket error');
     });
 
     socket.addEventListener('close', (ev: CloseEvent) => {
+      if (this.socket !== socket) return;
       this.socket = null;
       useGameStore
         .getState()
@@ -221,7 +235,20 @@ export class GameStream {
   close(code = 1000, reason = 'client navigation'): void {
     this.closedByCaller = true;
     this.cancelReconnect();
-    this.socket?.close(code, reason);
+    // Null out our reference *before* requesting the OS close. A
+    // subsequent open() in the same tick (StrictMode double-mount)
+    // can then proceed without short-circuiting on `this.socket`.
+    // The old socket's deferred close listener is silenced via the
+    // `this.socket !== socket` guard installed above; we transition
+    // user-facing connection state synchronously here so the UI
+    // reflects the close immediately rather than waiting on the
+    // (now-silent) async event.
+    const oldSocket = this.socket;
+    this.socket = null;
+    if (oldSocket) {
+      useGameStore.getState().setConnection('closed', reason);
+    }
+    oldSocket?.close(code, reason);
   }
 
   /**

@@ -434,6 +434,55 @@ describe('GameStream', () => {
     expect(sched.queued[1]!.ms).toBe(500);
   });
 
+  /**
+   * React 19 StrictMode dev runs effects setup → cleanup → setup in
+   * quick succession. The Game component uses a ref to one
+   * GameStream instance per (session, gameId), so close() and
+   * open() can fire on the same instance back-to-back without the
+   * stream actually unmounting. The OS-level close on the first
+   * socket fires async — without listener guards, that stale event
+   * would clobber the connection state of the freshly-opened
+   * second socket and leave the user staring at "Connection closed."
+   */
+  it('StrictMode-style close+open keeps the new connection live (no stale close)', () => {
+    const sched = makeFakeScheduler();
+    const stream = new GameStream({
+      gameId: FAKE_GAME_ID,
+      token: 'tok-1',
+      webSocketCtor: FakeWebSocket as unknown as typeof WebSocket,
+      scheduler: sched.scheduler,
+    });
+
+    stream.open();
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    const first = FakeWebSocket.instances[0]!;
+
+    // StrictMode-cleanup: close() before the first socket's open
+    // event has fired. close() requests a deferred close on the
+    // socket, but our caller-close path immediately transitions
+    // connection state synchronously.
+    stream.close();
+    expect(useGameStore.getState().connection).toBe('closed');
+
+    // StrictMode-setup #2: open() again. New socket spawned.
+    stream.open();
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    const second = FakeWebSocket.instances[1]!;
+    expect(useGameStore.getState().connection).toBe('connecting');
+
+    // The first socket's deferred close finally fires asynchronously
+    // (FakeWebSocket.close calls _close immediately, but we'll
+    // simulate the post-cleanup ordering by firing it now after the
+    // second open). The stale-listener guard must silence this.
+    first._close(1000, 'late');
+    expect(useGameStore.getState().connection).toBe('connecting');
+
+    // Second socket connects successfully → connection goes 'open'
+    // and stays there.
+    second._open();
+    expect(useGameStore.getState().connection).toBe('open');
+  });
+
   it('gives up after 4 attempts', () => {
     const sched = makeFakeScheduler();
     const stream = new GameStream({
