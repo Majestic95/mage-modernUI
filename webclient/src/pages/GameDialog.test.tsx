@@ -262,10 +262,117 @@ describe('GameDialog', () => {
     });
     render(<GameDialog stream={stream} />);
 
-    expect(screen.getByTestId('target-list-players')).toBeInTheDocument();
+    expect(screen.getByTestId('target-list-resolved')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /alice/ }));
     expect(stream.sendPlayerResponse).toHaveBeenCalledWith(4, 'uuid', aliceId);
     expect(useGameStore.getState().pendingDialog).toBeNull();
+  });
+
+  it('gameTarget: with hand-card UUIDs in targets[] resolves names from gameView.myHand (end-of-turn discard)', async () => {
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    const aliceId = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+    const card1 = {
+      id: 'cccccccc-cccc-cccc-cccc-cccccccccccc',
+      name: 'Forest',
+      displayName: 'Forest',
+      expansionSetCode: 'M21',
+      cardNumber: '281',
+      manaCost: '',
+      manaValue: 0,
+      typeLine: 'Basic Land — Forest',
+      supertypes: ['BASIC'],
+      types: ['LAND'],
+      subtypes: ['Forest'],
+      colors: [],
+      rarity: 'COMMON',
+      power: '',
+      toughness: '',
+      startingLoyalty: '',
+      rules: [],
+      faceDown: false,
+      counters: {},
+      transformable: false,
+      transformed: false,
+      secondCardFace: null,
+    };
+    const gameView = {
+      turn: 5,
+      phase: 'ENDING',
+      step: 'CLEANUP',
+      activePlayerName: 'alice',
+      priorityPlayerName: 'alice',
+      special: false,
+      rollbackTurnsAllowed: false,
+      totalErrorsCount: 0,
+      totalEffectsCount: 0,
+      gameCycle: 0,
+      myPlayerId: aliceId,
+      myHand: { [card1.id]: card1 },
+      stack: {},
+      combat: [],
+      players: [
+        {
+          playerId: aliceId,
+          name: 'alice',
+          life: 20, wins: 0, winsNeeded: 1, libraryCount: 53, handCount: 8,
+          graveyard: {}, exile: {}, sideboard: {}, battlefield: {},
+          manaPool: { red: 0, green: 0, blue: 0, white: 0, black: 0, colorless: 0 },
+          controlled: true, isHuman: true, isActive: true, hasPriority: true,
+          hasLeft: false, monarch: false, initiative: false,
+          designationNames: [],
+          commandList: [],
+        },
+      ],
+    };
+    act(() => {
+      useGameStore.setState({
+        pendingDialog: {
+          method: 'gameTarget',
+          messageId: 19,
+          data: webGameClientMessageSchema.parse({
+            gameView,
+            message: 'Discard a card',
+            targets: [card1.id],
+            cardsView1: {},
+            min: 0,
+            max: 0,
+            flag: true,
+            choice: null,
+          }),
+        },
+      });
+    });
+    render(<GameDialog stream={stream} />);
+
+    expect(screen.getByTestId('target-list-resolved')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Forest/ }));
+    expect(stream.sendPlayerResponse).toHaveBeenCalledWith(19, 'uuid', card1.id);
+    expect(useGameStore.getState().pendingDialog).toBeNull();
+  });
+
+  it('gameTarget: unresolvable id falls back to short-id stub (always clickable)', async () => {
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    const orphanId = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
+    act(() => {
+      useGameStore.setState({
+        pendingDialog: {
+          method: 'gameTarget',
+          messageId: 20,
+          data: emptyDialog({
+            message: 'Pick something',
+            targets: [orphanId],
+            flag: true,
+          }),
+        },
+      });
+    });
+    render(<GameDialog stream={stream} />);
+
+    expect(screen.getByTestId('target-list-resolved')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /ffffffff/ }));
+    expect(stream.sendPlayerResponse).toHaveBeenCalledWith(20, 'uuid', orphanId);
   });
 
   it('gameTarget: optional target shows Skip and sends empty UUID', async () => {

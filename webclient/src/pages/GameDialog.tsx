@@ -1,11 +1,62 @@
 import { useState } from 'react';
 import type { GameStream } from '../game/stream';
+import type { WebGameView } from '../api/schemas';
 import {
   useGameStore,
   type PendingDialog,
   type PendingDialogAbilityPicker,
   type PendingDialogClientMessage,
 } from '../game/store';
+
+interface ResolvedTarget {
+  id: string;
+  label: string;
+  subtitle: string;
+}
+
+/**
+ * Resolve a target UUID to a friendly display tuple by walking every
+ * place in the game view where the engine might be referencing.
+ * Falls back to a short-id stub so the modal always has *something*
+ * clickable — better to render an opaque ID than to strand the user
+ * with an empty modal and a required pick (e.g. end-of-turn discard).
+ */
+function resolveTarget(id: string, gv: WebGameView | null): ResolvedTarget {
+  if (gv) {
+    const player = gv.players.find((p) => p.playerId === id);
+    if (player) {
+      return { id, label: 'Player', subtitle: player.name || '<unknown>' };
+    }
+    const inMyHand = gv.myHand[id];
+    if (inMyHand) {
+      return { id, label: inMyHand.name, subtitle: inMyHand.typeLine };
+    }
+    for (const p of gv.players) {
+      const onBattlefield = p.battlefield[id];
+      if (onBattlefield) {
+        return {
+          id,
+          label: onBattlefield.card.name,
+          subtitle: onBattlefield.card.typeLine,
+        };
+      }
+      const graveCard = p.graveyard[id];
+      if (graveCard) {
+        return { id, label: graveCard.name, subtitle: 'graveyard' };
+      }
+      const exileCard = p.exile[id];
+      if (exileCard) {
+        return { id, label: exileCard.name, subtitle: 'exile' };
+      }
+      const sideboardCard = p.sideboard[id];
+      if (sideboardCard) {
+        return { id, label: sideboardCard.name, subtitle: 'sideboard' };
+      }
+    }
+  }
+  // Last-ditch: short-id stub. Better than an empty modal.
+  return { id, label: 'Target', subtitle: id.slice(0, 8) };
+}
 
 interface Props {
   stream: GameStream | null;
@@ -128,18 +179,22 @@ function YesNoDialog({ dialog, stream, clearDialog }: ContentProps) {
 
 function TargetDialog({ dialog, stream, clearDialog }: ContentProps) {
   const cards = Object.values(dialog.data.cardsView1);
-  // gameTarget can ask for non-card targets too (players at game
-  // start, "select a starting player"). When cardsView1 is empty
-  // but targets[] has entries, the IDs are player UUIDs — resolve
-  // them against the gameView's player list for friendly names.
+  // gameTarget can ask for non-card targets and for cards from
+  // sources cardsView1 doesn't include (end-of-turn discard, where
+  // the eligible IDs are in targets[] but the actual card detail
+  // lives on gameView.myHand). Walk targets[] and resolve each ID
+  // against every place we might find display text:
+  //   - players[] → "Player <name>"
+  //   - myHand    → the WebCardView (card name + typeLine)
+  //   - players[].battlefield permanents → permanent's card view
+  //   - players[].graveyard / exile / sideboard → those WebCardViews
+  // Anything still unresolved renders as a short-id-stamped row so
+  // the user can at least click it and move on.
   const targetIds = dialog.data.targets;
-  const players = dialog.data.gameView?.players ?? [];
-  const playerTargets = targetIds
-    .map((id) => {
-      const p = players.find((pl) => pl.playerId === id);
-      return p ? { id, name: p.name || '<unknown>' } : null;
-    })
-    .filter((x): x is { id: string; name: string } => x !== null);
+  const gv = dialog.data.gameView;
+  const resolvedTargets = cards.length > 0
+    ? []
+    : targetIds.map((id) => resolveTarget(id, gv));
 
   const submit = (id: string) => {
     stream?.sendPlayerResponse(dialog.messageId, 'uuid', id);
@@ -165,23 +220,28 @@ function TargetDialog({ dialog, stream, clearDialog }: ContentProps) {
           ))}
         </ul>
       )}
-      {cards.length === 0 && playerTargets.length > 0 && (
-        <ul className="space-y-1" data-testid="target-list-players">
-          {playerTargets.map((p) => (
-            <li key={p.id}>
+      {cards.length === 0 && resolvedTargets.length > 0 && (
+        <ul className="space-y-1 max-h-64 overflow-y-auto" data-testid="target-list-resolved">
+          {resolvedTargets.map((t) => (
+            <li key={t.id}>
               <button
                 type="button"
-                onClick={() => submit(p.id)}
+                onClick={() => submit(t.id)}
                 className="w-full text-left px-3 py-2 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-100 text-sm"
               >
-                <span className="font-medium">Player</span>{' '}
-                <span className="text-zinc-300">{p.name}</span>
+                <span className="font-medium">{t.label}</span>
+                {t.subtitle && (
+                  <>
+                    {' '}
+                    <span className="text-zinc-500 text-xs">{t.subtitle}</span>
+                  </>
+                )}
               </button>
             </li>
           ))}
         </ul>
       )}
-      {cards.length === 0 && playerTargets.length === 0 && (
+      {cards.length === 0 && resolvedTargets.length === 0 && (
         <p className="text-zinc-500 italic text-sm">
           No legal targets — pick from the battlefield directly.
         </p>
