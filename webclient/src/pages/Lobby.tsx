@@ -34,12 +34,12 @@ export function Lobby() {
   }, []);
 
   const [joinTarget, setJoinTarget] = useState<WebTable | null>(null);
-  const [leaveError, setLeaveError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const onLeave = useCallback(
     async (table: WebTable) => {
       if (!session || !room) return;
-      setLeaveError(null);
+      setActionError(null);
       try {
         await request(
           `/api/rooms/${room.roomId}/tables/${table.tableId}/seat`,
@@ -48,7 +48,25 @@ export function Lobby() {
         );
         requestImmediateRefresh();
       } catch (err) {
-        setLeaveError(err instanceof ApiError ? err.message : 'Leave failed.');
+        setActionError(err instanceof ApiError ? err.message : 'Leave failed.');
+      }
+    },
+    [session, room, requestImmediateRefresh],
+  );
+
+  const onStart = useCallback(
+    async (table: WebTable) => {
+      if (!session || !room) return;
+      setActionError(null);
+      try {
+        await request(
+          `/api/rooms/${room.roomId}/tables/${table.tableId}/start`,
+          null,
+          { token: session.token, method: 'POST' },
+        );
+        requestImmediateRefresh();
+      } catch (err) {
+        setActionError(err instanceof ApiError ? err.message : 'Start failed.');
       }
     },
     [session, room, requestImmediateRefresh],
@@ -178,9 +196,9 @@ export function Lobby() {
           {error}
         </p>
       )}
-      {leaveError && (
+      {actionError && (
         <p role="alert" className="text-sm text-red-400">
-          {leaveError}
+          {actionError}
         </p>
       )}
 
@@ -200,6 +218,8 @@ export function Lobby() {
             );
             const canJoin = !seated && t.tableState === 'WAITING' && hasOpenHumanSeat;
             const canLeave = seated && t.tableState === 'WAITING';
+            const canStart =
+              t.controllerName === username && t.tableState === 'READY_TO_START';
             return (
               <li key={t.tableId} className="p-3 flex items-center justify-between gap-4">
                 <div className="space-y-1 min-w-0">
@@ -233,6 +253,15 @@ export function Lobby() {
                       className="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-sm font-medium rounded px-3 py-1.5"
                     >
                       Leave
+                    </button>
+                  )}
+                  {canStart && (
+                    <button
+                      type="button"
+                      onClick={() => void onStart(t)}
+                      className="bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium rounded px-3 py-1.5"
+                    >
+                      Start
                     </button>
                   )}
                 </div>
