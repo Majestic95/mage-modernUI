@@ -5,13 +5,19 @@ import java.util.Map;
 
 /**
  * Top-level game-state snapshot. Carried as the {@code data} payload of
- * {@code gameInit} / {@code gameUpdate} frames.
+ * {@code gameInit} / {@code gameUpdate} frames, and embedded inside
+ * {@link WebGameClientMessage} for {@code gameInform} / {@code gameOver}.
  *
- * <p>Slice 3 shipped scalar state + per-player summaries; slice 4 adds
- * the {@code myPlayerId} + {@code myHand} fields so the controlling
- * player's hand renders, plus battlefield rendering via the new map
- * on {@link WebPlayerView}. Stack, exile, revealed/looked-at zones,
- * and combat groups stay deferred to slice 5.
+ * <p>Slice 5 lands the {@code stack} and {@code combat} fields, the
+ * last of the visible-state additions. Stack entries reuse
+ * {@link WebCardView} because upstream's stack mixes spells (CardView)
+ * and stack abilities (StackAbilityView extends CardView) — the rules
+ * text is captured in either case via {@code WebCardView.rules}.
+ *
+ * <p>Still deferred: shared exile zones (top-level), revealed /
+ * looked-at zones, transform / flip second-face data. Slice 6 covers
+ * the dialog family which doesn't add to the snapshot itself but
+ * wraps it via {@link WebGameClientMessage}.
  *
  * @param turn                 current turn number
  * @param phase                upstream {@code TurnPhase} enum name
@@ -38,6 +44,11 @@ import java.util.Map;
  * @param myHand               cards in the controlling player's hand,
  *     keyed by card UUID. Empty for spectators (and for opponents'
  *     hands in any view).
+ * @param stack                spells and abilities currently on the
+ *     stack, keyed by stack-object UUID. Top of stack has the highest
+ *     position in upstream-iteration order.
+ * @param combat               attacker → defender groups for the
+ *     current combat phase; empty outside combat
  * @param players              all players in the game, in seat order
  */
 public record WebGameView(
@@ -53,6 +64,8 @@ public record WebGameView(
         int gameCycle,
         String myPlayerId,
         Map<String, WebCardView> myHand,
+        Map<String, WebCardView> stack,
+        List<WebCombatGroupView> combat,
         List<WebPlayerView> players
 ) {
 }

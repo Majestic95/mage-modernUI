@@ -27,7 +27,7 @@ describe('parseSchemaVersion', () => {
 describe('webErrorSchema', () => {
   it('parses a complete error envelope', () => {
     const parsed = webErrorSchema.parse({
-      schemaVersion: '1.8',
+      schemaVersion: '1.9',
       code: 'INVALID_CREDENTIALS',
       message: 'Login failed.',
     });
@@ -41,7 +41,7 @@ describe('webErrorSchema', () => {
 describe('webVersionSchema', () => {
   it('parses /api/version response', () => {
     const parsed = webVersionSchema.parse({
-      schemaVersion: '1.8',
+      schemaVersion: '1.9',
       mageVersion: '1.4.58-V1',
       buildTime: '2026-04-25 22:39',
     });
@@ -52,7 +52,7 @@ describe('webVersionSchema', () => {
 describe('webHealthSchema', () => {
   it('parses /api/health response', () => {
     const parsed = webHealthSchema.parse({
-      schemaVersion: '1.8',
+      schemaVersion: '1.9',
       status: 'ready',
     });
     expect(parsed.status).toBe('ready');
@@ -62,7 +62,7 @@ describe('webHealthSchema', () => {
 describe('webSessionSchema', () => {
   it('parses an anonymous session', () => {
     const parsed = webSessionSchema.parse({
-      schemaVersion: '1.8',
+      schemaVersion: '1.9',
       token: 'aaaa',
       username: 'guest-deadbeef',
       isAnonymous: true,
@@ -76,7 +76,7 @@ describe('webSessionSchema', () => {
 describe('webServerStateSchema', () => {
   it('parses a fully populated state', () => {
     const parsed = webServerStateSchema.parse({
-      schemaVersion: '1.8',
+      schemaVersion: '1.9',
       gameTypes: [
         {
           name: 'Two Player Duel',
@@ -102,7 +102,7 @@ describe('webServerStateSchema', () => {
 describe('webCardListingSchema', () => {
   it('parses a single-card listing', () => {
     const parsed = webCardListingSchema.parse({
-      schemaVersion: '1.8',
+      schemaVersion: '1.9',
       cards: [
         {
           name: 'Lightning Bolt',
@@ -127,7 +127,7 @@ describe('webCardListingSchema', () => {
   });
   it('parses an empty listing', () => {
     const parsed = webCardListingSchema.parse({
-      schemaVersion: '1.8',
+      schemaVersion: '1.9',
       cards: [],
       truncated: false,
     });
@@ -138,7 +138,7 @@ describe('webCardListingSchema', () => {
 describe('webRoomRefSchema', () => {
   it('parses /api/server/main-room response', () => {
     const parsed = webRoomRefSchema.parse({
-      schemaVersion: '1.8',
+      schemaVersion: '1.9',
       roomId: '550e8400-e29b-41d4-a716-446655440000',
       chatId: '660e8400-e29b-41d4-a716-446655440000',
     });
@@ -149,7 +149,7 @@ describe('webRoomRefSchema', () => {
 describe('webTableListingSchema', () => {
   it('parses a listing with one fully-shaped table', () => {
     const parsed = webTableListingSchema.parse({
-      schemaVersion: '1.8',
+      schemaVersion: '1.9',
       tables: [
         {
           tableId: '770e8400-e29b-41d4-a716-446655440000',

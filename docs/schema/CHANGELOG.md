@@ -19,6 +19,127 @@ minor mismatches.
 
 ---
 
+## 1.9 — 2026-04-26 — Stack, combat, zone maps, game-end frames (Phase 3 slice 5)
+
+Slice 5 finishes the visible-state contract — every zone the game
+window renders is now on the wire. After this bump the webclient has
+everything it needs to render any game position; slice 6 ships the
+input side (dialog frames + WebPlayerAction / WebPlayerResponse).
+Existing payloads keep their shape; their reported `schemaVersion`
+value bumps to `"1.9"`.
+
+### New outbound methods
+
+| `method` | `data` shape | When |
+|---|---|---|
+| `gameInform` | `WebGameClientMessage` | Upstream `GAME_UPDATE_AND_INFORM` — state change with feedback text |
+| `gameOver` | `WebGameClientMessage` | Upstream `GAME_OVER` — single game in the match has ended |
+| `endGameInfo` | `WebGameEndView` | Upstream `END_GAME_INFO` — match-end summary screen |
+
+### New DTOs
+
+#### `WebCombatGroupView` (nested in `WebGameView.combat`)
+
+```json
+{
+  "defenderId":   "550e8400-...",
+  "defenderName": "alice",
+  "attackers":    { "<uuid>": <WebPermanentView>, ... },
+  "blockers":     { "<uuid>": <WebPermanentView>, ... },
+  "blocked":      false
+}
+```
+
+The defender is either a player or a planeswalker permanent; upstream
+already resolves the display name in either case.
+
+#### `WebGameClientMessage` (nested under `data` for `gameInform` / `gameOver`)
+
+```json
+{
+  "gameView": { ... full WebGameView ... },
+  "message":  "Lightning Bolt resolves: alice takes 3 damage."
+}
+```
+
+Slice 5 ships the minimal subset. Slice 6 will extend with dialog
+fields (`targets`, `min`/`max`, `cardsView1`, `flag`) once the
+`gameAsk` / `gameTarget` / `gameSelectAmount` outbound mappings land.
+
+#### `WebGameEndView` (nested under `data` for `endGameInfo`)
+
+```json
+{
+  "gameInfo":       "You won the game on turn 7.",
+  "matchInfo":      "You won the match!",
+  "additionalInfo": "",
+  "won":            true,
+  "wins":           1,
+  "winsNeeded":     1,
+  "players":        [ <WebPlayerView>, ... ]
+}
+```
+
+### Updated DTOs
+
+#### `WebGameView` — adds `stack` + `combat`
+
+```diff
+   "myPlayerId":     "550e8400-...",
+   "myHand":         { ... },
++  "stack":          { "<uuid>": <WebCardView>, ... },
++  "combat":         [ <WebCombatGroupView>, ... ],
+   "players":        [ ... ]
+```
+
+`stack` is keyed by stack-object UUID. Both spells and stack abilities
+serialize as `WebCardView` because upstream's `StackAbilityView`
+extends `CardView` and the rules text is captured via
+`WebCardView.rules`. Slice 6+ may add a richer `WebStackAbilityView`
+if the renderer needs the source-card pointer.
+
+`combat` is empty outside the combat phase.
+
+#### `WebPlayerView` — `graveyardCount` / `exileCount` / `sideboardCount` → maps
+
+```diff
+-  "graveyardCount":   0,
+-  "exileCount":       0,
+-  "sideboardCount":   0,
++  "graveyard":        { "<uuid>": <WebCardView>, ... },
++  "exile":            { "<uuid>": <WebCardView>, ... },
++  "sideboard":        { "<uuid>": <WebCardView>, ... },
+```
+
+Insertion order matches upstream's `LinkedHashMap` traversal — top of
+the graveyard pile (most recently put there) is the last entry.
+`sideboard` is only populated for the controlled player or AI players
+(opponents see an empty map).
+
+`libraryCount` / `handCount` remain counts because card content is
+private (the controlling player's hand is on `WebGameView.myHand`;
+library content remains hidden).
+
+### Known limitations (slice 6+)
+
+- **Dialog family** (`gameAsk` / `gameTarget` / `gameSelect` /
+  `gameChooseAbility` / `gameChoosePile` / `gameChooseChoice` /
+  `gamePlayMana` / `gamePlayXMana` / `gameSelectAmount` /
+  `gameSelectMultiAmount`) — slice 6 ships these alongside
+  `WebPlayerAction` / `WebPlayerResponse` inbound envelopes.
+- **Shared exile zones** (`GameView.exiles` top-level) — defer until
+  the renderer needs them; per-player exile via `WebPlayerView.exile`
+  covers the common case.
+- **Revealed / looked-at / companion zones** — same.
+- **Transform / flip second face** on `WebCardView` — defer.
+- **`WebStackAbilityView`** with source-card pointer — defer.
+
+After slice 6 lands the dialog family + inbound dispatch, a 1v1-vs-AI
+duel is fully playable end-to-end through the WebSocket — the Phase 3
+exit gate.
+
+---
+
 ## 1.8 — 2026-04-26 — Battlefield + hand rendering (Phase 3 slice 4)
 
 Slice 4 lands the card-detail mappers — the wire format finally

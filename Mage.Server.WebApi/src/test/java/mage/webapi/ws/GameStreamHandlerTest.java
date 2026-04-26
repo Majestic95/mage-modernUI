@@ -489,6 +489,12 @@ class GameStreamHandlerTest {
                 assertEquals("LAND", anyCard.get("types").get(0).asText());
             }
 
+            // Slice 5 additions on the GameView envelope.
+            assertTrue(initData.get("stack").isObject(),
+                    "stack must be an object map keyed by stack-object UUID");
+            assertTrue(initData.get("combat").isArray(),
+                    "combat must be an array of WebCombatGroupView entries");
+
             JsonNode firstPlayer = initData.get("players").get(0);
             assertTrue(firstPlayer.get("life").asInt() > 0,
                     "starting life must be positive");
@@ -496,6 +502,14 @@ class GameStreamHandlerTest {
             // count). Empty before any land is played.
             assertTrue(firstPlayer.get("battlefield").isObject(),
                     "battlefield must be an object map keyed by permanent UUID");
+            // Slice 5 promoted graveyard / exile / sideboard from
+            // counts to maps. They start empty at gameInit.
+            assertTrue(firstPlayer.get("graveyard").isObject(),
+                    "graveyard must be an object map keyed by card UUID");
+            assertTrue(firstPlayer.get("exile").isObject(),
+                    "exile must be an object map keyed by card UUID");
+            assertTrue(firstPlayer.get("sideboard").isObject(),
+                    "sideboard must be an object map keyed by card UUID");
             assertTrue(firstPlayer.get("libraryCount").asInt() > 0,
                     "library must have cards after the opening hand draw");
         } finally {

@@ -6,25 +6,33 @@ import java.util.Map;
 /**
  * Per-player state inside a {@link WebGameView}.
  *
- * <p>Slice 3 carried zone counts only. Slice 4 promotes
- * {@code battlefield} from a count to a full
- * {@code Map<UUID, WebPermanentView>} — the battlefield is what the
- * game window actually renders. Graveyard, exile, and sideboard remain
- * counts; slice 5 promotes them to card-detail maps.
+ * <p>Slice 4 promoted {@code battlefield} from a count to a full
+ * {@code Map<UUID, WebPermanentView>}. Slice 5 promotes the remaining
+ * three zone counts ({@code graveyard}, {@code exile},
+ * {@code sideboard}) to card-detail maps. {@code library} and
+ * {@code hand} retain their counts because card content is private to
+ * the controlling player (the controlling player's hand lives on
+ * {@link WebGameView#myHand}; library content remains hidden).
  *
  * @param playerId        upstream player UUID
  * @param name            display name
  * @param life            current life total
  * @param wins            wins in the current match
  * @param winsNeeded      target win count for this match
- * @param libraryCount    cards remaining in library
+ * @param libraryCount    cards remaining in library (private —
+ *     content not exposed)
  * @param handCount       cards in hand (face-down — opponents see only
  *     the count; the controlling player gets card detail via
  *     {@link WebGameView#myHand})
- * @param graveyardCount  cards in graveyard
- * @param exileCount      cards exiled by this player
- * @param sideboardCount  cards in sideboard (only populated for
- *     {@code controlled = true} or AI players upstream-side)
+ * @param graveyard       cards in graveyard, keyed by card UUID.
+ *     Insertion order matches upstream's {@code LinkedHashMap}
+ *     traversal — top of the graveyard pile (most recently put there)
+ *     is the last entry.
+ * @param exile           cards in this player's exile, keyed by card
+ *     UUID
+ * @param sideboard       cards in sideboard, keyed by card UUID. Only
+ *     populated for the {@code controlled} player or AI players —
+ *     opponents see an empty map.
  * @param battlefield     permanents this player controls, keyed by
  *     UUID. Insertion order matches upstream's {@code LinkedHashMap}
  *     traversal so the webclient gets a stable layout.
@@ -48,9 +56,9 @@ public record WebPlayerView(
         int winsNeeded,
         int libraryCount,
         int handCount,
-        int graveyardCount,
-        int exileCount,
-        int sideboardCount,
+        Map<String, WebCardView> graveyard,
+        Map<String, WebCardView> exile,
+        Map<String, WebCardView> sideboard,
         Map<String, WebPermanentView> battlefield,
         WebManaPoolView manaPool,
         boolean controlled,

@@ -1,9 +1,15 @@
 package mage.webapi.mapper;
 
+import mage.view.CombatGroupView;
+import mage.view.GameClientMessage;
+import mage.view.GameEndView;
 import mage.view.GameView;
 import mage.view.ManaPoolView;
 import mage.view.PlayerView;
 import mage.view.TableClientMessage;
+import mage.webapi.dto.stream.WebCombatGroupView;
+import mage.webapi.dto.stream.WebGameClientMessage;
+import mage.webapi.dto.stream.WebGameEndView;
 import mage.webapi.dto.stream.WebGameView;
 import mage.webapi.dto.stream.WebManaPoolView;
 import mage.webapi.dto.stream.WebPlayerView;
@@ -16,19 +22,21 @@ import java.util.List;
  * Maps upstream game-state views to wire DTOs.
  *
  * <ul>
- *   <li>{@link GameView} → {@link WebGameView} — top-level scalars +
- *       per-player summaries + the controlling player's hand (slice 4
- *       added {@code myPlayerId} + {@code myHand}).</li>
+ *   <li>{@link GameView} → {@link WebGameView} — top-level scalars,
+ *       per-player summaries, controlling-player hand (slice 4),
+ *       stack + combat (slice 5).</li>
  *   <li>{@link PlayerView} → {@link WebPlayerView} — life / counts /
- *       mana pool / state flags + battlefield map (slice 4).</li>
+ *       mana pool / state flags + battlefield (slice 4) + graveyard
+ *       / exile / sideboard maps (slice 5).</li>
  *   <li>{@link ManaPoolView} → {@link WebManaPoolView} — six color
  *       buckets.</li>
  *   <li>{@link TableClientMessage} → {@link WebStartGameInfo} — the
  *       slim subset populated by {@code ccGameStarted}.</li>
+ *   <li>{@link GameClientMessage} → {@link WebGameClientMessage} —
+ *       wrapper for {@code gameInform} / {@code gameOver} (slice 5).</li>
+ *   <li>{@link GameEndView} → {@link WebGameEndView} — match-end
+ *       summary for {@code endGameInfo} (slice 5).</li>
  * </ul>
- *
- * <p>Stack, exile, revealed/looked-at, combat groups, and full
- * graveyard/exile/sideboard card maps stay deferred to slice 5+.
  *
  * <p>Pure record-to-record translation. Defensive on null fields so
  * an in-flight engine state with partial data can still serialize.
@@ -49,6 +57,17 @@ public final class GameViewMapper {
         PlayerView me = gv.getMyPlayer();
         String myPlayerId = (me == null || me.getPlayerId() == null)
                 ? "" : me.getPlayerId().toString();
+
+        List<WebCombatGroupView> combat;
+        if (gv.getCombat() == null || gv.getCombat().isEmpty()) {
+            combat = List.of();
+        } else {
+            combat = new ArrayList<>(gv.getCombat().size());
+            for (CombatGroupView cg : gv.getCombat()) {
+                if (cg != null) combat.add(CombatGroupMapper.toDto(cg));
+            }
+        }
+
         return new WebGameView(
                 gv.getTurn(),
                 gv.getPhase() == null ? "" : gv.getPhase().name(),
@@ -62,6 +81,8 @@ public final class GameViewMapper {
                 gv.getGameCycle(),
                 myPlayerId,
                 CardViewMapper.toCardMap(gv.getMyHand()),
+                CardViewMapper.toCardMap(gv.getStack()),
+                combat,
                 players
         );
     }
@@ -78,9 +99,9 @@ public final class GameViewMapper {
                 pv.getWinsNeeded(),
                 pv.getLibraryCount(),
                 pv.getHandCount(),
-                pv.getGraveyard() == null ? 0 : pv.getGraveyard().size(),
-                pv.getExile() == null ? 0 : pv.getExile().size(),
-                pv.getSideboard() == null ? 0 : pv.getSideboard().size(),
+                CardViewMapper.toCardMap(pv.getGraveyard()),
+                CardViewMapper.toCardMap(pv.getExile()),
+                CardViewMapper.toCardMap(pv.getSideboard()),
                 CardViewMapper.toPermanentMap(pv.getBattlefield()),
                 toManaPoolDto(pv.getManaPool()),
                 pv.getControlled(),
@@ -118,6 +139,41 @@ public final class GameViewMapper {
                 tcm.getCurrentTableId() == null ? "" : tcm.getCurrentTableId().toString(),
                 tcm.getGameId() == null ? "" : tcm.getGameId().toString(),
                 tcm.getPlayerId() == null ? "" : tcm.getPlayerId().toString()
+        );
+    }
+
+    public static WebGameClientMessage toClientMessage(GameClientMessage gcm) {
+        if (gcm == null) {
+            throw new IllegalArgumentException("GameClientMessage must not be null");
+        }
+        WebGameView wrapped = gcm.getGameView() == null ? null : toDto(gcm.getGameView());
+        return new WebGameClientMessage(
+                wrapped,
+                nullToEmpty(gcm.getMessage())
+        );
+    }
+
+    public static WebGameEndView toGameEndDto(GameEndView gev) {
+        if (gev == null) {
+            throw new IllegalArgumentException("GameEndView must not be null");
+        }
+        List<WebPlayerView> players;
+        if (gev.getPlayers() == null || gev.getPlayers().isEmpty()) {
+            players = List.of();
+        } else {
+            players = new ArrayList<>(gev.getPlayers().size());
+            for (PlayerView pv : gev.getPlayers()) {
+                if (pv != null) players.add(toPlayerDto(pv));
+            }
+        }
+        return new WebGameEndView(
+                nullToEmpty(gev.getGameInfo()),
+                nullToEmpty(gev.getMatchInfo()),
+                nullToEmpty(gev.getAdditionalInfo()),
+                gev.hasWon(),
+                gev.getWins(),
+                gev.getWinsNeeded(),
+                players
         );
     }
 

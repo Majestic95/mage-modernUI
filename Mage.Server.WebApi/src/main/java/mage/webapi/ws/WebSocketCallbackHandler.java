@@ -4,6 +4,8 @@ import io.javalin.websocket.WsContext;
 import mage.interfaces.callback.ClientCallback;
 import mage.interfaces.callback.ClientCallbackMethod;
 import mage.view.ChatMessage;
+import mage.view.GameClientMessage;
+import mage.view.GameEndView;
 import mage.view.GameView;
 import mage.view.TableClientMessage;
 import mage.webapi.SchemaVersion;
@@ -186,6 +188,9 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
             case CHATMESSAGE -> mapChat(cc);
             case GAME_INIT -> mapGameView(cc, "gameInit");
             case GAME_UPDATE -> mapGameView(cc, "gameUpdate");
+            case GAME_UPDATE_AND_INFORM -> mapClientMessage(cc, "gameInform");
+            case GAME_OVER -> mapClientMessage(cc, "gameOver");
+            case END_GAME_INFO -> mapEndGame(cc);
             case START_GAME -> mapStartGame(cc);
             default -> null;
         };
@@ -237,6 +242,39 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
                 cc.getMessageId(),
                 cc.getObjectId() == null ? null : cc.getObjectId().toString(),
                 GameViewMapper.toStartGameInfo(upstream)
+        );
+    }
+
+    private WebStreamFrame mapClientMessage(ClientCallback cc, String wireMethod) {
+        Object data = cc.getData();
+        if (!(data instanceof GameClientMessage upstream)) {
+            LOG.warn("{} callback with unexpected data type: {}",
+                    cc.getMethod(),
+                    data == null ? "null" : data.getClass().getName());
+            return null;
+        }
+        return new WebStreamFrame(
+                SchemaVersion.CURRENT,
+                wireMethod,
+                cc.getMessageId(),
+                cc.getObjectId() == null ? null : cc.getObjectId().toString(),
+                GameViewMapper.toClientMessage(upstream)
+        );
+    }
+
+    private WebStreamFrame mapEndGame(ClientCallback cc) {
+        Object data = cc.getData();
+        if (!(data instanceof GameEndView upstream)) {
+            LOG.warn("END_GAME_INFO callback with unexpected data type: {}",
+                    data == null ? "null" : data.getClass().getName());
+            return null;
+        }
+        return new WebStreamFrame(
+                SchemaVersion.CURRENT,
+                "endGameInfo",
+                cc.getMessageId(),
+                cc.getObjectId() == null ? null : cc.getObjectId().toString(),
+                GameViewMapper.toGameEndDto(upstream)
         );
     }
 

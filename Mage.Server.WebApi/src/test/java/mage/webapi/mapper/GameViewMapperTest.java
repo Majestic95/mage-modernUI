@@ -3,10 +3,15 @@ package mage.webapi.mapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import mage.view.TableClientMessage;
+import mage.webapi.dto.stream.WebCombatGroupView;
+import mage.webapi.dto.stream.WebGameClientMessage;
+import mage.webapi.dto.stream.WebGameEndView;
 import mage.webapi.dto.stream.WebManaPoolView;
 import mage.webapi.dto.stream.WebStartGameInfo;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -95,5 +100,55 @@ class GameViewMapperTest {
                 () -> GameViewMapper.toPlayerDto(null));
         assertThrows(IllegalArgumentException.class,
                 () -> GameViewMapper.toStartGameInfo(null));
+        assertThrows(IllegalArgumentException.class,
+                () -> GameViewMapper.toClientMessage(null));
+        assertThrows(IllegalArgumentException.class,
+                () -> GameViewMapper.toGameEndDto(null));
+    }
+
+    @Test
+    void combatGroupView_jsonShape_locksFiveFields() throws Exception {
+        WebCombatGroupView dto = new WebCombatGroupView(
+                "11111111-1111-1111-1111-111111111111",
+                "alice",
+                Map.of(),
+                Map.of(),
+                false);
+        JsonNode node = JSON.valueToTree(dto);
+        assertEquals(5, node.size(),
+                "WebCombatGroupView must have exactly 5 fields; got: " + node);
+        for (String f : List.of("defenderId", "defenderName",
+                "attackers", "blockers", "blocked")) {
+            assertTrue(node.has(f), "missing field: " + f);
+        }
+    }
+
+    @Test
+    void gameClientMessage_jsonShape_locksTwoFields() throws Exception {
+        WebGameClientMessage dto = new WebGameClientMessage(null, "ggwp");
+        JsonNode node = JSON.valueToTree(dto);
+        assertEquals(2, node.size(),
+                "WebGameClientMessage must have exactly 2 fields (slice 5 minimal); got: " + node);
+        assertTrue(node.has("gameView"));
+        assertTrue(node.has("message"));
+    }
+
+    @Test
+    void gameEndView_jsonShape_locksSevenFields() throws Exception {
+        WebGameEndView dto = new WebGameEndView(
+                "You won the game on turn 7.",
+                "You won the match!",
+                "",
+                true,
+                1,
+                1,
+                List.of());
+        JsonNode node = JSON.valueToTree(dto);
+        assertEquals(7, node.size(),
+                "WebGameEndView must have exactly 7 fields; got: " + node);
+        for (String f : List.of("gameInfo", "matchInfo", "additionalInfo",
+                "won", "wins", "winsNeeded", "players")) {
+            assertTrue(node.has(f), "missing field: " + f);
+        }
     }
 }
