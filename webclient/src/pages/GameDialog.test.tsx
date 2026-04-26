@@ -134,6 +134,77 @@ describe('GameDialog', () => {
     expect(useGameStore.getState().pendingDialog).toBeNull();
   });
 
+  it('gameTarget: with player UUIDs in targets[] renders player picker (start-of-match)', async () => {
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    const aliceId = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+    const bobId = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+    const gameView = {
+      turn: 1,
+      phase: '',
+      step: '',
+      activePlayerName: '',
+      priorityPlayerName: '',
+      special: false,
+      rollbackTurnsAllowed: false,
+      totalErrorsCount: 0,
+      totalEffectsCount: 0,
+      gameCycle: 0,
+      myPlayerId: aliceId,
+      myHand: {},
+      stack: {},
+      combat: [],
+      players: [
+        {
+          playerId: aliceId,
+          name: 'alice',
+          life: 20, wins: 0, winsNeeded: 1, libraryCount: 60, handCount: 0,
+          graveyard: {}, exile: {}, sideboard: {}, battlefield: {},
+          manaPool: { red: 0, green: 0, blue: 0, white: 0, black: 0, colorless: 0 },
+          controlled: true, isHuman: true, isActive: false, hasPriority: false,
+          hasLeft: false, monarch: false, initiative: false,
+          designationNames: [],
+          commandList: [],
+        },
+        {
+          playerId: bobId,
+          name: 'COMPUTER_MAD',
+          life: 20, wins: 0, winsNeeded: 1, libraryCount: 60, handCount: 0,
+          graveyard: {}, exile: {}, sideboard: {}, battlefield: {},
+          manaPool: { red: 0, green: 0, blue: 0, white: 0, black: 0, colorless: 0 },
+          controlled: false, isHuman: false, isActive: false, hasPriority: false,
+          hasLeft: false, monarch: false, initiative: false,
+          designationNames: [],
+          commandList: [],
+        },
+      ],
+    };
+    act(() => {
+      useGameStore.setState({
+        pendingDialog: {
+          method: 'gameTarget',
+          messageId: 4,
+          data: webGameClientMessageSchema.parse({
+            gameView,
+            message: 'Select a starting player',
+            targets: [aliceId, bobId],
+            cardsView1: {},
+            min: 0,
+            max: 0,
+            flag: true,
+            choice: null,
+          }),
+        },
+      });
+    });
+    render(<GameDialog stream={stream} />);
+
+    expect(screen.getByTestId('target-list-players')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /alice/ }));
+    expect(stream.sendPlayerResponse).toHaveBeenCalledWith(4, 'uuid', aliceId);
+    expect(useGameStore.getState().pendingDialog).toBeNull();
+  });
+
   it('gameTarget: optional target shows Skip and sends empty UUID', async () => {
     const stream = fakeStream();
     const user = userEvent.setup();

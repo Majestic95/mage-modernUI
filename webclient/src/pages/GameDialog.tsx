@@ -116,6 +116,19 @@ function YesNoDialog({ dialog, stream, clearDialog }: ContentProps) {
 
 function TargetDialog({ dialog, stream, clearDialog }: ContentProps) {
   const cards = Object.values(dialog.data.cardsView1);
+  // gameTarget can ask for non-card targets too (players at game
+  // start, "select a starting player"). When cardsView1 is empty
+  // but targets[] has entries, the IDs are player UUIDs — resolve
+  // them against the gameView's player list for friendly names.
+  const targetIds = dialog.data.targets;
+  const players = dialog.data.gameView?.players ?? [];
+  const playerTargets = targetIds
+    .map((id) => {
+      const p = players.find((pl) => pl.playerId === id);
+      return p ? { id, name: p.name || '<unknown>' } : null;
+    })
+    .filter((x): x is { id: string; name: string } => x !== null);
+
   const submit = (id: string) => {
     stream?.sendPlayerResponse(dialog.messageId, 'uuid', id);
     clearDialog();
@@ -124,11 +137,7 @@ function TargetDialog({ dialog, stream, clearDialog }: ContentProps) {
     <>
       <Header title="Choose target" />
       <Message text={dialog.data.message} />
-      {cards.length === 0 ? (
-        <p className="text-zinc-500 italic text-sm">
-          No legal targets — pick from the battlefield directly.
-        </p>
-      ) : (
+      {cards.length > 0 && (
         <ul className="space-y-1 max-h-64 overflow-y-auto" data-testid="target-list">
           {cards.map((c) => (
             <li key={c.id}>
@@ -143,6 +152,27 @@ function TargetDialog({ dialog, stream, clearDialog }: ContentProps) {
             </li>
           ))}
         </ul>
+      )}
+      {cards.length === 0 && playerTargets.length > 0 && (
+        <ul className="space-y-1" data-testid="target-list-players">
+          {playerTargets.map((p) => (
+            <li key={p.id}>
+              <button
+                type="button"
+                onClick={() => submit(p.id)}
+                className="w-full text-left px-3 py-2 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-100 text-sm"
+              >
+                <span className="font-medium">Player</span>{' '}
+                <span className="text-zinc-300">{p.name}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {cards.length === 0 && playerTargets.length === 0 && (
+        <p className="text-zinc-500 italic text-sm">
+          No legal targets — pick from the battlefield directly.
+        </p>
       )}
       {!dialog.data.flag && (
         <Buttons>
