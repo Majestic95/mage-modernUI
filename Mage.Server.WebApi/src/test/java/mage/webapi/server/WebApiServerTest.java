@@ -427,6 +427,50 @@ class WebApiServerTest {
     }
 
     @Test
+    void cors_defaultOriginsParseAndAcceptPreflight() throws Exception {
+        // Regression: Javalin's CORS plugin requires every origin to
+        // have an explicit port number. Any default that violates this
+        // crashes EVERY request with `IllegalArgumentException: explicit
+        // port is required`. Boot a separate server with CORS enabled
+        // and assert a real preflight from localhost:5173 succeeds.
+        EmbeddedServer embedded = EmbeddedServer.boot(CONFIG_PATH);
+        WebApiServer corsServer = new WebApiServer(embedded)
+                .allowCorsOrigins(WebApiServer.DEFAULT_CORS_ORIGINS)
+                .start(0);
+        try {
+            HttpResponse<String> preflight = HTTP.send(
+                    HttpRequest.newBuilder()
+                            .uri(URI.create("http://localhost:" + corsServer.port() + "/api/session"))
+                            .header("Origin", "http://localhost:5173")
+                            .header("Access-Control-Request-Method", "POST")
+                            .header("Access-Control-Request-Headers", "Content-Type")
+                            .timeout(Duration.ofSeconds(5))
+                            .method("OPTIONS", HttpRequest.BodyPublishers.noBody())
+                            .build(),
+                    HttpResponse.BodyHandlers.ofString());
+            // Javalin's CORS plugin may use 200 or 204; either is fine
+            // as long as it's not the 500 we'd see on a malformed origin.
+            assertTrue(preflight.statusCode() < 400,
+                    "CORS preflight must succeed (got " + preflight.statusCode()
+                            + "): " + preflight.body());
+            // Real request with Origin must not crash.
+            HttpResponse<String> real = HTTP.send(
+                    HttpRequest.newBuilder()
+                            .uri(URI.create("http://localhost:" + corsServer.port() + "/api/session"))
+                            .header("Origin", "http://localhost:5173")
+                            .header("Content-Type", "application/json")
+                            .timeout(Duration.ofSeconds(5))
+                            .POST(HttpRequest.BodyPublishers.ofString("{}"))
+                            .build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertEquals(200, real.statusCode(),
+                    "anon login with Origin header must succeed: " + real.body());
+        } finally {
+            corsServer.stop();
+        }
+    }
+
+    @Test
     void doubleStart_throws() {
         WebApiServer second = new WebApiServer(EmbeddedServer.boot(CONFIG_PATH));
         try {

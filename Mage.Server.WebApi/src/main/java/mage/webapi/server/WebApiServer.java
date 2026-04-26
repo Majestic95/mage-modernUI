@@ -46,10 +46,21 @@ public final class WebApiServer {
     static final int PRINTINGS_LIMIT_DEFAULT = 50;
     static final int PRINTINGS_LIMIT_MAX = 200;
 
+    /**
+     * Default CORS allow-list — Vite dev + Vite preview only.
+     *
+     * <p>Tauri's webview origin (Phase 7) is intentionally NOT in this
+     * default. Javalin's CORS plugin requires every entry to have an
+     * explicit port number, and Tauri's custom-scheme URL
+     * ({@code tauri://localhost}) has none — it crashes the request
+     * with {@code IllegalArgumentException: explicit port is required}.
+     * Once Tauri is wired up, the right value (which varies by
+     * platform / Tauri major version) goes via the
+     * {@code XMAGE_CORS_ORIGINS} env var, not this list.
+     */
     public static final List<String> DEFAULT_CORS_ORIGINS = List.of(
             "http://localhost:5173",
-            "http://localhost:4173",
-            "tauri://localhost"
+            "http://localhost:4173"
     );
 
     private final EmbeddedServer embedded;
