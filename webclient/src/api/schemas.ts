@@ -158,7 +158,7 @@ export type WebTableListing = z.infer<typeof webTableListingSchema>;
 /* ---------- helpers ---------- */
 
 /**
- * Parse the {@code schemaVersion} string ("1.5") into its major + minor
+ * Parse the {@code schemaVersion} string ("1.6") into its major + minor
  * parts. Returns null on a malformed value (defensive — server only ever
  * sends well-formed versions, but a misconfigured proxy could mangle it).
  */

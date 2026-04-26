@@ -109,7 +109,7 @@ public final class WebApiServer {
         // WebSocket routes do not run through BearerAuthMiddleware —
         // browsers cannot set custom headers on the upgrade. Auth is
         // enforced inside GameStreamHandler.onConnect via ?token=.
-        app.ws("/api/games/{gameId}/stream", new GameStreamHandler(authService));
+        app.ws("/api/games/{gameId}/stream", new GameStreamHandler(authService, embedded));
 
         app.start(port);
         LOG.info("WebApi listening on port {}", app.port());

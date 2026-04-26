@@ -2,6 +2,8 @@ package mage.webapi.ws;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import mage.server.User;
+import mage.view.ChatMessage;
 import mage.webapi.SchemaVersion;
 import mage.webapi.embed.EmbeddedServer;
 import mage.webapi.server.WebApiServer;
@@ -28,12 +30,12 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Integration tests for the Phase 3 slice 1 game-stream WebSocket
- * endpoint. Boots an embedded server once, opens real WebSockets via
- * {@link java.net.http.WebSocket}, and asserts the slice 1 contract:
- * handshake auth via {@code ?token=}, the {@code streamHello} frame,
- * and the in-band {@code streamError} reply for unimplemented inbound
- * types.
+ * Integration tests for the Phase 3 game-stream WebSocket endpoint.
+ * Boots an embedded server once, opens real WebSockets via
+ * {@link java.net.http.WebSocket}, and asserts the live protocol
+ * contract: handshake auth via {@code ?token=}, the {@code streamHello}
+ * frame, the {@code chatMessage} outbound mapping, and the
+ * {@code chatSend} inbound dispatch.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class GameStreamHandlerTest {
@@ -46,11 +48,12 @@ class GameStreamHandlerTest {
     private static final Duration FRAME_WAIT = Duration.ofSeconds(5);
 
     private WebApiServer server;
+    private EmbeddedServer embedded;
     private String bearer;
 
     @BeforeAll
     void start() throws Exception {
-        EmbeddedServer embedded = EmbeddedServer.boot(CONFIG_PATH);
+        embedded = EmbeddedServer.boot(CONFIG_PATH);
         server = new WebApiServer(embedded).start(0);
 
         HttpResponse<String> r = postJson("/api/session", "{}");
@@ -83,8 +86,8 @@ class GameStreamHandlerTest {
             assertNotNull(env.get("objectId").asText(), "hello carries gameId as objectId");
             JsonNode data = env.get("data");
             assertNotNull(data);
-            assertEquals("skeleton", data.get("mode").asText(),
-                    "slice 1 announces 'skeleton' mode");
+            assertEquals("live", data.get("mode").asText(),
+                    "slice 2+ announces 'live' mode");
             assertTrue(data.get("username").asText().startsWith("guest-"),
                     "hello echoes the authenticated username");
         } finally {
@@ -100,14 +103,16 @@ class GameStreamHandlerTest {
             // Discard the streamHello frame.
             listener.awaitFrame(FRAME_WAIT);
 
-            ws.sendText("{\"type\":\"chatSend\",\"message\":\"hello\"}", true).join();
+            // 'playerAction' is reserved for slice 3+; slice 2 still
+            // soft-fails it via streamError.
+            ws.sendText("{\"type\":\"playerAction\",\"action\":\"CONCEDE\"}", true).join();
             String reply = listener.awaitFrame(FRAME_WAIT);
 
             JsonNode env = JSON.readTree(reply);
             assertEquals("streamError", env.get("method").asText());
             JsonNode data = env.get("data");
             assertEquals("NOT_IMPLEMENTED", data.get("code").asText());
-            assertTrue(data.get("message").asText().contains("chatSend"),
+            assertTrue(data.get("message").asText().contains("playerAction"),
                     "error message names the unsupported type");
         } finally {
             ws.sendClose(WebSocket.NORMAL_CLOSURE, "test done").join();
@@ -203,7 +208,164 @@ class GameStreamHandlerTest {
         }
     }
 
+    // ---------- slice 2: chat outbound + inbound ----------
+
+    @Test
+    void chatBroadcast_arrivesAsChatMessageFrame() throws Exception {
+        ChatFixture chat = subscribeFreshUser();
+        TestListener listener = new TestListener();
+        WebSocket ws = openWs(UUID.randomUUID(), chat.token, listener);
+        try {
+            listener.awaitFrame(FRAME_WAIT); // streamHello
+
+            // Direct upstream broadcast — bypasses the inbound WS path
+            // so this test isolates the outbound mapper.
+            embedded.managerFactory().chatManager().broadcast(
+                    chat.chatId,
+                    "system",
+                    "broadcast-from-test",
+                    ChatMessage.MessageColor.BLACK,
+                    true,
+                    null,
+                    ChatMessage.MessageType.USER_INFO,
+                    null);
+
+            String frame = awaitMethod(listener, "chatMessage");
+            JsonNode env = JSON.readTree(frame);
+            assertEquals(SchemaVersion.CURRENT, env.get("schemaVersion").asText());
+            assertEquals("chatMessage", env.get("method").asText());
+            assertTrue(env.get("messageId").asInt() > 0,
+                    "real callbacks carry a non-zero upstream-assigned messageId");
+            JsonNode data = env.get("data");
+            assertEquals("system", data.get("username").asText());
+            assertEquals("broadcast-from-test", data.get("message").asText());
+            assertEquals("BLACK", data.get("color").asText());
+            assertEquals("USER_INFO", data.get("messageType").asText());
+        } finally {
+            ws.sendClose(WebSocket.NORMAL_CLOSURE, "test done").join();
+        }
+    }
+
+    @Test
+    void clientChatSend_routesToUpstreamAndEchoesBack() throws Exception {
+        ChatFixture chat = subscribeFreshUser();
+        TestListener listener = new TestListener();
+        WebSocket ws = openWs(UUID.randomUUID(), chat.token, listener);
+        try {
+            listener.awaitFrame(FRAME_WAIT); // streamHello
+
+            String body = "{\"type\":\"chatSend\",\"chatId\":\""
+                    + chat.chatId + "\",\"message\":\"ggwp\"}";
+            ws.sendText(body, true).join();
+
+            // Sender is also subscribed → the upstream broadcast loops
+            // back to their own session and arrives as a chatMessage
+            // frame on the same WebSocket.
+            String frame = awaitMethod(listener, "chatMessage");
+            JsonNode env = JSON.readTree(frame);
+            JsonNode data = env.get("data");
+            assertEquals(chat.username, data.get("username").asText(),
+                    "server fills username from session — clients cannot spoof");
+            assertEquals("ggwp", data.get("message").asText());
+        } finally {
+            ws.sendClose(WebSocket.NORMAL_CLOSURE, "test done").join();
+        }
+    }
+
+    @Test
+    void clientChatSend_missingChatId_repliesWithStreamError() throws Exception {
+        TestListener listener = new TestListener();
+        WebSocket ws = openWs(UUID.randomUUID(), bearer, listener);
+        try {
+            listener.awaitFrame(FRAME_WAIT);
+            ws.sendText("{\"type\":\"chatSend\",\"message\":\"hi\"}", true).join();
+            String reply = listener.awaitFrame(FRAME_WAIT);
+            JsonNode env = JSON.readTree(reply);
+            assertEquals("streamError", env.get("method").asText());
+            assertEquals("BAD_REQUEST", env.get("data").get("code").asText());
+            assertTrue(env.get("data").get("message").asText().contains("chatId"));
+        } finally {
+            ws.sendClose(WebSocket.NORMAL_CLOSURE, "test done").join();
+        }
+    }
+
+    @Test
+    void clientChatSend_blankMessage_repliesWithStreamError() throws Exception {
+        TestListener listener = new TestListener();
+        WebSocket ws = openWs(UUID.randomUUID(), bearer, listener);
+        try {
+            listener.awaitFrame(FRAME_WAIT);
+            ws.sendText("{\"type\":\"chatSend\",\"chatId\":\""
+                    + UUID.randomUUID() + "\",\"message\":\"  \"}", true).join();
+            String reply = listener.awaitFrame(FRAME_WAIT);
+            JsonNode env = JSON.readTree(reply);
+            assertEquals("streamError", env.get("method").asText());
+            assertEquals("BAD_REQUEST", env.get("data").get("code").asText());
+        } finally {
+            ws.sendClose(WebSocket.NORMAL_CLOSURE, "test done").join();
+        }
+    }
+
+    // NOTE: there is no test for "unknown chatId" because upstream
+    // ChatManagerImpl.broadcast silently no-ops when the chatId isn't
+    // registered — no exception, nothing for the client to observe.
+    // Slice 3 will add a chat-registry pre-check so the WS handler can
+    // surface a stream-level error before the call reaches upstream.
+
     // ---------- helpers ----------
+
+    /** Holds everything a chat round-trip test needs. */
+    private record ChatFixture(String token, String username, UUID chatId) {
+    }
+
+    /**
+     * Logs in a fresh anonymous user, looks up the main-room chatId,
+     * and subscribes the user to it via upstream {@code chatJoin}.
+     * Returns the bits the test needs to drive the WebSocket layer.
+     */
+    private ChatFixture subscribeFreshUser() throws Exception {
+        HttpResponse<String> r = postJson("/api/session", "{}");
+        assertEquals(200, r.statusCode(), r.body());
+        JsonNode body = JSON.readTree(r.body());
+        String token = body.get("token").asText();
+        String username = body.get("username").asText();
+
+        HttpResponse<String> mr = HTTP.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create("http://localhost:" + server.port()
+                                + "/api/server/main-room"))
+                        .header("Authorization", "Bearer " + token)
+                        .timeout(Duration.ofSeconds(5))
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, mr.statusCode());
+        UUID chatId = UUID.fromString(JSON.readTree(mr.body()).get("chatId").asText());
+
+        User user = embedded.managerFactory().userManager()
+                .getUserByName(username)
+                .orElseThrow(() -> new AssertionError(
+                        "user not in upstream UserManager after login: " + username));
+        embedded.managerFactory().chatManager().joinChat(chatId, user.getId());
+        return new ChatFixture(token, username, chatId);
+    }
+
+    /**
+     * Pulls frames off the listener until we see one matching
+     * {@code wantedMethod}. Skips intermediate frames (streamError,
+     * other methods) which can fire concurrently in test conditions.
+     */
+    private String awaitMethod(TestListener listener, String wantedMethod) throws Exception {
+        long deadline = System.currentTimeMillis() + FRAME_WAIT.toMillis();
+        while (System.currentTimeMillis() < deadline) {
+            String f = listener.awaitFrame(FRAME_WAIT);
+            JsonNode env = JSON.readTree(f);
+            if (wantedMethod.equals(env.get("method").asText())) {
+                return f;
+            }
+        }
+        throw new AssertionError("no '" + wantedMethod + "' frame within " + FRAME_WAIT);
+    }
 
     private WebSocket openWs(UUID gameId, String token, TestListener listener) throws Exception {
         URI uri = URI.create("ws://localhost:" + server.port()

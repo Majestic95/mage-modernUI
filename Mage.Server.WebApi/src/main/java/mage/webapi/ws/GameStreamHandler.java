@@ -7,12 +7,14 @@ import io.javalin.websocket.WsConfig;
 import io.javalin.websocket.WsConnectContext;
 import io.javalin.websocket.WsContext;
 import io.javalin.websocket.WsMessageContext;
+import mage.MageException;
 import mage.webapi.SchemaVersion;
 import mage.webapi.auth.AuthService;
 import mage.webapi.auth.SessionEntry;
 import mage.webapi.dto.stream.WebStreamError;
 import mage.webapi.dto.stream.WebStreamFrame;
 import mage.webapi.dto.stream.WebStreamHello;
+import mage.webapi.embed.EmbeddedServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -25,35 +27,21 @@ import java.util.function.Consumer;
  * Implements ADR 0007 D2 (handshake auth via {@code ?token=}) and D4
  * (the {@link WebStreamFrame} envelope).
  *
- * <p>Slice 1 scope:
- * <ul>
- *   <li>{@code ?token=} resolution + sliding bump (same logic as
- *       {@code BearerAuthMiddleware}); reject with WS close 4001 on
- *       missing/expired/unknown token.</li>
- *   <li>{@code {gameId}} UUID parse; reject with 4003 on malformed UUID.
- *       Game-existence + seat verification deferred to slice 2 once
- *       game-state DTOs land.</li>
- *   <li>On connect: send a {@code streamHello} frame so clients can
- *       observe successful auth without a follow-up request.</li>
- *   <li>On message: parse the inbound tagged-union envelope; reply
- *       with a {@code streamError} frame for unknown {@code type}
- *       values or malformed JSON. Inbound dispatch (chat / player
- *       action / player response) lands in slice 2+.</li>
- *   <li>Register the per-session {@link WebSocketCallbackHandler} (so
- *       slice 2 dispatch can push frames). Slice 1's handler drops
- *       every upstream callback; the registration is harmless.</li>
- * </ul>
+ * <p>Slice 1 wired the handshake + the {@code streamHello} envelope.
+ * Slice 2 adds inbound {@code chatSend} → upstream
+ * {@code chatSendMessage} dispatch and outbound {@code chatMessage}
+ * frames (the latter via {@link WebSocketCallbackHandler#dispatch}).
  *
  * <p>Custom WebSocket close codes used:
  * <ul>
  *   <li>{@code 1000} — normal close</li>
- *   <li>{@code 1003} — unsupported data (would-be inbound dispatch
- *       reaches a path not yet implemented; currently we keep the
- *       socket open and reply with {@code streamError} instead)</li>
+ *   <li>{@code 1003} — unsupported data (reserved; in slice 2 unknown
+ *       inbound types still soft-fail with {@code streamError})</li>
  *   <li>{@code 4001} — auth failed at upgrade (token missing, unknown,
  *       or expired)</li>
  *   <li>{@code 4003} — request well-formed but rejected (gameId
- *       malformed; in slice 2 also: user not seated at this game)</li>
+ *       malformed; future slices will also reject when the user is not
+ *       seated at this game)</li>
  * </ul>
  */
 public final class GameStreamHandler implements Consumer<WsConfig> {
@@ -66,9 +54,11 @@ public final class GameStreamHandler implements Consumer<WsConfig> {
     static final String ATTR_USERNAME = "webapi.username";
 
     private final AuthService authService;
+    private final EmbeddedServer embedded;
 
-    public GameStreamHandler(AuthService authService) {
+    public GameStreamHandler(AuthService authService, EmbeddedServer embedded) {
         this.authService = authService;
+        this.embedded = embedded;
     }
 
     @Override
@@ -122,7 +112,7 @@ public final class GameStreamHandler implements Consumer<WsConfig> {
 
         LOG.info("WS connect: user={}, game={}", session.username(), gameId);
         sendFrame(ctx, "streamHello", gameId.toString(),
-                new WebStreamHello(gameId.toString(), session.username(), "skeleton"));
+                new WebStreamHello(gameId.toString(), session.username(), "live"));
     }
 
     private void onMessage(WsMessageContext ctx) {
@@ -144,12 +134,11 @@ public final class GameStreamHandler implements Consumer<WsConfig> {
             return;
         }
         String type = typeNode.asText();
-        // Slice 1: no inbound dispatch implemented yet. Surface the
-        // not-yet-implemented state in-band instead of closing the
-        // socket — gives the webclient a clear signal during Phase 3
-        // bring-up.
-        sendError(ctx, "NOT_IMPLEMENTED",
-                "Inbound type '" + type + "' is not yet implemented.");
+        switch (type) {
+            case "chatSend" -> handleChatSend(ctx, parsed);
+            default -> sendError(ctx, "NOT_IMPLEMENTED",
+                    "Inbound type '" + type + "' is not yet implemented.");
+        }
     }
 
     private void onClose(WsCloseContext ctx) {
@@ -160,6 +149,45 @@ public final class GameStreamHandler implements Consumer<WsConfig> {
         }
         LOG.info("WS close: game={}, code={}, reason={}",
                 gameId, ctx.status(), ctx.reason());
+    }
+
+    // ---------- inbound — chatSend ----------
+
+    private void handleChatSend(WsMessageContext ctx, JsonNode body) {
+        JsonNode chatIdNode = body.get("chatId");
+        JsonNode messageNode = body.get("message");
+        if (chatIdNode == null || !chatIdNode.isTextual()) {
+            sendError(ctx, "BAD_REQUEST", "chatSend missing required 'chatId' string.");
+            return;
+        }
+        if (messageNode == null || !messageNode.isTextual()) {
+            sendError(ctx, "BAD_REQUEST", "chatSend missing required 'message' string.");
+            return;
+        }
+        UUID chatId;
+        try {
+            chatId = UUID.fromString(chatIdNode.asText());
+        } catch (IllegalArgumentException ex) {
+            sendError(ctx, "BAD_REQUEST", "chatId must be a UUID: " + chatIdNode.asText());
+            return;
+        }
+        String message = messageNode.asText();
+        if (message.isBlank()) {
+            sendError(ctx, "BAD_REQUEST", "chatSend message must be non-blank.");
+            return;
+        }
+        String username = (String) ctx.attribute(ATTR_USERNAME);
+        try {
+            embedded.server().chatSendMessage(chatId, username, message);
+        } catch (MageException ex) {
+            sendError(ctx, "UPSTREAM_ERROR",
+                    "chatSendMessage failed: " + ex.getMessage());
+        } catch (RuntimeException ex) {
+            // Upstream chat-not-found / user-not-subscribed surfaces
+            // here (NPE inside ChatManager when the chatId is unknown).
+            sendError(ctx, "UPSTREAM_REJECTED",
+                    "chatSendMessage rejected: " + ex.getMessage());
+        }
     }
 
     // ---------- frame helpers ----------

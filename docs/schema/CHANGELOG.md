@@ -19,6 +19,83 @@ minor mismatches.
 
 ---
 
+## 1.6 — 2026-04-26 — Chat over the game stream (Phase 3 slice 2)
+
+First end-to-end DTO round-trip on the WebSocket protocol from
+[ADR 0007](../decisions/0007-game-stream-protocol.md). Adds the
+`chatMessage` outbound method (server→client) and the `chatSend`
+inbound type (client→server). Existing payloads keep their shape; their
+reported `schemaVersion` value bumps to `"1.6"`.
+
+### New outbound method
+
+| `method` | `data` shape | When |
+|---|---|---|
+| `chatMessage` | `WebChatMessage` | Every upstream `ClientCallbackMethod.CHATMESSAGE` callback the user's session receives |
+
+The `WebSocketCallbackHandler` (Phase 3 slice 1) now decompresses the
+upstream `ClientCallback.data`, casts to `mage.view.ChatMessage`, runs
+it through `ChatMessageMapper.toDto`, wraps in a `WebStreamFrame`, and
+pushes through every registered `WsContext`. Every other
+`ClientCallbackMethod` is still dropped — slices 3+ extend.
+
+#### `WebChatMessage` (nested under `data`)
+
+```json
+{
+  "username":    "alice",
+  "message":     "ggwp",
+  "time":        "2026-04-26T20:01:00Z",
+  "turnInfo":    "T2 — alice's turn",
+  "color":       "BLACK",
+  "messageType": "TALK",
+  "soundToPlay": ""
+}
+```
+
+| Field | Type | Note |
+|---|---|---|
+| `username` | string | Speaker; empty for system messages |
+| `message` | string | Plain text — webclient HTML-escapes on render |
+| `time` | string | ISO-8601 UTC; empty if upstream sent no timestamp |
+| `turnInfo` | string | Upstream turn-info text; empty outside game chat |
+| `color` | string | Upstream `MessageColor` enum name (`BLACK` / `RED` / `GREEN` / `BLUE` / `ORANGE` / `YELLOW`); empty if null |
+| `messageType` | string | Upstream `MessageType` enum name (`USER_INFO` / `STATUS` / `GAME` / `TALK` / `WHISPER_FROM` / `WHISPER_TO`); empty if null |
+| `soundToPlay` | string | Upstream `SoundToPlay` enum name; empty if null |
+
+### New inbound type
+
+```json
+{ "type": "chatSend", "chatId": "<uuid>", "message": "ggwp" }
+```
+
+Routes to upstream `MageServerImpl.chatSendMessage(chatId, username, message)`.
+The `username` argument is filled server-side from the authenticated
+session so clients cannot spoof. Failure modes (in-band
+`streamError` reply on the same socket):
+
+| `streamError.code` | When |
+|---|---|
+| `BAD_REQUEST` | Missing `chatId` / `message` field, malformed UUID, blank message |
+| `UPSTREAM_ERROR` | Upstream threw `MageException` |
+| `UPSTREAM_REJECTED` | Upstream rejected (chat not found, user not subscribed, etc.) |
+
+### Known limitations (next slices)
+
+- **Chat is not yet scoped per game.** Slice 2 forwards every chat
+  callback the user's session receives to every registered WebSocket
+  for that user — so a player in two games at once sees both games'
+  chats on both sockets. Slice 3 narrows to the game-chat once
+  `gameInit` introduces `WebGameInfo.chatId`.
+- **No reconnect via `?since=<messageId>`** (ADR 0007 D8) — slice 3,
+  alongside per-game scoping.
+- **No per-socket bounded queue / backpressure** (ADR 0007 D10) —
+  slice 3+ once high-volume frames flow.
+- **No DTO mappers** for `GameView` / `PlayerView` / `CardView` / etc.
+  — slices 3-5.
+
+---
+
 ## 1.5 — 2026-04-26 — Game stream skeleton (Phase 3 slice 1)
 
 First slice of the WebSocket game-stream protocol described by
