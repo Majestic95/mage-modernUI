@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+/* Project-wide CSS custom properties go here. Theme palette per
+ * ADR 0005 (dark default; light is Phase 7). Specific component
+ * styling lives in Tailwind utility classes. */
+:root {
+  color-scheme: dark;
+  font: 16px/1.5 system-ui, "Segoe UI", Roboto, sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  margin: 0;
+  min-height: 100svh;
+}
