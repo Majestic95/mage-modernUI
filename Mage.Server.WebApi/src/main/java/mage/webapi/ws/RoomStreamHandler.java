@@ -79,6 +79,7 @@ public final class RoomStreamHandler implements Consumer<WsConfig> {
     // ---------- lifecycle ----------
 
     private void onConnect(WsConnectContext ctx) {
+        ctx.session.setIdleTimeout(GameStreamHandler.IDLE_TIMEOUT);
         String roomIdRaw = ctx.pathParam("roomId");
         UUID roomId;
         try {

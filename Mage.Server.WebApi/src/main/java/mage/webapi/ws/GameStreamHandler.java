@@ -7,6 +7,8 @@ import io.javalin.websocket.WsConfig;
 import io.javalin.websocket.WsConnectContext;
 import io.javalin.websocket.WsContext;
 import io.javalin.websocket.WsMessageContext;
+
+import java.time.Duration;
 import mage.MageException;
 import mage.constants.ManaType;
 import mage.constants.PlayerAction;
@@ -64,6 +66,17 @@ public final class GameStreamHandler implements Consumer<WsConfig> {
      */
     static final int MAX_CHAT_MESSAGE_CHARS = 4096;
 
+    /**
+     * WebSocket idle timeout. Jetty's default is 30 seconds, which is
+     * far too short for a game window or lobby chat where the user
+     * may sit idle while reading the board / waiting on opponent.
+     * Five minutes is generous enough that idle users don't see
+     * connection drops, while still cleaning up genuinely-dead
+     * sockets (laptop closed, browser killed) within a reasonable
+     * window.
+     */
+    static final Duration IDLE_TIMEOUT = Duration.ofMinutes(5);
+
     private final AuthService authService;
     private final EmbeddedServer embedded;
 
@@ -85,6 +98,7 @@ public final class GameStreamHandler implements Consumer<WsConfig> {
     // ---------- lifecycle ----------
 
     private void onConnect(WsConnectContext ctx) {
+        ctx.session.setIdleTimeout(IDLE_TIMEOUT);
         String gameIdRaw = ctx.pathParam("gameId");
         UUID gameId;
         try {
