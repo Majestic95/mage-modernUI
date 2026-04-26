@@ -108,11 +108,61 @@ public final class GameStreamHandler implements Consumer<WsConfig> {
         ctx.attribute(ATTR_HANDLER, handler.get());
         ctx.attribute(ATTR_GAME_ID, gameId);
         ctx.attribute(ATTR_USERNAME, session.username());
+        bindGameChatId(ctx, gameId);
         handler.get().register(ctx);
 
         LOG.info("WS connect: user={}, game={}", session.username(), gameId);
         sendFrame(ctx, "streamHello", gameId.toString(),
                 new WebStreamHello(gameId.toString(), session.username(), "live"));
+
+        replayBufferIfRequested(ctx, handler.get());
+    }
+
+    /**
+     * Resolve the game's chatId via {@code MageServerImpl.chatFindByGame}
+     * so the per-WsContext chat-scoping filter in
+     * {@link WebSocketCallbackHandler} can suppress unrelated chats.
+     * Failures are non-fatal — when no chatId is bound, chat fans out
+     * to every socket (slice 2 behavior).
+     */
+    private void bindGameChatId(WsConnectContext ctx, UUID gameId) {
+        try {
+            UUID chatId = embedded.server().chatFindByGame(gameId);
+            if (chatId != null) {
+                ctx.attribute(WebSocketCallbackHandler.ATTR_GAME_CHAT_ID, chatId);
+            }
+        } catch (Exception ex) {
+            // Game does not exist yet (synthetic gameId in tests, or
+            // pre-game flow): leave the attribute unset so chat fans
+            // out by default.
+            LOG.debug("chatFindByGame({}) failed: {}", gameId, ex.toString());
+        }
+    }
+
+    /**
+     * Honor {@code ?since=<n>} on the upgrade URL — replay buffered
+     * frames whose {@code messageId > n}. Cold buffer (no qualifying
+     * frames) silently no-ops and the client falls through to live
+     * frames; the next {@code gameUpdate} restores state. Slice 4 may
+     * tag this gap with an explicit {@code resync} marker (ADR D8).
+     */
+    private static void replayBufferIfRequested(WsConnectContext ctx,
+                                                 WebSocketCallbackHandler handler) {
+        String sinceRaw = ctx.queryParam("since");
+        if (sinceRaw == null || sinceRaw.isBlank()) {
+            return;
+        }
+        int since;
+        try {
+            since = Integer.parseInt(sinceRaw.trim());
+        } catch (NumberFormatException ex) {
+            sendError(ctx, "BAD_REQUEST",
+                    "since must be an integer messageId: " + sinceRaw);
+            return;
+        }
+        for (var frame : handler.framesSince(since)) {
+            ctx.send(frame);
+        }
     }
 
     private void onMessage(WsMessageContext ctx) {

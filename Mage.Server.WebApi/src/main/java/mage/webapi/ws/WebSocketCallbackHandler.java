@@ -4,15 +4,23 @@ import io.javalin.websocket.WsContext;
 import mage.interfaces.callback.ClientCallback;
 import mage.interfaces.callback.ClientCallbackMethod;
 import mage.view.ChatMessage;
+import mage.view.GameView;
+import mage.view.TableClientMessage;
 import mage.webapi.SchemaVersion;
 import mage.webapi.dto.stream.WebStreamFrame;
 import mage.webapi.mapper.ChatMessageMapper;
+import mage.webapi.mapper.GameViewMapper;
 import org.jboss.remoting.callback.AsynchInvokerCallbackHandler;
 import org.jboss.remoting.callback.Callback;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Deque;
+import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -25,23 +33,41 @@ import java.util.concurrent.ConcurrentHashMap;
  * {@code Session.java:81} casts the constructor argument to the async
  * interface.
  *
- * <p>Slice 2 ships the {@code chatMessage} mapping only — every other
- * {@link ClientCallbackMethod} is silently dropped. Each new slice
- * extends {@link #dispatch} with one more case (slice 3:
- * {@code gameInit}/{@code gameUpdate}; slice 4: dialog frames; etc.).
+ * <p>Slice 2 shipped {@code chatMessage}. Slice 3 adds game-lifecycle
+ * mapping ({@code startGame} / {@code gameInit} / {@code gameUpdate}),
+ * the per-handler ring buffer that backs reconnect-via-{@code ?since=},
+ * and chat scoping by per-WsContext bound chatId. Each new slice
+ * extends {@link #mapToFrame} with one more {@link ClientCallbackMethod}
+ * case.
  *
- * <p>Thread-safety: {@link #sockets} is a concurrent set. Upstream
- * callbacks fire on the engine event-dispatch thread; in slice 2 the
- * mapped frames go straight to {@link WsContext#send} which Javalin
- * queues internally. Per-socket bounded backpressure (ADR 0007 D10)
- * lands once high-volume {@code gameUpdate} frames flow.
+ * <p>Thread-safety: {@link #sockets} is a concurrent set;
+ * {@link #buffer} writes/reads are synchronized on the deque. Upstream
+ * callbacks fire on the engine event-dispatch thread; mapped frames
+ * go straight to {@link WsContext#send} which Javalin queues
+ * internally. Per-socket bounded backpressure (ADR 0007 D10) lands
+ * once profiling shows it's needed.
  */
 public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHandler {
 
     private static final Logger LOG = LoggerFactory.getLogger(WebSocketCallbackHandler.class);
 
+    /** Maximum buffered frames retained for reconnect-via-{@code ?since=}. */
+    static final int BUFFER_CAPACITY = 64;
+
+    /**
+     * Per-WsContext attribute key — the chatId of the game this socket
+     * is bound to, resolved at connect time via
+     * {@code MageServerImpl.chatFindByGame}. When present, only
+     * {@code chatMessage} frames whose {@code objectId} matches are
+     * forwarded to that socket. When absent (game does not exist or
+     * lookup failed), chat fans out to every registered socket — same
+     * behavior as slice 2.
+     */
+    public static final String ATTR_GAME_CHAT_ID = "webapi.gameChatId";
+
     private final String username;
     private final Set<WsContext> sockets = ConcurrentHashMap.newKeySet();
+    private final Deque<WebStreamFrame> buffer = new ArrayDeque<>(BUFFER_CAPACITY);
 
     public WebSocketCallbackHandler(String username) {
         this.username = username;
@@ -69,6 +95,31 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
 
     Set<WsContext> sockets() {
         return sockets;
+    }
+
+    /**
+     * Snapshot the buffered frames whose {@code messageId} is strictly
+     * greater than {@code since}. Returned list is in arrival order.
+     * Empty if no frames qualify (cold buffer / large gap / fresh
+     * socket); caller treats that as "fall through to live."
+     */
+    public List<WebStreamFrame> framesSince(int since) {
+        List<WebStreamFrame> out;
+        synchronized (buffer) {
+            out = new ArrayList<>(buffer.size());
+            for (WebStreamFrame f : buffer) {
+                if (f.messageId() > since) {
+                    out.add(f);
+                }
+            }
+        }
+        return out;
+    }
+
+    int bufferSize() {
+        synchronized (buffer) {
+            return buffer.size();
+        }
     }
 
     // ---------- AsynchInvokerCallbackHandler ----------
@@ -106,48 +157,108 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
                     username, cc.getMethod(), cc.getMessageId(), ex.getMessage());
             return;
         }
-        WebStreamFrame frame = mapToFrame(cc);
+        WebStreamFrame frame;
+        try {
+            frame = mapToFrame(cc);
+        } catch (RuntimeException ex) {
+            // A mapper bug must not crash the engine thread.
+            LOG.warn("WS mapper threw for user={}, method={}, msgId={}: {}",
+                    username, cc.getMethod(), cc.getMessageId(), ex.toString());
+            return;
+        }
         if (frame == null) {
-            // Method not yet mapped for this slice — silent drop
-            // (slice 2 ships chatMessage only; slices 3+ extend).
             if (LOG.isDebugEnabled()) {
                 LOG.debug("WS drop (no mapper): user={}, method={}, msgId={}",
                         username, cc.getMethod(), cc.getMessageId());
             }
             return;
         }
-        broadcast(frame);
+        appendBuffer(frame);
+        broadcast(cc, frame);
     }
 
     private WebStreamFrame mapToFrame(ClientCallback cc) {
-        if (cc.getMethod() == ClientCallbackMethod.CHATMESSAGE) {
-            Object data = cc.getData();
-            if (!(data instanceof ChatMessage upstream)) {
-                LOG.warn("CHATMESSAGE callback with unexpected data type: {}",
-                        data == null ? "null" : data.getClass().getName());
-                return null;
-            }
-            return new WebStreamFrame(
-                    SchemaVersion.CURRENT,
-                    "chatMessage",
-                    cc.getMessageId(),
-                    cc.getObjectId() == null ? null : cc.getObjectId().toString(),
-                    ChatMessageMapper.toDto(upstream)
-            );
+        ClientCallbackMethod method = cc.getMethod();
+        if (method == null) {
+            return null;
         }
-        return null;
+        return switch (method) {
+            case CHATMESSAGE -> mapChat(cc);
+            case GAME_INIT -> mapGameView(cc, "gameInit");
+            case GAME_UPDATE -> mapGameView(cc, "gameUpdate");
+            case START_GAME -> mapStartGame(cc);
+            default -> null;
+        };
     }
 
-    private void broadcast(WebStreamFrame frame) {
-        // Slice 2 forwards every mapped frame to every registered
-        // WsContext for this WebSession. Per-game / per-chat scoping
-        // (ADR 0007 D6 — chat is "conceptually part of the game
-        // session") lands in slice 3 alongside gameInit, when game
-        // chat-id resolution becomes available.
+    private WebStreamFrame mapChat(ClientCallback cc) {
+        Object data = cc.getData();
+        if (!(data instanceof ChatMessage upstream)) {
+            LOG.warn("CHATMESSAGE callback with unexpected data type: {}",
+                    data == null ? "null" : data.getClass().getName());
+            return null;
+        }
+        return new WebStreamFrame(
+                SchemaVersion.CURRENT,
+                "chatMessage",
+                cc.getMessageId(),
+                cc.getObjectId() == null ? null : cc.getObjectId().toString(),
+                ChatMessageMapper.toDto(upstream)
+        );
+    }
+
+    private WebStreamFrame mapGameView(ClientCallback cc, String wireMethod) {
+        Object data = cc.getData();
+        if (!(data instanceof GameView upstream)) {
+            LOG.warn("{} callback with unexpected data type: {}",
+                    cc.getMethod(),
+                    data == null ? "null" : data.getClass().getName());
+            return null;
+        }
+        return new WebStreamFrame(
+                SchemaVersion.CURRENT,
+                wireMethod,
+                cc.getMessageId(),
+                cc.getObjectId() == null ? null : cc.getObjectId().toString(),
+                GameViewMapper.toDto(upstream)
+        );
+    }
+
+    private WebStreamFrame mapStartGame(ClientCallback cc) {
+        Object data = cc.getData();
+        if (!(data instanceof TableClientMessage upstream)) {
+            LOG.warn("START_GAME callback with unexpected data type: {}",
+                    data == null ? "null" : data.getClass().getName());
+            return null;
+        }
+        return new WebStreamFrame(
+                SchemaVersion.CURRENT,
+                "startGame",
+                cc.getMessageId(),
+                cc.getObjectId() == null ? null : cc.getObjectId().toString(),
+                GameViewMapper.toStartGameInfo(upstream)
+        );
+    }
+
+    private void appendBuffer(WebStreamFrame frame) {
+        synchronized (buffer) {
+            if (buffer.size() >= BUFFER_CAPACITY) {
+                buffer.removeFirst();
+            }
+            buffer.addLast(frame);
+        }
+    }
+
+    private void broadcast(ClientCallback cc, WebStreamFrame frame) {
         if (sockets.isEmpty()) {
             return;
         }
+        boolean isChat = "chatMessage".equals(frame.method());
+        UUID frameChatId = cc.getObjectId();
         for (WsContext ctx : sockets) {
+            if (isChat && !shouldDeliverChat(ctx, frameChatId)) {
+                continue;
+            }
             try {
                 ctx.send(frame);
             } catch (RuntimeException ex) {
@@ -155,5 +266,20 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
                         username, frame.method(), ex.getMessage());
             }
         }
+    }
+
+    /**
+     * Chat-scoping filter. If the WsContext has a bound game chatId
+     * (the connect handler resolved it via {@code chatFindByGame}),
+     * only deliver chats whose {@code objectId} matches. Otherwise
+     * deliver to all sockets — the slice-2 fan-out behavior, retained
+     * for the case where the game does not yet exist at connect time.
+     */
+    private static boolean shouldDeliverChat(WsContext ctx, UUID frameChatId) {
+        Object bound = ctx.attribute(ATTR_GAME_CHAT_ID);
+        if (!(bound instanceof UUID boundChatId)) {
+            return true;
+        }
+        return frameChatId != null && frameChatId.equals(boundChatId);
     }
 }

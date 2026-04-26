@@ -309,8 +309,173 @@ class GameStreamHandlerTest {
     // NOTE: there is no test for "unknown chatId" because upstream
     // ChatManagerImpl.broadcast silently no-ops when the chatId isn't
     // registered — no exception, nothing for the client to observe.
-    // Slice 3 will add a chat-registry pre-check so the WS handler can
-    // surface a stream-level error before the call reaches upstream.
+    // Slice 4+ will add a chat-registry pre-check so the WS handler
+    // can surface a stream-level error before the call reaches
+    // upstream.
+
+    // ---------- slice 3: reconnect via ?since= ----------
+
+    @Test
+    void reconnect_sinceReplaysBufferedFrames() throws Exception {
+        ChatFixture chat = subscribeFreshUser();
+
+        // Phase 1 — open WS, capture three chat frames so the buffer
+        // is populated. We then drop the WS without closing the
+        // upstream session; the buffer survives on the handler.
+        TestListener first = new TestListener();
+        WebSocket ws1 = openWs(UUID.randomUUID(), chat.token, first);
+        first.awaitFrame(FRAME_WAIT); // streamHello
+        broadcastSystem(chat.chatId, "msg-A");
+        broadcastSystem(chat.chatId, "msg-B");
+        broadcastSystem(chat.chatId, "msg-C");
+        int firstMessageId = JSON.readTree(awaitMethod(first, "chatMessage"))
+                .get("messageId").asInt();
+        // Drain the remaining two so the queue is empty when ws1 closes.
+        awaitMethod(first, "chatMessage");
+        awaitMethod(first, "chatMessage");
+        ws1.sendClose(WebSocket.NORMAL_CLOSURE, "phase 1 done").join();
+
+        // Phase 2 — reopen with ?since=firstMessageId. Server replays
+        // the two frames after that messageId; the first one (== since)
+        // is filtered out.
+        TestListener second = new TestListener();
+        URI uri = URI.create("ws://localhost:" + server.port()
+                + "/api/games/" + UUID.randomUUID() + "/stream"
+                + "?token=" + chat.token + "&since=" + firstMessageId);
+        WebSocket ws2 = HTTP.newWebSocketBuilder()
+                .buildAsync(uri, second)
+                .get(5, TimeUnit.SECONDS);
+        try {
+            second.awaitFrame(FRAME_WAIT); // streamHello
+
+            JsonNode replayB = JSON.readTree(awaitMethod(second, "chatMessage"));
+            JsonNode replayC = JSON.readTree(awaitMethod(second, "chatMessage"));
+            assertEquals("msg-B", replayB.get("data").get("message").asText());
+            assertEquals("msg-C", replayC.get("data").get("message").asText());
+            assertTrue(replayB.get("messageId").asInt() > firstMessageId,
+                    "replayed messageIds must all be > since");
+        } finally {
+            ws2.sendClose(WebSocket.NORMAL_CLOSURE, "phase 2 done").join();
+        }
+    }
+
+    @Test
+    void reconnect_sinceCold_silentlyAcceptsAndContinuesLive() throws Exception {
+        ChatFixture chat = subscribeFreshUser();
+        TestListener listener = new TestListener();
+        // since=Integer.MAX_VALUE — guaranteed cold buffer
+        URI uri = URI.create("ws://localhost:" + server.port()
+                + "/api/games/" + UUID.randomUUID() + "/stream"
+                + "?token=" + chat.token + "&since=" + Integer.MAX_VALUE);
+        WebSocket ws = HTTP.newWebSocketBuilder()
+                .buildAsync(uri, listener)
+                .get(5, TimeUnit.SECONDS);
+        try {
+            // streamHello arrives; no replay frames (cold buffer)
+            JsonNode hello = JSON.readTree(listener.awaitFrame(FRAME_WAIT));
+            assertEquals("streamHello", hello.get("method").asText());
+
+            // Live frames still flow.
+            broadcastSystem(chat.chatId, "after-cold");
+            JsonNode chatFrame = JSON.readTree(awaitMethod(listener, "chatMessage"));
+            assertEquals("after-cold", chatFrame.get("data").get("message").asText());
+        } finally {
+            ws.sendClose(WebSocket.NORMAL_CLOSURE, "test done").join();
+        }
+    }
+
+    @Test
+    void reconnect_sinceMalformed_repliesStreamError() throws Exception {
+        TestListener listener = new TestListener();
+        URI uri = URI.create("ws://localhost:" + server.port()
+                + "/api/games/" + UUID.randomUUID() + "/stream"
+                + "?token=" + bearer + "&since=not-a-number");
+        WebSocket ws = HTTP.newWebSocketBuilder()
+                .buildAsync(uri, listener)
+                .get(5, TimeUnit.SECONDS);
+        try {
+            // streamHello first, then the streamError for the bad since.
+            JsonNode hello = JSON.readTree(listener.awaitFrame(FRAME_WAIT));
+            assertEquals("streamHello", hello.get("method").asText());
+
+            JsonNode err = JSON.readTree(awaitMethod(listener, "streamError"));
+            assertEquals("BAD_REQUEST", err.get("data").get("code").asText());
+            assertTrue(err.get("data").get("message").asText().contains("since"));
+        } finally {
+            ws.sendClose(WebSocket.NORMAL_CLOSURE, "test done").join();
+        }
+    }
+
+    // ---------- slice 3: full game-lifecycle e2e ----------
+
+    @Test
+    void gameLifecycle_e2e_startGameAndGameInitArrive() throws Exception {
+        // Fresh user so the test is isolated from the shared bearer.
+        HttpResponse<String> login = postJson("/api/session", "{}");
+        assertEquals(200, login.statusCode());
+        String token = JSON.readTree(login.body()).get("token").asText();
+
+        // Open a WS bound to a synthetic gameId — the START_GAME
+        // callback fires on the user's session regardless of which
+        // game UUID the WebSocket path carries (buffer is per-handler,
+        // not per-game). The webclient in production uses a temporary
+        // gameId placeholder until startGame surfaces the real one.
+        TestListener listener = new TestListener();
+        WebSocket ws = openWs(UUID.randomUUID(), token, listener);
+        try {
+            listener.awaitFrame(FRAME_WAIT); // streamHello
+
+            // Drive the lobby flow that culminates in match-start.
+            String roomId = JSON.readTree(getAuthed(token, "/api/server/main-room").body())
+                    .get("roomId").asText();
+            String tableId = createTableWithSeats(token, roomId,
+                    "[\"HUMAN\",\"COMPUTER_MONTE_CARLO\"]");
+            postWithToken(token,
+                    "/api/rooms/" + roomId + "/tables/" + tableId + "/ai",
+                    "{\"playerType\":\"COMPUTER_MONTE_CARLO\"}");
+
+            String deckJson = buildForestDeckJson(token, 60);
+            String joinBody = "{\"name\":\"e2e-tester\",\"skill\":1,\"deck\":"
+                    + deckJson + "}";
+            HttpResponse<String> join = postWithToken(token,
+                    "/api/rooms/" + roomId + "/tables/" + tableId + "/join", joinBody);
+            assertEquals(204, join.statusCode(), "join failed: " + join.body());
+
+            HttpResponse<String> start = postWithToken(token,
+                    "/api/rooms/" + roomId + "/tables/" + tableId + "/start", "");
+            assertEquals(204, start.statusCode(), "start failed: " + start.body());
+
+            // The exact frame ordering depends on engine timing, but
+            // both startGame and gameInit must arrive within the
+            // window. We assert each separately (awaitMethod skips
+            // intermediate frames).
+            JsonNode startFrame = JSON.readTree(
+                    awaitMethod(listener, "startGame", Duration.ofSeconds(15)));
+            assertEquals(SchemaVersion.CURRENT,
+                    startFrame.get("schemaVersion").asText());
+            JsonNode startData = startFrame.get("data");
+            assertNotNull(startData.get("gameId").asText());
+            assertNotNull(startData.get("playerId").asText());
+            assertEquals(tableId, startData.get("tableId").asText(),
+                    "startGame.tableId must match the table we created");
+
+            JsonNode initFrame = JSON.readTree(
+                    awaitMethod(listener, "gameInit", Duration.ofSeconds(15)));
+            JsonNode initData = initFrame.get("data");
+            assertTrue(initData.get("turn").asInt() >= 1,
+                    "gameInit must carry a turn number");
+            assertTrue(initData.get("players").isArray());
+            assertEquals(2, initData.get("players").size(),
+                    "two-player duel must have exactly 2 PlayerView entries");
+            JsonNode firstPlayer = initData.get("players").get(0);
+            assertTrue(firstPlayer.get("life").asInt() > 0,
+                    "starting life must be positive");
+            assertTrue(firstPlayer.get("libraryCount").asInt() > 0,
+                    "library must have cards after the opening hand draw");
+        } finally {
+            ws.sendClose(WebSocket.NORMAL_CLOSURE, "test done").join();
+        }
+    }
 
     // ---------- helpers ----------
 
@@ -350,21 +515,46 @@ class GameStreamHandlerTest {
         return new ChatFixture(token, username, chatId);
     }
 
+    /** Convenience for tests that drive chat through the upstream broadcast path. */
+    private void broadcastSystem(UUID chatId, String message) {
+        embedded.managerFactory().chatManager().broadcast(
+                chatId,
+                "system",
+                message,
+                ChatMessage.MessageColor.BLACK,
+                true,
+                null,
+                ChatMessage.MessageType.USER_INFO,
+                null);
+    }
+
+    private String awaitMethod(TestListener listener, String wantedMethod) throws Exception {
+        return awaitMethod(listener, wantedMethod, FRAME_WAIT);
+    }
+
     /**
      * Pulls frames off the listener until we see one matching
      * {@code wantedMethod}. Skips intermediate frames (streamError,
      * other methods) which can fire concurrently in test conditions.
+     * Honors the outer {@code timeout} as a hard deadline — does not
+     * delegate to {@link TestListener#awaitFrame} which has its own
+     * fixed timeout.
      */
-    private String awaitMethod(TestListener listener, String wantedMethod) throws Exception {
-        long deadline = System.currentTimeMillis() + FRAME_WAIT.toMillis();
+    private String awaitMethod(TestListener listener, String wantedMethod,
+                                Duration timeout) throws Exception {
+        long deadline = System.currentTimeMillis() + timeout.toMillis();
         while (System.currentTimeMillis() < deadline) {
-            String f = listener.awaitFrame(FRAME_WAIT);
+            String f = listener.frames.poll();
+            if (f == null) {
+                Thread.sleep(20);
+                continue;
+            }
             JsonNode env = JSON.readTree(f);
             if (wantedMethod.equals(env.get("method").asText())) {
                 return f;
             }
         }
-        throw new AssertionError("no '" + wantedMethod + "' frame within " + FRAME_WAIT);
+        throw new AssertionError("no '" + wantedMethod + "' frame within " + timeout);
     }
 
     private WebSocket openWs(UUID gameId, String token, TestListener listener) throws Exception {
@@ -384,6 +574,55 @@ class GameStreamHandlerTest {
                         .POST(HttpRequest.BodyPublishers.ofString(body))
                         .build(),
                 HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> getAuthed(String token, String path) throws Exception {
+        return HTTP.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create("http://localhost:" + server.port() + path))
+                        .header("Authorization", "Bearer " + token)
+                        .timeout(Duration.ofSeconds(5))
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> postWithToken(String token, String path, String body)
+            throws Exception {
+        return HTTP.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create("http://localhost:" + server.port() + path))
+                        .header("Content-Type", "application/json")
+                        .header("Authorization", "Bearer " + token)
+                        .timeout(Duration.ofSeconds(10))
+                        .POST(HttpRequest.BodyPublishers.ofString(body))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
+    private String createTableWithSeats(String token, String roomId, String seatsJson)
+            throws Exception {
+        String body = "{\"gameType\":\"Two Player Duel\","
+                + "\"deckType\":\"Constructed - Vintage\","
+                + "\"winsNeeded\":1,\"seats\":" + seatsJson + "}";
+        HttpResponse<String> r = postWithToken(token,
+                "/api/rooms/" + roomId + "/tables", body);
+        assertEquals(200, r.statusCode(), "table create failed: " + r.body());
+        return JSON.readTree(r.body()).get("tableId").asText();
+    }
+
+    private String buildForestDeckJson(String token, int amount) throws Exception {
+        HttpResponse<String> r = getAuthed(token, "/api/cards?name=Forest");
+        JsonNode forest = JSON.readTree(r.body()).get("cards").get(0);
+        assertNotNull(forest, "Forest must exist in the card DB");
+        return String.format(
+                "{\"name\":\"Test Forest Deck\",\"author\":\"e2e\","
+                        + "\"cards\":[{\"cardName\":\"Forest\",\"setCode\":\"%s\","
+                        + "\"cardNumber\":\"%s\",\"amount\":%d}],"
+                        + "\"sideboard\":[]}",
+                forest.get("setCode").asText(),
+                forest.get("cardNumber").asText(),
+                amount);
     }
 
     /**

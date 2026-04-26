@@ -6,7 +6,7 @@ import { useAuthStore } from '../auth/store';
 import type { WebTable } from '../api/schemas';
 
 const ANON_SESSION = {
-  schemaVersion: '1.6',
+  schemaVersion: '1.7',
   token: 'tok-anon',
   username: 'guest-deadbeef',
   isAnonymous: true,
@@ -48,13 +48,13 @@ function tableWith(overrides: Partial<WebTable>): WebTable {
 }
 
 const MAIN_ROOM = {
-  schemaVersion: '1.6',
+  schemaVersion: '1.7',
   roomId: ROOM_ID,
   chatId: '11111111-1111-1111-1111-111111111111',
 };
 
 const SERVER_STATE = {
-  schemaVersion: '1.6',
+  schemaVersion: '1.7',
   gameTypes: [],
   tournamentTypes: [],
   playerTypes: [],
@@ -102,7 +102,7 @@ describe('Lobby — Start button', () => {
       '/api/server/state': () => jsonResponse(200, SERVER_STATE),
       '/api/rooms/': () =>
         jsonResponse(200, {
-          schemaVersion: '1.6',
+          schemaVersion: '1.7',
           tables: [tableWith({ tableState: 'READY_TO_START' })],
         }),
     });
@@ -120,7 +120,7 @@ describe('Lobby — Start button', () => {
       '/api/server/state': () => jsonResponse(200, SERVER_STATE),
       '/api/rooms/': () =>
         jsonResponse(200, {
-          schemaVersion: '1.6',
+          schemaVersion: '1.7',
           tables: [
             tableWith({
               tableState: 'READY_TO_START',
@@ -142,7 +142,7 @@ describe('Lobby — Start button', () => {
       '/api/server/state': () => jsonResponse(200, SERVER_STATE),
       '/api/rooms/': () =>
         jsonResponse(200, {
-          schemaVersion: '1.6',
+          schemaVersion: '1.7',
           tables: [tableWith({ tableState: 'WAITING' })],
         }),
     });
@@ -177,7 +177,7 @@ describe('Lobby — Start button', () => {
       if (url.includes('/api/rooms/')) {
         return Promise.resolve(
           jsonResponse(200, {
-            schemaVersion: '1.6',
+            schemaVersion: '1.7',
             tables: [tableWith({ tableState: 'READY_TO_START' })],
           }),
         );
@@ -210,7 +210,7 @@ describe('Lobby — Start button', () => {
         if (url.includes('/start')) {
           return Promise.resolve(
             jsonResponse(422, {
-              schemaVersion: '1.6',
+              schemaVersion: '1.7',
               code: 'UPSTREAM_REJECTED',
               message: 'Server refused to start the match.',
             }),
@@ -225,7 +225,7 @@ describe('Lobby — Start button', () => {
         if (url.includes('/api/rooms/')) {
           return Promise.resolve(
             jsonResponse(200, {
-              schemaVersion: '1.6',
+              schemaVersion: '1.7',
               tables: [tableWith({ tableState: 'READY_TO_START' })],
             }),
           );

@@ -19,6 +19,143 @@ minor mismatches.
 
 ---
 
+## 1.7 — 2026-04-26 — Game lifecycle frames + reconnect (Phase 3 slice 3)
+
+Adds the game lifecycle outbound mappings and the reconnect-via-`?since=`
+contract from [ADR 0007 D8](../decisions/0007-game-stream-protocol.md#d8).
+Existing payloads keep their shape; their reported `schemaVersion`
+value bumps to `"1.7"`.
+
+### New outbound methods
+
+| `method` | `data` shape | When |
+|---|---|---|
+| `startGame` | `WebStartGameInfo` | Upstream `START_GAME` callback — match has begun, signals the webclient to mount the game window |
+| `gameInit` | `WebGameView` | Upstream `GAME_INIT` callback — initial snapshot when the game opens or a new socket attaches |
+| `gameUpdate` | `WebGameView` | Upstream `GAME_UPDATE` callback — state change |
+
+### Updated handshake — `?since=<messageId>` reconnect
+
+The WebSocket upgrade URL now accepts an optional `since` query
+parameter. On connect, the server replays every buffered frame with
+`messageId > since` to the new socket. The buffer is per-`WebSession`
+(not per-socket), capped at the last 64 frames. Cold buffer (no
+qualifying frames) silently no-ops — the next live frame restores
+state.
+
+```
+ws://host/api/games/{gameId}/stream?token=<bearer>&since=<int?>
+```
+
+`?since=` non-integer → in-band `streamError { code: BAD_REQUEST }`.
+
+### Chat scoping by game
+
+The handler now resolves the game's chatId at WS-connect time via
+`MageServerImpl.chatFindByGame(gameId)`. When that lookup succeeds, the
+WsContext is bound to that chatId and only `chatMessage` frames whose
+`objectId` matches are forwarded. When the game does not exist yet (or
+the lookup fails), chat fans out to every socket — same as slice 2.
+
+### `WebStartGameInfo` (nested under `data`)
+
+```json
+{
+  "tableId":  "550e8400-...",
+  "gameId":   "660e8400-...",
+  "playerId": "770e8400-..."
+}
+```
+
+### `WebGameView` (nested under `data`)
+
+```json
+{
+  "turn":                 3,
+  "phase":                "PRECOMBAT_MAIN",
+  "step":                 "PRECOMBAT_MAIN",
+  "activePlayerName":     "alice",
+  "priorityPlayerName":   "alice",
+  "special":              false,
+  "rollbackTurnsAllowed": true,
+  "totalErrorsCount":     0,
+  "totalEffectsCount":    412,
+  "gameCycle":            87,
+  "players":              [ <WebPlayerView>, ... ]
+}
+```
+
+| Field | Type | Note |
+|---|---|---|
+| `turn` | int | Current turn number |
+| `phase` | string | Upstream `TurnPhase` enum name; empty pre-game |
+| `step` | string | Upstream `PhaseStep` enum name; empty pre-game |
+| `activePlayerName` | string | Empty between turns |
+| `priorityPlayerName` | string | Empty when no one has priority |
+| `special` | bool | Special actions available to priority player |
+| `rollbackTurnsAllowed` | bool | Match config |
+| `totalErrorsCount` | int | Upstream debug counter |
+| `totalEffectsCount` | int | Upstream debug counter |
+| `gameCycle` | int | applyEffects loop counter; useful for client-side cache invalidation |
+| `players` | array | Per-player summaries in seat order |
+
+### `WebPlayerView` (nested under `WebGameView.players[]`)
+
+```json
+{
+  "playerId":         "770e8400-...",
+  "name":             "alice",
+  "life":             20,
+  "wins":             0,
+  "winsNeeded":       1,
+  "libraryCount":     53,
+  "handCount":        7,
+  "graveyardCount":   0,
+  "exileCount":       0,
+  "sideboardCount":   0,
+  "battlefieldCount": 0,
+  "manaPool":         { "red": 0, "green": 0, "blue": 0,
+                        "white": 0, "black": 0, "colorless": 0 },
+  "controlled":       true,
+  "isHuman":          true,
+  "isActive":         true,
+  "hasPriority":      true,
+  "hasLeft":          false,
+  "monarch":          false,
+  "initiative":       false,
+  "designationNames": []
+}
+```
+
+Card-by-card battlefield / graveyard / exile / hand mappings are
+**deferred to slice 4** alongside `WebCardView` and
+`WebPermanentView` — slice 3 ships zone counts only so the lifecycle
+contract can land without the 1626-LOC `CardView` mapper.
+
+### `WebManaPoolView` (nested under `WebPlayerView.manaPool`)
+
+```json
+{ "red": 0, "green": 0, "blue": 0, "white": 0, "black": 0, "colorless": 0 }
+```
+
+Conditional-mana subtotals are folded into the per-color buckets
+upstream-side.
+
+### Known limitations (slice 4+)
+
+- **Card / permanent / stack / combat detail** — slice 4. Slice 3
+  carries zone counts only; the actual battlefield, hand, stack, and
+  combat-group rendering needs the `WebCardView` / `WebPermanentView`
+  / `WebStackAbilityView` mappers.
+- **`gameInform`, `gameOver`, `endGameInfo` frames** — slice 4. Their
+  upstream callbacks still drop in slice 3.
+- **Cold-buffer reconnect** silently no-ops; slice 4 may tag with an
+  explicit `resync` marker (ADR D8).
+- **Per-socket bounded queue / backpressure** (ADR D10) deferred until
+  profiling shows it's needed.
+
+---
+
 ## 1.6 — 2026-04-26 — Chat over the game stream (Phase 3 slice 2)
 
 First end-to-end DTO round-trip on the WebSocket protocol from
