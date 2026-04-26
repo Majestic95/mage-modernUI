@@ -53,6 +53,13 @@ public final class BearerAuthMiddleware implements Handler {
         if ("OPTIONS".equals(ctx.method().name())) {
             return;
         }
+        // WebSocket upgrade requests bypass HTTP Bearer auth — browsers
+        // cannot set custom headers on the upgrade. Auth lives in the
+        // WS onConnect handler via ?token=. ADR 0007 D2.
+        String upgrade = ctx.header("Upgrade");
+        if (upgrade != null && "websocket".equalsIgnoreCase(upgrade)) {
+            return;
+        }
         String key = ctx.method().name() + " " + ctx.path();
         if (PUBLIC.contains(key)) {
             return;

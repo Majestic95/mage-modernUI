@@ -8,6 +8,7 @@ import mage.webapi.SchemaVersion;
 import mage.webapi.WebApiException;
 import mage.webapi.dto.WebSession;
 import mage.webapi.embed.EmbeddedServer;
+import mage.webapi.ws.WebSocketCallbackHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -15,6 +16,7 @@ import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -27,13 +29,18 @@ import java.util.concurrent.TimeUnit;
  * <p>Responsibilities:
  * <ul>
  *   <li>Login / loginAdmin — register an upstream session with a
- *       {@link NoOpCallbackHandler}, call {@code MageServerImpl
- *       .connectUser/connectAdmin}, store the {@link SessionEntry},
- *       enforce newest-wins on duplicate usernames (ADR 0004 D7).</li>
+ *       per-session {@link WebSocketCallbackHandler} (slice 5 used a
+ *       {@code NoOpCallbackHandler}; Phase 3 slice 1 replaced it), call
+ *       {@code MageServerImpl.connectUser/connectAdmin}, store the
+ *       {@link SessionEntry}, enforce newest-wins on duplicate
+ *       usernames (ADR 0004 D7).</li>
  *   <li>Logout — disconnect the upstream session and remove the
  *       token.</li>
  *   <li>Resolve — middleware uses {@link #resolveAndBump(String)} to
  *       validate a Bearer token and pull the associated session.</li>
+ *   <li>Stream lookup — {@link #handlerFor(String)} returns the
+ *       per-session WebSocket handler so the WS upgrade handler can
+ *       register an open socket on it (ADR 0007 D3).</li>
  *   <li>Sweep — every 60 s, evict expired tokens. Disconnects the
  *       upstream session for each eviction so the upstream side
  *       doesn't leak.</li>
@@ -49,6 +56,8 @@ public final class AuthService implements AutoCloseable {
     private final EmbeddedServer embedded;
     private final WebSessionStore store;
     private final ScheduledExecutorService sweeper;
+    private final ConcurrentHashMap<String, WebSocketCallbackHandler> handlersBySessionId =
+            new ConcurrentHashMap<>();
 
     public AuthService(EmbeddedServer embedded, WebSessionStore store) {
         this.embedded = embedded;
@@ -59,6 +68,17 @@ public final class AuthService implements AutoCloseable {
             return t;
         });
         this.sweeper.scheduleAtFixedRate(this::sweep, 60, 60, TimeUnit.SECONDS);
+    }
+
+    /**
+     * Look up the per-session WebSocket callback handler. Used by the
+     * WS upgrade handler ({@link mage.webapi.ws.GameStreamHandler}) to
+     * register a freshly-opened socket on the handler that upstream is
+     * already pushing callbacks to. Empty optional means the upstream
+     * session no longer exists — the WS connect should reject.
+     */
+    public Optional<WebSocketCallbackHandler> handlerFor(String upstreamSessionId) {
+        return Optional.ofNullable(handlersBySessionId.get(upstreamSessionId));
     }
 
     /**
@@ -73,7 +93,7 @@ public final class AuthService implements AutoCloseable {
         boolean isAnonymous = (password == null || password.isBlank());
         String upstreamSessionId = UUID.randomUUID().toString();
 
-        registerUpstreamSession(upstreamSessionId);
+        registerUpstreamSession(upstreamSessionId, resolvedUsername);
 
         boolean ok;
         try {
@@ -113,7 +133,7 @@ public final class AuthService implements AutoCloseable {
      */
     public WebSession loginAdmin(String adminPassword) {
         String upstreamSessionId = UUID.randomUUID().toString();
-        registerUpstreamSession(upstreamSessionId);
+        registerUpstreamSession(upstreamSessionId, "Admin");
 
         boolean ok;
         try {
@@ -182,8 +202,10 @@ public final class AuthService implements AutoCloseable {
 
     // ---------- internals ----------
 
-    private void registerUpstreamSession(String upstreamSessionId) {
-        sessionManager().createSession(upstreamSessionId, new NoOpCallbackHandler());
+    private void registerUpstreamSession(String upstreamSessionId, String username) {
+        WebSocketCallbackHandler handler = new WebSocketCallbackHandler(username);
+        handlersBySessionId.put(upstreamSessionId, handler);
+        sessionManager().createSession(upstreamSessionId, handler);
     }
 
     private void silentDisconnect(String upstreamSessionId) {
@@ -191,6 +213,7 @@ public final class AuthService implements AutoCloseable {
     }
 
     private void silentDisconnect(String upstreamSessionId, DisconnectReason reason) {
+        handlersBySessionId.remove(upstreamSessionId);
         try {
             sessionManager().disconnect(upstreamSessionId, reason, false);
         } catch (RuntimeException ex) {

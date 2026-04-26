@@ -19,6 +19,95 @@ minor mismatches.
 
 ---
 
+## 1.5 — 2026-04-26 — Game stream skeleton (Phase 3 slice 1)
+
+First slice of the WebSocket game-stream protocol described by
+[ADR 0007](../decisions/0007-game-stream-protocol.md). Existing payloads
+keep their shape; their reported `schemaVersion` value bumps to `"1.5"`.
+
+### New endpoint
+
+```
+WS  /api/games/{gameId}/stream?token=<bearer>   server↔client
+```
+
+Authentication happens at the WebSocket upgrade via the `?token=` query
+parameter — browsers cannot set custom headers on `WebSocket` so the
+HTTP `Authorization: Bearer` path is unreachable. Token resolution
+shares the same `AuthService.resolveAndBump` logic as REST, including
+the sliding 24 h expiry bump.
+
+### Frame envelope (outbound — server to client)
+
+Every frame:
+
+```json
+{
+  "schemaVersion": "1.5",
+  "method":        "streamHello",
+  "messageId":     0,
+  "objectId":      "550e8400-...",
+  "data":          { ... method-specific shape ... }
+}
+```
+
+`method` is the discriminator; clients exhaustively switch on it.
+`messageId` is the upstream session-side monotonic counter (0 for
+synthetic frames not bound to an upstream callback). `objectId` is
+typically the `gameId` or `chatId`. `data` is method-specific JSON or
+`null`.
+
+### Methods shipping in 1.5
+
+| `method` | `data` shape | When |
+|---|---|---|
+| `streamHello` | `WebStreamHello` (`gameId`, `username`, `mode`) | Once on every successful WebSocket connection |
+| `streamError` | `WebStreamError` (`code`, `message`) | In-band error reply for unparseable inbound frames or unsupported `type` values |
+
+Future slices add `gameInit`, `gameUpdate`, `gameAsk`, `gameTarget`,
+`chatMessage`, etc. per the table in [ADR 0007 D5](../decisions/0007-game-stream-protocol.md#d5).
+
+### Inbound frames (client to server)
+
+Slice 1 parses the tagged-union envelope (`type` discriminator) but
+implements no inbound dispatch yet — every recognized payload type
+replies with a `streamError { code: "NOT_IMPLEMENTED" }` frame so the
+webclient can light up the bring-up path before its server counterpart
+exists. Slice 2 wires `chatSend`; slice 3 wires `playerAction` and
+`playerResponse`.
+
+### WebSocket close codes
+
+| Code | When |
+|---|---|
+| `1000` | Normal close |
+| `1003` | Reserved for unsupported inbound `type` once strict mode lands |
+| `4001` | Auth failed at upgrade — `?token=` missing, unknown, or expired |
+| `4003` | `gameId` malformed (UUID parse failure) |
+
+### Internal — `WebSocketCallbackHandler` replaces `NoOpCallbackHandler`
+
+`AuthService` constructs a per-session `WebSocketCallbackHandler` at
+login time, registers it with upstream `SessionManager.createSession`,
+and exposes lookup via `handlerFor(upstreamSessionId)`. The slice 5
+`NoOpCallbackHandler` is removed.
+
+The handler's `register/unregister(WsContext)` lifecycle is wired in
+slice 1 but its `dispatch(ClientCallback)` method is not — every
+upstream callback is logged at debug and dropped. Slice 2 adds the
+per-method DTO mappers and starts pushing real frames.
+
+### Known limitations (next slices)
+
+- **No game-existence / seat verification** at WS handshake (ADR 0007 D2 step 2).
+  Slice 2 hardens once a real game is observable from the WS path.
+- **No reconnect via `?since=<messageId>`** (ADR 0007 D8) — slice 2.
+- **No per-socket bounded queue / backpressure** (ADR 0007 D10) — slice 2 once frames flow.
+- **No inbound dispatch** — slices 2-3 ship `chatSend` / `playerAction` / `playerResponse`.
+- **No DTO mappers** for `GameView` / `PlayerView` / `CardView` / etc. — slices 2-5.
+
+---
+
 ## 1.4 — 2026-04-25 — Lobby and tables (Phase 2 slice 6)
 
 Adds the lobby + table CRUD layer described by [ADR 0006](../decisions/0006-lobby-and-tables.md).
