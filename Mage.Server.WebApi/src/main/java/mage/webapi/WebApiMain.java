@@ -5,17 +5,24 @@ import mage.webapi.server.WebApiServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Arrays;
+import java.util.List;
+import java.util.stream.Collectors;
+
 /**
  * Entry point for the WebApi server. Boots the in-process Mage server,
- * then starts Javalin and registers REST + WS routes against it.
+ * configures CORS from the environment, and starts Javalin.
  *
  * <p>Configuration is read from environment variables:
  * <ul>
  *   <li>{@code XMAGE_WEBAPI_PORT} — Javalin port. Default {@code 18080}.
- *       Pass {@code 0} to bind to a free port (test usage).</li>
- *   <li>{@code XMAGE_CONFIG_PATH} — path to the upstream {@code config.xml}.
- *       Default {@code "../Mage.Server/config/config.xml"} (relative to
- *       the module dir; matches the dev-setup layout).</li>
+ *       Pass {@code 0} to bind to a free port.</li>
+ *   <li>{@code XMAGE_CONFIG_PATH} — path to upstream {@code config.xml}.
+ *       Default {@code ../Mage.Server/config/config.xml}.</li>
+ *   <li>{@code XMAGE_CORS_ORIGINS} — comma-separated CORS allow-list.
+ *       Empty string disables CORS entirely. Unset uses the
+ *       development-friendly default ({@link
+ *       WebApiServer#DEFAULT_CORS_ORIGINS}).</li>
  * </ul>
  */
 public final class WebApiMain {
@@ -31,11 +38,14 @@ public final class WebApiMain {
     public static void main(String[] args) {
         String configPath = readConfigPath();
         int port = readPort();
+        List<String> corsOrigins = readCorsOrigins();
 
         LOG.info("Booting embedded Mage server (config: {})", configPath);
         EmbeddedServer embedded = EmbeddedServer.boot(configPath);
 
-        WebApiServer server = new WebApiServer(embedded).start(port);
+        WebApiServer server = new WebApiServer(embedded)
+                .allowCorsOrigins(corsOrigins)
+                .start(port);
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             LOG.info("Shutdown signal received; stopping WebApi");
             server.stop();
@@ -59,5 +69,19 @@ public final class WebApiMain {
             throw new IllegalArgumentException(
                     "XMAGE_WEBAPI_PORT must be a non-negative integer, got: " + env, ex);
         }
+    }
+
+    private static List<String> readCorsOrigins() {
+        String env = System.getenv("XMAGE_CORS_ORIGINS");
+        if (env == null) {
+            return WebApiServer.DEFAULT_CORS_ORIGINS;
+        }
+        if (env.isBlank()) {
+            return List.of(); // explicit "no CORS"
+        }
+        return Arrays.stream(env.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .collect(Collectors.toUnmodifiableList());
     }
 }

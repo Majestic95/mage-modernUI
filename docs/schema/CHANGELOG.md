@@ -19,6 +19,78 @@ minor mismatches.
 
 ---
 
+## 1.3 — 2026-04-25 — Auth and sessions (Phase 2 slice 5)
+
+Adds the auth layer described by [ADR 0004](../decisions/0004-auth-and-sessions.md).
+Existing payloads keep their shape; their reported `schemaVersion` value
+bumps to `"1.3"`. **Breaking convention change for error responses:**
+4xx/5xx now use a uniform `WebError` envelope across every endpoint
+(previously the cards routes used Javalin's default error JSON).
+
+### New endpoints
+
+- `POST /api/session` → `WebSession` (anonymous or authenticated)
+- `POST /api/session/admin` → `WebSession` (admin)
+- `GET /api/session/me` → `WebSession` (Bearer required)
+- `DELETE /api/session` → `204` (Bearer required)
+
+### Auth model
+
+- Bearer token in `Authorization` header
+- Opaque UUID tokens, in-memory store
+- Sliding 24 h expiry, hard cap 7 d
+- Newest-wins on duplicate username (revokes prior tokens)
+- All routes outside `{GET /api/version, GET /api/health, POST /api/session, POST /api/session/admin}` require Bearer
+- 60 s background sweep evicts expired tokens
+
+### New DTOs
+
+#### `WebSession` (top-level)
+
+```json
+{
+  "schemaVersion": "1.3",
+  "token":         "550e8400-e29b-41d4-a716-446655440000",
+  "username":      "alice",
+  "isAnonymous":   false,
+  "isAdmin":       false,
+  "expiresAt":     "2026-04-26T22:30:00Z"
+}
+```
+
+#### `WebError` (uniform 4xx/5xx envelope)
+
+```json
+{
+  "schemaVersion": "1.3",
+  "code":          "INVALID_CREDENTIALS",
+  "message":       "Login failed. Check username and password."
+}
+```
+
+### Error codes (initial set)
+
+| Status | Code | When |
+|---|---|---|
+| 400 | `BAD_REQUEST` | Malformed body, missing required query param, invalid limit |
+| 401 | `MISSING_TOKEN` | No `Authorization: Bearer` header on protected route |
+| 401 | `INVALID_TOKEN` | Token unknown or expired |
+| 401 | `INVALID_CREDENTIALS` | Login failed |
+| 401 | `INVALID_ADMIN_PASSWORD` | Wrong admin password (after a 3 s delay) |
+| 404 | `NOT_FOUND` | Route not registered |
+| 500 | `UPSTREAM_ERROR` | Unexpected upstream `MageException` |
+
+### Known limitations (slice 5b candidates)
+
+- **Auth-mode error granularity.** Upstream's `connectUser` returns `boolean`; our slice 5 collapses every login failure to `INVALID_CREDENTIALS`. Distinguishing locked-account → 403, version-mismatch → 412, etc. requires a callback-recording handler that captures upstream error messages. Slice 5b.
+- **Rate limiting** on `POST /api/session` and `POST /api/session/admin` — deferred to slice 5b.
+
+### CORS
+
+Default allow-list: `http://localhost:5173`, `http://localhost:4173`, `tauri://localhost`. Override via `XMAGE_CORS_ORIGINS` env var (comma-separated). Empty string disables CORS entirely.
+
+---
+
 ## 1.2 — 2026-04-25 — Add `/api/cards` lookup endpoints (Phase 2 slice 4)
 
 Additive change: two new endpoints, two new DTOs. Existing endpoints
