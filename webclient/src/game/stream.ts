@@ -19,6 +19,7 @@ import {
   webGameClientMessageSchema,
   webGameEndViewSchema,
   webGameViewSchema,
+  webSideboardInfoSchema,
   webStartGameInfoSchema,
   webStreamErrorSchema,
   webStreamFrameSchema,
@@ -70,6 +71,8 @@ const DATA_VALIDATORS: Record<string, (raw: unknown) => unknown> = {
   gameError: (raw) => webGameClientMessageSchema.parse(raw),
   // Distinct shape — WebAbilityPickerView, not GameClientMessage.
   gameChooseAbility: (raw) => webAbilityPickerViewSchema.parse(raw),
+  // Slice 13: post-game-1 sideboarding prompt.
+  sideboard: (raw) => webSideboardInfoSchema.parse(raw),
 };
 
 /**

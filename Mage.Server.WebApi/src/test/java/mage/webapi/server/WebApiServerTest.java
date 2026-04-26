@@ -377,6 +377,67 @@ class WebApiServerTest {
         assertEquals(422, r.statusCode());
     }
 
+    /* ---------- slice 13: deck submit ---------- */
+
+    @Test
+    void submitDeck_unknownTable_returns204() throws Exception {
+        // Upstream's TableManagerImpl.submitDeck returns true (with a
+        // server-side "Table no longer active" message) when the
+        // table doesn't exist — the design lets the user's submit
+        // panel close cleanly even after the table evaporated. So
+        // the wire response is 204, not 422. This test locks that
+        // contract: the route is wired through to upstream, and the
+        // request body parses cleanly.
+        String fakeTable = "00000000-0000-0000-0000-000000000000";
+        String body = "{\"name\":\"x\",\"author\":\"\",\"cards\":[],\"sideboard\":[]}";
+        HttpResponse<String> r = postJsonAuthed(
+                "/api/tables/" + fakeTable + "/deck", body);
+        assertEquals(204, r.statusCode(), r.body());
+    }
+
+    @Test
+    void submitDeck_updateMode_unknownTable_returns204() throws Exception {
+        // ?update=true routes to deckSave (void return). With no
+        // table the call no-ops; we still expect a 204.
+        String fakeTable = "00000000-0000-0000-0000-000000000000";
+        String body = "{\"name\":\"x\",\"author\":\"\",\"cards\":[],\"sideboard\":[]}";
+        HttpResponse<String> r = postJsonAuthed(
+                "/api/tables/" + fakeTable + "/deck?update=true", body);
+        assertEquals(204, r.statusCode(), r.body());
+    }
+
+    @Test
+    void submitDeck_malformedTableId_returns400() throws Exception {
+        HttpResponse<String> r = postJsonAuthed(
+                "/api/tables/not-a-uuid/deck",
+                "{\"name\":\"x\",\"author\":\"\",\"cards\":[],\"sideboard\":[]}");
+        assertEquals(400, r.statusCode());
+        assertEquals("BAD_REQUEST", JSON.readTree(r.body()).get("code").asText());
+    }
+
+    @Test
+    void submitDeck_blankBody_returns400() throws Exception {
+        String fakeTable = "00000000-0000-0000-0000-000000000000";
+        HttpResponse<String> r = postJsonAuthed(
+                "/api/tables/" + fakeTable + "/deck", "");
+        assertEquals(400, r.statusCode());
+    }
+
+    @Test
+    void submitDeck_missingAuth_returns401() throws Exception {
+        String fakeTable = "00000000-0000-0000-0000-000000000000";
+        HttpResponse<String> r = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create("http://localhost:" + server.port()
+                                + "/api/tables/" + fakeTable + "/deck"))
+                        .POST(HttpRequest.BodyPublishers.ofString(
+                                "{\"name\":\"x\",\"author\":\"\",\"cards\":[],\"sideboard\":[]}"))
+                        .header("Content-Type", "application/json")
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(401, r.statusCode());
+    }
+
     @Test
     void endToEnd_createTableAddAiJoinStart_advancesTableState() throws Exception {
         // Use a fresh anon session so test state is isolated from `bearer`.

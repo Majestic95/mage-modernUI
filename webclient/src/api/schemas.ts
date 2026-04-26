@@ -203,6 +203,43 @@ export const webStartGameInfoSchema = z.object({
 });
 export type WebStartGameInfo = z.infer<typeof webStartGameInfoSchema>;
 
+/**
+ * Slim card record for deck-construction wire payloads (sideboard
+ * picker, draft constructing). Mirrors server-side
+ * {@code WebSimpleCardView} — name is server-resolved via
+ * CardRepository, so the picker renders without a card-DB round trip.
+ * Schema 1.14.
+ */
+export const webSimpleCardViewSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  expansionSetCode: z.string(),
+  cardNumber: z.string(),
+  usesVariousArt: z.boolean(),
+});
+export type WebSimpleCardView = z.infer<typeof webSimpleCardViewSchema>;
+
+export const webDeckViewSchema = z.object({
+  name: z.string(),
+  mainList: z.array(webSimpleCardViewSchema),
+  sideboard: z.array(webSimpleCardViewSchema),
+});
+export type WebDeckView = z.infer<typeof webDeckViewSchema>;
+
+/**
+ * Carried as the {@code data} payload of {@code sideboard} frames.
+ * Server fires one per player at the start of each post-game-1
+ * sideboarding window. Schema 1.14.
+ */
+export const webSideboardInfoSchema = z.object({
+  deck: webDeckViewSchema,
+  tableId: z.string(),
+  parentTableId: z.string(),
+  time: z.number(),
+  limited: z.boolean(),
+});
+export type WebSideboardInfo = z.infer<typeof webSideboardInfoSchema>;
+
 export const webManaPoolViewSchema = z.object({
   red: z.number(),
   green: z.number(),

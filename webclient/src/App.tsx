@@ -7,6 +7,7 @@ import { Game } from './pages/Game';
 import { Lobby } from './pages/Lobby';
 import { LobbyChat } from './pages/LobbyChat';
 import { Login } from './pages/Login';
+import { SideboardModal } from './pages/SideboardModal';
 
 type Tab = 'lobby' | 'decks' | 'cards';
 
@@ -111,10 +112,13 @@ export function App() {
 
   if (activeGameId) {
     return (
-      <Game
-        gameId={activeGameId}
-        onLeave={() => setActiveGameId(null)}
-      />
+      <>
+        <Game
+          gameId={activeGameId}
+          onLeave={() => setActiveGameId(null)}
+        />
+        <SideboardModal />
+      </>
     );
   }
 
@@ -170,6 +174,7 @@ export function App() {
       </main>
 
       <Footer />
+      <SideboardModal />
     </div>
   );
 }

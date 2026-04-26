@@ -14,6 +14,7 @@ import type {
   WebGameClientMessage,
   WebGameEndView,
   WebGameView,
+  WebSideboardInfo,
   WebStartGameInfo,
   WebStreamFrame,
 } from '../api/schemas';
@@ -137,6 +138,16 @@ interface GameState {
    */
   pendingStartGame: WebStartGameInfo | null;
 
+  /**
+   * Pending {@code sideboard} frame. Set when upstream fires
+   * {@code User.ccSideboard} (between games of a sideboarded match,
+   * or at the start of a draft constructing window). The webclient
+   * renders a SideboardModal driven off this state; cleared by
+   * {@link clearSideboard} when the user submits or the server
+   * advances past the sideboarding window.
+   */
+  pendingSideboard: WebSideboardInfo | null;
+
   /** Connection lifecycle setters (called by GameStream). */
   setConnection: (s: ConnectionState, reason?: string) => void;
   /** Apply an inbound frame. Returns true if the frame was handled. */
@@ -149,6 +160,8 @@ interface GameState {
    * call without a fresh startGame returns null.
    */
   consumeStartGame: () => WebStartGameInfo | null;
+  /** Clear the pending sideboard prompt — called after submit or dismiss. */
+  clearSideboard: () => void;
   /** Reset back to the pre-connect state — for navigating away. */
   reset: () => void;
 }
@@ -165,6 +178,7 @@ const INITIAL: Pick<
   | 'pendingDialog'
   | 'chatMessages'
   | 'pendingStartGame'
+  | 'pendingSideboard'
 > = {
   connection: 'idle',
   closeReason: '',
@@ -176,6 +190,7 @@ const INITIAL: Pick<
   pendingDialog: null,
   chatMessages: {},
   pendingStartGame: null,
+  pendingSideboard: null,
 };
 
 export const useGameStore = create<GameState>()((set, get) => ({
@@ -236,6 +251,16 @@ export const useGameStore = create<GameState>()((set, get) => ({
         // the Game component's job once it mounts.
         const info = validatedData as WebStartGameInfo;
         set({ pendingStartGame: info });
+        return true;
+      }
+
+      case 'sideboard': {
+        // Post-game-1 sideboarding window. App-level subscriber
+        // mounts the SideboardModal off this state; user submits
+        // via POST /api/tables/{tableId}/deck which clears the
+        // pending entry on success.
+        const info = validatedData as WebSideboardInfo;
+        set({ pendingSideboard: info });
         return true;
       }
 
@@ -310,6 +335,8 @@ export const useGameStore = create<GameState>()((set, get) => ({
     }
     return pending;
   },
+
+  clearSideboard: () => set({ pendingSideboard: null }),
 
   reset: () => set(INITIAL),
 }));

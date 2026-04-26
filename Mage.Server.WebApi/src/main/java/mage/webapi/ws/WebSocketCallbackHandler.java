@@ -12,6 +12,7 @@ import mage.view.TableClientMessage;
 import mage.webapi.SchemaVersion;
 import mage.webapi.dto.stream.WebStreamFrame;
 import mage.webapi.mapper.ChatMessageMapper;
+import mage.webapi.mapper.DeckViewMapper;
 import mage.webapi.mapper.GameViewMapper;
 import org.jboss.remoting.callback.AsynchInvokerCallbackHandler;
 import org.jboss.remoting.callback.Callback;
@@ -228,6 +229,7 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
             case GAME_ERROR -> mapGameError(cc);
             case END_GAME_INFO -> mapEndGame(cc);
             case START_GAME -> mapStartGame(cc);
+            case SIDEBOARD -> mapSideboard(cc);
             default -> null;
         };
     }
@@ -278,6 +280,22 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
                 cc.getMessageId(),
                 cc.getObjectId() == null ? null : cc.getObjectId().toString(),
                 GameViewMapper.toStartGameInfo(upstream)
+        );
+    }
+
+    private WebStreamFrame mapSideboard(ClientCallback cc) {
+        Object data = cc.getData();
+        if (!(data instanceof TableClientMessage upstream)) {
+            LOG.warn("SIDEBOARD callback with unexpected data type: {}",
+                    data == null ? "null" : data.getClass().getName());
+            return null;
+        }
+        return new WebStreamFrame(
+                SchemaVersion.CURRENT,
+                "sideboard",
+                cc.getMessageId(),
+                cc.getObjectId() == null ? null : cc.getObjectId().toString(),
+                DeckViewMapper.toSideboardInfo(upstream)
         );
     }
 

@@ -64,7 +64,7 @@ function buildGameView(turn = 1) {
 
 function frame(method: string, data: unknown, messageId = 1) {
   return webStreamFrameSchema.parse({
-    schemaVersion: '1.13',
+    schemaVersion: '1.14',
     method,
     messageId,
     objectId: null,
@@ -311,7 +311,7 @@ describe('useGameStore', () => {
 
   function chatFrame(chatId: string, payload: ReturnType<typeof chatPayload>, messageId = 1) {
     return webStreamFrameSchema.parse({
-      schemaVersion: '1.13',
+      schemaVersion: '1.14',
       method: 'chatMessage',
       messageId,
       objectId: chatId,
@@ -342,7 +342,7 @@ describe('useGameStore', () => {
 
   it('chatMessage with null objectId is dropped (no chatId bucket)', () => {
     const f = webStreamFrameSchema.parse({
-      schemaVersion: '1.13',
+      schemaVersion: '1.14',
       method: 'chatMessage',
       messageId: 1,
       objectId: null,
@@ -411,5 +411,62 @@ describe('useGameStore', () => {
     useGameStore.getState().applyFrame(frame('startGame', info), info);
     useGameStore.getState().reset();
     expect(useGameStore.getState().pendingStartGame).toBeNull();
+  });
+
+  /* ---------- slice 13: sideboard ---------- */
+
+  function sideboardInfo() {
+    return {
+      deck: {
+        name: 'Mono-green',
+        mainList: [
+          {
+            id: '11111111-1111-1111-1111-111111111111',
+            name: 'Forest',
+            expansionSetCode: 'M21',
+            cardNumber: '281',
+            usesVariousArt: true,
+          },
+        ],
+        sideboard: [
+          {
+            id: '22222222-2222-2222-2222-222222222222',
+            name: 'Naturalize',
+            expansionSetCode: 'M21',
+            cardNumber: '199',
+            usesVariousArt: false,
+          },
+        ],
+      },
+      tableId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+      parentTableId: '',
+      time: 600,
+      limited: false,
+    };
+  }
+
+  it('sideboard frame stashes pendingSideboard with full deck shape', () => {
+    const info = sideboardInfo();
+    useGameStore.getState().applyFrame(frame('sideboard', info), info);
+    const pending = useGameStore.getState().pendingSideboard;
+    expect(pending).not.toBeNull();
+    expect(pending?.tableId).toBe(info.tableId);
+    expect(pending?.deck.mainList).toHaveLength(1);
+    expect(pending?.deck.mainList[0]?.name).toBe('Forest');
+    expect(pending?.deck.sideboard).toHaveLength(1);
+  });
+
+  it('clearSideboard resets pendingSideboard to null', () => {
+    const info = sideboardInfo();
+    useGameStore.getState().applyFrame(frame('sideboard', info), info);
+    useGameStore.getState().clearSideboard();
+    expect(useGameStore.getState().pendingSideboard).toBeNull();
+  });
+
+  it('reset clears pendingSideboard', () => {
+    const info = sideboardInfo();
+    useGameStore.getState().applyFrame(frame('sideboard', info), info);
+    useGameStore.getState().reset();
+    expect(useGameStore.getState().pendingSideboard).toBeNull();
   });
 });

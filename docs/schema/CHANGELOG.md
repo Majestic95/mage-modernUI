@@ -19,6 +19,60 @@ minor mismatches.
 
 ---
 
+## 1.14 — 2026-04-26 — Sideboard wire format
+
+Adds the `sideboard` callback frame and the deck-submit endpoint —
+previously the engine was firing `User.ccSideboard` between games of
+a sideboarded match and the webclient was dropping the frame on the
+floor (no handler), leaving the user stranded between game 1 and
+game 2.
+
+### New `sideboard` frame
+
+Server fires this once per player at the start of each post-game-1
+sideboarding window. Carries `WebSideboardInfo`:
+
+```json
+{
+  "deck":           { "name": "...", "mainList": [...], "sideboard": [...] },
+  "tableId":        "uuid",
+  "parentTableId":  "uuid | <empty for non-tournament tables>",
+  "time":           600,
+  "limited":        false
+}
+```
+
+`mainList` and `sideboard` are arrays of `WebSimpleCardView`:
+
+```json
+{
+  "id":               "uuid",
+  "name":             "Counterspell",
+  "expansionSetCode": "ICE",
+  "cardNumber":       "61",
+  "usesVariousArt":   false
+}
+```
+
+`name` is resolved server-side via `CardRepository.findCard(setCode,
+cardNumber)` so the webclient renders without a card-database round
+trip. Lookup misses fall back to `"<set>:<number>"` rather than
+breaking the picker.
+
+### New `POST /api/tables/{tableId}/deck` endpoint
+
+Body: `WebDeckCardLists` (the same DTO used at table-join time, so
+no new wire shape on the inbound side). Query param `?update=true`
+switches dispatch from final submit (`MageServer.deckSubmit`) to
+autosave (`MageServer.deckSave`); default (omitted / false) is
+final submit.
+
+Returns 204 on success. 422 `UPSTREAM_REJECTED` when the table is
+not in a sideboarding/constructing state, the deck fails format
+validation, or the player has quit.
+
+---
+
 ## 1.13 — 2026-04-26 — Audit tier-3: command-zone wire support
 
 Closes the last tier-3 gap from the architectural review:

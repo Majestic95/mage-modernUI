@@ -15,6 +15,7 @@ import mage.webapi.auth.WebSessionStore;
 import mage.webapi.dto.WebAddAiRequest;
 import mage.webapi.dto.WebAdminSessionRequest;
 import mage.webapi.dto.WebCreateTableRequest;
+import mage.webapi.dto.WebDeckCardLists;
 import mage.webapi.dto.WebError;
 import mage.webapi.dto.WebHealth;
 import mage.webapi.dto.WebJoinTableRequest;
@@ -219,6 +220,20 @@ public final class WebApiServer {
             UUID tableId = parseUuid(ctx.pathParam("tableId"), "tableId");
             SessionEntry session = sessionFrom(ctx);
             lobbyService.leaveSeat(session.upstreamSessionId(), roomId, tableId);
+            ctx.status(204);
+        });
+
+        // Sideboard / construction submit (slice 13). Body shape
+        // mirrors WebDeckCardLists used at table-join time. The
+        // `update` query param picks autosave (true → deckSave) vs
+        // final submit (false / omitted → deckSubmit).
+        app.post("/api/tables/{tableId}/deck", ctx -> {
+            UUID tableId = parseUuid(ctx.pathParam("tableId"), "tableId");
+            WebDeckCardLists req = parseBody(ctx.body(), WebDeckCardLists.class);
+            boolean update = "true".equalsIgnoreCase(ctx.queryParam("update"));
+            SessionEntry session = sessionFrom(ctx);
+            lobbyService.submitDeck(session.upstreamSessionId(), tableId,
+                    DeckMapper.toUpstream(req), update);
             ctx.status(204);
         });
     }

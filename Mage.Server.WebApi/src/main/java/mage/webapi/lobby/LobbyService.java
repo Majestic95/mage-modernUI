@@ -159,6 +159,34 @@ public final class LobbyService {
         }
     }
 
+    /**
+     * Submit a finalized deck for a sideboarding / construction
+     * window. Routes through {@code MageServerImpl.deckSubmit} which
+     * validates against the table's format and releases the player
+     * into the next game.
+     *
+     * <p>{@code update=true} switches to {@code deckSave} (autosave
+     * during sideboarding — no game-start trigger). Same wire body
+     * either way; the discriminator selects dispatch.
+     */
+    public void submitDeck(String upstreamSessionId, UUID tableId,
+                            DeckCardLists deckList, boolean update) {
+        try {
+            if (update) {
+                embedded.server().deckSave(upstreamSessionId, tableId, deckList);
+                return;
+            }
+            boolean ok = embedded.server().deckSubmit(upstreamSessionId, tableId, deckList);
+            if (!ok) {
+                throw new WebApiException(422, "UPSTREAM_REJECTED",
+                        "Server refused to accept the deck (table not sideboarding/constructing, "
+                                + "deck failed format validation, or player has quit).");
+            }
+        } catch (MageException ex) {
+            throw upstream(update ? "updating deck" : "submitting deck", ex);
+        }
+    }
+
     private WebApiException upstream(String action, Exception cause) {
         return new WebApiException(500, "UPSTREAM_ERROR",
                 "Upstream error while " + action + ": " + cause.getMessage());
