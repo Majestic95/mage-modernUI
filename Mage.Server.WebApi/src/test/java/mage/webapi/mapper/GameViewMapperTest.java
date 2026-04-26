@@ -124,13 +124,27 @@ class GameViewMapperTest {
     }
 
     @Test
-    void gameClientMessage_jsonShape_locksTwoFields() throws Exception {
-        WebGameClientMessage dto = new WebGameClientMessage(null, "ggwp");
+    void gameClientMessage_jsonShape_locksSevenFields() throws Exception {
+        WebGameClientMessage dto = new WebGameClientMessage(
+                null, "ggwp", List.of(), Map.of(), 0, 0, false);
         JsonNode node = JSON.valueToTree(dto);
-        assertEquals(2, node.size(),
-                "WebGameClientMessage must have exactly 2 fields (slice 5 minimal); got: " + node);
-        assertTrue(node.has("gameView"));
-        assertTrue(node.has("message"));
+        assertEquals(7, node.size(),
+                "WebGameClientMessage must have exactly 7 fields (slice 6 extended); got: " + node);
+        for (String f : List.of("gameView", "message", "targets",
+                "cardsView1", "min", "max", "flag")) {
+            assertTrue(node.has(f), "missing field: " + f);
+        }
+    }
+
+    @Test
+    void toErrorMessage_synthesizesMessageOnlyShape() {
+        WebGameClientMessage dto = GameViewMapper.toErrorMessage("oops");
+        assertEquals("oops", dto.message());
+        assertEquals(null, dto.gameView());
+        assertTrue(dto.targets().isEmpty());
+        assertTrue(dto.cardsView1().isEmpty());
+        assertEquals(0, dto.min());
+        assertEquals(0, dto.max());
     }
 
     @Test

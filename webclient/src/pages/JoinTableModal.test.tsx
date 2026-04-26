@@ -7,7 +7,7 @@ import { useDecksStore } from '../decks/store';
 import type { WebDeckCardInfo } from '../api/schemas';
 
 const ANON_SESSION = {
-  schemaVersion: '1.9',
+  schemaVersion: '1.10',
   token: 'tok-anon',
   username: 'guest-deadbeef',
   isAnonymous: true,
@@ -111,7 +111,7 @@ describe('JoinTableModal', () => {
       'fetch',
       vi.fn<typeof fetch>().mockResolvedValue(
         jsonResponse(422, {
-          schemaVersion: '1.9',
+          schemaVersion: '1.10',
           code: 'UPSTREAM_REJECTED',
           message: 'Server rejected the join (illegal deck).',
         }),

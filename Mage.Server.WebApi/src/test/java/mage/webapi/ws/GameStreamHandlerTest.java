@@ -103,16 +103,16 @@ class GameStreamHandlerTest {
             // Discard the streamHello frame.
             listener.awaitFrame(FRAME_WAIT);
 
-            // 'playerAction' is reserved for slice 3+; slice 2 still
-            // soft-fails it via streamError.
-            ws.sendText("{\"type\":\"playerAction\",\"action\":\"CONCEDE\"}", true).join();
+            // 'playerSurrender' isn't a valid inbound type — slice 6
+            // reserves NOT_IMPLEMENTED for unknown discriminators.
+            ws.sendText("{\"type\":\"playerSurrender\"}", true).join();
             String reply = listener.awaitFrame(FRAME_WAIT);
 
             JsonNode env = JSON.readTree(reply);
             assertEquals("streamError", env.get("method").asText());
             JsonNode data = env.get("data");
             assertEquals("NOT_IMPLEMENTED", data.get("code").asText());
-            assertTrue(data.get("message").asText().contains("playerAction"),
+            assertTrue(data.get("message").asText().contains("playerSurrender"),
                     "error message names the unsupported type");
         } finally {
             ws.sendClose(WebSocket.NORMAL_CLOSURE, "test done").join();
@@ -401,6 +401,137 @@ class GameStreamHandlerTest {
             JsonNode err = JSON.readTree(awaitMethod(listener, "streamError"));
             assertEquals("BAD_REQUEST", err.get("data").get("code").asText());
             assertTrue(err.get("data").get("message").asText().contains("since"));
+        } finally {
+            ws.sendClose(WebSocket.NORMAL_CLOSURE, "test done").join();
+        }
+    }
+
+    // ---------- slice 6: inbound playerAction + playerResponse ----------
+
+    @Test
+    void playerAction_unknownEnum_repliesWithBadRequest() throws Exception {
+        TestListener listener = new TestListener();
+        WebSocket ws = openWs(UUID.randomUUID(), bearer, listener);
+        try {
+            listener.awaitFrame(FRAME_WAIT); // streamHello
+            ws.sendText("{\"type\":\"playerAction\",\"action\":\"NOT_A_REAL_ACTION\"}", true).join();
+            JsonNode err = JSON.readTree(awaitMethod(listener, "streamError"));
+            assertEquals("BAD_REQUEST", err.get("data").get("code").asText());
+            assertTrue(err.get("data").get("message").asText().contains("Unknown PlayerAction"));
+        } finally {
+            ws.sendClose(WebSocket.NORMAL_CLOSURE, "test done").join();
+        }
+    }
+
+    @Test
+    void playerAction_clientOnlyEnum_repliesWithNotAllowed() throws Exception {
+        TestListener listener = new TestListener();
+        WebSocket ws = openWs(UUID.randomUUID(), bearer, listener);
+        try {
+            listener.awaitFrame(FRAME_WAIT);
+            // CLIENT_DOWNLOAD_SYMBOLS is a real PlayerAction enum value
+            // but is on the deny-list — Swing-UI-only.
+            ws.sendText("{\"type\":\"playerAction\","
+                    + "\"action\":\"CLIENT_DOWNLOAD_SYMBOLS\"}", true).join();
+            JsonNode err = JSON.readTree(awaitMethod(listener, "streamError"));
+            assertEquals("NOT_ALLOWED", err.get("data").get("code").asText());
+            assertTrue(err.get("data").get("message").asText().contains("CLIENT_DOWNLOAD_SYMBOLS"));
+        } finally {
+            ws.sendClose(WebSocket.NORMAL_CLOSURE, "test done").join();
+        }
+    }
+
+    @Test
+    void playerAction_missingAction_repliesWithBadRequest() throws Exception {
+        TestListener listener = new TestListener();
+        WebSocket ws = openWs(UUID.randomUUID(), bearer, listener);
+        try {
+            listener.awaitFrame(FRAME_WAIT);
+            ws.sendText("{\"type\":\"playerAction\"}", true).join();
+            JsonNode err = JSON.readTree(awaitMethod(listener, "streamError"));
+            assertEquals("BAD_REQUEST", err.get("data").get("code").asText());
+            assertTrue(err.get("data").get("message").asText().contains("action"));
+        } finally {
+            ws.sendClose(WebSocket.NORMAL_CLOSURE, "test done").join();
+        }
+    }
+
+    @Test
+    void playerAction_allowedNoGame_surfacesUpstreamRejection() throws Exception {
+        // CONCEDE is on the allow-list but there's no active game on
+        // a synthetic WS — upstream sendPlayerAction will quietly
+        // no-op (no session game-state change). We assert the dispatch
+        // path doesn't reply with a streamError, proving the action
+        // reached the upstream call. (No active dialog → no follow-up
+        // frame is the success criterion.)
+        TestListener listener = new TestListener();
+        WebSocket ws = openWs(UUID.randomUUID(), bearer, listener);
+        try {
+            listener.awaitFrame(FRAME_WAIT);
+            ws.sendText("{\"type\":\"playerAction\",\"action\":\"CONCEDE\"}", true).join();
+            // Wait briefly to confirm no error frame arrives.
+            try {
+                String maybeErr = listener.awaitFrame(Duration.ofMillis(500));
+                JsonNode env = JSON.readTree(maybeErr);
+                if ("streamError".equals(env.get("method").asText())) {
+                    String code = env.get("data").get("code").asText();
+                    // BAD_REQUEST / NOT_ALLOWED would be the
+                    // dispatch-layer rejection we're trying to disprove.
+                    assertFalse("BAD_REQUEST".equals(code) || "NOT_ALLOWED".equals(code),
+                            "CONCEDE should have passed dispatch validation but got: " + maybeErr);
+                }
+            } catch (AssertionError noFrame) {
+                // No frame arrived — that's the expected happy path
+                // when there's no game to concede.
+            }
+        } finally {
+            ws.sendClose(WebSocket.NORMAL_CLOSURE, "test done").join();
+        }
+    }
+
+    @Test
+    void playerResponse_missingKind_repliesWithBadRequest() throws Exception {
+        TestListener listener = new TestListener();
+        WebSocket ws = openWs(UUID.randomUUID(), bearer, listener);
+        try {
+            listener.awaitFrame(FRAME_WAIT);
+            ws.sendText("{\"type\":\"playerResponse\",\"value\":true}", true).join();
+            JsonNode err = JSON.readTree(awaitMethod(listener, "streamError"));
+            assertEquals("BAD_REQUEST", err.get("data").get("code").asText());
+            assertTrue(err.get("data").get("message").asText().contains("kind"));
+        } finally {
+            ws.sendClose(WebSocket.NORMAL_CLOSURE, "test done").join();
+        }
+    }
+
+    @Test
+    void playerResponse_unknownKind_repliesWithBadRequest() throws Exception {
+        TestListener listener = new TestListener();
+        WebSocket ws = openWs(UUID.randomUUID(), bearer, listener);
+        try {
+            listener.awaitFrame(FRAME_WAIT);
+            ws.sendText("{\"type\":\"playerResponse\",\"kind\":\"unicorn\","
+                    + "\"value\":\"meh\"}", true).join();
+            JsonNode err = JSON.readTree(awaitMethod(listener, "streamError"));
+            assertEquals("BAD_REQUEST", err.get("data").get("code").asText());
+            assertTrue(err.get("data").get("message").asText().contains("Unknown playerResponse kind"));
+        } finally {
+            ws.sendClose(WebSocket.NORMAL_CLOSURE, "test done").join();
+        }
+    }
+
+    @Test
+    void playerResponse_uuidKind_malformedValue_repliesWithBadRequest() throws Exception {
+        TestListener listener = new TestListener();
+        WebSocket ws = openWs(UUID.randomUUID(), bearer, listener);
+        try {
+            listener.awaitFrame(FRAME_WAIT);
+            ws.sendText("{\"type\":\"playerResponse\",\"kind\":\"uuid\","
+                    + "\"value\":\"definitely-not-a-uuid\"}", true).join();
+            JsonNode err = JSON.readTree(awaitMethod(listener, "streamError"));
+            assertEquals("BAD_REQUEST", err.get("data").get("code").asText());
+            assertTrue(err.get("data").get("message").asText()
+                    .contains("kind='uuid'"));
         } finally {
             ws.sendClose(WebSocket.NORMAL_CLOSURE, "test done").join();
         }

@@ -8,6 +8,8 @@ import io.javalin.websocket.WsConnectContext;
 import io.javalin.websocket.WsContext;
 import io.javalin.websocket.WsMessageContext;
 import mage.MageException;
+import mage.constants.ManaType;
+import mage.constants.PlayerAction;
 import mage.webapi.SchemaVersion;
 import mage.webapi.auth.AuthService;
 import mage.webapi.auth.SessionEntry;
@@ -52,6 +54,7 @@ public final class GameStreamHandler implements Consumer<WsConfig> {
     static final String ATTR_HANDLER = "webapi.callbackHandler";
     static final String ATTR_GAME_ID = "webapi.gameId";
     static final String ATTR_USERNAME = "webapi.username";
+    static final String ATTR_SESSION = "webapi.session";
 
     private final AuthService authService;
     private final EmbeddedServer embedded;
@@ -108,6 +111,7 @@ public final class GameStreamHandler implements Consumer<WsConfig> {
         ctx.attribute(ATTR_HANDLER, handler.get());
         ctx.attribute(ATTR_GAME_ID, gameId);
         ctx.attribute(ATTR_USERNAME, session.username());
+        ctx.attribute(ATTR_SESSION, session);
         bindGameChatId(ctx, gameId);
         handler.get().register(ctx);
 
@@ -186,6 +190,8 @@ public final class GameStreamHandler implements Consumer<WsConfig> {
         String type = typeNode.asText();
         switch (type) {
             case "chatSend" -> handleChatSend(ctx, parsed);
+            case "playerAction" -> handlePlayerAction(ctx, parsed);
+            case "playerResponse" -> handlePlayerResponse(ctx, parsed);
             default -> sendError(ctx, "NOT_IMPLEMENTED",
                     "Inbound type '" + type + "' is not yet implemented.");
         }
@@ -238,6 +244,168 @@ public final class GameStreamHandler implements Consumer<WsConfig> {
             sendError(ctx, "UPSTREAM_REJECTED",
                     "chatSendMessage rejected: " + ex.getMessage());
         }
+    }
+
+    // ---------- inbound — playerAction (toggles, lifecycle) ----------
+
+    private void handlePlayerAction(WsMessageContext ctx, JsonNode body) {
+        UUID gameId = (UUID) ctx.attribute(ATTR_GAME_ID);
+        SessionEntry session = sessionFromCtx(ctx);
+        if (session == null) {
+            sendError(ctx, "INVALID_TOKEN", "WebSocket session lost.");
+            return;
+        }
+        JsonNode actionNode = body.get("action");
+        if (actionNode == null || !actionNode.isTextual()) {
+            sendError(ctx, "BAD_REQUEST",
+                    "playerAction missing required 'action' string.");
+            return;
+        }
+        PlayerAction action;
+        try {
+            action = PlayerAction.valueOf(actionNode.asText());
+        } catch (IllegalArgumentException ex) {
+            sendError(ctx, "BAD_REQUEST",
+                    "Unknown PlayerAction: " + actionNode.asText());
+            return;
+        }
+        if (!PlayerActionAllowList.contains(action)) {
+            sendError(ctx, "NOT_ALLOWED",
+                    "PlayerAction '" + action + "' is not on the server-side "
+                            + "allow-list (client-only or debug enum).");
+            return;
+        }
+        Object data = decodeActionData(action, body.get("data"));
+        try {
+            embedded.server().sendPlayerAction(action, gameId,
+                    session.upstreamSessionId(), data);
+        } catch (MageException ex) {
+            sendError(ctx, "UPSTREAM_ERROR",
+                    "sendPlayerAction failed: " + ex.getMessage());
+        } catch (RuntimeException ex) {
+            sendError(ctx, "UPSTREAM_REJECTED",
+                    "sendPlayerAction rejected: " + ex.getMessage());
+        }
+    }
+
+    /**
+     * Pull the per-action {@code data} payload out of the inbound
+     * envelope. Most {@link PlayerAction} values carry null. The
+     * documented exceptions are:
+     * <ul>
+     *   <li>{@code ROLLBACK_TURNS} — int (number of turns)</li>
+     *   <li>{@code REQUEST_AUTO_ANSWER_ID_*} / {@code _TEXT_*} — String
+     *       (the id or text the auto-answer applies to)</li>
+     * </ul>
+     * Anything else is silently passed as null. Slice 7 may add
+     * per-action validation; slice 6 ships the dispatch contract.
+     */
+    private static Object decodeActionData(PlayerAction action, JsonNode dataNode) {
+        if (dataNode == null || dataNode.isNull()) {
+            return null;
+        }
+        return switch (action) {
+            case ROLLBACK_TURNS -> dataNode.isObject() && dataNode.has("turns")
+                    ? dataNode.get("turns").asInt()
+                    : (dataNode.isInt() ? dataNode.asInt() : null);
+            case REQUEST_AUTO_ANSWER_ID_YES, REQUEST_AUTO_ANSWER_ID_NO,
+                 REQUEST_AUTO_ANSWER_TEXT_YES, REQUEST_AUTO_ANSWER_TEXT_NO ->
+                    dataNode.isObject() && dataNode.has("text")
+                            ? dataNode.get("text").asText()
+                            : (dataNode.isTextual() ? dataNode.asText() : null);
+            default -> null;
+        };
+    }
+
+    // ---------- inbound — playerResponse (dialog answers) ----------
+
+    private void handlePlayerResponse(WsMessageContext ctx, JsonNode body) {
+        UUID gameId = (UUID) ctx.attribute(ATTR_GAME_ID);
+        SessionEntry session = sessionFromCtx(ctx);
+        if (session == null) {
+            sendError(ctx, "INVALID_TOKEN", "WebSocket session lost.");
+            return;
+        }
+        JsonNode kindNode = body.get("kind");
+        JsonNode valueNode = body.get("value");
+        if (kindNode == null || !kindNode.isTextual()) {
+            sendError(ctx, "BAD_REQUEST",
+                    "playerResponse missing required 'kind' string.");
+            return;
+        }
+        if (valueNode == null) {
+            sendError(ctx, "BAD_REQUEST",
+                    "playerResponse missing required 'value' field.");
+            return;
+        }
+        String kind = kindNode.asText();
+        try {
+            switch (kind) {
+                case "uuid" -> embedded.server().sendPlayerUUID(
+                        gameId, session.upstreamSessionId(),
+                        UUID.fromString(valueNode.asText()));
+                case "string" -> embedded.server().sendPlayerString(
+                        gameId, session.upstreamSessionId(),
+                        valueNode.asText());
+                case "boolean" -> embedded.server().sendPlayerBoolean(
+                        gameId, session.upstreamSessionId(),
+                        valueNode.asBoolean());
+                case "integer" -> embedded.server().sendPlayerInteger(
+                        gameId, session.upstreamSessionId(),
+                        valueNode.asInt());
+                case "manaType" -> dispatchManaType(ctx, gameId, session, valueNode);
+                default -> {
+                    sendError(ctx, "BAD_REQUEST",
+                            "Unknown playerResponse kind: " + kind);
+                    return;
+                }
+            }
+        } catch (IllegalArgumentException ex) {
+            sendError(ctx, "BAD_REQUEST",
+                    "playerResponse value did not parse for kind='"
+                            + kind + "': " + ex.getMessage());
+        } catch (MageException ex) {
+            sendError(ctx, "UPSTREAM_ERROR",
+                    "sendPlayer" + capitalize(kind) + " failed: "
+                            + ex.getMessage());
+        } catch (RuntimeException ex) {
+            sendError(ctx, "UPSTREAM_REJECTED",
+                    "sendPlayer" + capitalize(kind) + " rejected: "
+                            + ex.getMessage());
+        }
+    }
+
+    private void dispatchManaType(WsMessageContext ctx, UUID gameId,
+                                   SessionEntry session, JsonNode valueNode)
+            throws MageException {
+        // sendPlayerManaType also takes a playerId — upstream uses the
+        // session's user as the source. The current signature requires
+        // both gameId and playerId; we use the active player's id from
+        // the value's optional "playerId" field, falling back to the
+        // session's username-resolved player. Slice 7 will tighten via
+        // explicit dialog-correlation.
+        JsonNode pidNode = valueNode.get("playerId");
+        JsonNode mtNode = valueNode.get("manaType");
+        if (pidNode == null || !pidNode.isTextual() || mtNode == null || !mtNode.isTextual()) {
+            sendError(ctx, "BAD_REQUEST",
+                    "playerResponse{kind:manaType} value must be "
+                            + "{ playerId: <uuid>, manaType: <enum> }.");
+            return;
+        }
+        UUID playerId = UUID.fromString(pidNode.asText());
+        ManaType mt = ManaType.valueOf(mtNode.asText());
+        embedded.server().sendPlayerManaType(gameId, playerId,
+                session.upstreamSessionId(), mt);
+    }
+
+    private static SessionEntry sessionFromCtx(WsMessageContext ctx) {
+        Object attr = ctx.attribute(ATTR_SESSION);
+        return attr instanceof SessionEntry s ? s : null;
+    }
+
+    private static String capitalize(String s) {
+        if (s == null || s.isEmpty()) return s;
+        return Character.toUpperCase(s.charAt(0)) + s.substring(1);
     }
 
     // ---------- frame helpers ----------

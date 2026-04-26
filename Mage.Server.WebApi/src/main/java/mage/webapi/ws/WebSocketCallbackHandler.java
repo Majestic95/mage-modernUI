@@ -190,6 +190,13 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
             case GAME_UPDATE -> mapGameView(cc, "gameUpdate");
             case GAME_UPDATE_AND_INFORM -> mapClientMessage(cc, "gameInform");
             case GAME_OVER -> mapClientMessage(cc, "gameOver");
+            case GAME_ASK -> mapClientMessage(cc, "gameAsk");
+            case GAME_TARGET -> mapClientMessage(cc, "gameTarget");
+            case GAME_SELECT -> mapClientMessage(cc, "gameSelect");
+            case GAME_PLAY_MANA -> mapClientMessage(cc, "gamePlayMana");
+            case GAME_GET_AMOUNT -> mapClientMessage(cc, "gameSelectAmount");
+            case GAME_INFORM_PERSONAL -> mapClientMessage(cc, "gameInformPersonal");
+            case GAME_ERROR -> mapGameError(cc);
             case END_GAME_INFO -> mapEndGame(cc);
             case START_GAME -> mapStartGame(cc);
             default -> null;
@@ -259,6 +266,22 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
                 cc.getMessageId(),
                 cc.getObjectId() == null ? null : cc.getObjectId().toString(),
                 GameViewMapper.toClientMessage(upstream)
+        );
+    }
+
+    private WebStreamFrame mapGameError(ClientCallback cc) {
+        // GAME_ERROR is the one Game* method whose data is a bare
+        // String, not a GameClientMessage. Synthesize the wrapper so
+        // every game-error frame renders through the same shape on
+        // the wire.
+        Object data = cc.getData();
+        String text = data == null ? "" : data.toString();
+        return new WebStreamFrame(
+                SchemaVersion.CURRENT,
+                "gameError",
+                cc.getMessageId(),
+                cc.getObjectId() == null ? null : cc.getObjectId().toString(),
+                GameViewMapper.toErrorMessage(text)
         );
     }
 

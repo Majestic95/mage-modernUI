@@ -19,6 +19,130 @@ minor mismatches.
 
 ---
 
+## 1.10 — 2026-04-26 — Dialog family + inbound playerAction / playerResponse (Phase 3 slice 6)
+
+Phase 3 exit gate. Slice 6 ships the input side of the WebSocket
+protocol — the dialog frames the server emits when a human's input is
+required, plus the inbound envelopes that carry that input back. After
+this bump a 1v1-vs-AI duel is fully drivable end-to-end through the
+WebSocket. Existing payloads keep their shape; their reported
+`schemaVersion` value bumps to `"1.10"`.
+
+### New outbound dialog methods
+
+All carry the (now-extended) `WebGameClientMessage` payload, except
+`gameError` which synthesizes one from the upstream bare-string
+payload. Each one corresponds to a specific input kind via the
+inbound `playerResponse` envelope.
+
+| `method` | Answered with | When |
+|---|---|---|
+| `gameAsk` | `playerResponse{kind:"boolean"}` | Yes/no question |
+| `gameTarget` | `playerResponse{kind:"uuid"}` | Pick a target — frame carries `cardsView1` (eligible cards) + `targets` (eligible IDs) + `flag` (required) |
+| `gameSelect` | `playerResponse{kind:"uuid"}` | Pick a selectable |
+| `gamePlayMana` | `playerResponse{kind:"boolean"}` | Mana payment dialog |
+| `gameSelectAmount` | `playerResponse{kind:"integer"}` | Pick an integer in `[min, max]` |
+| `gameInformPersonal` | (no response) | Personal status text |
+| `gameError` | (no response) | Game-rules error text — upstream `GAME_ERROR` carries a bare String, mapper synthesizes a `WebGameClientMessage` with only `message` populated |
+
+### `WebGameClientMessage` — extended shape
+
+```diff
+   "gameView":   { ... full WebGameView ... } | null,
+   "message":    "Pick a target.",
++  "targets":    ["<uuid>", ...],
++  "cardsView1": { "<uuid>": <WebCardView>, ... },
++  "min":        0,
++  "max":        0,
++  "flag":       false,
+```
+
+Slice 5 (`gameInform` / `gameOver`) frames now include the new fields
+as defaults (empty list, empty map, 0/0/false) — non-breaking minor
+bump because the webclient Zod schema passes through extra fields.
+
+Still deferred (slice 7+): `gameChooseAbility` (needs
+`AbilityPickerView`), `gameChooseChoice` (needs `Choice`),
+`gameChoosePile` (needs `cardsView2`), `gamePlayXMana`,
+`gameSelectMultiAmount` (needs `MultiAmountMessage[]`),
+`userRequestDialog`. These are rare in basic vs-AI play.
+
+### New inbound types
+
+#### `playerAction` — toggles, lifecycle, pass-priority modes
+
+```json
+{ "type": "playerAction", "action": "PASS_PRIORITY_UNTIL_TURN_END_STEP", "data": null }
+```
+
+`action` must be one of the **40-value `PlayerActionAllowList`** —
+the server-relevant subset of upstream's 59-value `PlayerAction`
+enum. Values rejected from the wire:
+
+- `CLIENT_*` (13 values) — Swing-UI-only enums (download images,
+  quit-tournament, exit-app, remove-table, reconnect, replay-action,
+  etc.); never sent to the server in upstream's design
+- `TOGGLE_RECORD_MACRO` — debug-only
+
+The allow-list is locked by a snapshot test
+(`PlayerActionAllowListTest`) — adding an upstream enum value forces
+a deliberate include/exclude decision.
+
+`data` is null for most actions. Documented exceptions:
+
+| Action | `data` shape |
+|---|---|
+| `ROLLBACK_TURNS` | `{"turns": <int>}` or bare int |
+| `REQUEST_AUTO_ANSWER_ID_*` / `_TEXT_*` | `{"text": "<id-or-text>"}` or bare string |
+
+Failure modes (in-band `streamError`):
+
+| `code` | When |
+|---|---|
+| `BAD_REQUEST` | Missing `action` field, unknown enum name |
+| `NOT_ALLOWED` | Enum is valid but client-only / off the allow-list |
+| `UPSTREAM_ERROR` | Upstream `MageException` |
+| `UPSTREAM_REJECTED` | Upstream rejected (no game, wrong phase, etc.) |
+
+#### `playerResponse` — answers a server-side dialog
+
+```json
+{ "type": "playerResponse", "messageId": 1234, "kind": "uuid", "value": "<uuid>" }
+```
+
+`messageId` echoes the dialog frame this answers (server tracks
+correlation upstream-side). `kind` is one of:
+
+| `kind` | Maps to | `value` shape |
+|---|---|---|
+| `uuid` | `sendPlayerUUID` | string (UUID) |
+| `string` | `sendPlayerString` | string |
+| `boolean` | `sendPlayerBoolean` | bool |
+| `integer` | `sendPlayerInteger` | int |
+| `manaType` | `sendPlayerManaType` | `{ "playerId": "<uuid>", "manaType": "<enum>" }` |
+
+`manaType` carries the playerId because `sendPlayerManaType` requires
+it upstream-side (the player whose mana pool is being paid from).
+Other kinds resolve the source player from the WS session
+automatically.
+
+### Phase 3 status
+
+After slice 6, the WebSocket protocol is **feature-complete for the
+1v1-vs-AI duel scenario** — the Phase 3 exit gate. The webclient
+needs to:
+
+1. Render any `WebGameView` (battlefield + hand + stack + combat — slice 4 + 5)
+2. Send `playerAction` for pass-priority + concede
+3. Render dialog frames and respond with `playerResponse`
+
+…and a full duel runs end-to-end through the WebSocket. Phase 4 work
+on the actual game-window UI now has every wire-format piece it
+needs. Slice 7+ adds the deferred dialog frames (multi-amount,
+choose-ability, choose-pile) when the renderer surfaces them.
+
+---
+
 ## 1.9 — 2026-04-26 — Stack, combat, zone maps, game-end frames (Phase 3 slice 5)
 
 Slice 5 finishes the visible-state contract — every zone the game

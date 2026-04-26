@@ -17,6 +17,7 @@ import mage.webapi.dto.stream.WebStartGameInfo;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Maps upstream game-state views to wire DTOs.
@@ -147,9 +148,41 @@ public final class GameViewMapper {
             throw new IllegalArgumentException("GameClientMessage must not be null");
         }
         WebGameView wrapped = gcm.getGameView() == null ? null : toDto(gcm.getGameView());
+        List<String> targets;
+        if (gcm.getTargets() == null || gcm.getTargets().isEmpty()) {
+            targets = List.of();
+        } else {
+            targets = new ArrayList<>(gcm.getTargets().size());
+            for (UUID id : gcm.getTargets()) {
+                if (id != null) targets.add(id.toString());
+            }
+        }
         return new WebGameClientMessage(
                 wrapped,
-                nullToEmpty(gcm.getMessage())
+                nullToEmpty(gcm.getMessage()),
+                targets,
+                CardViewMapper.toCardMap(gcm.getCardsView1()),
+                gcm.getMin(),
+                gcm.getMax(),
+                gcm.isFlag()
+        );
+    }
+
+    /**
+     * Synthesize a {@link WebGameClientMessage} carrying only an error
+     * message text. Used for the {@code gameError} frame, whose
+     * upstream {@code GAME_ERROR} callback carries a bare String
+     * instead of a {@code GameClientMessage}.
+     */
+    public static WebGameClientMessage toErrorMessage(String text) {
+        return new WebGameClientMessage(
+                null,
+                text == null ? "" : text,
+                List.of(),
+                java.util.Map.of(),
+                0,
+                0,
+                false
         );
     }
 
