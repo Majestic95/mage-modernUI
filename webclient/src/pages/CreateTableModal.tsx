@@ -13,12 +13,16 @@ interface Props {
 type AiType = 'COMPUTER_MONTE_CARLO' | 'COMPUTER_MAD';
 
 /**
- * Modal form for {@code POST /api/rooms/{roomId}/tables}. Fields per
- * ADR 0006 D3 — three required ({@code gameType}, {@code deckType},
- * {@code winsNeeded}), plus the per-seat composition (HUMAN-only or
- * one HUMAN + one AI). Advanced fields (password, mulligan type,
- * skill, etc.) stay at their server defaults; later slices expose
- * them when needed.
+ * Modal form for {@code POST /api/rooms/{roomId}/tables}. Three fields
+ * are required ({@code gameType}, {@code deckType}, {@code winsNeeded});
+ * everything else lives under the collapsible "Advanced options"
+ * section and inherits server defaults when left empty.
+ *
+ * <p>The advanced fields mirror upstream {@link mage.game.match.MatchOptions}:
+ * password, skill level, match time limit, spectators-allowed, rated,
+ * free mulligans, mulligan type, attack option, and range of influence.
+ * The latter two are only meaningful on multiplayer games and are
+ * gated on {@code GameType.useAttackOption} / {@code GameType.useRange}.
  */
 export function CreateTableModal({ roomId, serverState, onClose, onCreated }: Props) {
   const session = useAuthStore((s) => s.session);
@@ -31,11 +35,26 @@ export function CreateTableModal({ roomId, serverState, onClose, onCreated }: Pr
   const [winsNeeded, setWinsNeeded] = useState(1);
   const [addAi, setAddAi] = useState(true);
   const [aiType, setAiType] = useState<AiType>('COMPUTER_MONTE_CARLO');
+
+  // Advanced options — defaults align with MatchOptionsBuilder.build().
+  const [tableName, setTableName] = useState('');
+  const [password, setPassword] = useState('');
+  const [skillLevel, setSkillLevel] = useState<SkillLevel>('CASUAL');
+  const [matchTimeLimit, setMatchTimeLimit] = useState<MatchTimeLimit>('NONE');
+  const [spectatorsAllowed, setSpectatorsAllowed] = useState(true);
+  const [rated, setRated] = useState(false);
+  const [freeMulligans, setFreeMulligans] = useState(0);
+  const [mulliganType, setMulliganType] = useState<MulliganType>('GAME_DEFAULT');
+  const [attackOption, setAttackOption] = useState<AttackOption>('LEFT');
+  const [rangeOfInfluence, setRangeOfInfluence] = useState<RangeOfInfluence>('ALL');
+
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const selectedGame = serverState.gameTypes.find((g) => g.name === gameType);
   const aiAllowed = selectedGame?.maxPlayers === 2;
+  const showAttackOption = selectedGame?.useAttackOption ?? false;
+  const showRange = selectedGame?.useRange ?? false;
 
   // ESC key dismisses the modal.
   useEffect(() => {
@@ -64,6 +83,25 @@ export function CreateTableModal({ roomId, serverState, onClose, onCreated }: Pr
       winsNeeded,
     };
     if (seats) body['seats'] = seats;
+
+    // Advanced options — omit when at default to keep the wire body
+    // small and let the server own the defaults. Strings only ship
+    // when non-blank; enums only when changed from default.
+    const trimmedTableName = tableName.trim();
+    if (trimmedTableName) body['tableName'] = trimmedTableName;
+    if (password) body['password'] = password;
+    if (skillLevel !== 'CASUAL') body['skillLevel'] = skillLevel;
+    if (matchTimeLimit !== 'NONE') body['matchTimeLimit'] = matchTimeLimit;
+    if (!spectatorsAllowed) body['spectatorsAllowed'] = false;
+    if (rated) body['rated'] = true;
+    if (freeMulligans > 0) body['freeMulligans'] = freeMulligans;
+    if (mulliganType !== 'GAME_DEFAULT') body['mulliganType'] = mulliganType;
+    if (showAttackOption && attackOption !== 'LEFT') {
+      body['attackOption'] = attackOption;
+    }
+    if (showRange && rangeOfInfluence !== 'ALL') {
+      body['range'] = rangeOfInfluence;
+    }
 
     let created;
     try {
@@ -118,7 +156,7 @@ export function CreateTableModal({ roomId, serverState, onClose, onCreated }: Pr
     >
       <form
         onSubmit={onSubmit}
-        className="bg-zinc-900 border border-zinc-800 rounded-lg p-6 max-w-md w-full space-y-4"
+        className="bg-zinc-900 border border-zinc-800 rounded-lg p-6 max-w-md w-full space-y-4 max-h-[90vh] overflow-y-auto"
       >
         <header className="flex items-baseline justify-between">
           <h2 className="text-xl font-semibold">Create table</h2>
@@ -202,6 +240,149 @@ export function CreateTableModal({ roomId, serverState, onClose, onCreated }: Pr
           )}
         </fieldset>
 
+        <details className="border border-zinc-800 rounded">
+          <summary
+            className="cursor-pointer select-none px-3 py-2 text-sm text-zinc-300 hover:bg-zinc-800/50"
+            data-testid="advanced-summary"
+          >
+            Advanced options
+          </summary>
+          <div className="space-y-3 p-3 border-t border-zinc-800">
+            <Field label="Table name (optional)">
+              <input
+                type="text"
+                value={tableName}
+                onChange={(e) => setTableName(e.target.value)}
+                placeholder="Server picks a default if blank"
+                className={inputClasses}
+                maxLength={80}
+              />
+            </Field>
+
+            <Field label="Password (optional)">
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Leave blank for an open table"
+                className={inputClasses}
+                maxLength={40}
+                autoComplete="new-password"
+              />
+            </Field>
+
+            <Field label="Skill level">
+              <select
+                value={skillLevel}
+                onChange={(e) => setSkillLevel(e.target.value as SkillLevel)}
+                className={selectClasses}
+              >
+                <option value="BEGINNER">Beginner</option>
+                <option value="CASUAL">Casual</option>
+                <option value="SERIOUS">Serious</option>
+              </select>
+            </Field>
+
+            <Field label="Match time limit">
+              <select
+                value={matchTimeLimit}
+                onChange={(e) => setMatchTimeLimit(e.target.value as MatchTimeLimit)}
+                className={selectClasses}
+              >
+                <option value="NONE">None</option>
+                <option value="MIN___5">5 minutes</option>
+                <option value="MIN__10">10 minutes</option>
+                <option value="MIN__15">15 minutes</option>
+                <option value="MIN__20">20 minutes</option>
+                <option value="MIN__25">25 minutes</option>
+                <option value="MIN__30">30 minutes</option>
+                <option value="MIN__35">35 minutes</option>
+                <option value="MIN__40">40 minutes</option>
+                <option value="MIN__45">45 minutes</option>
+                <option value="MIN__50">50 minutes</option>
+                <option value="MIN__55">55 minutes</option>
+                <option value="MIN__60">60 minutes</option>
+                <option value="MIN__90">90 minutes</option>
+                <option value="MIN_120">120 minutes</option>
+              </select>
+            </Field>
+
+            <Field label="Free mulligans">
+              <input
+                type="number"
+                min={0}
+                max={5}
+                value={freeMulligans}
+                onChange={(e) => setFreeMulligans(Math.max(0, Number(e.target.value) || 0))}
+                className={inputClasses}
+              />
+            </Field>
+
+            <Field label="Mulligan type">
+              <select
+                value={mulliganType}
+                onChange={(e) => setMulliganType(e.target.value as MulliganType)}
+                className={selectClasses}
+              >
+                <option value="GAME_DEFAULT">Game default</option>
+                <option value="LONDON">London</option>
+                <option value="SMOOTHED_LONDON">Smoothed London</option>
+                <option value="VANCOUVER">Vancouver</option>
+                <option value="PARIS">Paris</option>
+                <option value="CANADIAN_HIGHLANDER">Canadian Highlander</option>
+              </select>
+            </Field>
+
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={spectatorsAllowed}
+                onChange={(e) => setSpectatorsAllowed(e.target.checked)}
+                className="accent-fuchsia-500"
+              />
+              <span>Spectators allowed</span>
+            </label>
+
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={rated}
+                onChange={(e) => setRated(e.target.checked)}
+                className="accent-fuchsia-500"
+              />
+              <span>Rated</span>
+            </label>
+
+            {showAttackOption && (
+              <Field label="Multiplayer attack option">
+                <select
+                  value={attackOption}
+                  onChange={(e) => setAttackOption(e.target.value as AttackOption)}
+                  className={selectClasses}
+                >
+                  <option value="LEFT">Attack left</option>
+                  <option value="RIGHT">Attack right</option>
+                  <option value="MULTIPLE">Attack multiple players</option>
+                </select>
+              </Field>
+            )}
+
+            {showRange && (
+              <Field label="Range of influence">
+                <select
+                  value={rangeOfInfluence}
+                  onChange={(e) => setRangeOfInfluence(e.target.value as RangeOfInfluence)}
+                  className={selectClasses}
+                >
+                  <option value="ALL">All</option>
+                  <option value="ONE">One</option>
+                  <option value="TWO">Two</option>
+                </select>
+              </Field>
+            )}
+          </div>
+        </details>
+
         {error && (
           <p role="alert" className="text-sm text-red-400">
             {error}
@@ -229,6 +410,33 @@ export function CreateTableModal({ roomId, serverState, onClose, onCreated }: Pr
     </div>
   );
 }
+
+type SkillLevel = 'BEGINNER' | 'CASUAL' | 'SERIOUS';
+type MatchTimeLimit =
+  | 'NONE'
+  | 'MIN___5'
+  | 'MIN__10'
+  | 'MIN__15'
+  | 'MIN__20'
+  | 'MIN__25'
+  | 'MIN__30'
+  | 'MIN__35'
+  | 'MIN__40'
+  | 'MIN__45'
+  | 'MIN__50'
+  | 'MIN__55'
+  | 'MIN__60'
+  | 'MIN__90'
+  | 'MIN_120';
+type MulliganType =
+  | 'GAME_DEFAULT'
+  | 'LONDON'
+  | 'SMOOTHED_LONDON'
+  | 'VANCOUVER'
+  | 'PARIS'
+  | 'CANADIAN_HIGHLANDER';
+type AttackOption = 'LEFT' | 'RIGHT' | 'MULTIPLE';
+type RangeOfInfluence = 'ALL' | 'ONE' | 'TWO';
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (

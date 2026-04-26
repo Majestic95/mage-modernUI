@@ -143,7 +143,50 @@ export function App() {
         {tab === 'decks' && <Decks />}
         {tab === 'cards' && <CardSearch />}
       </main>
+
+      <Footer />
     </div>
+  );
+}
+
+/**
+ * Trademark + attribution footer. Links to LICENSE-NOTICES.md in the
+ * repo for the full text. The disclaimer is also load-bearing for the
+ * "not affiliated with WotC" framing called out in the audit.
+ */
+function Footer() {
+  return (
+    <footer
+      data-testid="app-footer"
+      className="max-w-4xl mx-auto px-6 pb-6 text-center text-xs text-zinc-500 space-y-1"
+    >
+      <p>
+        Magic: The Gathering is a trademark of Wizards of the Coast LLC.
+        This project is not produced, endorsed, supported by, or
+        affiliated with Wizards of the Coast.
+      </p>
+      <p>
+        Built on the{' '}
+        <a
+          href="https://github.com/magefree/mage"
+          target="_blank"
+          rel="noreferrer noopener"
+          className="hover:text-zinc-300 underline underline-offset-2"
+        >
+          XMage
+        </a>{' '}
+        rules engine (MIT). See{' '}
+        <a
+          href="https://github.com/Majestic95/mage-modernUI/blob/main/LICENSE-NOTICES.md"
+          target="_blank"
+          rel="noreferrer noopener"
+          className="hover:text-zinc-300 underline underline-offset-2"
+        >
+          LICENSE-NOTICES
+        </a>{' '}
+        for full attributions.
+      </p>
+    </footer>
   );
 }
 

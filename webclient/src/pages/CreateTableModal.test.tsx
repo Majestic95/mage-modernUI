@@ -230,6 +230,156 @@ describe('CreateTableModal', () => {
     expect(screen.getByLabelText(/add ai opponent/i)).toBeDisabled();
   });
 
+  /* ---------- slice 10: advanced options ---------- */
+
+  it('submits advanced fields when the user changes them from defaults', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(tableResponse());
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <CreateTableModal
+        roomId={ROOM_ID}
+        serverState={SERVER_STATE}
+        onClose={() => {}}
+        onCreated={() => {}}
+      />,
+    );
+
+    // Drop the AI seat to keep the test focused on the create-table call.
+    await user.click(screen.getByLabelText(/add ai opponent/i));
+
+    // Open the Advanced section and tweak every field.
+    await user.click(screen.getByTestId('advanced-summary'));
+
+    await user.type(screen.getByLabelText(/table name/i), 'My duel');
+    await user.type(screen.getByLabelText(/^password/i), 'hunter2');
+    await user.selectOptions(screen.getByLabelText(/skill level/i), 'SERIOUS');
+    await user.selectOptions(screen.getByLabelText(/match time limit/i), 'MIN__30');
+    const freeMull = screen.getByLabelText(/free mulligans/i);
+    await user.clear(freeMull);
+    await user.type(freeMull, '2');
+    await user.selectOptions(screen.getByLabelText(/mulligan type/i), 'LONDON');
+    await user.click(screen.getByLabelText(/spectators allowed/i));
+    await user.click(screen.getByLabelText(/^rated$/i));
+
+    await user.click(screen.getByRole('button', { name: /^create$/i }));
+
+    const call = fetchMock.mock.calls[0];
+    const body = call?.[1]
+      ? JSON.parse(call[1].body as string) as Record<string, unknown>
+      : null;
+    expect(body).toMatchObject({
+      gameType: 'Two Player Duel',
+      deckType: 'Constructed - Vintage',
+      winsNeeded: 1,
+      tableName: 'My duel',
+      password: 'hunter2',
+      skillLevel: 'SERIOUS',
+      matchTimeLimit: 'MIN__30',
+      freeMulligans: 2,
+      mulliganType: 'LONDON',
+      spectatorsAllowed: false,
+      rated: true,
+    });
+    expect('seats' in (body ?? {})).toBe(false);
+  });
+
+  it('omits unchanged advanced fields from the request body', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(tableResponse())
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <CreateTableModal
+        roomId={ROOM_ID}
+        serverState={SERVER_STATE}
+        onClose={() => {}}
+        onCreated={() => {}}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: /^create$/i }));
+
+    const call = fetchMock.mock.calls[0];
+    const body = call?.[1]
+      ? JSON.parse(call[1].body as string) as Record<string, unknown>
+      : null;
+    // Only the required fields + seats (AI is on by default).
+    expect(Object.keys(body ?? {}).sort()).toEqual(
+      ['deckType', 'gameType', 'seats', 'winsNeeded'].sort(),
+    );
+  });
+
+  it('hides attackOption / range fields on games that do not use them', async () => {
+    const user = userEvent.setup();
+    render(
+      <CreateTableModal
+        roomId={ROOM_ID}
+        serverState={SERVER_STATE}
+        onClose={() => {}}
+        onCreated={() => {}}
+      />,
+    );
+
+    await user.click(screen.getByTestId('advanced-summary'));
+
+    expect(screen.queryByLabelText(/attack option/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/range of influence/i)).not.toBeInTheDocument();
+  });
+
+  it('shows attackOption / range when the selected game uses them', async () => {
+    const user = userEvent.setup();
+    const multiplayerState: WebServerState = {
+      ...SERVER_STATE,
+      gameTypes: [
+        ...SERVER_STATE.gameTypes,
+        {
+          name: 'Free For All MP',
+          minPlayers: 3,
+          maxPlayers: 5,
+          numTeams: 0,
+          playersPerTeam: 0,
+          useRange: true,
+          useAttackOption: true,
+        },
+      ],
+    };
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(tableResponse());
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <CreateTableModal
+        roomId={ROOM_ID}
+        serverState={multiplayerState}
+        onClose={() => {}}
+        onCreated={() => {}}
+      />,
+    );
+
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: /game type/i }),
+      'Free For All MP',
+    );
+    await user.click(screen.getByTestId('advanced-summary'));
+
+    await user.selectOptions(screen.getByLabelText(/attack option/i), 'RIGHT');
+    await user.selectOptions(screen.getByLabelText(/range of influence/i), 'TWO');
+    await user.click(screen.getByRole('button', { name: /^create$/i }));
+
+    const call = fetchMock.mock.calls[0];
+    const body = call?.[1]
+      ? JSON.parse(call[1].body as string) as Record<string, unknown>
+      : null;
+    expect(body).toMatchObject({
+      attackOption: 'RIGHT',
+      range: 'TWO',
+    });
+  });
+
   it('shows the WebError message on a 422 rejection', async () => {
     const user = userEvent.setup();
     vi.stubGlobal(
