@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuthStore } from './auth/store';
 import { CardSearch } from './pages/CardSearch';
 import { Lobby } from './pages/Lobby';
@@ -10,11 +10,21 @@ type Tab = 'lobby' | 'cards';
  * Auth-gated tab shell. No router yet — slice 4.1 has just two
  * authenticated screens, so a tab switch is enough. React Router
  * comes when the screen count justifies it.
+ *
+ * <p>On mount, the persisted session (if any) is verified against
+ * the server. Stale tokens are cleared so the user lands on Login;
+ * valid tokens stay in place and the user lands directly on the
+ * lobby (slice 4.2 — persistent session).
  */
 export function App() {
   const session = useAuthStore((s) => s.session);
   const logout = useAuthStore((s) => s.logout);
+  const verify = useAuthStore((s) => s.verify);
   const [tab, setTab] = useState<Tab>('lobby');
+
+  useEffect(() => {
+    void verify();
+  }, [verify]);
 
   if (!session) {
     return <Login />;

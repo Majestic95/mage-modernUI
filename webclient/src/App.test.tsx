@@ -20,9 +20,46 @@ const ANON_SESSION = {
   expiresAt: '2026-04-27T00:00:00Z',
 };
 
+const MAIN_ROOM = {
+  schemaVersion: '1.4',
+  roomId: '00000000-0000-0000-0000-000000000000',
+  chatId: '00000000-0000-0000-0000-000000000001',
+};
+
+/**
+ * URL-aware fetch mock. App startup hits /api/session/me, the Lobby
+ * hits /api/server/main-room (then /api/rooms/.../tables), CardSearch
+ * hits /api/cards. Each test stubs the routes it needs.
+ */
+function stubFetchByPath(routes: Record<string, () => Response>) {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((input: string | URL | Request) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+      for (const [prefix, build] of Object.entries(routes)) {
+        if (url.includes(prefix)) {
+          return Promise.resolve(build());
+        }
+      }
+      return Promise.resolve(new Response(null, { status: 404 }));
+    }),
+  );
+}
+
 describe('App shell', () => {
   beforeEach(() => {
-    useAuthStore.setState({ session: null, loading: false, error: null });
+    useAuthStore.setState({
+      session: null,
+      loading: false,
+      error: null,
+      verifying: false,
+    });
+    localStorage.clear();
   });
 
   afterEach(() => {
@@ -37,19 +74,10 @@ describe('App shell', () => {
 
   it('renders the tabbed shell when authenticated', () => {
     useAuthStore.setState({ session: ANON_SESSION });
-    // Stub fetch so the Lobby's auto-load doesn't blow up.
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() =>
-        Promise.resolve(
-          jsonResponse(200, {
-            schemaVersion: '1.4',
-            roomId: '00000000-0000-0000-0000-000000000000',
-            chatId: '00000000-0000-0000-0000-000000000001',
-          }),
-        ),
-      ),
-    );
+    stubFetchByPath({
+      '/api/session/me': () => jsonResponse(200, ANON_SESSION),
+      '/api/server/main-room': () => jsonResponse(200, MAIN_ROOM),
+    });
 
     render(<App />);
 
@@ -61,18 +89,10 @@ describe('App shell', () => {
   it('switches to the Cards tab when clicked', async () => {
     const user = userEvent.setup();
     useAuthStore.setState({ session: ANON_SESSION });
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() =>
-        Promise.resolve(
-          jsonResponse(200, {
-            schemaVersion: '1.4',
-            roomId: '00000000-0000-0000-0000-000000000000',
-            chatId: '00000000-0000-0000-0000-000000000001',
-          }),
-        ),
-      ),
-    );
+    stubFetchByPath({
+      '/api/session/me': () => jsonResponse(200, ANON_SESSION),
+      '/api/server/main-room': () => jsonResponse(200, MAIN_ROOM),
+    });
 
     render(<App />);
 
@@ -83,10 +103,11 @@ describe('App shell', () => {
   it('Sign out clears the session', async () => {
     const user = userEvent.setup();
     useAuthStore.setState({ session: ANON_SESSION });
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => Promise.resolve(new Response(null, { status: 204 }))),
-    );
+    stubFetchByPath({
+      '/api/session/me': () => jsonResponse(200, ANON_SESSION),
+      '/api/server/main-room': () => jsonResponse(200, MAIN_ROOM),
+      '/api/session': () => new Response(null, { status: 204 }),
+    });
 
     render(<App />);
     await user.click(screen.getByRole('button', { name: /sign out/i }));
