@@ -147,12 +147,22 @@ public final class AuthService implements AutoCloseable {
      * Resolve a Bearer token. Bumps sliding expiry on the way through.
      * Empty Optional ⇒ token unknown or expired (the middleware turns
      * this into 401).
+     *
+     * <p>Returns the internal {@link SessionEntry} so callers (the
+     * middleware, routes that need the upstream sessionId) get full
+     * context. Build the public {@link WebSession} DTO via
+     * {@link #toDto(SessionEntry)}.
      */
-    public Optional<WebSession> resolveAndBump(String token) {
+    public Optional<SessionEntry> resolveAndBump(String token) {
         if (token == null || token.isBlank()) {
             return Optional.empty();
         }
-        return store.getAndBump(token).map(this::toDto);
+        return store.getAndBump(token);
+    }
+
+    /** Build the public {@link WebSession} DTO from an internal entry. */
+    public WebSession toDto(SessionEntry entry) {
+        return toDtoInternal(entry);
     }
 
     /** Logout. Removes the WebApi token and disconnects the upstream session. */
@@ -222,7 +232,7 @@ public final class AuthService implements AutoCloseable {
         );
     }
 
-    private WebSession toDto(SessionEntry e) {
+    private WebSession toDtoInternal(SessionEntry e) {
         return new WebSession(
                 SchemaVersion.CURRENT,
                 e.token(),

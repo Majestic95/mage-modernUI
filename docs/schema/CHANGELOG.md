@@ -19,6 +19,104 @@ minor mismatches.
 
 ---
 
+## 1.4 — 2026-04-25 — Lobby and tables (Phase 2 slice 6)
+
+Adds the lobby + table CRUD layer described by [ADR 0006](../decisions/0006-lobby-and-tables.md).
+Existing payloads keep their shape; their reported `schemaVersion`
+value bumps to `"1.4"`.
+
+### New endpoints
+
+```
+GET    /api/server/main-room                               → WebRoomRef
+GET    /api/rooms/{roomId}/tables                          → WebTableListing
+POST   /api/rooms/{roomId}/tables                          → WebTable
+POST   /api/rooms/{roomId}/tables/{tableId}/join           → 204
+POST   /api/rooms/{roomId}/tables/{tableId}/ai             → 204
+POST   /api/rooms/{roomId}/tables/{tableId}/start          → 204
+DELETE /api/rooms/{roomId}/tables/{tableId}/seat           → 204
+```
+
+All require Bearer.
+
+### New DTOs
+
+#### `WebRoomRef` (top-level)
+
+```json
+{
+  "schemaVersion": "1.4",
+  "roomId":        "550e8400-...",
+  "chatId":        "660e8400-..."
+}
+```
+
+#### `WebTableListing` (top-level)
+
+```json
+{
+  "schemaVersion": "1.4",
+  "tables":        [ <WebTable>, ... ]
+}
+```
+
+#### `WebTable` (top-level on create, nested in listing)
+
+```json
+{
+  "tableId":           "770e...",
+  "tableName":         "alice's table",
+  "gameType":          "Two Player Duel",
+  "deckType":          "Constructed - Standard",
+  "tableState":        "WAITING",
+  "createTime":        "2026-04-25T22:30:00Z",
+  "controllerName":    "alice",
+  "skillLevel":        "CASUAL",
+  "isTournament":      false,
+  "passworded":        false,
+  "spectatorsAllowed": true,
+  "rated":             false,
+  "limited":           false,
+  "seats":             [ <WebSeat>, ... ]
+}
+```
+
+#### `WebSeat` (nested)
+
+```json
+{ "playerName": "alice", "playerType": "HUMAN", "occupied": true }
+```
+
+`playerType` is one of `HUMAN`, `COMPUTER_MONTE_CARLO`, `COMPUTER_MAD`,
+`COMPUTER_DRAFT_BOT`, or `""` for unoccupied seats.
+
+### Request DTOs
+
+`WebCreateTableRequest`, `WebJoinTableRequest`, `WebAddAiRequest`,
+`WebDeckCardLists`, `WebDeckCardInfo` — see [ADR 0006](../decisions/0006-lobby-and-tables.md)
+for the full field list.
+
+### New error code
+
+| Status | Code | When |
+|---|---|---|
+| 422 | `UPSTREAM_REJECTED` | Upstream returned `false` from a join/leave/start/AI call (illegal deck, table full, wrong password, missing seats, wrong table state, etc.) |
+
+Slice 6b will split this into specific codes once the callback-recording
+handler from [ADR 0004 D8](../decisions/0004-auth-and-sessions.md) can
+read the upstream rejection message.
+
+### Known limitations
+
+- **Owner-only table removal** (`DELETE /api/rooms/{id}/tables/{id}`)
+  is deferred to slice 6b. Currently only seat-vacate is supported.
+- **Single-table detail, room-users, finished-matches** all deferred.
+- **Spectate / watch** deferred (slice 7+ alongside game stream).
+- **Tournament tables** out of scope for Phase 2.
+- **Per-table chat streaming** lands with the WebSocket layer in Phase 3.
+
+---
+
 ## 1.3 — 2026-04-25 — Auth and sessions (Phase 2 slice 5)
 
 Adds the auth layer described by [ADR 0004](../decisions/0004-auth-and-sessions.md).

@@ -15,9 +15,11 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -282,6 +284,148 @@ class WebApiServerTest {
         assertEquals("NOT_FOUND", body.get("code").asText());
     }
 
+    // ---------- slice 6: lobby + tables ----------
+
+    @Test
+    void getMainRoom_returnsRoomRef() throws Exception {
+        HttpResponse<String> r = getAuthed("/api/server/main-room");
+        assertEquals(200, r.statusCode());
+
+        JsonNode body = JSON.readTree(r.body());
+        assertEquals(SchemaVersion.CURRENT, body.get("schemaVersion").asText());
+        assertNotNull(body.get("roomId").asText());
+        // chatId may be empty in some configs; just assert the field exists.
+        assertTrue(body.has("chatId"));
+    }
+
+    @Test
+    void listTables_returnsListing() throws Exception {
+        String roomId = mainRoomId();
+        HttpResponse<String> r = getAuthed("/api/rooms/" + roomId + "/tables");
+        assertEquals(200, r.statusCode());
+
+        JsonNode body = JSON.readTree(r.body());
+        assertEquals(SchemaVersion.CURRENT, body.get("schemaVersion").asText());
+        assertTrue(body.has("tables"));
+        assertTrue(body.get("tables").isArray());
+    }
+
+    @Test
+    void createTable_returnsWebTableWithExpectedShape() throws Exception {
+        String roomId = mainRoomId();
+        HttpResponse<String> r = postJsonAuthed("/api/rooms/" + roomId + "/tables", """
+                {"gameType":"Two Player Duel","deckType":"Constructed - Vintage","winsNeeded":1}
+                """);
+        assertEquals(200, r.statusCode(), r.body());
+
+        JsonNode table = JSON.readTree(r.body());
+        // Lock the 14-field shape.
+        assertEquals(14, table.size(),
+                "WebTable JSON must have exactly 14 fields; got: " + table);
+        assertNotNull(table.get("tableId").asText());
+        assertEquals("Two Player Duel", table.get("gameType").asText());
+        assertEquals("Constructed - Vintage", table.get("deckType").asText());
+        assertEquals("WAITING", table.get("tableState").asText());
+        assertTrue(table.get("seats").isArray());
+        assertEquals(2, table.get("seats").size(), "Two Player Duel must have 2 seats");
+    }
+
+    @Test
+    void createTable_missingGameType_returns400() throws Exception {
+        String roomId = mainRoomId();
+        HttpResponse<String> r = postJsonAuthed("/api/rooms/" + roomId + "/tables", """
+                {"deckType":"Constructed - Vintage","winsNeeded":1}
+                """);
+        assertEquals(400, r.statusCode());
+        assertEquals("BAD_REQUEST", JSON.readTree(r.body()).get("code").asText());
+    }
+
+    @Test
+    void addAi_returns204() throws Exception {
+        String roomId = mainRoomId();
+        // Table must declare a COMPUTER seat upfront (ADR 0006 — upstream
+        // getNextAvailableSeat filters by declared playerType).
+        String tableId = createTableWithSeats(roomId,
+                List.of("HUMAN", "COMPUTER_MONTE_CARLO"));
+
+        HttpResponse<String> r = postJsonAuthed(
+                "/api/rooms/" + roomId + "/tables/" + tableId + "/ai",
+                "{\"playerType\":\"COMPUTER_MONTE_CARLO\"}");
+        assertEquals(204, r.statusCode(), r.body());
+    }
+
+    @Test
+    void addAi_unknownPlayerType_returns400() throws Exception {
+        String roomId = mainRoomId();
+        String tableId = createTableWithSeats(roomId,
+                List.of("HUMAN", "COMPUTER_MONTE_CARLO"));
+
+        HttpResponse<String> r = postJsonAuthed(
+                "/api/rooms/" + roomId + "/tables/" + tableId + "/ai",
+                "{\"playerType\":\"NOT_A_REAL_AI\"}");
+        assertEquals(400, r.statusCode());
+        assertEquals("BAD_REQUEST", JSON.readTree(r.body()).get("code").asText());
+    }
+
+    @Test
+    void unknownTable_addAi_returns422() throws Exception {
+        String roomId = mainRoomId();
+        String fakeTable = "00000000-0000-0000-0000-000000000000";
+        HttpResponse<String> r = postJsonAuthed(
+                "/api/rooms/" + roomId + "/tables/" + fakeTable + "/ai",
+                "{\"playerType\":\"COMPUTER_MONTE_CARLO\"}");
+        assertEquals(422, r.statusCode());
+    }
+
+    @Test
+    void endToEnd_createTableAddAiJoinStart_advancesTableState() throws Exception {
+        // Use a fresh anon session so test state is isolated from `bearer`.
+        String e2eToken = freshAnonBearer();
+
+        String roomId = mainRoomId();
+        String tableId = createTableWith(e2eToken, roomId,
+                "Two Player Duel", "Constructed - Vintage", 1,
+                List.of("HUMAN", "COMPUTER_MONTE_CARLO"));
+
+        // Add an AI seat
+        HttpResponse<String> ai = postJsonWithToken(e2eToken,
+                "/api/rooms/" + roomId + "/tables/" + tableId + "/ai",
+                "{\"playerType\":\"COMPUTER_MONTE_CARLO\"}");
+        assertEquals(204, ai.statusCode(), ai.body());
+
+        // Join with a 60-Forest deck
+        String deckJson = buildForestDeckJson(60);
+        String joinBody = String.format(
+                "{\"name\":\"e2e-tester\",\"skill\":1,\"deck\":%s}", deckJson);
+        HttpResponse<String> join = postJsonWithToken(e2eToken,
+                "/api/rooms/" + roomId + "/tables/" + tableId + "/join", joinBody);
+        assertEquals(204, join.statusCode(), "join failed: " + join.body());
+
+        // Start the match
+        HttpResponse<String> start = postJsonWithToken(e2eToken,
+                "/api/rooms/" + roomId + "/tables/" + tableId + "/start", "");
+        assertEquals(204, start.statusCode(), "start failed: " + start.body());
+
+        // Verify the table state has advanced past WAITING. Two valid
+        // outcomes:
+        //   (a) table still appears in the listing with state != WAITING
+        //   (b) table has dropped from the listing entirely (which the
+        //       upstream lobby refresh does once a match transitions to
+        //       DUELING+) — also proof of advancement
+        HttpResponse<String> list = getWithToken(e2eToken, "/api/rooms/" + roomId + "/tables");
+        JsonNode tables = JSON.readTree(list.body()).get("tables");
+        for (JsonNode t : tables) {
+            if (tableId.equals(t.get("tableId").asText())) {
+                String state = t.get("tableState").asText();
+                assertNotEquals("WAITING", state,
+                        "table still listed but state is WAITING: should have advanced");
+                return;
+            }
+        }
+        // Table not in listing — match transitioned past the lobby snapshot,
+        // which is also success.
+    }
+
     @Test
     void doubleStart_throws() {
         WebApiServer second = new WebApiServer(EmbeddedServer.boot(CONFIG_PATH));
@@ -328,5 +472,93 @@ class WebApiServerTest {
                         .POST(HttpRequest.BodyPublishers.ofString(body))
                         .build(),
                 HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> postJsonAuthed(String path, String body) throws Exception {
+        return postJsonWithToken(bearer, path, body);
+    }
+
+    private HttpResponse<String> postJsonWithToken(String token, String path, String body) throws Exception {
+        return HTTP.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create("http://localhost:" + server.port() + path))
+                        .header("Content-Type", "application/json")
+                        .header("Authorization", "Bearer " + token)
+                        .timeout(Duration.ofSeconds(10))
+                        .POST(HttpRequest.BodyPublishers.ofString(body))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> getWithToken(String token, String path) throws Exception {
+        return HTTP.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create("http://localhost:" + server.port() + path))
+                        .header("Authorization", "Bearer " + token)
+                        .timeout(Duration.ofSeconds(5))
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
+    private String mainRoomId() throws Exception {
+        return JSON.readTree(getAuthed("/api/server/main-room").body()).get("roomId").asText();
+    }
+
+    private String createTestTable(String roomId) throws Exception {
+        HttpResponse<String> r = postJsonAuthed("/api/rooms/" + roomId + "/tables", """
+                {"gameType":"Two Player Duel","deckType":"Constructed - Vintage","winsNeeded":1}
+                """);
+        assertEquals(200, r.statusCode(), "table create failed: " + r.body());
+        return JSON.readTree(r.body()).get("tableId").asText();
+    }
+
+    private String createTableWithSeats(String roomId, List<String> seats) throws Exception {
+        String seatJson = seats.stream()
+                .map(s -> "\"" + s + "\"")
+                .collect(java.util.stream.Collectors.joining(",", "[", "]"));
+        String body = String.format(
+                "{\"gameType\":\"Two Player Duel\",\"deckType\":\"Constructed - Vintage\","
+                        + "\"winsNeeded\":1,\"seats\":%s}",
+                seatJson);
+        HttpResponse<String> r = postJsonAuthed("/api/rooms/" + roomId + "/tables", body);
+        assertEquals(200, r.statusCode(), "table create failed: " + r.body());
+        return JSON.readTree(r.body()).get("tableId").asText();
+    }
+
+    private String createTableWith(String token, String roomId, String gameType,
+                                    String deckType, int winsNeeded,
+                                    List<String> seats) throws Exception {
+        String seatJson = seats.stream()
+                .map(s -> "\"" + s + "\"")
+                .collect(java.util.stream.Collectors.joining(",", "[", "]"));
+        String body = String.format(
+                "{\"gameType\":\"%s\",\"deckType\":\"%s\",\"winsNeeded\":%d,\"seats\":%s}",
+                gameType, deckType, winsNeeded, seatJson);
+        HttpResponse<String> r = postJsonWithToken(token,
+                "/api/rooms/" + roomId + "/tables", body);
+        assertEquals(200, r.statusCode(), "table create failed: " + r.body());
+        return JSON.readTree(r.body()).get("tableId").asText();
+    }
+
+    private String freshAnonBearer() throws Exception {
+        HttpResponse<String> r = postJson("/api/session", "{}");
+        return JSON.readTree(r.body()).get("token").asText();
+    }
+
+    private String buildForestDeckJson(int amount) throws Exception {
+        // Find a real Forest printing in the local card DB so the deck
+        // passes upstream validation.
+        HttpResponse<String> r = getAuthed("/api/cards?name=Forest");
+        JsonNode forest = JSON.readTree(r.body()).get("cards").get(0);
+        assertNotNull(forest, "Forest must exist in the card DB");
+        return String.format(
+                "{\"name\":\"Test Forest Deck\",\"author\":\"e2e\","
+                        + "\"cards\":[{\"cardName\":\"Forest\",\"setCode\":\"%s\","
+                        + "\"cardNumber\":\"%s\",\"amount\":%d}],"
+                        + "\"sideboard\":[]}",
+                forest.get("setCode").asText(),
+                forest.get("cardNumber").asText(),
+                amount);
     }
 }

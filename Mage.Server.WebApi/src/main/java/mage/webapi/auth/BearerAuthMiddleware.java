@@ -3,7 +3,6 @@ package mage.webapi.auth;
 import io.javalin.http.Context;
 import io.javalin.http.Handler;
 import mage.webapi.WebApiException;
-import mage.webapi.dto.WebSession;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.Optional;
@@ -15,8 +14,12 @@ import java.util.Set;
  *
  * <p>On success, attaches:
  * <ul>
- *   <li>{@code ctx.attribute("webSession")} — the {@link WebSession}
- *       DTO for the current request</li>
+ *   <li>{@code ctx.attribute("session")} — the internal
+ *       {@link SessionEntry} carrying the upstream sessionId; routes
+ *       that talk to {@code MageServerImpl} read this</li>
+ *   <li>{@code ctx.attribute("webSession")} — the public
+ *       {@link mage.webapi.dto.WebSession} DTO for routes that just
+ *       echo back session info (e.g. {@code GET /api/session/me})</li>
  *   <li>{@code ctx.attribute("token")} — the raw bearer string</li>
  * </ul>
  *
@@ -61,12 +64,13 @@ public final class BearerAuthMiddleware implements Handler {
                     "Authorization: Bearer <token> required.");
         }
         String token = header.substring(BEARER_PREFIX.length()).trim();
-        Optional<WebSession> session = authService.resolveAndBump(token);
-        if (session.isEmpty()) {
+        Optional<SessionEntry> entry = authService.resolveAndBump(token);
+        if (entry.isEmpty()) {
             throw new WebApiException(401, "INVALID_TOKEN",
                     "Bearer token is invalid or expired.");
         }
-        ctx.attribute("webSession", session.get());
+        ctx.attribute("session", entry.get());
+        ctx.attribute("webSession", authService.toDto(entry.get()));
         ctx.attribute("token", token);
     }
 }
