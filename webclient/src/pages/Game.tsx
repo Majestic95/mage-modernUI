@@ -191,6 +191,8 @@ function Battlefield({
   gv: WebGameView;
   stream: GameStream | null;
 }) {
+  const pendingDialog = useGameStore((s) => s.pendingDialog);
+  const clearDialog = useGameStore((s) => s.clearDialog);
   const me = useMemo(
     () => gv.players.find((p) => p.playerId === gv.myPlayerId) ?? null,
     [gv.players, gv.myPlayerId],
@@ -205,9 +207,26 @@ function Battlefield({
   // ships this gate via hasPriority alone — server still validates
   // legality and surfaces gameError on bad clicks, so the worst
   // failure mode is a no-op + transient banner.
-  const canAct = !!me?.hasPriority && stream != null;
+  //
+  // Slice 15: when the engine is asking for a target (pendingDialog
+  // method=gameTarget), board clicks dispatch as the target
+  // response instead of as free priority. The TargetDialog is now a
+  // non-blocking side panel so clicks reach the board.
+  const targeting =
+    pendingDialog?.method === 'gameTarget' ? pendingDialog : null;
+  const eligibleTargetIds = useMemo(
+    () => new Set(targeting?.data.targets ?? []),
+    [targeting],
+  );
+  const canAct = (!!me?.hasPriority || targeting !== null) && stream != null;
   const onObjectClick = (id: string) => {
-    if (canAct) stream?.sendObjectClick(id);
+    if (!stream) return;
+    if (targeting) {
+      stream.sendPlayerResponse(targeting.messageId, 'uuid', id);
+      clearDialog();
+      return;
+    }
+    if (canAct) stream.sendObjectClick(id);
   };
 
   return (
@@ -221,6 +240,7 @@ function Battlefield({
             perspective="opponent"
             canAct={canAct}
             onObjectClick={onObjectClick}
+            targetable={eligibleTargetIds.has(p.playerId)}
           />
         ))}
         {opponents.length === 0 && (
@@ -237,6 +257,7 @@ function Battlefield({
               perspective="self"
               canAct={canAct}
               onObjectClick={onObjectClick}
+              targetable={eligibleTargetIds.has(me.playerId)}
             />
             <MyHand
               hand={gv.myHand}
@@ -259,11 +280,18 @@ function PlayerArea({
   perspective,
   canAct,
   onObjectClick,
+  targetable,
 }: {
   player: WebPlayerView;
   perspective: 'self' | 'opponent';
   canAct: boolean;
   onObjectClick: (id: string) => void;
+  /**
+   * True when a target dialog is pending and the player is a legal
+   * target. Click-on-name then dispatches the player's UUID as the
+   * target response. Slice 15.
+   */
+  targetable: boolean;
 }) {
   const battlefield = Object.values(player.battlefield);
   return (
@@ -273,7 +301,19 @@ function PlayerArea({
     >
       <header className="flex items-baseline justify-between mb-2">
         <div className="flex items-baseline gap-3">
-          <span className="font-medium">{player.name || '<unknown>'}</span>
+          {targetable ? (
+            <button
+              type="button"
+              data-testid={`target-player-${perspective}`}
+              onClick={() => onObjectClick(player.playerId)}
+              className="font-medium text-fuchsia-300 hover:text-fuchsia-200 underline underline-offset-2"
+              title="Click to target this player"
+            >
+              {player.name || '<unknown>'}
+            </button>
+          ) : (
+            <span className="font-medium">{player.name || '<unknown>'}</span>
+          )}
           {player.isActive && (
             <span className="text-xs bg-fuchsia-500/20 text-fuchsia-300 px-1.5 py-0.5 rounded">
               ACTIVE

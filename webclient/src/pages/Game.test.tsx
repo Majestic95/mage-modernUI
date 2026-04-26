@@ -311,6 +311,118 @@ describe('Game page', () => {
     expect(screen.getAllByTestId('permanent')[0]).toBeDisabled();
   });
 
+  /* ---------- slice 15: click-on-board targeting ---------- */
+
+  function pendingTargetDialog(targets: string[]) {
+    return {
+      method: 'gameTarget' as const,
+      messageId: 42,
+      data: {
+        gameView: null,
+        message: 'Pick a target',
+        targets,
+        cardsView1: {},
+        min: 0,
+        max: 0,
+        flag: true,
+        choice: null,
+      },
+    };
+  }
+
+  it('clicking a hand card while gameTarget is pending sends playerResponse, not free click', async () => {
+    const userEvent = (await import('@testing-library/user-event')).default;
+    const user = userEvent.setup();
+    const sendObj = vi
+      .spyOn(GameStream.prototype, 'sendObjectClick')
+      .mockImplementation(() => {});
+    const sendResp = vi
+      .spyOn(GameStream.prototype, 'sendPlayerResponse')
+      .mockImplementation(() => {});
+
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: buildGameView(),
+        pendingDialog: pendingTargetDialog([FOREST.id]),
+      });
+    });
+
+    await user.click(screen.getByTestId('hand-card'));
+
+    // Targeting takes precedence — went through playerResponse, not
+    // sendObjectClick.
+    expect(sendObj).not.toHaveBeenCalled();
+    expect(sendResp).toHaveBeenCalledWith(42, 'uuid', FOREST.id);
+    // Dialog cleared after dispatch.
+    expect(useGameStore.getState().pendingDialog).toBeNull();
+    sendObj.mockRestore();
+    sendResp.mockRestore();
+  });
+
+  it('clicking a permanent while gameTarget is pending dispatches as target response', async () => {
+    const userEvent = (await import('@testing-library/user-event')).default;
+    const user = userEvent.setup();
+    const sendResp = vi
+      .spyOn(GameStream.prototype, 'sendPlayerResponse')
+      .mockImplementation(() => {});
+
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: buildGameView(),
+        pendingDialog: pendingTargetDialog([TAPPED_FOREST_PERMANENT.card.id]),
+      });
+    });
+
+    await user.click(screen.getAllByTestId('permanent')[0]!);
+    expect(sendResp).toHaveBeenCalledWith(
+      42,
+      'uuid',
+      TAPPED_FOREST_PERMANENT.card.id,
+    );
+    sendResp.mockRestore();
+  });
+
+  it('player header becomes a clickable target when their UUID is in targets[]', async () => {
+    const userEvent = (await import('@testing-library/user-event')).default;
+    const user = userEvent.setup();
+    const sendResp = vi
+      .spyOn(GameStream.prototype, 'sendPlayerResponse')
+      .mockImplementation(() => {});
+
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    const gv = buildGameView();
+    const opponentId = gv.players.find((p) => !p.controlled)!.playerId;
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: gv,
+        pendingDialog: pendingTargetDialog([opponentId]),
+      });
+    });
+
+    const opponentBtn = screen.getByTestId('target-player-opponent');
+    await user.click(opponentBtn);
+    expect(sendResp).toHaveBeenCalledWith(42, 'uuid', opponentId);
+    sendResp.mockRestore();
+  });
+
+  it('player header is plain text when no target dialog is pending', () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: buildGameView(),
+      });
+    });
+    expect(
+      screen.queryByTestId('target-player-opponent'),
+    ).not.toBeInTheDocument();
+  });
+
   it('Leave button invokes onLeave', async () => {
     const onLeave = vi.fn();
     const userEvent = (await import('@testing-library/user-event')).default;

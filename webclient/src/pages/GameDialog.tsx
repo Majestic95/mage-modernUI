@@ -90,6 +90,25 @@ export function GameDialog({ stream }: Props) {
     return null;
   }
 
+  // gameTarget renders as a non-blocking side panel — the
+  // Battlefield wires click-on-board to dispatch the target
+  // response, so the user can pick by clicking either a card/
+  // permanent on the board OR a row in the picker. A full-screen
+  // backdrop would prevent the board interaction.
+  if (dialog.method === 'gameTarget') {
+    return (
+      <div
+        role="dialog"
+        aria-modal="false"
+        data-testid="game-dialog"
+        data-method={dialog.method}
+        className="fixed bottom-4 right-4 z-40 max-w-sm w-full bg-zinc-900 border border-zinc-700 rounded-lg p-5 space-y-3 shadow-2xl"
+      >
+        <DialogContent dialog={dialog} stream={stream} clearDialog={clearDialog} />
+      </div>
+    );
+  }
+
   return (
     <div
       role="dialog"
