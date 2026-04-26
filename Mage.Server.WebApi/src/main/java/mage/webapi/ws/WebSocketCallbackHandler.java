@@ -91,6 +91,26 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
         return sockets.size();
     }
 
+    /**
+     * Close every WebSocket registered on this handler with the given
+     * close code + reason. Called when the owning WebSession ends
+     * (logout / sweep) so connected clients observe the close instead
+     * of holding a TCP socket open until Jetty's idle timeout.
+     *
+     * <p>Per-socket failure is logged and skipped — the goal is
+     * best-effort fan-out, not transactional guarantee.
+     */
+    public void closeAllSockets(int code, String reason) {
+        for (WsContext ctx : sockets) {
+            try {
+                ctx.closeSession(code, reason);
+            } catch (RuntimeException ex) {
+                LOG.debug("WS close failed for user={}: {}", username, ex.getMessage());
+            }
+        }
+        sockets.clear();
+    }
+
     String username() {
         return username;
     }
@@ -314,9 +334,15 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
         if (sockets.isEmpty()) {
             return;
         }
+        // Snapshot the set so concurrent unregister() during the
+        // engine-thread fan-out doesn't surface as send-to-dead-socket
+        // log spam. ConcurrentHashMap's iterator is weakly consistent;
+        // a fresh ArrayList captures the registered set at this
+        // instant. (See concurrency audit 2026-04-26.)
+        List<WsContext> snapshot = new ArrayList<>(sockets);
         boolean isChat = "chatMessage".equals(frame.method());
         UUID frameChatId = cc.getObjectId();
-        for (WsContext ctx : sockets) {
+        for (WsContext ctx : snapshot) {
             if (isChat && !shouldDeliverChat(ctx, frameChatId)) {
                 continue;
             }

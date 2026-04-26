@@ -14,6 +14,7 @@ import org.slf4j.LoggerFactory;
 
 import java.security.SecureRandom;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -197,7 +198,19 @@ public final class AuthService implements AutoCloseable {
 
     @Override
     public void close() {
-        sweeper.shutdownNow();
+        // Graceful shutdown: stop accepting new sweep ticks, then wait
+        // briefly for any in-flight sweep to finish so its cleanup
+        // (close sockets + disconnect upstream) doesn't get interrupted
+        // mid-iteration. Hardening fix 2026-04-26.
+        sweeper.shutdown();
+        try {
+            if (!sweeper.awaitTermination(5, TimeUnit.SECONDS)) {
+                sweeper.shutdownNow();
+            }
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            sweeper.shutdownNow();
+        }
     }
 
     // ---------- internals ----------
@@ -213,7 +226,14 @@ public final class AuthService implements AutoCloseable {
     }
 
     private void silentDisconnect(String upstreamSessionId, DisconnectReason reason) {
-        handlersBySessionId.remove(upstreamSessionId);
+        // Close any registered WebSockets so connected clients observe
+        // the close instead of holding TCP open until Jetty timeout.
+        // Then drop the handler from the map and disconnect upstream.
+        // Hardening fix 2026-04-26.
+        WebSocketCallbackHandler handler = handlersBySessionId.remove(upstreamSessionId);
+        if (handler != null) {
+            handler.closeAllSockets(1000, "session ended: " + reason);
+        }
         try {
             sessionManager().disconnect(upstreamSessionId, reason, false);
         } catch (RuntimeException ex) {
@@ -228,13 +248,18 @@ public final class AuthService implements AutoCloseable {
     }
 
     private void sweep() {
-        // Snapshot tokens to disconnect upstream after eviction. The
-        // store evicts atomically; we just need to know which upstream
-        // sessions are now orphaned.
+        // Per-entry cleanup: close sockets, drop handler, disconnect
+        // upstream Session. The slice-1 sweep used to drop only the
+        // token from the store, leaving handlers + upstream Sessions
+        // resident as a slow leak (~1 KB per idle session, growing
+        // with idle population). Hardening fix 2026-04-26.
         try {
-            int evicted = store.evictExpired();
-            if (evicted > 0) {
-                LOG.info("WebApi sweep: evicted {} expired tokens", evicted);
+            List<SessionEntry> evicted = store.evictExpiredEntries();
+            for (SessionEntry e : evicted) {
+                silentDisconnect(e.upstreamSessionId(), DisconnectReason.SessionExpired);
+            }
+            if (!evicted.isEmpty()) {
+                LOG.info("WebApi sweep: evicted {} expired tokens", evicted.size());
             }
         } catch (RuntimeException ex) {
             LOG.warn("WebApi sweep error", ex);

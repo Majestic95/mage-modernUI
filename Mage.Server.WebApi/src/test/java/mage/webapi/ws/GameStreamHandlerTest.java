@@ -537,6 +537,68 @@ class GameStreamHandlerTest {
         }
     }
 
+    // ---------- hardening (post-audit) ----------
+
+    @Test
+    void playerResponse_booleanKind_stringValue_rejectedNotCoerced() throws Exception {
+        // Without strict type-checking, Jackson's asBoolean() on the
+        // string "no" silently returns false — turning a malicious
+        // string into a real game decision. Lock the strict guard.
+        TestListener listener = new TestListener();
+        WebSocket ws = openWs(UUID.randomUUID(), bearer, listener);
+        try {
+            listener.awaitFrame(FRAME_WAIT);
+            ws.sendText("{\"type\":\"playerResponse\",\"kind\":\"boolean\","
+                    + "\"value\":\"no\"}", true).join();
+            JsonNode err = JSON.readTree(awaitMethod(listener, "streamError"));
+            assertEquals("BAD_REQUEST", err.get("data").get("code").asText());
+            assertTrue(err.get("data").get("message").asText()
+                    .contains("must be a JSON bool"));
+        } finally {
+            ws.sendClose(WebSocket.NORMAL_CLOSURE, "test done").join();
+        }
+    }
+
+    @Test
+    void playerResponse_integerKind_stringValue_rejectedNotCoerced() throws Exception {
+        // Without strict type-checking, asInt() on a non-numeric string
+        // returns 0 — turning a malicious string into "I pick 0".
+        TestListener listener = new TestListener();
+        WebSocket ws = openWs(UUID.randomUUID(), bearer, listener);
+        try {
+            listener.awaitFrame(FRAME_WAIT);
+            ws.sendText("{\"type\":\"playerResponse\",\"kind\":\"integer\","
+                    + "\"value\":\"abc\"}", true).join();
+            JsonNode err = JSON.readTree(awaitMethod(listener, "streamError"));
+            assertEquals("BAD_REQUEST", err.get("data").get("code").asText());
+            assertTrue(err.get("data").get("message").asText()
+                    .contains("must be a JSON int"));
+        } finally {
+            ws.sendClose(WebSocket.NORMAL_CLOSURE, "test done").join();
+        }
+    }
+
+    @Test
+    void chatSend_oversizedMessage_repliesWithBadRequest() throws Exception {
+        // Cap is 4096 chars; send 5000.
+        StringBuilder huge = new StringBuilder(5000);
+        for (int i = 0; i < 5000; i++) huge.append('x');
+        TestListener listener = new TestListener();
+        WebSocket ws = openWs(UUID.randomUUID(), bearer, listener);
+        try {
+            listener.awaitFrame(FRAME_WAIT);
+            ws.sendText("{\"type\":\"chatSend\",\"chatId\":\""
+                    + UUID.randomUUID() + "\",\"message\":\""
+                    + huge + "\"}", true).join();
+            JsonNode err = JSON.readTree(awaitMethod(listener, "streamError"));
+            assertEquals("BAD_REQUEST", err.get("data").get("code").asText());
+            assertTrue(err.get("data").get("message").asText()
+                    .contains("4096"));
+        } finally {
+            ws.sendClose(WebSocket.NORMAL_CLOSURE, "test done").join();
+        }
+    }
+
     // ---------- slice 3: full game-lifecycle e2e ----------
 
     @Test

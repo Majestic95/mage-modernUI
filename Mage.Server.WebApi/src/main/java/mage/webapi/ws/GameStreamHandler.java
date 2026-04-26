@@ -56,6 +56,14 @@ public final class GameStreamHandler implements Consumer<WsConfig> {
     static final String ATTR_USERNAME = "webapi.username";
     static final String ATTR_SESSION = "webapi.session";
 
+    /**
+     * Hard cap on inbound {@code chatSend} message length. Prevents
+     * memory-amplification DoS through chat history. 4 KB is well
+     * above any legitimate single chat message; anything larger is
+     * almost certainly malicious or a buggy client.
+     */
+    static final int MAX_CHAT_MESSAGE_CHARS = 4096;
+
     private final AuthService authService;
     private final EmbeddedServer embedded;
 
@@ -232,17 +240,27 @@ public final class GameStreamHandler implements Consumer<WsConfig> {
             sendError(ctx, "BAD_REQUEST", "chatSend message must be non-blank.");
             return;
         }
+        if (message.length() > MAX_CHAT_MESSAGE_CHARS) {
+            sendError(ctx, "BAD_REQUEST",
+                    "chatSend message exceeds " + MAX_CHAT_MESSAGE_CHARS + " characters.");
+            return;
+        }
         String username = (String) ctx.attribute(ATTR_USERNAME);
         try {
             embedded.server().chatSendMessage(chatId, username, message);
         } catch (MageException ex) {
+            // MageException messages are designed for client display
+            // (see upstream usage); pass through.
             sendError(ctx, "UPSTREAM_ERROR",
                     "chatSendMessage failed: " + ex.getMessage());
         } catch (RuntimeException ex) {
             // Upstream chat-not-found / user-not-subscribed surfaces
             // here (NPE inside ChatManager when the chatId is unknown).
-            sendError(ctx, "UPSTREAM_REJECTED",
-                    "chatSendMessage rejected: " + ex.getMessage());
+            // Don't echo the raw exception message — it could leak
+            // internal stack info. Log full server-side, return generic.
+            LOG.warn("chatSendMessage unexpected error: user={}, chatId={}",
+                    username, chatId, ex);
+            sendError(ctx, "UPSTREAM_REJECTED", "chatSendMessage rejected.");
         }
     }
 
@@ -283,8 +301,10 @@ public final class GameStreamHandler implements Consumer<WsConfig> {
             sendError(ctx, "UPSTREAM_ERROR",
                     "sendPlayerAction failed: " + ex.getMessage());
         } catch (RuntimeException ex) {
-            sendError(ctx, "UPSTREAM_REJECTED",
-                    "sendPlayerAction rejected: " + ex.getMessage());
+            // Don't echo raw exception text — could leak stack info.
+            LOG.warn("sendPlayerAction unexpected error: user={}, action={}",
+                    session.username(), action, ex);
+            sendError(ctx, "UPSTREAM_REJECTED", "sendPlayerAction rejected.");
         }
     }
 
@@ -339,20 +359,54 @@ public final class GameStreamHandler implements Consumer<WsConfig> {
             return;
         }
         String kind = kindNode.asText();
+        // Strict type validation per kind. Jackson's asBoolean()/asInt()
+        // silently coerce strings ("true" → true, "abc" → 0); without
+        // this guard a malicious client could turn a yes/no dialog
+        // into "false" by sending `{kind: "boolean", value: "no"}`,
+        // and the server would dispatch a real game choice. Hardening
+        // fix 2026-04-26.
         try {
             switch (kind) {
-                case "uuid" -> embedded.server().sendPlayerUUID(
-                        gameId, session.upstreamSessionId(),
-                        UUID.fromString(valueNode.asText()));
-                case "string" -> embedded.server().sendPlayerString(
-                        gameId, session.upstreamSessionId(),
-                        valueNode.asText());
-                case "boolean" -> embedded.server().sendPlayerBoolean(
-                        gameId, session.upstreamSessionId(),
-                        valueNode.asBoolean());
-                case "integer" -> embedded.server().sendPlayerInteger(
-                        gameId, session.upstreamSessionId(),
-                        valueNode.asInt());
+                case "uuid" -> {
+                    if (!valueNode.isTextual()) {
+                        sendError(ctx, "BAD_REQUEST",
+                                "playerResponse{kind:uuid} value must be a string.");
+                        return;
+                    }
+                    embedded.server().sendPlayerUUID(
+                            gameId, session.upstreamSessionId(),
+                            UUID.fromString(valueNode.asText()));
+                }
+                case "string" -> {
+                    if (!valueNode.isTextual()) {
+                        sendError(ctx, "BAD_REQUEST",
+                                "playerResponse{kind:string} value must be a string.");
+                        return;
+                    }
+                    embedded.server().sendPlayerString(
+                            gameId, session.upstreamSessionId(),
+                            valueNode.asText());
+                }
+                case "boolean" -> {
+                    if (!valueNode.isBoolean()) {
+                        sendError(ctx, "BAD_REQUEST",
+                                "playerResponse{kind:boolean} value must be a JSON bool.");
+                        return;
+                    }
+                    embedded.server().sendPlayerBoolean(
+                            gameId, session.upstreamSessionId(),
+                            valueNode.booleanValue());
+                }
+                case "integer" -> {
+                    if (!valueNode.isInt()) {
+                        sendError(ctx, "BAD_REQUEST",
+                                "playerResponse{kind:integer} value must be a JSON int.");
+                        return;
+                    }
+                    embedded.server().sendPlayerInteger(
+                            gameId, session.upstreamSessionId(),
+                            valueNode.intValue());
+                }
                 case "manaType" -> dispatchManaType(ctx, gameId, session, valueNode);
                 default -> {
                     sendError(ctx, "BAD_REQUEST",
@@ -369,9 +423,11 @@ public final class GameStreamHandler implements Consumer<WsConfig> {
                     "sendPlayer" + capitalize(kind) + " failed: "
                             + ex.getMessage());
         } catch (RuntimeException ex) {
+            // Don't echo raw exception text — could leak stack info.
+            LOG.warn("sendPlayer{} unexpected error: user={}, kind={}",
+                    capitalize(kind), session.username(), kind, ex);
             sendError(ctx, "UPSTREAM_REJECTED",
-                    "sendPlayer" + capitalize(kind) + " rejected: "
-                            + ex.getMessage());
+                    "sendPlayer" + capitalize(kind) + " rejected.");
         }
     }
 

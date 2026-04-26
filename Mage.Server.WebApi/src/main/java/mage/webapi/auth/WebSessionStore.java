@@ -99,16 +99,27 @@ public final class WebSessionStore {
 
     /** Evict all expired entries. Cheap; safe to call from a scheduler. */
     public int evictExpired() {
+        return evictExpiredEntries().size();
+    }
+
+    /**
+     * Evict expired entries and return the {@link SessionEntry}s
+     * removed so the caller can run downstream cleanup (close
+     * WebSockets, disconnect upstream, drop callback handlers).
+     * The slice-1 sweep used to drop only the token map without
+     * touching upstream state — a leak this method exists to fix.
+     */
+    public List<SessionEntry> evictExpiredEntries() {
         Instant now = clock.instant();
-        int[] count = {0};
+        List<SessionEntry> evicted = new ArrayList<>();
         byToken.values().removeIf(e -> {
             if (now.isAfter(e.expiresAt()) || now.isAfter(hardCapOf(e))) {
-                count[0]++;
+                evicted.add(e);
                 return true;
             }
             return false;
         });
-        return count[0];
+        return evicted;
     }
 
     public int size() {

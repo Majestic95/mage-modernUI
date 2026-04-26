@@ -79,6 +79,29 @@ class WebSessionStoreTest {
     }
 
     @Test
+    void evictExpiredEntries_returnsRemovedSessionEntries() {
+        // The evictExpiredEntries() variant returns the SessionEntry
+        // for each eviction so AuthService.sweep can run downstream
+        // cleanup (close sockets, disconnect upstream). The slice-1
+        // sweep used to drop the count only — leak fix 2026-04-26.
+        TestClock clock = new TestClock(T0);
+        WebSessionStore store = new WebSessionStore(clock);
+        store.put(entry("dead-1", "alice", T0, T0.plus(Duration.ofMinutes(5))));
+        store.put(entry("dead-2", "bob", T0, T0.plus(Duration.ofMinutes(5))));
+        store.put(entry("alive", "carol", T0, T0.plus(Duration.ofHours(2))));
+
+        clock.advance(Duration.ofMinutes(10));
+        List<SessionEntry> evicted = store.evictExpiredEntries();
+        assertEquals(2, evicted.size());
+        // Both evicted entries must carry their upstream session ID
+        // so the caller can disconnect upstream.
+        for (SessionEntry e : evicted) {
+            assertFalse(e.upstreamSessionId().isBlank());
+        }
+        assertEquals(1, store.size());
+    }
+
+    @Test
     void removeAllByUsername_revokesPriorTokens_caseInsensitive() {
         TestClock clock = new TestClock(T0);
         WebSessionStore store = new WebSessionStore(clock);
