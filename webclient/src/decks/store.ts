@@ -16,11 +16,20 @@ export interface SavedDeck {
   createdAt: string;
   /** Mainboard entries already resolved to set+number per ADR 0006 D4. */
   cards: WebDeckCardInfo[];
+  /**
+   * Sideboard entries (slice 33). Migration from store v1 defaults
+   * this to {@code []} so older saves continue to load.
+   */
+  sideboard: WebDeckCardInfo[];
 }
 
 interface DecksState {
   decks: SavedDeck[];
-  add: (name: string, cards: WebDeckCardInfo[]) => SavedDeck;
+  add: (
+    name: string,
+    cards: WebDeckCardInfo[],
+    sideboard?: WebDeckCardInfo[],
+  ) => SavedDeck;
   remove: (id: string) => void;
   /** Reset the entire list (testing convenience). */
   clear: () => void;
@@ -36,12 +45,13 @@ export const useDecksStore = create<DecksState>()(
     (set) => ({
       decks: [],
 
-      add: (name, cards) => {
+      add: (name, cards, sideboard = []) => {
         const deck: SavedDeck = {
           id: uuid(),
           name: name.trim() || 'Untitled deck',
           createdAt: new Date().toISOString(),
           cards,
+          sideboard,
         };
         set((s) => ({ decks: [deck, ...s.decks] }));
         return deck;
@@ -53,8 +63,22 @@ export const useDecksStore = create<DecksState>()(
     }),
     {
       name: 'mage-decks',
-      version: 1,
+      version: 2,
       storage: createJSONStorage(() => localStorage),
+      // Migration v1 → v2: backfill sideboard:[] on every existing deck.
+      migrate: (persisted, version) => {
+        if (!persisted || typeof persisted !== 'object') return persisted;
+        if (version >= 2) return persisted as DecksState;
+        const state = persisted as { decks?: Partial<SavedDeck>[] };
+        const decks = (state.decks ?? []).map((d) => ({
+          id: d.id ?? uuid(),
+          name: d.name ?? 'Untitled deck',
+          createdAt: d.createdAt ?? new Date().toISOString(),
+          cards: d.cards ?? [],
+          sideboard: d.sideboard ?? [],
+        }));
+        return { ...state, decks } as DecksState;
+      },
     },
   ),
 );
@@ -68,6 +92,6 @@ export function toRequestBody(deck: SavedDeck, author: string): WebDeckCardLists
     name: deck.name,
     author,
     cards: deck.cards,
-    sideboard: [],
+    sideboard: deck.sideboard ?? [],
   };
 }

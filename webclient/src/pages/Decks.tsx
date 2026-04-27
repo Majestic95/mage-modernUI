@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { parseDeckText, totalCount } from '../decks/parse';
-import { resolveDeck } from '../decks/resolve';
+import { resolveDeckLists } from '../decks/resolve';
 import { useDecksStore, type SavedDeck } from '../decks/store';
 import { useAuthStore } from '../auth/store';
 
@@ -34,14 +34,18 @@ export function Decks() {
       setError(parsed.errors.join('\n'));
       return;
     }
-    if (parsed.cards.length === 0) {
+    if (parsed.cards.length === 0 && parsed.sideboard.length === 0) {
       setError('No cards parsed. Use one "<count> <card name>" line per entry.');
       return;
     }
 
     setImporting(true);
     try {
-      const result = await resolveDeck(parsed.cards, session.token);
+      const result = await resolveDeckLists(
+        parsed.cards,
+        parsed.sideboard,
+        session.token,
+      );
       if (result.missing.length > 0) {
         setError(
           'Could not find these cards in the server DB ' +
@@ -51,7 +55,7 @@ export function Decks() {
         setImporting(false);
         return;
       }
-      addDeck(name, result.cards);
+      addDeck(name, result.cards, result.sideboard);
       setName('');
       setText('');
     } catch (err) {
@@ -103,11 +107,23 @@ function ImportForm({
       <textarea
         value={text}
         onChange={(e) => onText(e.target.value)}
-        rows={10}
+        rows={12}
         spellCheck={false}
-        placeholder={'4 Lightning Bolt\n4 Counterspell\n20 Island\n…'}
+        placeholder={
+          '4 Lightning Bolt\n' +
+          '4 Counterspell\n' +
+          '20 Island\n' +
+          '\n' +
+          'Sideboard\n' +
+          '2 Negate'
+        }
         className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-fuchsia-500 font-mono text-sm"
       />
+      <p className="text-xs text-zinc-500">
+        Accepts MTGA / MTGO / Moxfield / Archidekt exports. Sideboard
+        starts after a blank line or a <code>Sideboard</code> header.
+        Trailing <code>(SET) NUM</code> annotations are stripped.
+      </p>
       {error && (
         <pre role="alert" className="text-sm text-red-400 whitespace-pre-wrap font-sans">
           {error}
@@ -145,7 +161,25 @@ function SavedList({
               <div className="space-y-1 min-w-0">
                 <p className="font-medium truncate">{deck.name}</p>
                 <p className="text-xs text-zinc-400">
-                  {totalCount(deck.cards.map((c) => ({ count: c.amount, cardName: c.cardName })))} cards
+                  {totalCount(
+                    deck.cards.map((c) => ({
+                      count: c.amount,
+                      cardName: c.cardName,
+                    })),
+                  )}{' '}
+                  cards
+                  {(deck.sideboard?.length ?? 0) > 0 && (
+                    <>
+                      {' '}/{' '}
+                      {totalCount(
+                        deck.sideboard.map((c) => ({
+                          count: c.amount,
+                          cardName: c.cardName,
+                        })),
+                      )}{' '}
+                      sideboard
+                    </>
+                  )}
                   &nbsp;·&nbsp;
                   imported {new Date(deck.createdAt).toLocaleDateString()}
                 </p>

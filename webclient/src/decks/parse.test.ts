@@ -18,19 +18,22 @@ describe('parseDeckText', () => {
     expect(result.cards.map((c) => c.cardName)).toEqual(['Forest', 'Mountain']);
   });
 
-  it('skips empty lines and comments', () => {
+  it('skips comment-only blank lines and pre-card blanks', () => {
+    // Blanks before any card line don't trigger the sideboard flip;
+    // both entries land in the mainboard. Slice 33: the flip only
+    // kicks in for a blank line AFTER ≥1 mainboard entry.
     const result = parseDeckText(
       [
         '// my burn deck',
         '',
         '# another comment',
         '4 Lightning Bolt',
-        '',
         '20 Mountain',
       ].join('\n'),
     );
     expect(result.errors).toEqual([]);
     expect(result.cards).toHaveLength(2);
+    expect(result.sideboard).toHaveLength(0);
   });
 
   it('reports malformed lines with line numbers', () => {
@@ -75,5 +78,110 @@ describe('parseDeckText', () => {
         { count: 20, cardName: 'Y' },
       ]),
     ).toBe(24);
+  });
+
+  /* ---------- slice 33: sideboard + MTGA suffix ---------- */
+
+  it('strips MTGA-style "(SET) NUM" trailing annotations', () => {
+    const result = parseDeckText(
+      [
+        '4 Lightning Bolt (M21) 162',
+        '4 Forest (UNF)',
+        '1 Jace, the Mind Sculptor (WWK) 31',
+      ].join('\n'),
+    );
+    expect(result.errors).toEqual([]);
+    expect(result.cards.map((c) => c.cardName)).toEqual([
+      'Lightning Bolt',
+      'Forest',
+      'Jace, the Mind Sculptor',
+    ]);
+  });
+
+  it('flips to sideboard on a blank line after main entries', () => {
+    const result = parseDeckText(
+      [
+        '4 Lightning Bolt',
+        '4 Counterspell',
+        '',
+        '2 Negate',
+        '3 Pyroblast',
+      ].join('\n'),
+    );
+    expect(result.errors).toEqual([]);
+    expect(result.cards.map((c) => c.cardName)).toEqual([
+      'Lightning Bolt',
+      'Counterspell',
+    ]);
+    expect(result.sideboard.map((c) => c.cardName)).toEqual([
+      'Negate',
+      'Pyroblast',
+    ]);
+  });
+
+  it('flips to sideboard on an explicit Sideboard header', () => {
+    const result = parseDeckText(
+      [
+        '4 Lightning Bolt',
+        'Sideboard',
+        '2 Negate',
+      ].join('\n'),
+    );
+    expect(result.cards.map((c) => c.cardName)).toEqual(['Lightning Bolt']);
+    expect(result.sideboard.map((c) => c.cardName)).toEqual(['Negate']);
+  });
+
+  it('uses only the first blank-line flip; subsequent blanks are skipped', () => {
+    const result = parseDeckText(
+      [
+        '4 Lightning Bolt',
+        '',
+        '2 Negate',
+        '',
+        '3 Pyroblast',
+      ].join('\n'),
+    );
+    // 2 Negate flipped to sideboard at the first blank; the second
+    // blank is just a separator. 3 Pyroblast stays in sideboard.
+    expect(result.cards.map((c) => c.cardName)).toEqual(['Lightning Bolt']);
+    expect(result.sideboard.map((c) => c.cardName)).toEqual([
+      'Negate',
+      'Pyroblast',
+    ]);
+  });
+
+  it('respects MTGO inline "SB:" prefix even before the section flip', () => {
+    const result = parseDeckText(
+      [
+        '4 Lightning Bolt',
+        'SB: 2 Negate',
+        '4 Mountain',
+      ].join('\n'),
+    );
+    // Only the SB-prefixed line goes to sideboard; the rest stays
+    // in main.
+    expect(result.cards.map((c) => c.cardName)).toEqual([
+      'Lightning Bolt',
+      'Mountain',
+    ]);
+    expect(result.sideboard.map((c) => c.cardName)).toEqual(['Negate']);
+  });
+
+  it('treats Deck / Mainboard headers as switches back to main', () => {
+    const result = parseDeckText(
+      [
+        'Deck',
+        '4 Lightning Bolt',
+        'Sideboard',
+        '2 Negate',
+        'Mainboard',
+        '4 Counterspell',
+      ].join('\n'),
+    );
+    expect(result.cards.map((c) => c.cardName)).toEqual([
+      'Lightning Bolt',
+      'Counterspell',
+    ]);
+    expect(result.sideboard.map((c) => c.cardName)).toEqual(['Negate']);
   });
 });
