@@ -513,6 +513,11 @@ function Battlefield({
         )}
       </section>
 
+      {/* Stack — between players (slice 27). Collapses to nothing
+          when empty so the 50/50 opponents/self vertical split is
+          undisturbed. */}
+      <StackZone stack={gv.stack} />
+
       {/* Self — bottom */}
       <section className="flex-1 p-4 space-y-4 overflow-auto">
         {me ? (
@@ -541,6 +546,71 @@ function Battlefield({
         )}
       </section>
     </div>
+  );
+}
+
+/**
+ * Stack zone — slice 27. Renders the spells / abilities currently on
+ * the stack between the opponents row and the self row. Collapses to
+ * {@code null} when empty so the surrounding layout doesn't shift.
+ *
+ * <p>Order: newest-first ({@code Object.values(...).reverse()}). The
+ * upstream wire preserves insertion order via {@code LinkedHashMap}
+ * (oldest first); reversing matches the MTGO/MTGA convention of
+ * showing the top-of-stack at the top of the UI.
+ *
+ * <p>No click handlers in this slice — interacting with stack
+ * objects is rare in 1v1 and would conflict with the free-priority
+ * click router. The tooltip surfaces the rules text so the player
+ * can see what's about to resolve.
+ */
+function StackZone({ stack }: { stack: Record<string, WebCardView> }) {
+  const entries = Object.values(stack).reverse();
+  if (entries.length === 0) {
+    return null;
+  }
+  return (
+    <section
+      data-testid="stack-zone"
+      className="flex-shrink-0 border-b border-zinc-800 bg-zinc-900/60 px-4 py-2"
+    >
+      <div className="text-xs text-zinc-500 uppercase tracking-wide mb-1.5">
+        Stack ({entries.length}) — top resolves first
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {entries.map((card, idx) => {
+          const tooltip = [card.typeLine, ...(card.rules ?? [])]
+            .filter(Boolean)
+            .join('\n');
+          return (
+            <div
+              key={card.id}
+              data-testid="stack-entry"
+              className={
+                'inline-flex items-baseline gap-1 px-2 py-1 rounded text-xs ' +
+                'border border-zinc-700 bg-zinc-900'
+              }
+              title={tooltip || card.name}
+            >
+              <span className="font-medium text-zinc-100">{card.name}</span>
+              {card.manaCost && (
+                <span className="text-[10px] text-zinc-500 font-mono">
+                  {card.manaCost}
+                </span>
+              )}
+              {idx === 0 && (
+                <span
+                  data-testid="stack-top-marker"
+                  className="text-[10px] font-semibold bg-fuchsia-500/30 text-fuchsia-200 px-1 rounded"
+                >
+                  TOP
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 

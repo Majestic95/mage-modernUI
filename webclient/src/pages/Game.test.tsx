@@ -651,6 +651,79 @@ describe('Game page', () => {
     expect(screen.queryByTestId('combat-badge-blocker')).toBeNull();
   });
 
+  /* ---------- slice 27: stack rendering ---------- */
+
+  it('does not render the stack zone when stack is empty', () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: buildGameView(),
+      });
+    });
+    expect(screen.queryByTestId('stack-zone')).not.toBeInTheDocument();
+  });
+
+  it('renders one stack entry per card on the stack', () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    const gv = buildGameView();
+    const lightning = webCardViewSchema.parse({
+      ...FOREST,
+      id: '33333333-3333-3333-3333-333333333333',
+      name: 'Lightning Bolt',
+      manaCost: '{R}',
+      typeLine: 'Instant',
+      types: ['INSTANT'],
+      subtypes: [],
+      rules: ['Lightning Bolt deals 3 damage to any target.'],
+    });
+    gv.stack = { [lightning.id]: lightning };
+    act(() => {
+      useGameStore.setState({ connection: 'open', gameView: gv });
+    });
+    const zone = screen.getByTestId('stack-zone');
+    expect(zone).toBeInTheDocument();
+    expect(zone).toHaveTextContent('Lightning Bolt');
+    expect(screen.getAllByTestId('stack-entry')).toHaveLength(1);
+  });
+
+  it('marks the most recently added stack entry as TOP (resolves first)', () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    const gv = buildGameView();
+    const oldest = webCardViewSchema.parse({
+      ...FOREST,
+      id: '44444444-4444-4444-4444-444444444444',
+      name: 'Oldest Spell',
+      manaCost: '{1}',
+      typeLine: 'Instant',
+      types: ['INSTANT'],
+      subtypes: [],
+    });
+    const newest = webCardViewSchema.parse({
+      ...FOREST,
+      id: '55555555-5555-5555-5555-555555555555',
+      name: 'Newest Spell',
+      manaCost: '{2}',
+      typeLine: 'Instant',
+      types: ['INSTANT'],
+      subtypes: [],
+    });
+    // Server preserves insertion order (LinkedHashMap) — oldest
+    // first on the wire, newest first in the UI.
+    gv.stack = { [oldest.id]: oldest, [newest.id]: newest };
+    act(() => {
+      useGameStore.setState({ connection: 'open', gameView: gv });
+    });
+    const entries = screen.getAllByTestId('stack-entry');
+    expect(entries).toHaveLength(2);
+    // First rendered entry is the newest — and carries the TOP marker.
+    expect(entries[0]).toHaveTextContent('Newest Spell');
+    expect(entries[1]).toHaveTextContent('Oldest Spell');
+    const topMarkers = screen.getAllByTestId('stack-top-marker');
+    expect(topMarkers).toHaveLength(1);
+    expect(entries[0]!.contains(topMarkers[0]!)).toBe(true);
+  });
+
   /* ---------- slice 19: game-end overlay ---------- */
 
   it('renders game-over banner when gameOverPending is set and gameEnd is null', () => {
