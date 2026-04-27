@@ -128,6 +128,25 @@ export function GameDialog({ stream }: Props) {
     );
   }
 
+  // gamePlayMana / gamePlayXMana — slice 21 (B2). The user pays
+  // mana by clicking lands / mana sources on the battlefield;
+  // slice 16's clickRouter dispatches manaPay-mode clicks via
+  // sendObjectClick. A full-screen modal would block those clicks,
+  // so render the panel as a non-blocking side strip instead.
+  if (dialog.method === 'gamePlayMana' || dialog.method === 'gamePlayXMana') {
+    return (
+      <div
+        role="dialog"
+        aria-modal="false"
+        data-testid="game-dialog"
+        data-method={dialog.method}
+        className="fixed bottom-4 right-4 z-40 max-w-sm w-full bg-zinc-900 border border-zinc-700 rounded-lg p-5 space-y-3 shadow-2xl"
+      >
+        <DialogContent dialog={dialog} stream={stream} clearDialog={clearDialog} />
+      </div>
+    );
+  }
+
   return (
     <div
       role="dialog"
@@ -171,7 +190,14 @@ function DialogContent({
       return <YesNoDialog dialog={dialog} stream={stream} clearDialog={clearDialog} />;
     case 'gamePlayMana':
     case 'gamePlayXMana':
-      return <YesNoDialog dialog={dialog} stream={stream} clearDialog={clearDialog} />;
+      return (
+        <ManaPayPanel
+          dialog={dialog}
+          stream={stream}
+          clearDialog={clearDialog}
+          isXMana={dialog.method === 'gamePlayXMana'}
+        />
+      );
     case 'gameTarget':
       return <TargetDialog dialog={dialog} stream={stream} clearDialog={clearDialog} />;
     case 'gameSelect':
@@ -578,6 +604,58 @@ function CombatPanel({
         <PrimaryButton onClick={() => commit('boolean', true)}>
           OK
         </PrimaryButton>
+      </Buttons>
+    </>
+  );
+}
+
+/* ---------- mana-pay panel (slice 21 B2) ---------- */
+
+/**
+ * Manual-mana-payment panel. Engine fires gamePlayMana when
+ * auto-pay can't resolve a cost (hybrid mana, conditional mana, X
+ * costs that need explicit player picks). The user pays by
+ * clicking mana-producing permanents on the battlefield —
+ * slice 16's clickRouter routes those clicks via sendObjectClick
+ * during {@code manaPay} mode without clearing the dialog.
+ *
+ * <p>This panel renders the cost message and a Cancel button that
+ * sends {@code playerResponse{boolean:false}} (upstream rolls back
+ * any partial payment).
+ *
+ * <p>For gamePlayXMana the same panel renders, plus a "Done"
+ * button to commit the current X value (upstream uses
+ * {@code boolean:false} as the finalize signal here too —
+ * verified against HumanPlayer's playXMana loop).
+ */
+function ManaPayPanel({
+  dialog,
+  stream,
+  clearDialog,
+  isXMana,
+}: ContentProps & { isXMana: boolean }) {
+  const send = (value: boolean) => {
+    // Read messageId from the store at click time — the engine
+    // fires fresh gamePlayMana frames as each mana is paid; the
+    // imperative read avoids stale-id staleness.
+    const current = useGameStore.getState().pendingDialog;
+    const mid = current?.messageId ?? dialog.messageId;
+    stream?.sendPlayerResponse(mid, 'boolean', value);
+    clearDialog();
+  };
+
+  return (
+    <>
+      <Header title={isXMana ? 'Pay X mana' : 'Pay mana'} />
+      <Message text={dialog.data.message} />
+      <p className="text-xs text-zinc-500 italic">
+        Click a mana source on the battlefield to pay.
+      </p>
+      <Buttons>
+        {isXMana && (
+          <PrimaryButton onClick={() => send(false)}>Done</PrimaryButton>
+        )}
+        <SecondaryButton onClick={() => send(false)}>Cancel</SecondaryButton>
       </Buttons>
     </>
   );

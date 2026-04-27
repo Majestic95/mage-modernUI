@@ -684,7 +684,7 @@ describe('GameDialog', () => {
     expect(stream.sendPlayerResponse).not.toHaveBeenCalled();
   });
 
-  it('gamePlayMana: Yes/No sends boolean', async () => {
+  it('gamePlayMana: renders cost message + Cancel button (slice 21)', async () => {
     const stream = fakeStream();
     const user = userEvent.setup();
     act(() => {
@@ -698,13 +698,21 @@ describe('GameDialog', () => {
     });
     render(<GameDialog stream={stream} />);
     expect(screen.getByTestId('dialog-title')).toHaveTextContent(/pay mana/i);
-    await user.click(screen.getByRole('button', { name: /^yes$/i }));
-    expect(stream.sendPlayerResponse).toHaveBeenCalledWith(33, 'boolean', true);
+    expect(screen.getByText(/Pay \{R\}\?/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Click a mana source on the battlefield/i),
+    ).toBeInTheDocument();
+    // Slice 21: no Yes/No buttons — Cancel is the only modal control,
+    // because the gesture is to click a land on the board.
+    expect(screen.queryByRole('button', { name: /^Yes$/i })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /^Cancel$/i }));
+    expect(stream.sendPlayerResponse).toHaveBeenCalledWith(33, 'boolean', false);
+    expect(useGameStore.getState().pendingDialog).toBeNull();
   });
 
   /* ---------- slice 7: 3 audit-tier-2 dialogs ---------- */
 
-  it('gamePlayXMana: reuses YesNo renderer and sends boolean', async () => {
+  it('gamePlayXMana: renders cost message + Done + Cancel buttons (slice 21)', async () => {
     const stream = fakeStream();
     const user = userEvent.setup();
     act(() => {
@@ -712,7 +720,7 @@ describe('GameDialog', () => {
         pendingDialog: {
           method: 'gamePlayXMana',
           messageId: 50,
-          data: emptyDialog({ message: 'Add another to X?' }),
+          data: emptyDialog({ message: 'X = 3 — keep paying?' }),
         },
       });
     });
@@ -721,8 +729,10 @@ describe('GameDialog', () => {
       'data-method',
       'gamePlayXMana',
     );
-    await user.click(screen.getByRole('button', { name: /^yes$/i }));
-    expect(stream.sendPlayerResponse).toHaveBeenCalledWith(50, 'boolean', true);
+    expect(screen.getByTestId('dialog-title')).toHaveTextContent(/Pay X mana/i);
+    // Done finalizes (boolean=false per upstream convention).
+    await user.click(screen.getByRole('button', { name: /^Done$/i }));
+    expect(stream.sendPlayerResponse).toHaveBeenCalledWith(50, 'boolean', false);
   });
 
   it('gameChooseChoice: clicking a choice sends the chosen key as string', async () => {
