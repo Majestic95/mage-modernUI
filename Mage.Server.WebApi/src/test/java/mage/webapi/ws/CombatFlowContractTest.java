@@ -89,6 +89,68 @@ class CombatFlowContractTest {
     }
 
     @Test
+    void mapToFrame_gameSelectAttackers_forwardsPossibleAttackersAndSpecialButton() throws Exception {
+        // Slice 20 B1a — combat UI consumes options.possibleAttackers
+        // (highlight legal creatures) + options.specialButton ("All
+        // attack" button). This test pins the propagation contract.
+        java.util.UUID atk1 = java.util.UUID.fromString("11111111-1111-1111-1111-111111111111");
+        java.util.UUID atk2 = java.util.UUID.fromString("22222222-2222-2222-2222-222222222222");
+        java.util.Map<String, java.io.Serializable> upstreamOptions = new java.util.HashMap<>();
+        upstreamOptions.put("POSSIBLE_ATTACKERS",
+                new java.util.ArrayList<>(java.util.List.of(atk1, atk2)));
+        upstreamOptions.put("SPECIAL_BUTTON", "All attack");
+
+        WebSocketCallbackHandler h = new WebSocketCallbackHandler("alice");
+        GameClientMessage payload = new GameClientMessage(null, upstreamOptions, SELECT_ATTACKERS);
+        ClientCallback cc = new ClientCallback(
+                ClientCallbackMethod.GAME_SELECT,
+                java.util.UUID.randomUUID(),
+                payload
+        );
+        cc.decompressData();
+        WebStreamFrame frame = h.mapToFrame(cc);
+        assertNotNull(frame);
+
+        JsonNode data = JSON.valueToTree(frame.data());
+        JsonNode options = data.get("options");
+        assertNotNull(options, "wire format must include options field (slice 17)");
+
+        JsonNode pa = options.get("possibleAttackers");
+        assertNotNull(pa, "options.possibleAttackers must be present");
+        assertEquals(2, pa.size(), "both attacker UUIDs forwarded");
+        assertEquals(atk1.toString(), pa.get(0).asText());
+        assertEquals(atk2.toString(), pa.get(1).asText());
+
+        assertEquals("All attack", options.get("specialButton").asText(),
+                "specialButton text forwarded for All-attack button");
+    }
+
+    @Test
+    void mapToFrame_gameSelectBlockers_forwardsPossibleBlockers() throws Exception {
+        java.util.UUID b1 = java.util.UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+        java.util.Map<String, java.io.Serializable> upstreamOptions = new java.util.HashMap<>();
+        upstreamOptions.put("POSSIBLE_BLOCKERS",
+                new java.util.ArrayList<>(java.util.List.of(b1)));
+
+        WebSocketCallbackHandler h = new WebSocketCallbackHandler("bob");
+        GameClientMessage payload = new GameClientMessage(null, upstreamOptions, SELECT_BLOCKERS);
+        ClientCallback cc = new ClientCallback(
+                ClientCallbackMethod.GAME_SELECT,
+                java.util.UUID.randomUUID(),
+                payload
+        );
+        cc.decompressData();
+        WebStreamFrame frame = h.mapToFrame(cc);
+
+        JsonNode options = JSON.valueToTree(frame.data()).get("options");
+        JsonNode pb = options.get("possibleBlockers");
+        assertEquals(1, pb.size());
+        assertEquals(b1.toString(), pb.get(0).asText());
+        // No specialButton on blockers.
+        assertEquals("", options.get("specialButton").asText());
+    }
+
+    @Test
     void mapToFrame_unknownCallback_returnsNull() throws Exception {
         // Sanity: REPLAY_GAME has no mapper case (out-of-1v1-scope
         // per ADR 0008 §1.40); confirms the default → null branch.

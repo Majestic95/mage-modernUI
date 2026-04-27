@@ -150,6 +150,143 @@ describe('GameDialog', () => {
     expect(stream.sendPlayerResponse).toHaveBeenCalledWith(99, 'boolean', false);
   });
 
+  /* ---------- slice 20 B1a: combat panel ---------- */
+
+  function combatDialog(message: string, opts?: {
+    possibleAttackers?: string[];
+    possibleBlockers?: string[];
+    specialButton?: string;
+  }) {
+    return {
+      method: 'gameSelect' as const,
+      messageId: 99,
+      data: {
+        gameView: null,
+        message,
+        targets: [],
+        cardsView1: {},
+        min: 0,
+        max: 0,
+        flag: false,
+        choice: null,
+        options: {
+          leftBtnText: '',
+          rightBtnText: '',
+          possibleAttackers: opts?.possibleAttackers ?? [],
+          possibleBlockers: opts?.possibleBlockers ?? [],
+          specialButton: opts?.specialButton ?? '',
+        },
+      },
+    };
+  }
+
+  it('declareAttackers: renders combat panel with title + OK button', () => {
+    const stream = fakeStream();
+    act(() => {
+      useGameStore.setState({
+        pendingDialog: combatDialog('Select attackers', {
+          possibleAttackers: ['aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'],
+        }),
+      });
+    });
+    render(<GameDialog stream={stream} />);
+    expect(screen.getByTestId('game-dialog')).toHaveAttribute(
+      'data-combat-mode',
+      'declareAttackers',
+    );
+    expect(screen.getByTestId('dialog-title')).toHaveTextContent(/Declare attackers/i);
+    expect(screen.getByRole('button', { name: /^OK$/i })).toBeInTheDocument();
+  });
+
+  it('declareAttackers: OK button sends boolean=true and clears the dialog', async () => {
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    act(() => {
+      useGameStore.setState({
+        pendingDialog: combatDialog('Select attackers'),
+      });
+    });
+    render(<GameDialog stream={stream} />);
+    await user.click(screen.getByRole('button', { name: /^OK$/i }));
+    expect(stream.sendPlayerResponse).toHaveBeenCalledWith(99, 'boolean', true);
+    expect(useGameStore.getState().pendingDialog).toBeNull();
+  });
+
+  it('declareAttackers: All-attack button renders when specialButton is set, sends string="special"', async () => {
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    act(() => {
+      useGameStore.setState({
+        pendingDialog: combatDialog('Select attackers', {
+          specialButton: 'All attack',
+        }),
+      });
+    });
+    render(<GameDialog stream={stream} />);
+    const allAttack = screen.getByRole('button', { name: /^All attack$/i });
+    await user.click(allAttack);
+    expect(stream.sendPlayerResponse).toHaveBeenCalledWith(99, 'string', 'special');
+    expect(useGameStore.getState().pendingDialog).toBeNull();
+  });
+
+  it('declareAttackers: All-attack button is hidden when specialButton is empty', () => {
+    const stream = fakeStream();
+    act(() => {
+      useGameStore.setState({
+        pendingDialog: combatDialog('Select attackers'),
+      });
+    });
+    render(<GameDialog stream={stream} />);
+    expect(
+      screen.queryByRole('button', { name: /^All attack$/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('declareBlockers: renders combat panel; no All-attack button', () => {
+    const stream = fakeStream();
+    act(() => {
+      useGameStore.setState({
+        pendingDialog: combatDialog('Select blockers', {
+          specialButton: 'All attack', // even if upstream sends it, hide
+        }),
+      });
+    });
+    render(<GameDialog stream={stream} />);
+    expect(screen.getByTestId('game-dialog')).toHaveAttribute(
+      'data-combat-mode',
+      'declareBlockers',
+    );
+    expect(screen.getByTestId('dialog-title')).toHaveTextContent(/Declare blockers/i);
+    expect(
+      screen.queryByRole('button', { name: /^All attack$/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^OK$/i })).toBeInTheDocument();
+  });
+
+  it('declareBlockers: OK sends boolean=true', async () => {
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    act(() => {
+      useGameStore.setState({
+        pendingDialog: combatDialog('Select blockers'),
+      });
+    });
+    render(<GameDialog stream={stream} />);
+    await user.click(screen.getByRole('button', { name: /^OK$/i }));
+    expect(stream.sendPlayerResponse).toHaveBeenCalledWith(99, 'boolean', true);
+  });
+
+  it('gameSelect free-priority message renders nothing (board is the input)', () => {
+    const stream = fakeStream();
+    act(() => {
+      useGameStore.setState({
+        pendingDialog: combatDialog('Play spells and abilities'),
+      });
+    });
+    const { container } = render(<GameDialog stream={stream} />);
+    expect(container.firstChild).toBeNull();
+  });
+
   /* ---------- slice 17: button-text overrides via options ---------- */
 
   it('gameAsk: options.UI.btn.text overrides render as button labels (mulligan)', async () => {

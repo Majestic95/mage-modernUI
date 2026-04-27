@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { GameStream } from '../game/stream';
-import type { WebGameView } from '../api/schemas';
+import type { WebGameClientMessage, WebGameView } from '../api/schemas';
+import { deriveInteractionMode } from '../game/interactionMode';
 import {
   useGameStore,
   type PendingDialog,
@@ -78,15 +79,33 @@ export function GameDialog({ stream }: Props) {
 
   if (!dialog) return null;
 
-  // gameSelect is upstream's "free priority — do something" prompt,
-  // not a question that needs a modal. The user interacts with the
-  // board (click a hand card to cast, click a permanent to
-  // tap/activate) and slice 14's button handlers send the response
-  // via sendObjectClick. A modal here would just block those
-  // clicks. The pendingDialog stays in the store so the clear-on-
-  // gameUpdate path still fires once the engine processes the
-  // action, but no overlay is rendered.
+  // gameSelect is upstream's "free priority / combat" prompt.
+  // Three sub-modes:
+  //   * declareAttackers — banner + OK + (optional) All-attack button
+  //   * declareBlockers — banner + OK button
+  //   * free priority — render nothing; the board is the input surface
+  //     (slice 14 / 15 / 16 handle the clicks).
   if (dialog.method === 'gameSelect') {
+    const mode = deriveInteractionMode(dialog);
+    if (mode.kind === 'declareAttackers' || mode.kind === 'declareBlockers') {
+      return (
+        <div
+          role="dialog"
+          aria-modal="false"
+          data-testid="game-dialog"
+          data-method={dialog.method}
+          data-combat-mode={mode.kind}
+          className="fixed bottom-4 right-4 z-40 max-w-sm w-full bg-zinc-900 border border-zinc-700 rounded-lg p-5 space-y-3 shadow-2xl"
+        >
+          <CombatPanel
+            dialog={dialog}
+            stream={stream}
+            clearDialog={clearDialog}
+            isAttackers={mode.kind === 'declareAttackers'}
+          />
+        </div>
+      );
+    }
     return null;
   }
 
@@ -489,6 +508,76 @@ function InformDialog({
       <Message text={dialog.data.message} />
       <Buttons>
         <PrimaryButton onClick={clearDialog}>OK</PrimaryButton>
+      </Buttons>
+    </>
+  );
+}
+
+/* ---------- combat panel (slice 20 B1a) ---------- */
+
+/**
+ * Combat-step prompt panel. Drives the declare-attackers and
+ * declare-blockers loops:
+ *
+ * <ul>
+ *   <li>The user clicks creatures on their battlefield to toggle
+ *       them as attackers / blockers — handled by clickRouter
+ *       (slice 16) which dispatches via sendObjectClick without
+ *       clearing the dialog.</li>
+ *   <li>This panel renders the prompt text + an OK button to
+ *       commit the current set ({@code playerResponse{boolean:true}})
+ *       + an "All attack" button when upstream populated
+ *       {@code options.specialButton} (declareAttackers only).</li>
+ * </ul>
+ *
+ * <p>The OK + All-attack buttons read {@code dialog.messageId} from
+ * the store at click time (not from a captured closure) to avoid
+ * stale-messageId staleness if the engine fires multiple
+ * gameSelect frames during the loop.
+ */
+function CombatPanel({
+  dialog,
+  stream,
+  clearDialog,
+  isAttackers,
+}: ContentProps & { isAttackers: boolean }) {
+  const data = dialog.data as WebGameClientMessage;
+  const specialButton = data.options?.specialButton ?? '';
+
+  const commit = (kind: 'boolean' | 'string', value: boolean | string) => {
+    // Read the current pendingDialog from the store imperatively in
+    // case the engine pushed a fresh gameSelect mid-render and the
+    // closure's messageId is stale.
+    const current = useGameStore.getState().pendingDialog;
+    const mid = current?.messageId ?? dialog.messageId;
+    stream?.sendPlayerResponse(mid, kind, value);
+    clearDialog();
+  };
+
+  return (
+    <>
+      <Header
+        title={isAttackers ? 'Declare attackers' : 'Declare blockers'}
+      />
+      <Message
+        text={
+          data.message ||
+          (isAttackers
+            ? 'Click creatures to attack with, then OK.'
+            : 'Click creatures to block with, then OK.')
+        }
+      />
+      <Buttons>
+        {isAttackers && specialButton.length > 0 && (
+          <SecondaryButton
+            onClick={() => commit('string', 'special')}
+          >
+            {specialButton}
+          </SecondaryButton>
+        )}
+        <PrimaryButton onClick={() => commit('boolean', true)}>
+          OK
+        </PrimaryButton>
       </Buttons>
     </>
   );
