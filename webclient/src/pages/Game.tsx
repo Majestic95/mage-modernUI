@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useAuthStore } from '../auth/store';
 import { GameStream } from '../game/stream';
 import { useGameStore } from '../game/store';
@@ -831,30 +831,31 @@ function StackZone({ stack }: { stack: Record<string, WebCardView> }) {
             .filter(Boolean)
             .join('\n');
           return (
-            <div
-              key={card.id}
-              data-testid="stack-entry"
-              className={
-                'inline-flex items-baseline gap-1 px-2 py-1 rounded text-xs ' +
-                'border border-zinc-700 bg-zinc-900'
-              }
-              title={tooltip || card.name}
-            >
-              <span className="font-medium text-zinc-100">{card.name}</span>
-              {card.manaCost && (
-                <span className="text-[10px] text-zinc-500 font-mono">
-                  {card.manaCost}
-                </span>
-              )}
-              {idx === 0 && (
-                <span
-                  data-testid="stack-top-marker"
-                  className="text-[10px] font-semibold bg-fuchsia-500/30 text-fuchsia-200 px-1 rounded"
-                >
-                  TOP
-                </span>
-              )}
-            </div>
+            <HoverCardDetail key={card.id} card={card}>
+              <div
+                data-testid="stack-entry"
+                className={
+                  'inline-flex items-baseline gap-1 px-2 py-1 rounded text-xs ' +
+                  'border border-zinc-700 bg-zinc-900'
+                }
+                title={tooltip || card.name}
+              >
+                <span className="font-medium text-zinc-100">{card.name}</span>
+                {card.manaCost && (
+                  <span className="text-[10px] text-zinc-500 font-mono">
+                    {card.manaCost}
+                  </span>
+                )}
+                {idx === 0 && (
+                  <span
+                    data-testid="stack-top-marker"
+                    className="text-[10px] font-semibold bg-fuchsia-500/30 text-fuchsia-200 px-1 rounded"
+                  >
+                    TOP
+                  </span>
+                )}
+              </div>
+            </HoverCardDetail>
           );
         })}
       </div>
@@ -1091,6 +1092,7 @@ function PermanentChip({
     ? ' ring-2 ring-amber-400/60'
     : '';
   return (
+    <HoverCardDetail card={perm.card}>
     <button
       type="button"
       data-testid="permanent"
@@ -1130,6 +1132,7 @@ function PermanentChip({
         </span>
       )}
     </button>
+    </HoverCardDetail>
   );
 }
 
@@ -1193,26 +1196,27 @@ function MyHand({
           <span className="text-xs text-zinc-600 italic">Empty hand.</span>
         ) : (
           cards.map((card) => (
-            <button
-              key={card.id}
-              type="button"
-              data-testid="hand-card"
-              disabled={!canAct}
-              onClick={() => onObjectClick(card.id)}
-              className={
-                'inline-flex items-baseline gap-1 px-2 py-1 rounded text-xs ' +
-                'border border-zinc-700 bg-zinc-900 ' +
-                (canAct
-                  ? 'cursor-pointer hover:border-fuchsia-500 hover:bg-zinc-800'
-                  : 'cursor-default opacity-70')
-              }
-              title={cardTooltip(card)}
-            >
-              <span className="font-medium">{card.name}</span>
-              {card.manaCost && (
-                <span className="text-zinc-500 font-mono">{card.manaCost}</span>
-              )}
-            </button>
+            <HoverCardDetail key={card.id} card={card}>
+              <button
+                type="button"
+                data-testid="hand-card"
+                disabled={!canAct}
+                onClick={() => onObjectClick(card.id)}
+                className={
+                  'inline-flex items-baseline gap-1 px-2 py-1 rounded text-xs ' +
+                  'border border-zinc-700 bg-zinc-900 ' +
+                  (canAct
+                    ? 'cursor-pointer hover:border-fuchsia-500 hover:bg-zinc-800'
+                    : 'cursor-default opacity-70')
+                }
+                title={cardTooltip(card)}
+              >
+                <span className="font-medium">{card.name}</span>
+                {card.manaCost && (
+                  <span className="text-zinc-500 font-mono">{card.manaCost}</span>
+                )}
+              </button>
+            </HoverCardDetail>
           ))
         )}
       </div>
@@ -1220,3 +1224,99 @@ function MyHand({
   );
 }
 
+/* ---------- card detail overlay (slice 30) ---------- */
+
+/**
+ * Floating card-detail panel — shown on hover. Phase 5 deliverable
+ * (PATH_C_PLAN.md "Card-detail overlay (zoom + full text)") that
+ * gives the player a one-glance read of "what does this card do?"
+ * without having to wait for a tooltip or click through. The same
+ * scaffolding will host the Scryfall card art when image-fetching
+ * lands later.
+ *
+ * <p>Renders the card name, mana cost, type line, P/T (if a
+ * creature) or starting loyalty (if a planeswalker), full rules
+ * text (each line a separate paragraph), and a subdued footer with
+ * set code + rarity.
+ */
+function CardDetail({ card }: { card: WebCardView }) {
+  const isCreature = card.power || card.toughness;
+  const isPlaneswalker = !!card.startingLoyalty;
+  return (
+    <div
+      data-testid="card-detail"
+      className="bg-zinc-900 border border-zinc-700 rounded shadow-xl p-3 w-64 text-xs space-y-2"
+    >
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="font-semibold text-sm text-zinc-100 truncate">
+          {card.name}
+        </span>
+        {card.manaCost && (
+          <span className="text-zinc-400 font-mono shrink-0">
+            {card.manaCost}
+          </span>
+        )}
+      </div>
+      {card.typeLine && (
+        <div className="text-zinc-400 italic">{card.typeLine}</div>
+      )}
+      {(isCreature || isPlaneswalker) && (
+        <div className="text-zinc-300 font-mono">
+          {isPlaneswalker
+            ? `Loyalty: ${card.startingLoyalty}`
+            : `${card.power} / ${card.toughness}`}
+        </div>
+      )}
+      {card.rules && card.rules.length > 0 && (
+        <div className="space-y-1 text-zinc-300 leading-snug">
+          {card.rules.map((line, i) => (
+            <p key={i}>{line.replace(/<[^>]+>/g, '')}</p>
+          ))}
+        </div>
+      )}
+      <div className="text-[10px] text-zinc-500 uppercase tracking-wide flex items-baseline gap-2 pt-1 border-t border-zinc-800">
+        {card.expansionSetCode && <span>{card.expansionSetCode}</span>}
+        {card.rarity && <span>· {card.rarity}</span>}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Hover wrapper. Wraps any card-bearing element and shows
+ * {@link CardDetail} above it on mouseEnter. Positioned absolutely
+ * with high z-index so the overlay floats over surrounding chips
+ * even when the parent has overflow.
+ *
+ * <p>Visibility is also bound to keyboard focus (focus / blur) so
+ * tab-navigating the hand surfaces the same detail — accessibility
+ * scaffolding for the Phase 6 a11y pass.
+ */
+function HoverCardDetail({
+  card,
+  children,
+}: {
+  card: WebCardView;
+  children: ReactNode;
+}) {
+  const [show, setShow] = useState(false);
+  return (
+    <span
+      className="relative inline-flex"
+      onMouseEnter={() => setShow(true)}
+      onMouseLeave={() => setShow(false)}
+      onFocus={() => setShow(true)}
+      onBlur={() => setShow(false)}
+    >
+      {children}
+      {show && (
+        <span
+          data-testid="card-detail-overlay"
+          className="absolute bottom-full left-0 mb-2 z-50 pointer-events-none"
+        >
+          <CardDetail card={card} />
+        </span>
+      )}
+    </span>
+  );
+}

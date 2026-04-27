@@ -846,6 +846,83 @@ describe('Game page', () => {
     expect(ticks).toHaveLength(6);
   });
 
+  /* ---------- slice 30: hover-to-zoom card detail ---------- */
+
+  it('hovering a hand card shows the card-detail overlay with name + mana cost', async () => {
+    const userEvent = (await import('@testing-library/user-event')).default;
+    const user = userEvent.setup();
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: buildGameView(),
+      });
+    });
+    expect(screen.queryByTestId('card-detail-overlay')).toBeNull();
+    await user.hover(screen.getByTestId('hand-card'));
+    const detail = await screen.findByTestId('card-detail');
+    expect(detail).toHaveTextContent('Forest');
+    expect(detail).toHaveTextContent('Basic Land');
+  });
+
+  it('un-hovering hides the overlay', async () => {
+    const userEvent = (await import('@testing-library/user-event')).default;
+    const user = userEvent.setup();
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: buildGameView(),
+      });
+    });
+    const handCard = screen.getByTestId('hand-card');
+    await user.hover(handCard);
+    expect(await screen.findByTestId('card-detail')).toBeInTheDocument();
+    await user.unhover(handCard);
+    expect(screen.queryByTestId('card-detail')).toBeNull();
+  });
+
+  it('hovering a stack entry shows the detail with rules text', async () => {
+    const userEvent = (await import('@testing-library/user-event')).default;
+    const user = userEvent.setup();
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    const gv = buildGameView();
+    const lightning = webCardViewSchema.parse({
+      ...FOREST,
+      id: '88888888-8888-8888-8888-888888888888',
+      name: 'Lightning Bolt',
+      manaCost: '{R}',
+      typeLine: 'Instant',
+      types: ['INSTANT'],
+      subtypes: [],
+      rules: ['Lightning Bolt deals 3 damage to any target.'],
+    });
+    gv.stack = { [lightning.id]: lightning };
+    act(() => {
+      useGameStore.setState({ connection: 'open', gameView: gv });
+    });
+    await user.hover(screen.getByTestId('stack-entry'));
+    const detail = await screen.findByTestId('card-detail');
+    expect(detail).toHaveTextContent('Lightning Bolt');
+    expect(detail).toHaveTextContent('{R}');
+    expect(detail).toHaveTextContent(/3 damage to any target/);
+  });
+
+  it('hovering a battlefield permanent shows its detail', async () => {
+    const userEvent = (await import('@testing-library/user-event')).default;
+    const user = userEvent.setup();
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: buildGameView(),
+      });
+    });
+    await user.hover(screen.getAllByTestId('permanent')[0]!);
+    const detail = await screen.findByTestId('card-detail');
+    expect(detail).toHaveTextContent('Forest');
+  });
+
   /* ---------- slice 19: game-end overlay ---------- */
 
   it('renders game-over banner when gameOverPending is set and gameEnd is null', () => {
