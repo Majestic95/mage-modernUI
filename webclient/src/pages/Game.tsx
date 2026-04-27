@@ -2,6 +2,11 @@ import { useEffect, useMemo } from 'react';
 import { useAuthStore } from '../auth/store';
 import { GameStream } from '../game/stream';
 import { useGameStore } from '../game/store';
+import {
+  deriveInteractionMode,
+  type InteractionMode,
+} from '../game/interactionMode';
+import { isBoardClickable, routeObjectClick } from '../game/clickRouter';
 import type {
   WebCardView,
   WebCommandObjectView,
@@ -222,32 +227,50 @@ function Battlefield({
     [gv.players, gv.myPlayerId],
   );
 
-  // Free-priority object clicks (cast from hand, tap/activate
-  // permanents) are gated on the player holding priority. Slice 14
-  // ships this gate via hasPriority alone — server still validates
-  // legality and surfaces gameError on bad clicks, so the worst
-  // failure mode is a no-op + transient banner.
-  //
-  // Slice 15: when the engine is asking for a target (pendingDialog
-  // method=gameTarget), board clicks dispatch as the target
-  // response instead of as free priority. The TargetDialog is now a
-  // non-blocking side panel so clicks reach the board.
-  const targeting =
-    pendingDialog?.method === 'gameTarget' ? pendingDialog : null;
-  const eligibleTargetIds = useMemo(
-    () => new Set(targeting?.data.targets ?? []),
-    [targeting],
+  // Slice 16: derive the interaction mode and route board clicks
+  // through the shared clickRouter. The mode is a function of the
+  // pending dialog + game view — pure derivation, no stored state.
+  // Each mode (free, target, manaPay, declareAttackers,
+  // declareBlockers, modal) has explicit dispatch in clickRouter,
+  // replacing the slice-15 "if (targeting) ..." pattern.
+  const mode: InteractionMode = useMemo(
+    () => deriveInteractionMode(pendingDialog),
+    [pendingDialog],
   );
-  const canAct = (!!me?.hasPriority || targeting !== null) && stream != null;
+
+  // Slice 16 / U5 fix: compare priority by playerId, not by
+  // username. Upstream's getControllingPlayerHint can decorate
+  // priorityPlayerName with " (as <name>)" suffixes (mind control,
+  // control magic) which broke the prior name-based check even in
+  // 1v1.
+  const myPriority = !!me?.hasPriority;
+  const canAct = isBoardClickable(mode, myPriority) && stream != null;
+
+  const out = useMemo(
+    () =>
+      stream
+        ? {
+            sendObjectClick: (id: string) => stream.sendObjectClick(id),
+            sendPlayerResponse: (
+              mid: number,
+              kind: 'uuid' | 'string' | 'boolean' | 'integer' | 'manaType',
+              v: unknown,
+            ) => stream.sendPlayerResponse(mid, kind, v),
+            clearDialog,
+          }
+        : null,
+    [stream, clearDialog],
+  );
+
   const onObjectClick = (id: string) => {
-    if (!stream) return;
-    if (targeting) {
-      stream.sendPlayerResponse(targeting.messageId, 'uuid', id);
-      clearDialog();
-      return;
-    }
-    if (canAct) stream.sendObjectClick(id);
+    if (!out) return;
+    routeObjectClick(mode, id, myPriority, out);
   };
+
+  // Targetable players: derived from the mode (only target mode
+  // exposes player UUIDs as legal clicks).
+  const eligibleTargetIds =
+    mode.kind === 'target' ? mode.eligibleIds : new Set<string>();
 
   return (
     <div className="flex-1 flex flex-col">

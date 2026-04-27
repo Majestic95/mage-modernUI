@@ -271,14 +271,28 @@ export const useGameStore = create<GameState>()((set, get) => ({
       }
 
       case 'gameInit':
+        set({
+          gameView: validatedData as WebGameView,
+          // gameInit means a fresh game (or a reconnect's catch-up).
+          // Wipe any stale dialog state.
+          protocolError: null,
+          pendingDialog: null,
+        });
+        return true;
+
       case 'gameUpdate':
         set({
           gameView: validatedData as WebGameView,
-          // Clear any stale dialog state on a fresh non-dialog push —
-          // the server has moved on, any previously open dialog has
-          // been resolved.
+          // Slice 16: do NOT clear pendingDialog on gameUpdate. The
+          // engine fires gameUpdate frames mid-prompt during combat
+          // (after each declare-attackers toggle, between blocker
+          // assignments, etc.). Clearing the dialog on update would
+          // wipe the "Select attackers" prompt and the user would
+          // lose their combat-mode signal. The next gameSelect /
+          // gameTarget that arrives will replace the dialog if the
+          // prompt has changed; if not, the same prompt persists.
+          // The user explicitly clears via clearDialog() on commit.
           protocolError: null,
-          pendingDialog: null,
         });
         return true;
 
@@ -288,7 +302,13 @@ export const useGameStore = create<GameState>()((set, get) => ({
         set({
           lastWrapped: wrapped,
           gameView: wrapped.gameView ?? get().gameView,
-          pendingDialog: null,
+          // Slice 16: do NOT clear pendingDialog on gameInform —
+          // the engine fires informs mid-combat ("alice attacks
+          // with Grizzly Bears") while declare-attackers is still
+          // active. Clearing would nuke the prompt and the user
+          // would lose combat-mode signal. gameOver wants the
+          // banner to overlay any stale dialog so we don't clear
+          // there either; reset() handles cleanup on Leave.
         });
         return true;
       }

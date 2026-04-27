@@ -250,16 +250,25 @@ describe('useGameStore', () => {
     }
   });
 
-  it('a fresh gameUpdate clears any pending dialog', () => {
+  it('a fresh gameUpdate preserves pendingDialog (slice 16: combat informs mid-flow)', () => {
+    // Slice 16 reversal of prior behavior. Combat fires gameUpdate
+    // frames between declare-attackers toggles; clearing the dialog
+    // on update would lose the "Select attackers" prompt. Trust the
+    // engine's next dialog frame (or explicit clearDialog from a
+    // commit handler) to manage the prompt lifetime.
     const dialog = dialogPayload();
     useGameStore.getState().applyFrame(frame('gameAsk', dialog, 1), dialog);
     expect(useGameStore.getState().pendingDialog).not.toBeNull();
     const gv = buildGameView(2);
     useGameStore.getState().applyFrame(frame('gameUpdate', gv, 2), gv);
-    expect(useGameStore.getState().pendingDialog).toBeNull();
+    expect(useGameStore.getState().pendingDialog).not.toBeNull();
+    expect(useGameStore.getState().gameView?.turn).toBe(2);
   });
 
-  it('a fresh gameOver clears any pending dialog', () => {
+  it('a fresh gameOver preserves pendingDialog (banner overlays stale dialog)', () => {
+    // Slice 16: gameOver no longer nukes pendingDialog. The banner
+    // (slice B5, planned) renders over whatever was on screen.
+    // reset() handles cleanup when the user clicks Leave.
     const dialog = dialogPayload();
     useGameStore.getState().applyFrame(frame('gameAsk', dialog, 1), dialog);
     const wrap = webGameClientMessageSchema.parse({
@@ -273,6 +282,15 @@ describe('useGameStore', () => {
       choice: null,
     });
     useGameStore.getState().applyFrame(frame('gameOver', wrap, 2), wrap);
+    expect(useGameStore.getState().pendingDialog).not.toBeNull();
+    expect(useGameStore.getState().lastWrapped?.message).toBe('GG');
+  });
+
+  it('gameInit still clears pendingDialog (fresh game / reconnect catch-up)', () => {
+    const dialog = dialogPayload();
+    useGameStore.getState().applyFrame(frame('gameAsk', dialog, 1), dialog);
+    const gv = buildGameView(1);
+    useGameStore.getState().applyFrame(frame('gameInit', gv, 2), gv);
     expect(useGameStore.getState().pendingDialog).toBeNull();
   });
 

@@ -206,7 +206,13 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
         broadcast(cc, frame);
     }
 
-    private WebStreamFrame mapToFrame(ClientCallback cc) {
+    /**
+     * Package-private (was private prior to slice 16) to let
+     * CombatFlowContractTest assert the wire-format contract that
+     * the webclient's interaction-mode heuristic depends on, without
+     * standing up a full embedded-server WebSocket round-trip.
+     */
+    WebStreamFrame mapToFrame(ClientCallback cc) {
         ClientCallbackMethod method = cc.getMethod();
         if (method == null) {
             return null;
