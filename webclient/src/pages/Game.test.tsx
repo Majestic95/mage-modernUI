@@ -904,7 +904,8 @@ describe('Game page', () => {
     await user.hover(screen.getByTestId('stack-entry'));
     const detail = await screen.findByTestId('card-detail');
     expect(detail).toHaveTextContent('Lightning Bolt');
-    expect(detail).toHaveTextContent('{R}');
+    // Slice 32: mana cost renders as icon glyphs, not raw text
+    expect(detail.querySelector('[data-testid="mana-cost"] i.ms-r')).toBeInTheDocument();
     expect(detail).toHaveTextContent(/3 damage to any target/);
   });
 
@@ -921,6 +922,84 @@ describe('Game page', () => {
     await user.hover(screen.getAllByTestId('permanent')[0]!);
     const detail = await screen.findByTestId('card-detail');
     expect(detail).toHaveTextContent('Forest');
+  });
+
+  /* ---------- slice 32: mana cost icon font ---------- */
+
+  it('renders mana costs as icon-font glyphs (one <i> per token)', () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    const gv = buildGameView();
+    const lightning = webCardViewSchema.parse({
+      ...FOREST,
+      id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa01',
+      name: 'Lightning Bolt',
+      manaCost: '{R}',
+      typeLine: 'Instant',
+      types: ['INSTANT'],
+      subtypes: [],
+      rules: ['Lightning Bolt deals 3 damage to any target.'],
+    });
+    gv.stack = { [lightning.id]: lightning };
+    act(() => {
+      useGameStore.setState({ connection: 'open', gameView: gv });
+    });
+    const stackEntry = screen.getByTestId('stack-entry');
+    const cost = stackEntry.querySelector('[data-testid="mana-cost"]')!;
+    expect(cost).toBeInTheDocument();
+    const glyphs = cost.querySelectorAll('i');
+    expect(glyphs).toHaveLength(1);
+    expect(glyphs[0]).toHaveClass('ms', 'ms-r');
+    expect(glyphs[0]).toHaveAttribute('data-symbol', '{R}');
+  });
+
+  it('parses multi-token costs into one glyph per token', () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    const gv = buildGameView();
+    const wrath = webCardViewSchema.parse({
+      ...FOREST,
+      id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa02',
+      name: 'Wrath of God',
+      manaCost: '{2}{W}{W}',
+      typeLine: 'Sorcery',
+      types: ['SORCERY'],
+      subtypes: [],
+      rules: ['Destroy all creatures.'],
+    });
+    gv.stack = { [wrath.id]: wrath };
+    act(() => {
+      useGameStore.setState({ connection: 'open', gameView: gv });
+    });
+    const stackEntry = screen.getByTestId('stack-entry');
+    const glyphs = stackEntry.querySelectorAll(
+      '[data-testid="mana-cost"] i',
+    );
+    expect(glyphs).toHaveLength(3);
+    expect(glyphs[0]).toHaveClass('ms-2');
+    expect(glyphs[1]).toHaveClass('ms-w');
+    expect(glyphs[2]).toHaveClass('ms-w');
+  });
+
+  it('hybrid mana costs strip the slash for the class name', () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    const gv = buildGameView();
+    const card = webCardViewSchema.parse({
+      ...FOREST,
+      id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa03',
+      name: 'Boros Charm',
+      manaCost: '{R/W}',
+      typeLine: 'Instant',
+      types: ['INSTANT'],
+      subtypes: [],
+      rules: [],
+    });
+    gv.stack = { [card.id]: card };
+    act(() => {
+      useGameStore.setState({ connection: 'open', gameView: gv });
+    });
+    const glyph = screen
+      .getByTestId('stack-entry')
+      .querySelector('[data-testid="mana-cost"] i')!;
+    expect(glyph).toHaveClass('ms-rw');
   });
 
   /* ---------- slice 31: zone browsers (graveyard + exile) ---------- */
