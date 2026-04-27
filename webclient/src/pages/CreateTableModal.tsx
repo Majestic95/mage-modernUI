@@ -28,7 +28,23 @@ export function CreateTableModal({ roomId, serverState, onClose, onCreated }: Pr
   const session = useAuthStore((s) => s.session);
 
   const initialGameType = serverState.gameTypes[0]?.name ?? '';
-  const initialDeckType = serverState.deckTypes[0] ?? '';
+  // Default deck format: prefer Freeform Unlimited (no card pool /
+  // quantity restrictions) so the AI's fallback Bears deck and
+  // user-imported old-card decks always validate. Fall back to
+  // Vintage (permissive: any pre-restricted card pool) and finally
+  // to the first format the server lists. Without this default,
+  // Standard was selected and dev decks failed legality checks
+  // — see slice 24 commit notes.
+  const PREFERRED_DEV_FORMATS = [
+    'Constructed - Freeform Unlimited',
+    'Constructed - Vintage',
+  ];
+  const initialDeckType = (() => {
+    for (const wanted of PREFERRED_DEV_FORMATS) {
+      if (serverState.deckTypes.includes(wanted)) return wanted;
+    }
+    return serverState.deckTypes[0] ?? '';
+  })();
 
   const [gameType, setGameType] = useState(initialGameType);
   const [deckType, setDeckType] = useState(initialDeckType);
