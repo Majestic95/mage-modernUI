@@ -16,6 +16,7 @@ import mage.view.PlayerView;
 import mage.view.TableClientMessage;
 import mage.webapi.dto.stream.WebAbilityPickerView;
 import mage.webapi.dto.stream.WebChoice;
+import mage.webapi.dto.stream.WebClientMessageOptions;
 import mage.webapi.dto.stream.WebCombatGroupView;
 import mage.webapi.dto.stream.WebCommandObjectView;
 import mage.webapi.dto.stream.WebGameClientMessage;
@@ -226,7 +227,8 @@ public final class GameViewMapper {
                 gcm.getMin(),
                 gcm.getMax(),
                 gcm.isFlag(),
-                choice
+                choice,
+                extractOptions(gcm.getOptions())
         );
     }
 
@@ -245,8 +247,62 @@ public final class GameViewMapper {
                 0,
                 0,
                 false,
-                null
+                null,
+                WebClientMessageOptions.EMPTY
         );
+    }
+
+    /**
+     * Project upstream's free-form {@code options} map onto our
+     * whitelisted {@link WebClientMessageOptions} record. Five keys
+     * forwarded today (slice 17 covers button-text overrides; slice
+     * 20 will populate combat fields):
+     *
+     * <ul>
+     *   <li>{@code "UI.left.btn.text"} / {@code "UI.right.btn.text"}
+     *       — button-label overrides for {@code gameAsk} (mulligan
+     *       uses these to render "Mulligan" / "Keep").</li>
+     *   <li>{@code "POSSIBLE_ATTACKERS"} / {@code "POSSIBLE_BLOCKERS"}
+     *       — UUID lists (List&lt;UUID&gt; in upstream).</li>
+     *   <li>{@code "SPECIAL_BUTTON"} — text for the "All attack"
+     *       button.</li>
+     * </ul>
+     *
+     * <p>Anything else upstream stuffs into the map is dropped on the
+     * floor — the wire format is a closed surface, not a passthrough.
+     */
+    static WebClientMessageOptions extractOptions(
+            java.util.Map<String, java.io.Serializable> source) {
+        if (source == null || source.isEmpty()) {
+            return WebClientMessageOptions.EMPTY;
+        }
+        return new WebClientMessageOptions(
+                stringValue(source.get("UI.left.btn.text")),
+                stringValue(source.get("UI.right.btn.text")),
+                uuidList(source.get("POSSIBLE_ATTACKERS")),
+                uuidList(source.get("POSSIBLE_BLOCKERS")),
+                stringValue(source.get("SPECIAL_BUTTON"))
+        );
+    }
+
+    private static String stringValue(Object v) {
+        return v instanceof String s ? s : "";
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<String> uuidList(Object v) {
+        if (!(v instanceof java.util.Collection<?> coll) || coll.isEmpty()) {
+            return List.of();
+        }
+        List<String> out = new ArrayList<>(coll.size());
+        for (Object item : coll) {
+            if (item instanceof UUID id) {
+                out.add(id.toString());
+            } else if (item instanceof String s) {
+                out.add(s);
+            }
+        }
+        return List.copyOf(out);
     }
 
     /**

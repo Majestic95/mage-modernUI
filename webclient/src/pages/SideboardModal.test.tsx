@@ -6,7 +6,7 @@ import { useAuthStore } from '../auth/store';
 import { useGameStore } from '../game/store';
 
 const ANON_SESSION = {
-  schemaVersion: '1.14',
+  schemaVersion: '1.15',
   token: 'tok-anon',
   username: 'alice',
   isAnonymous: true,
@@ -188,7 +188,7 @@ describe('SideboardModal', () => {
       vi.fn<typeof fetch>().mockResolvedValue(
         new Response(
           JSON.stringify({
-            schemaVersion: '1.14',
+            schemaVersion: '1.15',
             code: 'UPSTREAM_REJECTED',
             message: 'Server refused the deck.',
           }),

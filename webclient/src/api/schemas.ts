@@ -403,6 +403,29 @@ export const webChoiceSchema = z.object({
 });
 export type WebChoice = z.infer<typeof webChoiceSchema>;
 
+/**
+ * Whitelisted projection of upstream's GameClientMessage.options
+ * map. Schema 1.15. Matches server-side WebClientMessageOptions
+ * record. Older 1.14 fixtures default to all-empty via z.default
+ * so this slice's schema bump doesn't force a fixture rewrite.
+ */
+export const webClientMessageOptionsSchema = z.object({
+  leftBtnText: z.string().default(''),
+  rightBtnText: z.string().default(''),
+  possibleAttackers: z.array(z.string()).default([]),
+  possibleBlockers: z.array(z.string()).default([]),
+  specialButton: z.string().default(''),
+});
+export type WebClientMessageOptions = z.infer<typeof webClientMessageOptionsSchema>;
+
+export const EMPTY_CLIENT_MESSAGE_OPTIONS: WebClientMessageOptions = {
+  leftBtnText: '',
+  rightBtnText: '',
+  possibleAttackers: [],
+  possibleBlockers: [],
+  specialButton: '',
+};
+
 export const webGameClientMessageSchema = z.object({
   gameView: webGameViewSchema.nullable(),
   message: z.string(),
@@ -412,6 +435,7 @@ export const webGameClientMessageSchema = z.object({
   max: z.number(),
   flag: z.boolean(),
   choice: webChoiceSchema.nullable(),
+  options: webClientMessageOptionsSchema.default(EMPTY_CLIENT_MESSAGE_OPTIONS),
 });
 export type WebGameClientMessage = z.infer<typeof webGameClientMessageSchema>;
 

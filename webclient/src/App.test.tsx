@@ -13,7 +13,7 @@ function jsonResponse(status: number, body: unknown): Response {
 }
 
 const ANON_SESSION = {
-  schemaVersion: '1.14',
+  schemaVersion: '1.15',
   token: 'tok-anon',
   username: 'guest-deadbeef',
   isAnonymous: true,
@@ -22,7 +22,7 @@ const ANON_SESSION = {
 };
 
 const MAIN_ROOM = {
-  schemaVersion: '1.14',
+  schemaVersion: '1.15',
   roomId: '00000000-0000-0000-0000-000000000000',
   chatId: '00000000-0000-0000-0000-000000000001',
 };

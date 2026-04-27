@@ -61,6 +61,10 @@ import java.util.Map;
  *     otherwise
  * @param choice      modal-choice payload for {@code gameChooseChoice};
  *     {@code null} for every other frame method
+ * @param options     whitelisted projection of upstream's
+ *     {@code options} map (button-text overrides, possible-attackers
+ *     / -blockers, etc.). Always present; fields may be empty when
+ *     upstream did not populate that key. Added in schema 1.15.
  */
 public record WebGameClientMessage(
         WebGameView gameView,
@@ -70,6 +74,7 @@ public record WebGameClientMessage(
         int min,
         int max,
         boolean flag,
-        WebChoice choice
+        WebChoice choice,
+        WebClientMessageOptions options
 ) {
 }

@@ -150,6 +150,82 @@ describe('GameDialog', () => {
     expect(stream.sendPlayerResponse).toHaveBeenCalledWith(99, 'boolean', false);
   });
 
+  /* ---------- slice 17: button-text overrides via options ---------- */
+
+  it('gameAsk: options.UI.btn.text overrides render as button labels (mulligan)', async () => {
+    // Mulligan loop populates options.leftBtnText="Mulligan" /
+    // options.rightBtnText="Keep" via upstream HumanPlayer.java:404.
+    // Default Yes/No labels should not appear when overrides are
+    // present. Real-world fix for the "Question / Yes / No" UX bug
+    // surfaced in the play session.
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    const data = emptyDialog({
+      message: 'Mulligan down to 6 cards?',
+    });
+    // Inject the slice-17 options field. emptyDialog() defaults
+    // options to all-empty via Zod default; we override here.
+    const dataWithOptions = {
+      ...data,
+      options: {
+        leftBtnText: 'Mulligan',
+        rightBtnText: 'Keep',
+        possibleAttackers: [],
+        possibleBlockers: [],
+        specialButton: '',
+      },
+    };
+    act(() => {
+      useGameStore.setState({
+        pendingDialog: {
+          method: 'gameAsk',
+          messageId: 17,
+          data: dataWithOptions,
+        },
+      });
+    });
+    render(<GameDialog stream={stream} />);
+
+    expect(screen.getByRole('button', { name: /^Mulligan$/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Keep$/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Yes$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^No$/i })).not.toBeInTheDocument();
+
+    // Click "Mulligan" sends boolean=true (left = primary = true).
+    await user.click(screen.getByRole('button', { name: /^Mulligan$/i }));
+    expect(stream.sendPlayerResponse).toHaveBeenCalledWith(17, 'boolean', true);
+  });
+
+  it('gameAsk: empty button-text override falls back to default Yes/No', () => {
+    // Defensive: if upstream populates only one label, the other
+    // should still default. (Realistic case: Proliferate sets only
+    // UI.right.btn.text="Done".)
+    const stream = fakeStream();
+    const data = emptyDialog({ message: 'Proliferate?' });
+    const dataWithPartial = {
+      ...data,
+      options: {
+        leftBtnText: '',
+        rightBtnText: 'Done',
+        possibleAttackers: [],
+        possibleBlockers: [],
+        specialButton: '',
+      },
+    };
+    act(() => {
+      useGameStore.setState({
+        pendingDialog: {
+          method: 'gameAsk',
+          messageId: 18,
+          data: dataWithPartial,
+        },
+      });
+    });
+    render(<GameDialog stream={stream} />);
+    expect(screen.getByRole('button', { name: /^Yes$/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Done$/i })).toBeInTheDocument();
+  });
+
   it('gameTarget: clicking a target sends uuid response', async () => {
     const stream = fakeStream();
     const user = userEvent.setup();

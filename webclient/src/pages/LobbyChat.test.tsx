@@ -6,7 +6,7 @@ import { useAuthStore } from '../auth/store';
 import { useGameStore } from '../game/store';
 
 const ANON_SESSION = {
-  schemaVersion: '1.14',
+  schemaVersion: '1.15',
   token: 'tok-anon',
   username: 'alice',
   isAnonymous: true,
@@ -25,7 +25,7 @@ function jsonResponse(status: number, body: unknown): Response {
 }
 
 const MAIN_ROOM = {
-  schemaVersion: '1.14',
+  schemaVersion: '1.15',
   roomId: ROOM_ID,
   chatId: CHAT_ID,
 };

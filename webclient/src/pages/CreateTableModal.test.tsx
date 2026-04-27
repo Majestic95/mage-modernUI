@@ -6,7 +6,7 @@ import { useAuthStore } from '../auth/store';
 import type { WebServerState } from '../api/schemas';
 
 const ANON_SESSION = {
-  schemaVersion: '1.14',
+  schemaVersion: '1.15',
   token: 'tok-anon',
   username: 'guest-deadbeef',
   isAnonymous: true,
@@ -15,7 +15,7 @@ const ANON_SESSION = {
 };
 
 const SERVER_STATE: WebServerState = {
-  schemaVersion: '1.14',
+  schemaVersion: '1.15',
   gameTypes: [
     {
       name: 'Two Player Duel',
@@ -182,7 +182,7 @@ describe('CreateTableModal', () => {
       .mockResolvedValueOnce(tableResponse())
       .mockResolvedValueOnce(
         jsonResponse(422, {
-          schemaVersion: '1.14',
+          schemaVersion: '1.15',
           code: 'UPSTREAM_REJECTED',
           message: 'Server rejected the AI seat.',
         }),
@@ -410,7 +410,7 @@ describe('CreateTableModal', () => {
       'fetch',
       vi.fn<typeof fetch>().mockResolvedValue(
         jsonResponse(422, {
-          schemaVersion: '1.14',
+          schemaVersion: '1.15',
           code: 'UPSTREAM_REJECTED',
           message: 'Server refused to create the table.',
         }),

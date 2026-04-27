@@ -19,6 +19,62 @@ minor mismatches.
 
 ---
 
+## 1.15 — 2026-04-26 — Client-message options carrier (audit gap U1 + B4)
+
+Adds a structured `options` carrier on `WebGameClientMessage` so
+upstream's free-form `Map<String, Serializable>` reaches the
+webclient as a typed, whitelisted projection. Closes ADR 0008
+gap U1 (mapper dropped `options`) and consumer #1 = B4 (mulligan
+button labels).
+
+### `WebGameClientMessage` — added `options` field
+
+```diff
+   "choice":  null,
++  "options": {
++    "leftBtnText":       "Mulligan",
++    "rightBtnText":      "Keep",
++    "possibleAttackers": [],
++    "possibleBlockers":  [],
++    "specialButton":     ""
++  }
+ }
+```
+
+The field is always present — empty strings / empty lists signal
+"upstream did not populate this key". Five fields cover every
+GameClientMessage-shaped frame's known consumers in 1v1 duel:
+
+- `leftBtnText` / `rightBtnText` — upstream's
+  `"UI.left.btn.text"` / `"UI.right.btn.text"` button-label
+  overrides. Mulligan loop populates these as `"Mulligan"` /
+  `"Keep"` (`HumanPlayer.java:404-405`); Proliferate /
+  Time Travel use `"Done"` for right.
+- `possibleAttackers` / `possibleBlockers` — UUID lists for the
+  combat declare-attackers / declare-blockers prompts. Populated
+  by upstream's `HumanPlayer.selectAttackers` /
+  `selectBlockers`. Slice 20 (B1) consumer.
+- `specialButton` — text for the `"All attack"` button during
+  declare-attackers (slice 20 consumer).
+
+### Closed surface — not a passthrough
+
+Anything outside the whitelist is dropped at the mapper. Adding a
+new key = extend the record + bump schema. Don't widen to a
+generic `Map<String, ?>` — type safety lives in the carrier
+record; webclient's `WebClientMessageOptions` Zod schema mirrors it.
+
+### Consumer #1: mulligan button labels (gap B4)
+
+`YesNoDialog` reads `options.leftBtnText` / `rightBtnText` when
+non-empty and renders them in place of the default Yes/No labels.
+The mulligan dialog now says "Mulligan" / "Keep" instead of
+generic Yes/No, and any future spell with `UI.*.btn.text`
+overrides (Proliferate, Time Travel, etc.) gets the right labels
+for free.
+
+---
+
 ## 1.14 — 2026-04-26 — Sideboard wire format
 
 Adds the `sideboard` callback frame and the deck-submit endpoint —

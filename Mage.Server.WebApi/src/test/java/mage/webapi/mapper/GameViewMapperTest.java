@@ -128,16 +128,89 @@ class GameViewMapperTest {
     }
 
     @Test
-    void gameClientMessage_jsonShape_locksEightFields() throws Exception {
+    void gameClientMessage_jsonShape_locksNineFields() throws Exception {
         WebGameClientMessage dto = new WebGameClientMessage(
-                null, "ggwp", List.of(), Map.of(), 0, 0, false, null);
+                null, "ggwp", List.of(), Map.of(), 0, 0, false, null,
+                mage.webapi.dto.stream.WebClientMessageOptions.EMPTY);
         JsonNode node = JSON.valueToTree(dto);
-        assertEquals(8, node.size(),
-                "WebGameClientMessage must have exactly 8 fields (slice 7 added choice); got: " + node);
+        assertEquals(9, node.size(),
+                "WebGameClientMessage must have exactly 9 fields "
+                        + "(slice 7 added choice; slice 17 added options); got: " + node);
         for (String f : List.of("gameView", "message", "targets",
-                "cardsView1", "min", "max", "flag", "choice")) {
+                "cardsView1", "min", "max", "flag", "choice", "options")) {
             assertTrue(node.has(f), "missing field: " + f);
         }
+    }
+
+    @Test
+    void clientMessageOptions_jsonShape_locksFiveFields() throws Exception {
+        mage.webapi.dto.stream.WebClientMessageOptions opts =
+                new mage.webapi.dto.stream.WebClientMessageOptions(
+                        "Mulligan", "Keep",
+                        List.of("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+                        List.of(),
+                        "All attack");
+        JsonNode node = JSON.valueToTree(opts);
+        assertEquals(5, node.size(),
+                "WebClientMessageOptions must have exactly 5 fields; got: " + node);
+        for (String f : List.of("leftBtnText", "rightBtnText",
+                "possibleAttackers", "possibleBlockers", "specialButton")) {
+            assertTrue(node.has(f), "missing field: " + f);
+        }
+        assertEquals("Mulligan", node.get("leftBtnText").asText());
+        assertEquals("Keep", node.get("rightBtnText").asText());
+        assertTrue(node.get("possibleAttackers").isArray());
+        assertEquals(1, node.get("possibleAttackers").size());
+        assertEquals("All attack", node.get("specialButton").asText());
+    }
+
+    @Test
+    void extractOptions_nullInput_returnsEmpty() {
+        assertEquals(mage.webapi.dto.stream.WebClientMessageOptions.EMPTY,
+                GameViewMapper.extractOptions(null));
+    }
+
+    @Test
+    void extractOptions_buttonLabels_forwardsLeftAndRight() {
+        java.util.Map<String, java.io.Serializable> source = new java.util.HashMap<>();
+        source.put("UI.left.btn.text", "Mulligan");
+        source.put("UI.right.btn.text", "Keep");
+        mage.webapi.dto.stream.WebClientMessageOptions out =
+                GameViewMapper.extractOptions(source);
+        assertEquals("Mulligan", out.leftBtnText());
+        assertEquals("Keep", out.rightBtnText());
+        assertTrue(out.possibleAttackers().isEmpty());
+        assertTrue(out.possibleBlockers().isEmpty());
+        assertEquals("", out.specialButton());
+    }
+
+    @Test
+    void extractOptions_combatLists_forwardsUuidStringsFromUuidCollection() {
+        java.util.UUID a1 = java.util.UUID.fromString("11111111-1111-1111-1111-111111111111");
+        java.util.UUID a2 = java.util.UUID.fromString("22222222-2222-2222-2222-222222222222");
+        java.util.Map<String, java.io.Serializable> source = new java.util.HashMap<>();
+        source.put("POSSIBLE_ATTACKERS",
+                new java.util.ArrayList<>(List.of(a1, a2)));
+        source.put("SPECIAL_BUTTON", "All attack");
+        mage.webapi.dto.stream.WebClientMessageOptions out =
+                GameViewMapper.extractOptions(source);
+        assertEquals(List.of(a1.toString(), a2.toString()), out.possibleAttackers());
+        assertEquals("All attack", out.specialButton());
+    }
+
+    @Test
+    void extractOptions_unknownKeys_areDropped() {
+        // Closed-surface contract: anything outside the whitelist is
+        // discarded, not forwarded as a passthrough. Locks against
+        // accidental wire-format expansion if upstream adds a new key.
+        java.util.Map<String, java.io.Serializable> source = new java.util.HashMap<>();
+        source.put("INTERNAL_ENGINE_KEY", "leak-me");
+        source.put("UI.left.btn.text", "OK");
+        mage.webapi.dto.stream.WebClientMessageOptions out =
+                GameViewMapper.extractOptions(source);
+        assertEquals("OK", out.leftBtnText());
+        // No way to assert the key is dropped beyond proving the
+        // record only has 5 fields, which the shape-lock test covers.
     }
 
     @Test
