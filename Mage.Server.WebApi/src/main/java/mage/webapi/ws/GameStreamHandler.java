@@ -141,7 +141,30 @@ public final class GameStreamHandler implements Consumer<WsConfig> {
         sendFrame(ctx, "streamHello", gameId.toString(),
                 new WebStreamHello(gameId.toString(), session.username(), "live"));
 
+        // Slice 22 fix: tell upstream's GameController that the user
+        // wants to join the game. Without this call, upstream waits
+        // 10 seconds before its recovery timer fires "Forced join"
+        // (GameController.sendInfoAboutPlayersNotJoinedYetAndTryToFixIt)
+        // — by which time the player session is in a degraded state
+        // and player-action UUIDs may not route correctly.
+        //
+        // Upstream's Swing client invokes mageServer.gameJoin(...)
+        // after it receives the ccGameStarted callback; we mirror
+        // here at WS-connect time. Failures are non-fatal — if the
+        // user isn't a registered player on this game (spectator,
+        // wrong gameId, etc.) the call is a no-op upstream-side.
+        joinGameUpstream(gameId, session);
+
         replayBufferIfRequested(ctx, handler.get());
+    }
+
+    private void joinGameUpstream(UUID gameId, SessionEntry session) {
+        try {
+            embedded.server().gameJoin(gameId, session.upstreamSessionId());
+        } catch (Exception ex) {
+            LOG.warn("gameJoin failed for user={} game={}: {}",
+                    session.username(), gameId, ex.toString());
+        }
     }
 
     /**

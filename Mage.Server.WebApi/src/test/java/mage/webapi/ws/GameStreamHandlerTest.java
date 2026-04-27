@@ -642,6 +642,18 @@ class GameStreamHandlerTest {
             // both startGame and gameInit must arrive within the
             // window. We assert each separately (awaitMethod skips
             // intermediate frames).
+            //
+            // Note: this test's WS opens with a synthetic
+            // randomUUID() before the real gameId is known. Slice
+            // 22's gameJoin-on-connect fix calls upstream's gameJoin
+            // with the WS path's gameId — which here is bogus, so
+            // the upstream call is a no-op and the original 10s
+            // forced-join recovery still drives the test. Production
+            // webclient opens the WS to the REAL gameId after the
+            // startGame frame arrives (slice 12 auto-nav), so the
+            // fix DOES skip the recovery in real use; this test
+            // just doesn't exercise it. The 15s deadline reflects
+            // the recovery-driven timing.
             JsonNode startFrame = JSON.readTree(
                     awaitMethod(listener, "startGame", Duration.ofSeconds(15)));
             assertEquals(SchemaVersion.CURRENT,
@@ -707,6 +719,88 @@ class GameStreamHandlerTest {
                     "library must have cards after the opening hand draw");
         } finally {
             ws.sendClose(WebSocket.NORMAL_CLOSURE, "test done").join();
+        }
+    }
+
+    /**
+     * Slice 22 fix — production-style flow that proves gameInit
+     * arrives quickly when GameStreamHandler.onConnect calls
+     * upstream gameJoin with the REAL gameId (not a synthetic
+     * placeholder).
+     *
+     * <p>Mirrors slice 12's webclient auto-nav: the user opens a
+     * WS to the gameId only AFTER the startGame frame surfaces it
+     * (e.g. the lobby room WS, or in this test we look up the
+     * gameId via the table API).
+     *
+     * <p>Without slice 22's fix, this test would hit the upstream
+     * forced-join recovery (10s) and gameInit would take ~10s to
+     * arrive. With the fix, gameInit arrives in &lt; 3s.
+     */
+    @Test
+    void gameLifecycle_realGameId_initArrivesUnder3s() throws Exception {
+        HttpResponse<String> login = postJson("/api/session", "{}");
+        assertEquals(200, login.statusCode());
+        String token = JSON.readTree(login.body()).get("token").asText();
+
+        String roomId = JSON.readTree(getAuthed(token, "/api/server/main-room").body())
+                .get("roomId").asText();
+        String tableId = createTableWithSeats(token, roomId,
+                "[\"HUMAN\",\"COMPUTER_MAD\"]");
+        postWithToken(token,
+                "/api/rooms/" + roomId + "/tables/" + tableId + "/ai",
+                "{\"playerType\":\"COMPUTER_MAD\"}");
+
+        String deckJson = buildForestDeckJson(token, 60);
+        String joinBody = "{\"name\":\"e2e-tester\",\"skill\":1,\"deck\":"
+                + deckJson + "}";
+        HttpResponse<String> join = postWithToken(token,
+                "/api/rooms/" + roomId + "/tables/" + tableId + "/join", joinBody);
+        assertEquals(204, join.statusCode());
+
+        // Open the lobby room WS to receive the startGame frame
+        // (mirroring slice 12's flow). We need the room's chatId
+        // first.
+        String mainRoomBody = getAuthed(token, "/api/server/main-room").body();
+        UUID lobbyRoomId = UUID.fromString(JSON.readTree(mainRoomBody).get("roomId").asText());
+        TestListener lobby = new TestListener();
+        URI lobbyUri = URI.create("ws://localhost:" + server.port()
+                + "/api/rooms/" + lobbyRoomId + "/stream?token=" + token);
+        WebSocket lobbyWs = HTTP.newWebSocketBuilder()
+                .buildAsync(lobbyUri, lobby)
+                .get(5, TimeUnit.SECONDS);
+        try {
+            lobby.awaitFrame(FRAME_WAIT); // streamHello
+
+            HttpResponse<String> start = postWithToken(token,
+                    "/api/rooms/" + roomId + "/tables/" + tableId + "/start", "");
+            assertEquals(204, start.statusCode());
+
+            JsonNode startFrame = JSON.readTree(
+                    awaitMethod(lobby, "startGame", Duration.ofSeconds(5)));
+            String realGameId = startFrame.get("data").get("gameId").asText();
+            assertNotNull(realGameId);
+
+            // NOW open a game WS to the real gameId — this is what
+            // the production webclient does. Slice 22's gameJoin
+            // fires here, skipping the 10s forced-join recovery.
+            TestListener gameListener = new TestListener();
+            WebSocket gameWs = openWs(UUID.fromString(realGameId), token, gameListener);
+            try {
+                long start_ms = System.currentTimeMillis();
+                gameListener.awaitFrame(FRAME_WAIT); // streamHello
+                JsonNode init = JSON.readTree(
+                        awaitMethod(gameListener, "gameInit", Duration.ofSeconds(3)));
+                long elapsed = System.currentTimeMillis() - start_ms;
+                assertTrue(elapsed < 3000,
+                        "gameInit must arrive under 3s — slice 22 gameJoin fix. "
+                                + "Got " + elapsed + "ms (10s+ means forced-join "
+                                + "recovery is back). Frame: " + init);
+            } finally {
+                gameWs.sendClose(WebSocket.NORMAL_CLOSURE, "test done").join();
+            }
+        } finally {
+            lobbyWs.sendClose(WebSocket.NORMAL_CLOSURE, "lobby done").join();
         }
     }
 
