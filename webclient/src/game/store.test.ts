@@ -382,6 +382,57 @@ describe('useGameStore', () => {
     expect(useGameStore.getState().gameLog).toHaveLength(0);
   });
 
+  /* ---------- slice 19: game-over banner state ---------- */
+
+  it('gameOver sets gameOverPending true', () => {
+    const wrap = webGameClientMessageSchema.parse({
+      gameView: null,
+      message: 'alice has won the game',
+      targets: [],
+      cardsView1: {},
+      min: 0,
+      max: 0,
+      flag: false,
+      choice: null,
+    });
+    expect(useGameStore.getState().gameOverPending).toBe(false);
+    useGameStore.getState().applyFrame(frame('gameOver', wrap, 1), wrap);
+    expect(useGameStore.getState().gameOverPending).toBe(true);
+  });
+
+  it('gameInform does not set gameOverPending', () => {
+    const wrap = webGameClientMessageSchema.parse({
+      gameView: null,
+      message: 'alice plays Forest',
+      targets: [],
+      cardsView1: {},
+      min: 0,
+      max: 0,
+      flag: false,
+      choice: null,
+    });
+    useGameStore.getState().applyFrame(frame('gameInform', wrap, 1), wrap);
+    expect(useGameStore.getState().gameOverPending).toBe(false);
+  });
+
+  it('gameInit clears gameOverPending (next game in best-of-N)', () => {
+    const over = webGameClientMessageSchema.parse({
+      gameView: null,
+      message: 'alice has won game 1',
+      targets: [],
+      cardsView1: {},
+      min: 0,
+      max: 0,
+      flag: false,
+      choice: null,
+    });
+    useGameStore.getState().applyFrame(frame('gameOver', over, 1), over);
+    expect(useGameStore.getState().gameOverPending).toBe(true);
+    const gv = buildGameView(1);
+    useGameStore.getState().applyFrame(frame('gameInit', gv, 2), gv);
+    expect(useGameStore.getState().gameOverPending).toBe(false);
+  });
+
   it('gameInit still clears pendingDialog (fresh game / reconnect catch-up)', () => {
     const dialog = dialogPayload();
     useGameStore.getState().applyFrame(frame('gameAsk', dialog, 1), dialog);

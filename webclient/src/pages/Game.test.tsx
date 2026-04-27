@@ -492,6 +492,129 @@ describe('Game page', () => {
     ).not.toBeInTheDocument();
   });
 
+  /* ---------- slice 19: game-end overlay ---------- */
+
+  it('renders game-over banner when gameOverPending is set and gameEnd is null', () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: buildGameView(),
+        gameOverPending: true,
+        lastWrapped: {
+          gameView: null,
+          message: 'alice has won the game',
+          targets: [],
+          cardsView1: {},
+          min: 0,
+          max: 0,
+          flag: false,
+          choice: null,
+          options: {
+            leftBtnText: '',
+            rightBtnText: '',
+            possibleAttackers: [],
+            possibleBlockers: [],
+            specialButton: '',
+          },
+        },
+      });
+    });
+    const banner = screen.getByTestId('game-over-banner');
+    expect(banner).toHaveTextContent(/Game over/i);
+    expect(banner).toHaveTextContent(/alice has won the game/);
+    expect(banner).toHaveTextContent(/Waiting for the next game/);
+  });
+
+  it('renders match-end summary modal when gameEnd is set', async () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: buildGameView(),
+        gameEnd: {
+          gameInfo: 'You won the game on turn 7.',
+          matchInfo: 'You won the match!',
+          additionalInfo: '',
+          won: true,
+          wins: 1,
+          winsNeeded: 1,
+          players: [],
+        },
+      });
+    });
+    const modal = screen.getByTestId('game-end-modal');
+    expect(modal).toHaveTextContent(/Match won/i);
+    expect(modal).toHaveTextContent(/You won the match/);
+    expect(modal).toHaveTextContent(/1\/1/);
+  });
+
+  it('match-end modal shows "Match lost" + red styling when won=false', () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: buildGameView(),
+        gameEnd: {
+          gameInfo: '',
+          matchInfo: 'You lost the match.',
+          additionalInfo: '',
+          won: false,
+          wins: 0,
+          winsNeeded: 1,
+          players: [],
+        },
+      });
+    });
+    expect(screen.getByTestId('game-end-modal')).toHaveTextContent(/Match lost/i);
+  });
+
+  it('match-end Back to lobby button invokes onLeave', async () => {
+    const onLeave = vi.fn();
+    const userEvent = (await import('@testing-library/user-event')).default;
+    const user = userEvent.setup();
+    render(<Game gameId={FAKE_GAME_ID} onLeave={onLeave} />);
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: buildGameView(),
+        gameEnd: {
+          gameInfo: '',
+          matchInfo: '',
+          additionalInfo: '',
+          won: true,
+          wins: 1,
+          winsNeeded: 1,
+          players: [],
+        },
+      });
+    });
+    await user.click(screen.getByRole('button', { name: /back to lobby/i }));
+    expect(onLeave).toHaveBeenCalled();
+  });
+
+  it('match-end modal takes precedence over the game-over banner', () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: buildGameView(),
+        gameOverPending: true,
+        gameEnd: {
+          gameInfo: '',
+          matchInfo: 'GG',
+          additionalInfo: '',
+          won: true,
+          wins: 1,
+          winsNeeded: 1,
+          players: [],
+        },
+      });
+    });
+    expect(screen.queryByTestId('game-over-banner')).not.toBeInTheDocument();
+    expect(screen.getByTestId('game-end-modal')).toBeInTheDocument();
+  });
+
   it('Leave button invokes onLeave', async () => {
     const onLeave = vi.fn();
     const userEvent = (await import('@testing-library/user-event')).default;

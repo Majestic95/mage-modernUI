@@ -122,8 +122,103 @@ export function Game({ gameId, onLeave }: Props) {
       </main>
       {gameView && <ActionPanel stream={stream} />}
       <GameDialog stream={stream} />
+      <GameEndOverlay onLeave={onLeave} />
     </div>
   );
+}
+
+/* ---------- game-end overlay (slice 19 / B5) ---------- */
+
+/**
+ * Game / match end overlay. Two states:
+ *
+ * <ul>
+ *   <li>{@code gameEnd} set (match over) → modal summary with the
+ *       upstream {@code matchInfo}, win/wins-needed score, and a
+ *       Leave button.</li>
+ *   <li>{@code gameOverPending} set but no {@code gameEnd} yet
+ *       (best-of-N: game ended, match continues) → centered
+ *       banner with the {@code lastWrapped.message} and "waiting
+ *       for next game" hint. Cleared by the next {@code gameInit}.</li>
+ * </ul>
+ *
+ * <p>The board stays visible behind the banner / modal so the
+ * user can see the final state. The match-end modal is
+ * blocking — the only path forward is Leave (no rematch flow yet).
+ */
+function GameEndOverlay({ onLeave }: { onLeave: () => void }) {
+  const gameEnd = useGameStore((s) => s.gameEnd);
+  const gameOverPending = useGameStore((s) => s.gameOverPending);
+  const lastWrapped = useGameStore((s) => s.lastWrapped);
+
+  if (gameEnd) {
+    return (
+      <div
+        role="dialog"
+        aria-modal="true"
+        data-testid="game-end-modal"
+        className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-6"
+      >
+        <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-8 max-w-md w-full space-y-4 shadow-2xl text-center">
+          <h2
+            className={
+              'text-2xl font-semibold ' +
+              (gameEnd.won ? 'text-emerald-300' : 'text-red-300')
+            }
+          >
+            {gameEnd.won ? 'Match won' : 'Match lost'}
+          </h2>
+          {gameEnd.matchInfo && (
+            <p className="text-sm text-zinc-300">{gameEnd.matchInfo}</p>
+          )}
+          {gameEnd.gameInfo && (
+            <p className="text-sm text-zinc-400">{gameEnd.gameInfo}</p>
+          )}
+          <p className="text-zinc-200">
+            <span className="text-zinc-500 mr-2">Score:</span>
+            <span className="font-mono">
+              {gameEnd.wins}/{gameEnd.winsNeeded}
+            </span>
+          </p>
+          {gameEnd.additionalInfo && (
+            <p className="text-xs text-zinc-500">{gameEnd.additionalInfo}</p>
+          )}
+          <div className="flex justify-center pt-2">
+            <button
+              type="button"
+              onClick={onLeave}
+              className="px-5 py-2 rounded bg-fuchsia-600 hover:bg-fuchsia-500 text-white font-medium"
+            >
+              Back to lobby
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (gameOverPending) {
+    return (
+      <div
+        data-testid="game-over-banner"
+        className="fixed inset-x-0 top-16 z-40 flex justify-center pointer-events-none"
+      >
+        <div className="bg-zinc-900/95 border border-amber-700/60 rounded-lg px-6 py-3 shadow-xl text-center">
+          <p className="text-amber-300 font-semibold">Game over</p>
+          {lastWrapped?.message && (
+            <p className="text-sm text-zinc-300 mt-1">
+              {lastWrapped.message.replace(/<[^>]+>/g, '')}
+            </p>
+          )}
+          <p className="text-xs text-zinc-500 mt-1">
+            Waiting for the next game…
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
 }
 
 /* ---------- game log (slice 18) ---------- */

@@ -178,6 +178,15 @@ interface GameState {
   gameLog: GameLogEntry[];
 
   /**
+   * True when a {@code gameOver} frame is the most recent state
+   * push and the next game (in a best-of-N match) has not yet
+   * started. Drives the in-between-games banner overlay. Cleared
+   * by {@code gameInit} (next game starts) and by {@link reset}.
+   * Slice 19 / ADR 0008 B5.
+   */
+  gameOverPending: boolean;
+
+  /**
    * Pending {@code sideboard} frame. Set when upstream fires
    * {@code User.ccSideboard} (between games of a sideboarded match,
    * or at the start of a draft constructing window). The webclient
@@ -219,6 +228,7 @@ const INITIAL: Pick<
   | 'pendingStartGame'
   | 'pendingSideboard'
   | 'gameLog'
+  | 'gameOverPending'
 > = {
   connection: 'idle',
   closeReason: '',
@@ -232,6 +242,7 @@ const INITIAL: Pick<
   pendingStartGame: null,
   pendingSideboard: null,
   gameLog: [],
+  gameOverPending: false,
 };
 
 export const useGameStore = create<GameState>()((set, get) => ({
@@ -318,6 +329,9 @@ export const useGameStore = create<GameState>()((set, get) => ({
           // Wipe any stale dialog state.
           protocolError: null,
           pendingDialog: null,
+          // Slice 19: clear the inter-game banner — next game has
+          // started.
+          gameOverPending: false,
         });
         return true;
 
@@ -356,10 +370,15 @@ export const useGameStore = create<GameState>()((set, get) => ({
             ? [...nextLog.slice(nextLog.length - GAME_LOG_CAP + 1), entry]
             : [...nextLog, entry];
         }
+        const isGameOver = frame.method === 'gameOver';
         set({
           lastWrapped: wrapped,
           gameView: nextGv,
           gameLog: nextLog,
+          // Slice 19: flag the gameOver-pending state so the
+          // banner renders. Cleared on the next gameInit (best-of-N
+          // next game starts) or on reset (user leaves).
+          gameOverPending: isGameOver || get().gameOverPending,
           // Slice 16: do NOT clear pendingDialog on gameInform —
           // the engine fires informs mid-combat ("alice attacks
           // with Grizzly Bears") while declare-attackers is still
