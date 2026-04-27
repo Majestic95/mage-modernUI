@@ -7,6 +7,7 @@ import mage.cards.repository.CardInfo;
 import mage.cards.repository.CardRepository;
 import mage.game.match.MatchOptions;
 import mage.players.PlayerType;
+import mage.server.Session;
 import mage.view.TableView;
 import mage.webapi.WebApiException;
 import mage.webapi.dto.WebRoomRef;
@@ -172,6 +173,35 @@ public final class LobbyService {
             return;
         }
         out.add(new DeckCardInfo(name, info.getCardNumber(), info.getSetCode(), n));
+    }
+
+    /**
+     * Remove a table from the room. Upstream's
+     * {@code TableManagerImpl.removeTable} requires the caller to be
+     * the table's owner (or an admin) — non-owners get a {@code false}
+     * back, which we surface as a 403 so the UI can react.
+     *
+     * <p>We bypass {@code MageServerImpl.tableRemove} because it
+     * discards the boolean. Going one level deeper to the manager
+     * preserves the auth-failure signal.
+     */
+    public void removeTable(String upstreamSessionId, UUID roomId, UUID tableId) {
+        UUID userId = embedded.managerFactory().sessionManager()
+                .getSession(upstreamSessionId)
+                .map(Session::getUserId)
+                .orElseThrow(() -> new WebApiException(401, "MISSING_SESSION",
+                        "Upstream session expired."));
+        boolean ok;
+        try {
+            ok = embedded.managerFactory().tableManager().removeTable(userId, tableId);
+        } catch (RuntimeException ex) {
+            throw upstream("removing table", ex);
+        }
+        if (!ok) {
+            throw new WebApiException(403, "NOT_OWNER",
+                    "Only the table owner can remove the table.");
+        }
+        LOG.info("Table removed: {} from room {}", tableId, roomId);
     }
 
     public void leaveSeat(String upstreamSessionId, UUID roomId, UUID tableId) {

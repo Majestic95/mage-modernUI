@@ -222,6 +222,13 @@ public final class WebApiServer {
             lobbyService.leaveSeat(session.upstreamSessionId(), roomId, tableId);
             ctx.status(204);
         });
+        app.delete("/api/rooms/{roomId}/tables/{tableId}", ctx -> {
+            UUID roomId = parseUuid(ctx.pathParam("roomId"), "roomId");
+            UUID tableId = parseUuid(ctx.pathParam("tableId"), "tableId");
+            SessionEntry session = sessionFrom(ctx);
+            lobbyService.removeTable(session.upstreamSessionId(), roomId, tableId);
+            ctx.status(204);
+        });
 
         // Sideboard / construction submit (slice 13). Body shape
         // mirrors WebDeckCardLists used at table-join time. The

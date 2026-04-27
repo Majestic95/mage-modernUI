@@ -377,6 +377,87 @@ class WebApiServerTest {
         assertEquals(422, r.statusCode());
     }
 
+    /* ---------- slice 25: delete table ---------- */
+
+    @Test
+    void deleteTable_byOwner_returns204_andRemovesFromListing() throws Exception {
+        String e2eToken = freshAnonBearer();
+        String roomId = mainRoomId();
+        String tableId = createTableWith(e2eToken, roomId,
+                "Two Player Duel", "Constructed - Vintage", 1,
+                List.of("HUMAN", "COMPUTER_MONTE_CARLO"));
+
+        HttpResponse<String> del = HTTP.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create("http://localhost:" + server.port()
+                                + "/api/rooms/" + roomId + "/tables/" + tableId))
+                        .header("Authorization", "Bearer " + e2eToken)
+                        .timeout(Duration.ofSeconds(5))
+                        .DELETE()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(204, del.statusCode(), del.body());
+
+        HttpResponse<String> list = getWithToken(e2eToken,
+                "/api/rooms/" + roomId + "/tables");
+        JsonNode tables = JSON.readTree(list.body()).get("tables");
+        for (JsonNode t : tables) {
+            assertNotEquals(tableId, t.get("tableId").asText(),
+                    "deleted table must not appear in listing");
+        }
+    }
+
+    @Test
+    void deleteTable_byNonOwner_returns403() throws Exception {
+        // Owner creates the table
+        String ownerToken = freshAnonBearer();
+        String roomId = mainRoomId();
+        String tableId = createTableWith(ownerToken, roomId,
+                "Two Player Duel", "Constructed - Vintage", 1,
+                List.of("HUMAN", "COMPUTER_MONTE_CARLO"));
+
+        // Different session attempts to delete
+        String otherToken = freshAnonBearer();
+        HttpResponse<String> del = HTTP.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create("http://localhost:" + server.port()
+                                + "/api/rooms/" + roomId + "/tables/" + tableId))
+                        .header("Authorization", "Bearer " + otherToken)
+                        .timeout(Duration.ofSeconds(5))
+                        .DELETE()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(403, del.statusCode(), del.body());
+        assertEquals("NOT_OWNER", JSON.readTree(del.body()).get("code").asText());
+
+        // Cleanup so the test doesn't leak a table to subsequent tests
+        HTTP.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create("http://localhost:" + server.port()
+                                + "/api/rooms/" + roomId + "/tables/" + tableId))
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .timeout(Duration.ofSeconds(5))
+                        .DELETE()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
+    @Test
+    void deleteTable_malformedTableId_returns400() throws Exception {
+        String roomId = mainRoomId();
+        HttpResponse<String> del = HTTP.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create("http://localhost:" + server.port()
+                                + "/api/rooms/" + roomId + "/tables/not-a-uuid"))
+                        .header("Authorization", "Bearer " + bearer)
+                        .timeout(Duration.ofSeconds(5))
+                        .DELETE()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(400, del.statusCode());
+        assertEquals("BAD_REQUEST", JSON.readTree(del.body()).get("code").asText());
+    }
+
     /* ---------- slice 13: deck submit ---------- */
 
     @Test

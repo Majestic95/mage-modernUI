@@ -196,6 +196,175 @@ describe('Lobby — Start button', () => {
     expect(startCalls[0]).toMatch(/POST .*\/api\/rooms\/[^/]+\/tables\/[^/]+\/start$/);
   });
 
+  it('shows the Delete button when current user is the controller', async () => {
+    stubFetch({
+      '/api/server/main-room': () => jsonResponse(200, MAIN_ROOM),
+      '/api/server/state': () => jsonResponse(200, SERVER_STATE),
+      '/api/rooms/': () =>
+        jsonResponse(200, {
+          schemaVersion: '1.15',
+          tables: [tableWith({ tableState: 'WAITING' })],
+        }),
+    });
+
+    render(<Lobby />);
+
+    expect(
+      await screen.findByRole('button', { name: /^delete$/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('hides the Delete button when current user is NOT the controller', async () => {
+    stubFetch({
+      '/api/server/main-room': () => jsonResponse(200, MAIN_ROOM),
+      '/api/server/state': () => jsonResponse(200, SERVER_STATE),
+      '/api/rooms/': () =>
+        jsonResponse(200, {
+          schemaVersion: '1.15',
+          tables: [tableWith({ controllerName: 'someone-else' })],
+        }),
+    });
+
+    render(<Lobby />);
+
+    await screen.findByText("guest-deadbeef's table");
+    expect(screen.queryByRole('button', { name: /^delete$/i })).toBeNull();
+  });
+
+  it('clicking Delete (after confirm) sends DELETE to the table endpoint', async () => {
+    const user = userEvent.setup();
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const deleteCalls: string[] = [];
+
+    const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+      if (init?.method === 'DELETE' && /\/tables\/[^/]+$/.test(url)) {
+        deleteCalls.push(`${init.method} ${url}`);
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      if (url.includes('/api/server/main-room')) {
+        return Promise.resolve(jsonResponse(200, MAIN_ROOM));
+      }
+      if (url.includes('/api/server/state')) {
+        return Promise.resolve(jsonResponse(200, SERVER_STATE));
+      }
+      if (url.includes('/api/rooms/')) {
+        return Promise.resolve(
+          jsonResponse(200, {
+            schemaVersion: '1.15',
+            tables: [tableWith({ tableState: 'WAITING' })],
+          }),
+        );
+      }
+      return Promise.resolve(new Response(null, { status: 404 }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<Lobby />);
+    await user.click(await screen.findByRole('button', { name: /^delete$/i }));
+
+    await waitFor(() => {
+      expect(deleteCalls).toHaveLength(1);
+    });
+    expect(deleteCalls[0]).toMatch(
+      /DELETE .*\/api\/rooms\/[^/]+\/tables\/[^/]+$/,
+    );
+    expect(confirmSpy).toHaveBeenCalledOnce();
+    confirmSpy.mockRestore();
+  });
+
+  it('does not call DELETE if the user cancels the confirm dialog', async () => {
+    const user = userEvent.setup();
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const deleteCalls: string[] = [];
+
+    const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+      if (init?.method === 'DELETE' && /\/tables\/[^/]+$/.test(url)) {
+        deleteCalls.push(`${init.method} ${url}`);
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      if (url.includes('/api/server/main-room')) {
+        return Promise.resolve(jsonResponse(200, MAIN_ROOM));
+      }
+      if (url.includes('/api/server/state')) {
+        return Promise.resolve(jsonResponse(200, SERVER_STATE));
+      }
+      if (url.includes('/api/rooms/')) {
+        return Promise.resolve(
+          jsonResponse(200, { schemaVersion: '1.15', tables: [tableWith({})] }),
+        );
+      }
+      return Promise.resolve(new Response(null, { status: 404 }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<Lobby />);
+    await user.click(await screen.findByRole('button', { name: /^delete$/i }));
+
+    expect(confirmSpy).toHaveBeenCalledOnce();
+    expect(deleteCalls).toHaveLength(0);
+    confirmSpy.mockRestore();
+  });
+
+  it('surfaces a 403 NOT_OWNER message when the server rejects deletion', async () => {
+    const user = userEvent.setup();
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: string | URL | Request, init?: RequestInit) => {
+        const url =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url;
+        if (init?.method === 'DELETE' && /\/tables\/[^/]+$/.test(url)) {
+          return Promise.resolve(
+            jsonResponse(403, {
+              schemaVersion: '1.15',
+              code: 'NOT_OWNER',
+              message: 'Only the table owner can remove the table.',
+            }),
+          );
+        }
+        if (url.includes('/api/server/main-room')) {
+          return Promise.resolve(jsonResponse(200, MAIN_ROOM));
+        }
+        if (url.includes('/api/server/state')) {
+          return Promise.resolve(jsonResponse(200, SERVER_STATE));
+        }
+        if (url.includes('/api/rooms/')) {
+          return Promise.resolve(
+            jsonResponse(200, {
+              schemaVersion: '1.15',
+              tables: [tableWith({})],
+            }),
+          );
+        }
+        return Promise.resolve(new Response(null, { status: 404 }));
+      }),
+    );
+
+    render(<Lobby />);
+    await user.click(await screen.findByRole('button', { name: /^delete$/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      /only the table owner/i,
+    );
+    confirmSpy.mockRestore();
+  });
+
   it('surfaces a 422 UPSTREAM_REJECTED message when start fails', async () => {
     const user = userEvent.setup();
     vi.stubGlobal(

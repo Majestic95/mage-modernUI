@@ -72,6 +72,27 @@ export function Lobby() {
     [session, room, requestImmediateRefresh],
   );
 
+  const onDelete = useCallback(
+    async (table: WebTable) => {
+      if (!session || !room) return;
+      if (!window.confirm(`Delete table "${table.tableName}"? This cannot be undone.`)) {
+        return;
+      }
+      setActionError(null);
+      try {
+        await request(
+          `/api/rooms/${room.roomId}/tables/${table.tableId}`,
+          null,
+          { token: session.token, method: 'DELETE' },
+        );
+        requestImmediateRefresh();
+      } catch (err) {
+        setActionError(err instanceof ApiError ? err.message : 'Delete failed.');
+      }
+    },
+    [session, room, requestImmediateRefresh],
+  );
+
   useEffect(() => {
     if (!session) {
       return;
@@ -220,6 +241,7 @@ export function Lobby() {
             const canLeave = seated && t.tableState === 'WAITING';
             const canStart =
               t.controllerName === username && t.tableState === 'READY_TO_START';
+            const canDelete = t.controllerName === username;
             return (
               <li key={t.tableId} className="p-3 flex items-center justify-between gap-4">
                 <div className="space-y-1 min-w-0">
@@ -262,6 +284,16 @@ export function Lobby() {
                       className="bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium rounded px-3 py-1.5"
                     >
                       Start
+                    </button>
+                  )}
+                  {canDelete && (
+                    <button
+                      type="button"
+                      onClick={() => void onDelete(t)}
+                      className="bg-red-700 hover:bg-red-600 text-white text-sm font-medium rounded px-3 py-1.5"
+                      title="Remove this table from the lobby"
+                    >
+                      Delete
                     </button>
                   )}
                 </div>
