@@ -307,6 +307,13 @@ function Header({
   gameView: WebGameView | null;
   onLeave: () => void;
 }) {
+  // Slice 23: prominent "Your turn / Opponent's turn" indicator.
+  // Compare by playerId (not name) — slice-16 U5 fix; controller-
+  // hint suffixes can decorate priorityPlayerName in some flows.
+  const me =
+    gameView?.players.find((p) => p.playerId === gameView.myPlayerId) ?? null;
+  const isMyTurn = !!me?.isActive;
+  const hasMyPriority = !!me?.hasPriority;
   return (
     <header className="border-b border-zinc-800 px-6 py-2 flex items-center justify-between">
       <div className="flex items-baseline gap-4 text-sm">
@@ -315,13 +322,26 @@ function Header({
       </div>
       {gameView && (
         <div className="text-sm text-zinc-300 flex items-baseline gap-3">
+          <span data-testid="turn-indicator"
+                className={
+                  'px-2 py-0.5 rounded text-xs font-semibold uppercase tracking-wide '
+                  + (isMyTurn
+                    ? 'bg-emerald-600/30 text-emerald-200'
+                    : 'bg-zinc-700/50 text-zinc-400')
+                }>
+            {isMyTurn ? 'Your turn' : "Opponent's turn"}
+          </span>
           <span>Turn {gameView.turn}</span>
           <span className="text-zinc-500">{phaseLabel(gameView)}</span>
-          {gameView.priorityPlayerName && (
-            <span className="text-fuchsia-300">
-              Priority: {gameView.priorityPlayerName}
-            </span>
-          )}
+          <span
+            data-testid="priority-indicator"
+            className={
+              'text-xs '
+              + (hasMyPriority ? 'text-amber-300' : 'text-zinc-500')
+            }
+          >
+            {hasMyPriority ? 'Your priority' : 'Waiting for opponent'}
+          </span>
         </div>
       )}
       <div className="flex items-center gap-3 text-xs">
@@ -475,6 +495,8 @@ function Battlefield({
               hand={gv.myHand}
               canAct={canAct}
               onObjectClick={onObjectClick}
+              isMyTurn={!!me.isActive}
+              hasPriority={!!me.hasPriority}
             />
           </>
         ) : (
@@ -706,12 +728,41 @@ function MyHand({
   hand,
   canAct,
   onObjectClick,
+  isMyTurn,
+  hasPriority,
 }: {
   hand: Record<string, WebCardView>;
   canAct: boolean;
   onObjectClick: (id: string) => void;
+  isMyTurn: boolean;
+  hasPriority: boolean;
 }) {
   const cards = Object.values(hand);
+  // Slice 23: clearer reason when hand is disabled.
+  // - !hasPriority → engine isn't waiting on you
+  // - hasPriority && !isMyTurn → you can react with instants but
+  //   not play lands / sorceries; the user-typical click on a
+  //   Forest is silently rejected by upstream because it's not
+  //   their main phase.
+  // The hint text spells out the rule so the user doesn't have to
+  // internalize Magic's priority/timing system to understand why.
+  const disabledHint = !hasPriority
+    ? 'Waiting for opponent'
+    : !isMyTurn
+      ? 'Wait for your turn — most cards are sorcery-speed'
+      : '';
+
+  const cardTooltip = (card: WebCardView) => {
+    if (canAct && isMyTurn) return `${card.name} — click to play/cast`;
+    if (canAct && !isMyTurn) {
+      // Instant-speed only on opponent's turn. Today we don't
+      // distinguish instants in the UI; the engine will gameError
+      // on illegal sorcery-speed clicks. Hint accordingly.
+      return `${card.name} — only instants are playable on opponent's turn`;
+    }
+    return card.typeLine;
+  };
+
   return (
     <div
       data-testid="my-hand"
@@ -719,9 +770,12 @@ function MyHand({
     >
       <div className="text-xs text-zinc-500 mb-2 uppercase tracking-wide flex items-baseline justify-between">
         <span>Your hand ({cards.length})</span>
-        {!canAct && (
-          <span className="text-[10px] normal-case tracking-normal text-zinc-600">
-            waiting for priority
+        {disabledHint && (
+          <span
+            data-testid="hand-disabled-hint"
+            className="text-[10px] normal-case tracking-normal text-zinc-500 italic"
+          >
+            {disabledHint}
           </span>
         )}
       </div>
@@ -743,11 +797,7 @@ function MyHand({
                   ? 'cursor-pointer hover:border-fuchsia-500 hover:bg-zinc-800'
                   : 'cursor-default opacity-70')
               }
-              title={
-                canAct
-                  ? `${card.name} — click to play/cast`
-                  : card.typeLine
-              }
+              title={cardTooltip(card)}
             >
               <span className="font-medium">{card.name}</span>
               {card.manaCost && (

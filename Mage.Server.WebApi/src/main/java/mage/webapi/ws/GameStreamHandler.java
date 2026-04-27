@@ -233,6 +233,17 @@ public final class GameStreamHandler implements Consumer<WsConfig> {
             return;
         }
         String type = typeNode.asText();
+        // Slice 22 diagnostic: log every inbound frame at INFO so the
+        // server log shows exactly what the user clicked. Without
+        // this the server is silent for everything except chat /
+        // bad-frame errors, and "the user clicked but nothing
+        // happened" symptoms have no log trail. Truncated to 200
+        // chars so a 4 KB chatSend doesn't spam the log.
+        String username = (String) ctx.attribute(ATTR_USERNAME);
+        UUID gameId = (UUID) ctx.attribute(ATTR_GAME_ID);
+        String preview = body.length() > 200 ? body.substring(0, 200) + "..." : body;
+        LOG.info("WS msg: user={}, game={}, type={}, body={}",
+                username, gameId, type, preview);
         switch (type) {
             case "chatSend" -> handleChatSend(ctx, parsed);
             case "playerAction" -> handlePlayerAction(ctx, parsed);

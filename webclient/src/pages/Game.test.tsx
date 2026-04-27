@@ -266,18 +266,68 @@ describe('Game page', () => {
     sendSpy.mockRestore();
   });
 
-  it('hand cards are disabled when self does not have priority', () => {
+  it('hand cards are disabled when self does not have priority — shows "Waiting for opponent" hint', () => {
     render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
     const gv = buildGameView();
     const me = gv.players.find((p) => p.controlled)!;
     me.hasPriority = false;
+    me.isActive = false;
     gv.priorityPlayerName = 'COMPUTER_MONTE_CARLO';
     act(() => {
       useGameStore.setState({ connection: 'open', gameView: gv });
     });
 
     expect(screen.getByTestId('hand-card')).toBeDisabled();
-    expect(screen.getByText(/waiting for priority/i)).toBeInTheDocument();
+    expect(screen.getByTestId('hand-disabled-hint')).toHaveTextContent(
+      /Waiting for opponent/i,
+    );
+  });
+
+  /* ---------- slice 23: turn / priority indicators + hand hints ---------- */
+
+  it('header shows "Your turn" + "Your priority" when self is active and has priority', () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    act(() => {
+      useGameStore.setState({ connection: 'open', gameView: buildGameView() });
+    });
+    expect(screen.getByTestId('turn-indicator')).toHaveTextContent(/Your turn/i);
+    expect(screen.getByTestId('priority-indicator')).toHaveTextContent(
+      /Your priority/i,
+    );
+  });
+
+  it('header shows "Opponent\'s turn" + "Waiting for opponent" when AI is active', () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    const gv = buildGameView();
+    const me = gv.players.find((p) => p.controlled)!;
+    me.isActive = false;
+    me.hasPriority = false;
+    const ai = gv.players.find((p) => !p.controlled)!;
+    ai.isActive = true;
+    ai.hasPriority = true;
+    act(() => {
+      useGameStore.setState({ connection: 'open', gameView: gv });
+    });
+    expect(screen.getByTestId('turn-indicator')).toHaveTextContent(
+      /Opponent's turn/i,
+    );
+    expect(screen.getByTestId('priority-indicator')).toHaveTextContent(
+      /Waiting for opponent/i,
+    );
+  });
+
+  it('hand shows "Wait for your turn" hint when user has priority on opponent\'s turn', () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    const gv = buildGameView();
+    const me = gv.players.find((p) => p.controlled)!;
+    me.isActive = false; // not your turn
+    me.hasPriority = true; // but you hold priority (instant-speed window)
+    act(() => {
+      useGameStore.setState({ connection: 'open', gameView: gv });
+    });
+    expect(screen.getByTestId('hand-disabled-hint')).toHaveTextContent(
+      /Wait for your turn/i,
+    );
   });
 
   it('clicking a self-controlled permanent calls sendObjectClick', async () => {
