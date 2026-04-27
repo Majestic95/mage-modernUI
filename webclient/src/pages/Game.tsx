@@ -1242,43 +1242,95 @@ function MyHand({
 function CardDetail({ card }: { card: WebCardView }) {
   const isCreature = card.power || card.toughness;
   const isPlaneswalker = !!card.startingLoyalty;
+  const imageUrl = scryfallImageUrl(card);
   return (
     <div
       data-testid="card-detail"
-      className="bg-zinc-900 border border-zinc-700 rounded shadow-xl p-3 w-64 text-xs space-y-2"
+      className="bg-zinc-900 border border-zinc-700 rounded shadow-xl w-64 text-xs overflow-hidden"
     >
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="font-semibold text-sm text-zinc-100 truncate">
-          {card.name}
-        </span>
-        {card.manaCost && (
-          <span className="text-zinc-300 shrink-0">
-            <ManaCost cost={card.manaCost} />
+      {imageUrl && <CardImage url={imageUrl} alt={card.name} />}
+      <div className="p-3 space-y-2">
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="font-semibold text-sm text-zinc-100 truncate">
+            {card.name}
           </span>
+          {card.manaCost && (
+            <span className="text-zinc-300 shrink-0">
+              <ManaCost cost={card.manaCost} />
+            </span>
+          )}
+        </div>
+        {card.typeLine && (
+          <div className="text-zinc-400 italic">{card.typeLine}</div>
         )}
-      </div>
-      {card.typeLine && (
-        <div className="text-zinc-400 italic">{card.typeLine}</div>
-      )}
-      {(isCreature || isPlaneswalker) && (
-        <div className="text-zinc-300 font-mono">
-          {isPlaneswalker
-            ? `Loyalty: ${card.startingLoyalty}`
-            : `${card.power} / ${card.toughness}`}
+        {(isCreature || isPlaneswalker) && (
+          <div className="text-zinc-300 font-mono">
+            {isPlaneswalker
+              ? `Loyalty: ${card.startingLoyalty}`
+              : `${card.power} / ${card.toughness}`}
+          </div>
+        )}
+        {card.rules && card.rules.length > 0 && (
+          <div className="space-y-1 text-zinc-300 leading-snug">
+            {card.rules.map((line, i) => (
+              <p key={i}>{line.replace(/<[^>]+>/g, '')}</p>
+            ))}
+          </div>
+        )}
+        <div className="text-[10px] text-zinc-500 uppercase tracking-wide flex items-baseline gap-2 pt-1 border-t border-zinc-800">
+          {card.expansionSetCode && <span>{card.expansionSetCode}</span>}
+          {card.rarity && <span>· {card.rarity}</span>}
         </div>
-      )}
-      {card.rules && card.rules.length > 0 && (
-        <div className="space-y-1 text-zinc-300 leading-snug">
-          {card.rules.map((line, i) => (
-            <p key={i}>{line.replace(/<[^>]+>/g, '')}</p>
-          ))}
-        </div>
-      )}
-      <div className="text-[10px] text-zinc-500 uppercase tracking-wide flex items-baseline gap-2 pt-1 border-t border-zinc-800">
-        {card.expansionSetCode && <span>{card.expansionSetCode}</span>}
-        {card.rarity && <span>· {card.rarity}</span>}
       </div>
     </div>
+  );
+}
+
+/**
+ * Build a Scryfall image URL from a card's set + collector number.
+ * Returns {@code null} when either field is missing — the
+ * {@link CardDetail} renders without an image in that case.
+ *
+ * <p>{@code ?format=image&version=normal} is the redirect-to-CDN
+ * endpoint Scryfall provides; the browser follows the 302 once
+ * and caches the result. Set codes are upper-cased upstream;
+ * Scryfall's URL space is lowercase, so we normalize here.
+ *
+ * <p>Per ADR 0002 / PATH_C_PLAN.md "Image strategy": Scryfall is
+ * the source of truth for card art, fetched on demand and cached
+ * by the browser HTTP cache. A Service Worker overlay can come
+ * later if rate limits or offline-play matter; for now the
+ * native cache is sufficient.
+ */
+export function scryfallImageUrl(card: WebCardView): string | null {
+  if (!card.expansionSetCode || !card.cardNumber) return null;
+  const set = card.expansionSetCode.toLowerCase();
+  const num = encodeURIComponent(card.cardNumber);
+  return `https://api.scryfall.com/cards/${set}/${num}?format=image&version=normal`;
+}
+
+/**
+ * Lazy-loaded Scryfall image with graceful failure. Hides itself
+ * on load error so a missing print (Scryfall has no record of
+ * this set / number, network blocked, etc.) just falls back to
+ * the text-only card detail. {@code loading="lazy"} is a hint
+ * for browsers that mount the element off-screen — most of our
+ * use cases hover the element on, so it loads immediately, but
+ * the hint is harmless and helps when an overlay first mounts
+ * outside the viewport.
+ */
+function CardImage({ url, alt }: { url: string; alt: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return null;
+  return (
+    <img
+      src={url}
+      alt={alt}
+      loading="lazy"
+      onError={() => setFailed(true)}
+      data-testid="card-image"
+      className="w-full block"
+    />
   );
 }
 

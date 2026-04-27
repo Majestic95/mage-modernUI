@@ -924,6 +924,74 @@ describe('Game page', () => {
     expect(detail).toHaveTextContent('Forest');
   });
 
+  /* ---------- slice 34: scryfall card images ---------- */
+
+  it('renders a Scryfall image inside the card detail overlay on hover', async () => {
+    const userEvent = (await import('@testing-library/user-event')).default;
+    const user = userEvent.setup();
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: buildGameView(),
+      });
+    });
+    await user.hover(screen.getByTestId('hand-card'));
+    const img = (await screen.findByTestId(
+      'card-image',
+    )) as HTMLImageElement;
+    // Forest from M21 #281 → lowercase set, encoded number, normal version
+    expect(img.getAttribute('src')).toBe(
+      'https://api.scryfall.com/cards/m21/281?format=image&version=normal',
+    );
+    expect(img.getAttribute('loading')).toBe('lazy');
+    expect(img.getAttribute('alt')).toBe('Forest');
+  });
+
+  it('hides the image (text detail still visible) when Scryfall errors', async () => {
+    const userEvent = (await import('@testing-library/user-event')).default;
+    const { fireEvent } = await import('@testing-library/react');
+    const user = userEvent.setup();
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: buildGameView(),
+      });
+    });
+    await user.hover(screen.getByTestId('hand-card'));
+    const img = await screen.findByTestId('card-image');
+    fireEvent.error(img);
+    // Image gone, but the rest of the detail card stays mounted.
+    expect(screen.queryByTestId('card-image')).toBeNull();
+    expect(screen.getByTestId('card-detail')).toHaveTextContent('Forest');
+  });
+
+  it('omits the image when set or collector number is missing', async () => {
+    const userEvent = (await import('@testing-library/user-event')).default;
+    const user = userEvent.setup();
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    const gv = buildGameView();
+    // Inject an unprinted card (e.g. a token built ad-hoc) — no
+    // setCode means we can't derive a Scryfall URL.
+    const tokenCard = webCardViewSchema.parse({
+      ...FOREST,
+      id: 'tttttttt-tttt-tttt-tttt-tttttttttttt',
+      name: 'Saproling',
+      expansionSetCode: '',
+      cardNumber: '',
+    });
+    gv.myHand = { [tokenCard.id]: tokenCard };
+    act(() => {
+      useGameStore.setState({ connection: 'open', gameView: gv });
+    });
+    await user.hover(screen.getByTestId('hand-card'));
+    expect(await screen.findByTestId('card-detail')).toHaveTextContent(
+      'Saproling',
+    );
+    expect(screen.queryByTestId('card-image')).toBeNull();
+  });
+
   /* ---------- slice 32: mana cost icon font ---------- */
 
   it('renders mana costs as icon-font glyphs (one <i> per token)', () => {
