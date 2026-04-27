@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
+import { createPortal } from 'react-dom';
 import { useAuthStore } from '../auth/store';
 import { GameStream } from '../game/stream';
 import { useGameStore } from '../game/store';
@@ -1497,24 +1505,87 @@ function HoverCardDetail({
   children: ReactNode;
 }) {
   const [show, setShow] = useState(false);
+  const triggerRef = useRef<HTMLSpanElement | null>(null);
+  const popoverRef = useRef<HTMLDivElement | null>(null);
+  // Slice 38: viewport-clamped position. Initial render places the
+  // popover off-screen (so its layout settles invisibly) and the
+  // useLayoutEffect below measures both the trigger and the popover,
+  // then snaps the popover to a position that:
+  //   1. flips above ↔ below depending on which side has more room
+  //   2. clamps horizontally so the right / left edges never spill
+  //      past the viewport
+  // We use position: fixed (not absolute) and a portal so the
+  // popover escapes any overflow:hidden ancestor (the battlefield
+  // sections are scrollable).
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+
+  useLayoutEffect(() => {
+    if (!show) {
+      setPos(null);
+      return;
+    }
+    if (!triggerRef.current || !popoverRef.current) return;
+    const tr = triggerRef.current.getBoundingClientRect();
+    const pr = popoverRef.current.getBoundingClientRect();
+    const margin = 8;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+
+    // Vertical: prefer above the trigger, flip below if more room
+    // there, else clamp into the viewport.
+    let top: number;
+    const roomAbove = tr.top - margin;
+    const roomBelow = vh - tr.bottom - margin;
+    if (roomAbove >= pr.height) {
+      top = tr.top - pr.height - margin;
+    } else if (roomBelow >= pr.height) {
+      top = tr.bottom + margin;
+    } else {
+      // Neither side fits — clamp so at minimum the top of the
+      // popover stays in view.
+      top = Math.max(margin, vh - pr.height - margin);
+    }
+
+    // Horizontal: align to trigger's left edge, clamp to viewport.
+    let left = tr.left;
+    if (left + pr.width > vw - margin) {
+      left = vw - pr.width - margin;
+    }
+    if (left < margin) left = margin;
+
+    setPos({ left, top });
+  }, [show, card]);
+
   return (
-    <span
-      className="relative inline-flex"
-      onMouseEnter={() => setShow(true)}
-      onMouseLeave={() => setShow(false)}
-      onFocus={() => setShow(true)}
-      onBlur={() => setShow(false)}
-    >
-      {children}
-      {show && (
-        <span
-          data-testid="card-detail-overlay"
-          className="absolute bottom-full left-0 mb-2 z-50 pointer-events-none"
-        >
-          <CardDetail card={card} />
-        </span>
-      )}
-    </span>
+    <>
+      <span
+        ref={triggerRef}
+        className="relative inline-flex"
+        onMouseEnter={() => setShow(true)}
+        onMouseLeave={() => setShow(false)}
+        onFocus={() => setShow(true)}
+        onBlur={() => setShow(false)}
+      >
+        {children}
+      </span>
+      {show &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            ref={popoverRef}
+            data-testid="card-detail-overlay"
+            className="fixed z-50 pointer-events-none"
+            style={
+              pos
+                ? { left: pos.left, top: pos.top }
+                : { left: -9999, top: -9999, opacity: 0 }
+            }
+          >
+            <CardDetail card={card} />
+          </div>,
+          document.body,
+        )}
+    </>
   );
 }
 

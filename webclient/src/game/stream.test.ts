@@ -39,10 +39,9 @@ class FakeWebSocket {
     this._close(code, reason);
   }
 
+  sent: string[] = [];
   send(data: string): void {
-    // Stub — spied on by send-related tests. Reference data so the
-    // arg isn't optimized out / flagged unused-vars.
-    void data;
+    this.sent.push(data);
   }
 
   _open(): void {
@@ -289,6 +288,13 @@ describe('GameStream', () => {
     const queued: { cb: () => void; ms: number; cancelled: boolean }[] = [];
     return {
       queued,
+      // Slice 38: keepalive uses the same scheduler now (one extra
+      // entry per open()). Helpers below filter it out so the
+      // reconnect-flow assertions stay focused.
+      reconnectTimer: () =>
+        queued.find((q) => !q.cancelled && q.ms !== KEEPALIVE_MS),
+      activeReconnectQueue: () =>
+        queued.filter((q) => !q.cancelled && q.ms !== KEEPALIVE_MS),
       scheduler: {
         set: (cb: () => void, ms: number) => {
           const entry = { cb, ms, cancelled: false };
@@ -300,13 +306,18 @@ describe('GameStream', () => {
         },
       },
       fireNext: () => {
-        const next = queued.find((q) => !q.cancelled);
+        // Skip cancelled and skip keepalive — fireNext is only used
+        // to advance reconnect-driven flow.
+        const next = queued.find(
+          (q) => !q.cancelled && q.ms !== KEEPALIVE_MS,
+        );
         if (!next) throw new Error('No pending timer to fire');
         next.cancelled = true;
         next.cb();
       },
     };
   }
+  const KEEPALIVE_MS = 30_000;
 
   it('auto-reconnects on unexpected close with backoff', () => {
     const sched = makeFakeScheduler();
@@ -323,8 +334,8 @@ describe('GameStream', () => {
     // Server-side close (not caller-initiated, not auth code).
     FakeWebSocket.instances[0]!._close(1006, 'connection lost');
     expect(useGameStore.getState().connection).toBe('closed');
-    expect(sched.queued).toHaveLength(1);
-    expect(sched.queued[0]!.ms).toBe(500);
+    expect(sched.activeReconnectQueue()).toHaveLength(1);
+    expect(sched.reconnectTimer()!.ms).toBe(500);
 
     sched.fireNext();
     expect(FakeWebSocket.instances).toHaveLength(2);
@@ -372,7 +383,7 @@ describe('GameStream', () => {
     FakeWebSocket.instances[0]!._open();
     FakeWebSocket.instances[0]!._close(4001, 'INVALID_TOKEN');
 
-    expect(sched.queued).toHaveLength(0);
+    expect(sched.activeReconnectQueue()).toHaveLength(0);
     expect(useGameStore.getState().connection).toBe('error');
     expect(FakeWebSocket.instances).toHaveLength(1);
   });
@@ -388,13 +399,13 @@ describe('GameStream', () => {
     stream.open();
     FakeWebSocket.instances[0]!._open();
     FakeWebSocket.instances[0]!._close(1006, 'lost');
-    expect(sched.queued).toHaveLength(1);
+    expect(sched.activeReconnectQueue()).toHaveLength(1);
 
     stream.close();
-    // Pending timer cancelled — firing it would no-op via the cancel
-    // flag, but we also expect attemptCount to reset; the safer
-    // assertion is that no new socket is created after caller close.
-    expect(sched.queued[0]!.cancelled).toBe(true);
+    // Pending reconnect cancelled — firing it would no-op via the
+    // cancel flag, but we also expect attemptCount to reset; the
+    // safer assertion is that no live reconnect timer remains.
+    expect(sched.activeReconnectQueue()).toHaveLength(0);
   });
 
   it('autoReconnect=false suppresses reconnect attempts', () => {
@@ -409,7 +420,7 @@ describe('GameStream', () => {
     stream.open();
     FakeWebSocket.instances[0]!._open();
     FakeWebSocket.instances[0]!._close(1006, 'lost');
-    expect(sched.queued).toHaveLength(0);
+    expect(sched.activeReconnectQueue()).toHaveLength(0);
   });
 
   it('successful reopen resets attempt counter (next failure starts at 500ms)', () => {
@@ -423,7 +434,7 @@ describe('GameStream', () => {
     stream.open();
     FakeWebSocket.instances[0]!._open();
     FakeWebSocket.instances[0]!._close(1006, 'lost');
-    expect(sched.queued[0]!.ms).toBe(500);
+    expect(sched.reconnectTimer()!.ms).toBe(500);
 
     sched.fireNext();
     FakeWebSocket.instances[1]!._open();
@@ -431,7 +442,62 @@ describe('GameStream', () => {
 
     FakeWebSocket.instances[1]!._close(1006, 'lost again');
     // Counter reset on successful open — next backoff starts at 500ms.
-    expect(sched.queued[1]!.ms).toBe(500);
+    expect(sched.reconnectTimer()!.ms).toBe(500);
+  });
+
+  /* ---------- slice 38: keepalive heartbeat ---------- */
+
+  it('schedules a keepalive timer at 30s after the socket opens', () => {
+    const sched = makeFakeScheduler();
+    const stream = new GameStream({
+      gameId: FAKE_GAME_ID,
+      token: 'tok-1',
+      webSocketCtor: FakeWebSocket as unknown as typeof WebSocket,
+      scheduler: sched.scheduler,
+    });
+    stream.open();
+    FakeWebSocket.instances[0]!._open();
+    const keepalive = sched.queued.find((q) => q.ms === KEEPALIVE_MS);
+    expect(keepalive).toBeDefined();
+    expect(keepalive!.cancelled).toBe(false);
+  });
+
+  it('firing the keepalive timer sends a {type:"keepalive"} frame', () => {
+    const sched = makeFakeScheduler();
+    const stream = new GameStream({
+      gameId: FAKE_GAME_ID,
+      token: 'tok-1',
+      webSocketCtor: FakeWebSocket as unknown as typeof WebSocket,
+      scheduler: sched.scheduler,
+    });
+    stream.open();
+    const sock = FakeWebSocket.instances[0]!;
+    sock._open();
+    const keepalive = sched.queued.find(
+      (q) => q.ms === KEEPALIVE_MS && !q.cancelled,
+    )!;
+    keepalive.cancelled = true;
+    keepalive.cb();
+    expect(sock.sent.some((s) => s.includes('"keepalive"'))).toBe(true);
+  });
+
+  it('keepalive cancels on socket close and does not send afterwards', () => {
+    const sched = makeFakeScheduler();
+    const stream = new GameStream({
+      gameId: FAKE_GAME_ID,
+      token: 'tok-1',
+      autoReconnect: false,
+      webSocketCtor: FakeWebSocket as unknown as typeof WebSocket,
+      scheduler: sched.scheduler,
+    });
+    stream.open();
+    const sock = FakeWebSocket.instances[0]!;
+    sock._open();
+    sock._close(1006, 'lost');
+    const liveKeepalive = sched.queued.find(
+      (q) => q.ms === KEEPALIVE_MS && !q.cancelled,
+    );
+    expect(liveKeepalive).toBeUndefined();
   });
 
   /**

@@ -118,6 +118,15 @@ export interface GameStreamOptions {
 const RECONNECT_BACKOFF_MS = [500, 1000, 2000, 4000] as const;
 
 /**
+ * Slice 38: how often the client sends a {@code keepalive} frame
+ * to keep the WS link from being idled out by the server (5min) or
+ * intermediate proxies (often as low as 60s). 30s is well below
+ * any common idle threshold and adds negligible bandwidth (~1
+ * tiny JSON message per 30s).
+ */
+const KEEPALIVE_INTERVAL_MS = 30_000;
+
+/**
  * Close codes that are permanent failures — retrying won't help and
  * usually re-attempts will hit the same wall (auth still bad,
  * gameId still malformed). Surface the close to the user instead.
@@ -139,6 +148,15 @@ export class GameStream {
   private closedByCaller = false;
   private reconnectAttempt = 0;
   private reconnectTimer: unknown = null;
+  /**
+   * Slice 38: periodic keepalive timer. Server's WS idle timeout is
+   * 5 minutes (GameStreamHandler.IDLE_TIMEOUT); intermediate proxies
+   * (corporate, ISP, OS network stack) often drop idle WS earlier.
+   * Sending a tiny "keepalive" frame every 30s keeps the link alive
+   * across AFK windows. Server-side handlers no-op the frame; we
+   * just need the bytes to reset everyone's idle timer.
+   */
+  private keepaliveTimer: unknown = null;
 
   constructor(options: GameStreamOptions) {
     this.gameId = options.gameId;
@@ -198,6 +216,7 @@ export class GameStream {
       if (this.socket !== socket) return;
       this.reconnectAttempt = 0;
       useGameStore.getState().setConnection('open');
+      this.startKeepalive(socket);
     });
 
     socket.addEventListener('message', (ev: MessageEvent) => {
@@ -213,6 +232,7 @@ export class GameStream {
     socket.addEventListener('close', (ev: CloseEvent) => {
       if (this.socket !== socket) return;
       this.socket = null;
+      this.cancelKeepalive();
       useGameStore
         .getState()
         .setConnection('closed', ev.reason || `code ${ev.code}`);
@@ -235,6 +255,7 @@ export class GameStream {
   close(code = 1000, reason = 'client navigation'): void {
     this.closedByCaller = true;
     this.cancelReconnect();
+    this.cancelKeepalive();
     // Null out our reference *before* requesting the OS close. A
     // subsequent open() in the same tick (StrictMode double-mount)
     // can then proceed without short-circuiting on `this.socket`.
@@ -279,6 +300,40 @@ export class GameStream {
       this.reconnectTimer = null;
     }
     this.reconnectAttempt = 0;
+  }
+
+  /**
+   * Slice 38: start the keepalive interval for a freshly-open
+   * socket. Sends `{ "type": "keepalive" }` every 30s while the
+   * socket is OPEN; cancels itself when the socket is replaced or
+   * closed. The server's switch arms a no-op for this type — the
+   * data on the wire is what matters.
+   */
+  private startKeepalive(socket: WebSocket): void {
+    this.cancelKeepalive();
+    this.keepaliveTimer = this.scheduler.set(() => {
+      this.keepaliveTimer = null;
+      if (this.socket !== socket || socket.readyState !== WebSocket.OPEN) {
+        return;
+      }
+      try {
+        socket.send(JSON.stringify({ type: 'keepalive' }));
+      } catch {
+        // Send may fail on a closing socket — close handler will
+        // clean up; nothing to do here.
+      }
+      // Re-arm. Recursive scheduling instead of setInterval so we
+      // align with the existing scheduler abstraction (test injects
+      // its own setTimeout/clearTimeout).
+      this.startKeepalive(socket);
+    }, KEEPALIVE_INTERVAL_MS);
+  }
+
+  private cancelKeepalive(): void {
+    if (this.keepaliveTimer != null) {
+      this.scheduler.clear(this.keepaliveTimer);
+      this.keepaliveTimer = null;
+    }
   }
 
   /** True when the underlying socket is connected and accepting sends. */

@@ -248,6 +248,10 @@ public final class GameStreamHandler implements Consumer<WsConfig> {
             case "chatSend" -> handleChatSend(ctx, parsed);
             case "playerAction" -> handlePlayerAction(ctx, parsed);
             case "playerResponse" -> handlePlayerResponse(ctx, parsed);
+            case "keepalive" -> { /* slice 38: no-op — receiving the
+                frame is enough to reset Jetty's idle timer. The client
+                sends one every 30s while the WS is open so AFK players
+                don't get killed by the 5-minute idle close. */ }
             default -> sendError(ctx, "NOT_IMPLEMENTED",
                     "Inbound type '" + type + "' is not yet implemented.");
         }

@@ -177,6 +177,7 @@ public final class RoomStreamHandler implements Consumer<WsConfig> {
         String type = typeNode.asText();
         switch (type) {
             case "chatSend" -> handleChatSend(ctx, parsed);
+            case "keepalive" -> { /* slice 38: see GameStreamHandler. */ }
             // Room context has no game state; player actions are
             // game-specific. Reject them explicitly so a misrouted
             // client gets a clear signal.
