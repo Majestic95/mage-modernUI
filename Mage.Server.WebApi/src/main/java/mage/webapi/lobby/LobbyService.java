@@ -117,6 +117,19 @@ public final class LobbyService {
         }
     }
 
+    /**
+     * Build the AI's fallback deck used by {@code addAi}. Slice 24
+     * upgrade — was a 60-Forest pile (no creatures, no combat
+     * possible). Now a mono-green creature pile so the AI actually
+     * casts spells and attacks. Lets us exercise the slice-20
+     * combat panel + slice-21 manual mana paths in live testing.
+     *
+     * <p>Every entry is looked up via CardRepository — if a
+     * specific card isn't in the DB we substitute Forest so the
+     * total card count stays at 60 (deck-validation requirement).
+     * In practice every card here has been in upstream's repository
+     * for years; the substitute path is paranoia.
+     */
     private DeckCardLists buildFallbackBasicLandsDeck() {
         CardInfo forest = CardRepository.instance.findCard("Forest");
         if (forest == null) {
@@ -124,13 +137,41 @@ public final class LobbyService {
                     "Card DB has no Forest — cannot build AI fallback deck.");
         }
         DeckCardLists deck = new DeckCardLists();
-        deck.setName("AI Fallback Deck");
+        deck.setName("AI Bears Deck");
         deck.setAuthor("server");
         List<DeckCardInfo> cards = new ArrayList<>();
-        cards.add(new DeckCardInfo("Forest", forest.getCardNumber(), forest.getSetCode(), 60));
+        addEntry(cards, "Forest", forest, 24);
+        addEntryOrFallback(cards, "Llanowar Elves", forest, 4);
+        addEntryOrFallback(cards, "Grizzly Bears", forest, 4);
+        addEntryOrFallback(cards, "Centaur Courser", forest, 4);
+        addEntryOrFallback(cards, "Trained Armodon", forest, 4);
+        addEntryOrFallback(cards, "Spined Wurm", forest, 4);
+        addEntryOrFallback(cards, "Craw Wurm", forest, 4);
+        addEntryOrFallback(cards, "Yavimaya Wurm", forest, 4);
+        addEntryOrFallback(cards, "Plated Slagwurm", forest, 4);
+        addEntryOrFallback(cards, "Quirion Sentinel", forest, 4);
         deck.setCards(cards);
         deck.setSideboard(new ArrayList<>());
         return deck;
+    }
+
+    private static void addEntry(List<DeckCardInfo> out, String name, CardInfo info, int n) {
+        out.add(new DeckCardInfo(name, info.getCardNumber(), info.getSetCode(), n));
+    }
+
+    private static void addEntryOrFallback(List<DeckCardInfo> out, String name,
+                                            CardInfo fallback, int n) {
+        CardInfo info = CardRepository.instance.findCard(name);
+        if (info == null) {
+            // Substitute basic lands so the 60-card target is preserved
+            // even if some cards are missing from the local DB.
+            LOG.warn("AI deck card '{}' missing from repository — substituting {} extra Forests",
+                    name, n);
+            out.add(new DeckCardInfo("Forest",
+                    fallback.getCardNumber(), fallback.getSetCode(), n));
+            return;
+        }
+        out.add(new DeckCardInfo(name, info.getCardNumber(), info.getSetCode(), n));
     }
 
     public void leaveSeat(String upstreamSessionId, UUID roomId, UUID tableId) {
