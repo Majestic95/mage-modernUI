@@ -8,10 +8,16 @@ import java.util.Map;
  * three fields, no further nesting.
  *
  * <p>Fires when a permanent has multiple activated abilities to pick
- * from (most cards with two abilities), or when ordering a stack of
- * simultaneously-fired triggers ({@code chooseTriggeredAbility}). The
- * player picks an ability UUID; the response goes back as
- * {@code playerResponse{kind:"uuid", value: <chosen-id>}}.
+ * from (most cards with two abilities) and when picking a modal
+ * spell's mode (the {@code chooseMode} path is funneled through
+ * {@code GameController}'s switch into the same {@code chooseAbility}
+ * dispatch). The player picks a UUID / mode key; the response goes
+ * back as {@code playerResponse{kind:"uuid", value: <chosen-id>}}.
+ *
+ * <p>Triggered ability ordering is a SEPARATE path despite the
+ * shared semantics — see ADR 0009. Trigger ordering arrives on
+ * {@code gameTarget} (via {@code QueryType.PICK_ABILITY}), not here.
+ * ADR 0008 §1.29 misattributed it to this frame; ADR 0009 corrects.
  *
  * <p>Distinct from the {@link WebGameClientMessage} wrapper because
  * upstream's {@code AbilityPickerView} is a separate class (not a

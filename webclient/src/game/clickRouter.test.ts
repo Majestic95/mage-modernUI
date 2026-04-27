@@ -134,6 +134,37 @@ describe('routeObjectClick', () => {
     expect(r.dispatched).toBe(false);
     expect(out.calls).toEqual([]);
   });
+
+  /* ---------- slice 26 / ADR 0009: orderTriggers ---------- */
+
+  it('orderTriggers + eligible ability id → sendPlayerResponse + clearDialog', () => {
+    const out = mockOut();
+    const mode: InteractionMode = {
+      kind: 'orderTriggers',
+      messageId: 42,
+      abilityIds: new Set(['ability-x']),
+    };
+    const r = routeObjectClick(mode, 'ability-x', false, out);
+    expect(r.dispatched).toBe(true);
+    expect(out.calls).toEqual([
+      { method: 'sendPlayerResponse', args: [42, 'uuid', 'ability-x'] },
+      { method: 'clearDialog', args: [] },
+    ]);
+  });
+
+  it('orderTriggers + ineligible id → no dispatch (board click suppressed)', () => {
+    const out = mockOut();
+    const mode: InteractionMode = {
+      kind: 'orderTriggers',
+      messageId: 42,
+      abilityIds: new Set(['ability-x']),
+    };
+    const r = routeObjectClick(mode, 'permanent-y', true, out);
+    expect(r.dispatched).toBe(false);
+    if (r.dispatched) return;
+    expect(r.reason).toBe('not-eligible-ability');
+    expect(out.calls).toEqual([]);
+  });
 });
 
 describe('isBoardClickable', () => {
@@ -167,6 +198,15 @@ describe('isBoardClickable', () => {
     expect(
       isBoardClickable(
         { kind: 'modal', messageId: 1, method: 'gameAsk' },
+        true,
+      ),
+    ).toBe(false);
+  });
+
+  it('returns false for orderTriggers mode (slice 26)', () => {
+    expect(
+      isBoardClickable(
+        { kind: 'orderTriggers', messageId: 1, abilityIds: new Set() },
         true,
       ),
     ).toBe(false);

@@ -100,6 +100,27 @@ export function routeObjectClick(
       };
     }
 
+    case 'orderTriggers': {
+      // Slice 26 / ADR 0009. Same dispatch shape as `target` (uuid
+      // response + clearDialog), but the eligibility check uses the
+      // ability-id set rather than the target-id set, and board
+      // objects are NOT eligible — only ability rows in the panel
+      // can trigger this branch (the panel passes the ability UUID
+      // directly).
+      if (!mode.abilityIds.has(objectId)) {
+        return { dispatched: false, reason: 'not-eligible-ability' };
+      }
+      out.sendPlayerResponse(mode.messageId, 'uuid', objectId);
+      out.clearDialog();
+      return {
+        dispatched: true,
+        via: 'playerResponse',
+        kind: 'uuid',
+        messageId: mode.messageId,
+        value: objectId,
+      };
+    }
+
     case 'declareAttackers':
     case 'declareBlockers':
     case 'manaPay':
@@ -138,6 +159,11 @@ export function isBoardClickable(
 ): boolean {
   switch (mode.kind) {
     case 'modal':
+    case 'orderTriggers':
+      // Slice 26: trigger-order picks happen in the side panel,
+      // never on the board. Suppress board click-through so a stray
+      // click on a permanent during the prompt doesn't leak as a
+      // free-priority dispatch.
       return false;
     case 'target':
     case 'declareAttackers':

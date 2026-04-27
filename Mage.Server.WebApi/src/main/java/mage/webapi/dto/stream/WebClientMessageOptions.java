@@ -11,7 +11,7 @@ import java.util.List;
  * key. We project to a closed record per ADR 0008 audit
  * (slice 17 substrate).
  *
- * <p>Five fields cover every {@code GameClientMessage}-shaped frame's
+ * <p>Six fields cover every {@code GameClientMessage}-shaped frame's
  * known consumers in 1v1 duel:
  *
  * <ul>
@@ -27,10 +27,16 @@ import java.util.List;
  *   <li>{@link #specialButton} — upstream {@code "SPECIAL_BUTTON"}.
  *       Text for the "All attack" button during declare-attackers
  *       (slice 20).</li>
+ *   <li>{@link #isTriggerOrder} — true when the upstream
+ *       {@code GameClientMessage} arrived via the trigger-ordering
+ *       path ({@code QueryType.PICK_ABILITY}). The wire frame is
+ *       {@code gameTarget} either way; this flag lets the webclient
+ *       branch into {@code OrderTriggersDialog} when set, instead of
+ *       rendering the regular target picker. ADR 0009 D2; schema 1.16.</li>
  * </ul>
  *
- * <p>All fields are always present; empty string / empty list signal
- * "upstream did not populate this key". The Zod schema on the
+ * <p>All fields are always present; empty string / empty list / false
+ * signals "upstream did not populate this key". The Zod schema on the
  * webclient relies on the fixed shape.
  *
  * <p>If upstream introduces a new key we want to forward, extend the
@@ -44,17 +50,20 @@ import java.util.List;
  * @param possibleBlockers   legal blocker permanent UUIDs (combat)
  * @param specialButton      text for the SPECIAL_BUTTON, e.g.
  *     "All attack" — empty when not applicable
+ * @param isTriggerOrder     true when the prompt is a trigger-order
+ *     pick (ADR 0009 / schema 1.16)
  */
 public record WebClientMessageOptions(
         String leftBtnText,
         String rightBtnText,
         List<String> possibleAttackers,
         List<String> possibleBlockers,
-        String specialButton
+        String specialButton,
+        boolean isTriggerOrder
 ) {
 
     /** Empty options instance — used when upstream's options map is null. */
     public static final WebClientMessageOptions EMPTY = new WebClientMessageOptions(
-            "", "", List.of(), List.of(), ""
+            "", "", List.of(), List.of(), "", false
     );
 }

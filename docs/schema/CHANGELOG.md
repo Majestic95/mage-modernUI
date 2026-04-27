@@ -19,6 +19,52 @@ minor mismatches.
 
 ---
 
+## 1.16 — 2026-04-27 — Trigger-order discriminator (ADR 0009)
+
+Adds an `isTriggerOrder` boolean to `WebClientMessageOptions`. The
+flag flips on when upstream's `GameClientMessage.options` carries
+`queryType == PlayerQueryEvent.QueryType.PICK_ABILITY` — the
+trigger-ordering engine path. The wire frame stays `gameTarget`;
+the boolean lets the webclient branch into the dedicated
+`OrderTriggersDialog` UI surface (rule text rows, single-shot
+click-to-pick) instead of rendering the regular target picker.
+
+ADR 0009 D2 / D3.
+
+### `WebClientMessageOptions` — added `isTriggerOrder` field
+
+```diff
+   "specialButton":     "All attack",
++  "isTriggerOrder":    false
+ }
+```
+
+Defaults to `false` (additive minor — older fixtures parse cleanly
+via `z.default(false)` on the webclient).
+
+### Webclient impact
+
+- `interactionMode` gains a new `kind: 'orderTriggers'` discriminant.
+- `clickRouter` adds an `orderTriggers` arm; `isBoardClickable`
+  returns `false` for that mode (ability rows live in the panel,
+  not on the board).
+- New `OrderTriggersDialog` component renders rows from
+  `cardsView1[id].rules.join(' ')`.
+
+### Server impact
+
+- `WebClientMessageOptions` Java record gains a sixth field.
+- `GameViewMapper.extractOptions` reads `source.get("queryType")`
+  and compares against `PlayerQueryEvent.QueryType.PICK_ABILITY`.
+
+### Non-impact
+
+- `WebPlayerAction.data` is unchanged in 1.16 — slice 27 of ADR
+  0009 will add the `{ abilityId }` shape for `TRIGGER_AUTO_ORDER_*`
+  actions and that's a separate schema bump.
+
+---
+
 ## 1.15 — 2026-04-26 — Client-message options carrier (audit gap U1 + B4)
 
 Adds a structured `options` carrier on `WebGameClientMessage` so

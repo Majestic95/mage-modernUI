@@ -7,6 +7,44 @@ describe('deriveInteractionMode', () => {
     expect(deriveInteractionMode(null)).toEqual({ kind: 'free' });
   });
 
+  it('maps gameTarget with options.isTriggerOrder=true to orderTriggers mode (slice 26)', () => {
+    const dialog: PendingDialog = {
+      method: 'gameTarget',
+      messageId: 99,
+      data: {
+        gameView: null,
+        message: 'Pick triggered ability (goes to the stack first)',
+        targets: [],
+        cardsView1: {
+          'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa': {
+            id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+          } as never,
+          'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb': {
+            id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+          } as never,
+        },
+        min: 0,
+        max: 0,
+        flag: true,
+        choice: null,
+        options: {
+          leftBtnText: '',
+          rightBtnText: '',
+          possibleAttackers: [],
+          possibleBlockers: [],
+          specialButton: '',
+          isTriggerOrder: true,
+        },
+      },
+    };
+    const mode = deriveInteractionMode(dialog);
+    expect(mode.kind).toBe('orderTriggers');
+    if (mode.kind !== 'orderTriggers') return;
+    expect(mode.messageId).toBe(99);
+    expect(mode.abilityIds.has('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')).toBe(true);
+    expect(mode.abilityIds.has('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb')).toBe(true);
+  });
+
   it('maps gameTarget to target mode with eligible IDs from cardsView1 + targets', () => {
     const dialog: PendingDialog = {
       method: 'gameTarget',

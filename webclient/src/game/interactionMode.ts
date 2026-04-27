@@ -72,6 +72,25 @@ export type InteractionModeDeclareBlockers = {
 };
 
 /**
+ * Triggered ability ordering — slice 26 (ADR 0009). The engine has
+ * 2+ triggers ready to go on the stack and asks the player to pick
+ * the next one. Wire arrives as {@code gameTarget} with
+ * {@code options.isTriggerOrder = true}; {@code abilityIds} is the
+ * set of {@code cardsView1} keys (each is a runtime ability UUID).
+ *
+ * <p>Click semantics are single-shot like {@code target} — pick one,
+ * the dialog clears, the engine resolves it and re-prompts for the
+ * next. {@link InteractionModeTarget} is intentionally NOT reused
+ * because the row content (rule text, no card art / typeLine) and
+ * board click semantics ({@code isBoardClickable === false}) differ.
+ */
+export type InteractionModeOrderTriggers = {
+  kind: 'orderTriggers';
+  messageId: number;
+  abilityIds: Set<string>;
+};
+
+/**
  * Manual mana payment. Engine fires gamePlayMana / gamePlayXMana
  * when auto-payment can't resolve a cost. Click a tapped/untapped
  * mana source on the battlefield → server picks the source. Cancel
@@ -101,6 +120,7 @@ export type InteractionMode =
   | InteractionModeTarget
   | InteractionModeDeclareAttackers
   | InteractionModeDeclareBlockers
+  | InteractionModeOrderTriggers
   | InteractionModeManaPay
   | InteractionModeModal;
 
@@ -128,6 +148,17 @@ export function deriveInteractionMode(
   switch (dialog.method) {
     case 'gameTarget': {
       const data = dialog.data as WebGameClientMessage;
+      // Slice 26 / ADR 0009: gameTarget doubles as the trigger-order
+      // prompt (upstream's QueryType.PICK_ABILITY). When the
+      // server-side discriminator is set, branch into the
+      // orderTriggers mode — same wire frame, different UI surface.
+      if (data.options?.isTriggerOrder) {
+        return {
+          kind: 'orderTriggers',
+          messageId: dialog.messageId,
+          abilityIds: new Set(Object.keys(data.cardsView1 ?? {})),
+        };
+      }
       const ids = new Set<string>([
         ...Object.keys(data.cardsView1 ?? {}),
         ...(data.targets ?? []),

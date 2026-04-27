@@ -13,6 +13,7 @@ function emptyDialog(overrides: Partial<{
   min: number;
   max: number;
   flag: boolean;
+  options: Record<string, unknown>;
 }> = {}) {
   return webGameClientMessageSchema.parse({
     gameView: null,
@@ -23,6 +24,7 @@ function emptyDialog(overrides: Partial<{
     max: overrides.max ?? 0,
     flag: overrides.flag ?? false,
     choice: null,
+    ...(overrides.options !== undefined ? { options: overrides.options } : {}),
   });
 }
 
@@ -607,6 +609,121 @@ describe('GameDialog', () => {
       'uuid',
       '00000000-0000-0000-0000-000000000000',
     );
+  });
+
+  /* ---------- slice 26 / ADR 0009: trigger-order dialog ---------- */
+
+  it('gameTarget with options.isTriggerOrder=true renders OrderTriggersDialog rows from rule text', async () => {
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    const ability1 = {
+      id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+      name: 'Ability',
+      displayName: 'Ability',
+      expansionSetCode: '',
+      cardNumber: '',
+      manaCost: '',
+      manaValue: 0,
+      typeLine: '',
+      supertypes: [],
+      types: [],
+      subtypes: [],
+      colors: [],
+      rarity: '',
+      power: '',
+      toughness: '',
+      startingLoyalty: '',
+      rules: ['When Soul Warden enters the battlefield, you gain 1 life.'],
+      faceDown: false,
+      counters: {},
+      transformable: false,
+      transformed: false,
+      secondCardFace: null,
+    };
+    const ability2 = {
+      ...ability1,
+      id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+      rules: ["Whenever a creature enters, you may pay {1}. If you do, draw a card."],
+    };
+    act(() => {
+      useGameStore.setState({
+        pendingDialog: {
+          method: 'gameTarget',
+          messageId: 99,
+          data: emptyDialog({
+            message: 'Pick triggered ability (goes to the stack first)',
+            cardsView1: { [ability1.id]: ability1, [ability2.id]: ability2 },
+            options: {
+              leftBtnText: '',
+              rightBtnText: '',
+              possibleAttackers: [],
+              possibleBlockers: [],
+              specialButton: '',
+              isTriggerOrder: true,
+            },
+          }),
+        },
+      });
+    });
+    render(<GameDialog stream={stream} />);
+
+    const rows = screen.getAllByTestId('trigger-order-row');
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toHaveTextContent(/Soul Warden enters the battlefield/);
+    expect(rows[1]).toHaveTextContent(/Whenever a creature enters/);
+
+    await user.click(rows[0]!);
+    expect(stream.sendPlayerResponse).toHaveBeenCalledWith(99, 'uuid', ability1.id);
+    expect(useGameStore.getState().pendingDialog).toBeNull();
+  });
+
+  it('OrderTriggersDialog has no Skip button (chooseTriggeredAbility is required)', () => {
+    const stream = fakeStream();
+    const ability = {
+      id: 'cccccccc-cccc-cccc-cccc-cccccccccccc',
+      name: 'Ability',
+      displayName: 'Ability',
+      expansionSetCode: '',
+      cardNumber: '',
+      manaCost: '',
+      manaValue: 0,
+      typeLine: '',
+      supertypes: [],
+      types: [],
+      subtypes: [],
+      colors: [],
+      rarity: '',
+      power: '',
+      toughness: '',
+      startingLoyalty: '',
+      rules: ['Some trigger text.'],
+      faceDown: false,
+      counters: {},
+      transformable: false,
+      transformed: false,
+      secondCardFace: null,
+    };
+    act(() => {
+      useGameStore.setState({
+        pendingDialog: {
+          method: 'gameTarget',
+          messageId: 100,
+          data: emptyDialog({
+            cardsView1: { [ability.id]: ability },
+            options: {
+              leftBtnText: '',
+              rightBtnText: '',
+              possibleAttackers: [],
+              possibleBlockers: [],
+              specialButton: '',
+              isTriggerOrder: true,
+            },
+          }),
+        },
+      });
+    });
+    render(<GameDialog stream={stream} />);
+    expect(screen.queryByRole('button', { name: /skip/i })).toBeNull();
   });
 
   it('gameSelectAmount: number input + Submit sends integer', async () => {

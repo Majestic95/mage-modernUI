@@ -1,6 +1,7 @@
 package mage.webapi.mapper;
 
 import mage.choices.Choice;
+import mage.game.events.PlayerQueryEvent;
 import mage.view.AbilityPickerView;
 import mage.view.CombatGroupView;
 import mage.view.CommandObjectView;
@@ -281,7 +282,8 @@ public final class GameViewMapper {
                 stringValue(source.get("UI.right.btn.text")),
                 uuidList(source.get("POSSIBLE_ATTACKERS")),
                 uuidList(source.get("POSSIBLE_BLOCKERS")),
-                stringValue(source.get("SPECIAL_BUTTON"))
+                stringValue(source.get("SPECIAL_BUTTON")),
+                source.get("queryType") == PlayerQueryEvent.QueryType.PICK_ABILITY
         );
     }
 

@@ -19,6 +19,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -143,18 +144,21 @@ class GameViewMapperTest {
     }
 
     @Test
-    void clientMessageOptions_jsonShape_locksFiveFields() throws Exception {
+    void clientMessageOptions_jsonShape_locksSixFields() throws Exception {
         mage.webapi.dto.stream.WebClientMessageOptions opts =
                 new mage.webapi.dto.stream.WebClientMessageOptions(
                         "Mulligan", "Keep",
                         List.of("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
                         List.of(),
-                        "All attack");
+                        "All attack",
+                        false);
         JsonNode node = JSON.valueToTree(opts);
-        assertEquals(5, node.size(),
-                "WebClientMessageOptions must have exactly 5 fields; got: " + node);
+        assertEquals(6, node.size(),
+                "WebClientMessageOptions must have exactly 6 fields "
+                        + "(slice 26 / ADR 0009 added isTriggerOrder); got: " + node);
         for (String f : List.of("leftBtnText", "rightBtnText",
-                "possibleAttackers", "possibleBlockers", "specialButton")) {
+                "possibleAttackers", "possibleBlockers", "specialButton",
+                "isTriggerOrder")) {
             assertTrue(node.has(f), "missing field: " + f);
         }
         assertEquals("Mulligan", node.get("leftBtnText").asText());
@@ -162,6 +166,7 @@ class GameViewMapperTest {
         assertTrue(node.get("possibleAttackers").isArray());
         assertEquals(1, node.get("possibleAttackers").size());
         assertEquals("All attack", node.get("specialButton").asText());
+        assertFalse(node.get("isTriggerOrder").asBoolean());
     }
 
     @Test
@@ -210,7 +215,36 @@ class GameViewMapperTest {
                 GameViewMapper.extractOptions(source);
         assertEquals("OK", out.leftBtnText());
         // No way to assert the key is dropped beyond proving the
-        // record only has 5 fields, which the shape-lock test covers.
+        // record only has 6 fields, which the shape-lock test covers.
+    }
+
+    /* ---------- slice 26 / ADR 0009: isTriggerOrder discriminator ---------- */
+
+    @Test
+    void extractOptions_queryTypePickAbility_setsIsTriggerOrderTrue() {
+        java.util.Map<String, java.io.Serializable> source = new java.util.HashMap<>();
+        source.put("queryType", mage.game.events.PlayerQueryEvent.QueryType.PICK_ABILITY);
+        mage.webapi.dto.stream.WebClientMessageOptions out =
+                GameViewMapper.extractOptions(source);
+        assertTrue(out.isTriggerOrder());
+    }
+
+    @Test
+    void extractOptions_queryTypePickTarget_leavesIsTriggerOrderFalse() {
+        java.util.Map<String, java.io.Serializable> source = new java.util.HashMap<>();
+        source.put("queryType", mage.game.events.PlayerQueryEvent.QueryType.PICK_TARGET);
+        mage.webapi.dto.stream.WebClientMessageOptions out =
+                GameViewMapper.extractOptions(source);
+        assertFalse(out.isTriggerOrder());
+    }
+
+    @Test
+    void extractOptions_missingQueryType_leavesIsTriggerOrderFalse() {
+        java.util.Map<String, java.io.Serializable> source = new java.util.HashMap<>();
+        source.put("UI.left.btn.text", "OK");
+        mage.webapi.dto.stream.WebClientMessageOptions out =
+                GameViewMapper.extractOptions(source);
+        assertFalse(out.isTriggerOrder());
     }
 
     @Test

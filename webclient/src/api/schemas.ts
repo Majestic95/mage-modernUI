@@ -405,9 +405,15 @@ export type WebChoice = z.infer<typeof webChoiceSchema>;
 
 /**
  * Whitelisted projection of upstream's GameClientMessage.options
- * map. Schema 1.15. Matches server-side WebClientMessageOptions
- * record. Older 1.14 fixtures default to all-empty via z.default
- * so this slice's schema bump doesn't force a fixture rewrite.
+ * map. Schema 1.16. Matches server-side WebClientMessageOptions
+ * record. Older fixtures default to all-empty via z.default so
+ * schema bumps don't force a fixture rewrite.
+ *
+ * <p>Schema 1.16 (ADR 0009): added {@code isTriggerOrder} —
+ * discriminator that flips the {@code gameTarget} renderer into
+ * the trigger-ordering panel when upstream's {@code queryType ==
+ * QueryType.PICK_ABILITY}. The wire frame stays {@code gameTarget};
+ * the boolean controls the client-side dialog branch.
  */
 export const webClientMessageOptionsSchema = z.object({
   leftBtnText: z.string().default(''),
@@ -415,6 +421,7 @@ export const webClientMessageOptionsSchema = z.object({
   possibleAttackers: z.array(z.string()).default([]),
   possibleBlockers: z.array(z.string()).default([]),
   specialButton: z.string().default(''),
+  isTriggerOrder: z.boolean().default(false),
 });
 export type WebClientMessageOptions = z.infer<typeof webClientMessageOptionsSchema>;
 
@@ -424,6 +431,7 @@ export const EMPTY_CLIENT_MESSAGE_OPTIONS: WebClientMessageOptions = {
   possibleAttackers: [],
   possibleBlockers: [],
   specialButton: '',
+  isTriggerOrder: false,
 };
 
 export const webGameClientMessageSchema = z.object({

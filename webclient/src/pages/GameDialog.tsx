@@ -198,8 +198,21 @@ function DialogContent({
           isXMana={dialog.method === 'gamePlayXMana'}
         />
       );
-    case 'gameTarget':
+    case 'gameTarget': {
+      // Slice 26 / ADR 0009: gameTarget doubles as the trigger-order
+      // prompt. Branch when upstream's queryType discriminator is set.
+      const data = dialog.data as WebGameClientMessage;
+      if (data.options?.isTriggerOrder) {
+        return (
+          <OrderTriggersDialog
+            dialog={dialog}
+            stream={stream}
+            clearDialog={clearDialog}
+          />
+        );
+      }
       return <TargetDialog dialog={dialog} stream={stream} clearDialog={clearDialog} />;
+    }
     case 'gameSelect':
       return <SelectDialog dialog={dialog} stream={stream} clearDialog={clearDialog} />;
     case 'gameSelectAmount':
@@ -337,6 +350,62 @@ function TargetDialog({ dialog, stream, clearDialog }: ContentProps) {
           </SecondaryButton>
         </Buttons>
       )}
+    </>
+  );
+}
+
+/**
+ * Triggered-ability ordering panel — slice 26, ADR 0009. Same wire
+ * frame as {@link TargetDialog} ({@code gameTarget}), but the rows
+ * carry rule text from each ability's {@code rules[]} array instead
+ * of card name + typeLine. Click-to-pick is single-shot: the engine
+ * resolves the chosen ability, then re-prompts with the remaining
+ * abilities until the queue empties (D9).
+ *
+ * <p>No skip button — {@code chooseTriggeredAbility} does not surface
+ * an optional path. No board click-through either: {@code
+ * isBoardClickable} returns false for this mode (clickRouter D7).
+ *
+ * <p>Slice 27 will add the per-row hamburger menu for the five
+ * {@code TRIGGER_AUTO_ORDER_*} actions.
+ */
+function OrderTriggersDialog({ dialog, stream, clearDialog }: ContentProps) {
+  const data = dialog.data as WebGameClientMessage;
+  const abilities = Object.values(data.cardsView1);
+  const submit = (id: string) => {
+    stream?.sendPlayerResponse(dialog.messageId, 'uuid', id);
+    clearDialog();
+  };
+  return (
+    <>
+      <Header title="Pick triggered ability" />
+      <Message text={data.message || 'Pick the next ability to put on the stack.'} />
+      <ul
+        className="space-y-1.5 max-h-72 overflow-y-auto"
+        data-testid="trigger-order-list"
+      >
+        {abilities.map((a) => {
+          const ruleText = (a.rules ?? []).join(' ').replace(/<[^>]+>/g, '').trim();
+          return (
+            <li key={a.id}>
+              <button
+                type="button"
+                data-testid="trigger-order-row"
+                data-ability-id={a.id}
+                onClick={() => submit(a.id)}
+                className="w-full text-left px-3 py-2 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-100 text-sm leading-snug"
+              >
+                {ruleText || a.name || '(unlabeled trigger)'}
+              </button>
+            </li>
+          );
+        })}
+        {abilities.length === 0 && (
+          <li className="text-zinc-500 italic text-sm">
+            No triggers reported — engine likely auto-resolved.
+          </li>
+        )}
+      </ul>
     </>
   );
 }
