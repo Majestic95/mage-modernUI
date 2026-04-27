@@ -97,7 +97,14 @@ export function Game({ gameId, onLeave }: Props) {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-zinc-950 text-zinc-100">
+    // Slice 23 layout fix: pin the root to exactly viewport height
+    // (h-screen + overflow-hidden) so internal panes (Battlefield
+    // zones, GameLog entries) scroll independently rather than the
+    // whole page growing as the game log accumulates entries. With
+    // min-h-screen, the page grew past viewport once the log
+    // exceeded the screen and the user had to scroll the entire
+    // window to read the log / reach the action panel.
+    <div className="h-screen flex flex-col bg-zinc-950 text-zinc-100 overflow-hidden">
       <Header
         gameId={gameId}
         connection={connection}
@@ -110,8 +117,8 @@ export function Game({ gameId, onLeave }: Props) {
           {protocolError}
         </div>
       )}
-      <main className="flex-1 flex">
-        <div className="flex-1 flex flex-col">
+      <main className="flex-1 flex min-h-0">
+        <div className="flex-1 flex flex-col min-w-0">
           {gameView ? (
             <Battlefield gv={gameView} stream={stream} />
           ) : (
