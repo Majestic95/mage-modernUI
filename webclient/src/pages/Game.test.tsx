@@ -153,7 +153,7 @@ describe('Game page', () => {
     expect(screen.getByTestId('player-area-opponent')).toBeInTheDocument();
   });
 
-  it('shows turn + phase in the header', () => {
+  it('shows turn number on the phase timeline (slice 28 owns this display)', () => {
     render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
     act(() => {
       useGameStore.setState({
@@ -161,8 +161,7 @@ describe('Game page', () => {
         gameView: buildGameView(),
       });
     });
-    expect(screen.getByText(/Turn 2/)).toBeInTheDocument();
-    expect(screen.getByText(/PRECOMBAT_MAIN/)).toBeInTheDocument();
+    expect(screen.getByTestId('phase-timeline')).toHaveTextContent(/Turn 2/);
   });
 
   it("renders the controlling player's hand cards by name", () => {
@@ -722,6 +721,83 @@ describe('Game page', () => {
     const topMarkers = screen.getAllByTestId('stack-top-marker');
     expect(topMarkers).toHaveLength(1);
     expect(entries[0]!.contains(topMarkers[0]!)).toBe(true);
+  });
+
+  /* ---------- slice 28: phase timeline ---------- */
+
+  it('renders the phase timeline with all five phase segments', () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: buildGameView(),
+      });
+    });
+    expect(screen.getByTestId('phase-timeline')).toBeInTheDocument();
+    expect(screen.getAllByTestId('phase-segment')).toHaveLength(5);
+  });
+
+  it('marks the segment matching the active step as data-active-phase', () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    // buildGameView sets phase: 'PRECOMBAT_MAIN', step: 'PRECOMBAT_MAIN'
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: buildGameView(),
+      });
+    });
+    const segments = screen.getAllByTestId('phase-segment');
+    const activeSegments = segments.filter(
+      (el) => el.getAttribute('data-active-phase') === 'true',
+    );
+    expect(activeSegments).toHaveLength(1);
+    expect(activeSegments[0]).toHaveAttribute('data-phase', 'Main Phase 1');
+  });
+
+  it('renders the active-step bloom orb on the matching tick', () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    const gv = buildGameView();
+    gv.step = 'DECLARE_BLOCKERS';
+    gv.phase = 'COMBAT';
+    act(() => {
+      useGameStore.setState({ connection: 'open', gameView: gv });
+    });
+    const orbs = screen.getAllByTestId('active-step-orb');
+    expect(orbs).toHaveLength(1);
+    // The orb sits inside the tick element with data-step.
+    const tick = orbs[0]!.closest('[data-testid="phase-tick"]');
+    expect(tick).toHaveAttribute('data-step', 'DECLARE_BLOCKERS');
+    expect(tick).toHaveAttribute('data-active-step', 'true');
+  });
+
+  it('shows the turn number and active player name on the timeline', () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: buildGameView(),
+      });
+    });
+    const timeline = screen.getByTestId('phase-timeline');
+    expect(timeline).toHaveTextContent(/Turn 2/);
+    expect(screen.getByTestId('active-player-name')).toHaveTextContent('alice');
+  });
+
+  it('renders six combat ticks (5 standard + first-strike)', () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: buildGameView(),
+      });
+    });
+    const segments = screen.getAllByTestId('phase-segment');
+    const combat = segments.find(
+      (el) => el.getAttribute('data-phase') === 'Combat',
+    );
+    expect(combat).toBeTruthy();
+    const ticks = combat!.querySelectorAll('[data-testid="phase-tick"]');
+    expect(ticks).toHaveLength(6);
   });
 
   /* ---------- slice 19: game-end overlay ---------- */
