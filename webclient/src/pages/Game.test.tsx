@@ -315,6 +315,71 @@ describe('Game page', () => {
     expect(screen.getAllByTestId('permanent')[0]).toBeDisabled();
   });
 
+  /* ---------- slice 18: game log strip ---------- */
+
+  it('GameLog renders accumulated entries from store.gameLog', () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: buildGameView(),
+        gameLog: [
+          {
+            id: 1,
+            message: 'alice plays Forest',
+            turn: 1,
+            phase: 'PRECOMBAT_MAIN',
+          },
+          {
+            id: 2,
+            message: 'Lightning Bolt deals 3 damage to bob',
+            turn: 2,
+            phase: 'PRECOMBAT_MAIN',
+          },
+        ],
+      });
+    });
+
+    const log = screen.getByTestId('game-log');
+    expect(log).toHaveTextContent(/Game log \(2\)/);
+    const entries = screen.getAllByTestId('game-log-entry');
+    expect(entries).toHaveLength(2);
+    expect(entries[0]).toHaveTextContent('alice plays Forest');
+    expect(entries[1]).toHaveTextContent(/Lightning Bolt deals 3/);
+  });
+
+  it('GameLog shows empty placeholder before any entries arrive', () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: buildGameView(),
+      });
+    });
+    expect(screen.getByTestId('game-log')).toHaveTextContent(/No events yet/);
+  });
+
+  it('GameLog strips raw HTML markup from the message', () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: buildGameView(),
+        gameLog: [
+          {
+            id: 1,
+            message: 'Mulligan <font color=#ffff00>down to 6</font>',
+            turn: 1,
+            phase: '',
+          },
+        ],
+      });
+    });
+    const entry = screen.getByTestId('game-log-entry');
+    expect(entry).toHaveTextContent(/Mulligan down to 6/);
+    expect(entry.querySelector('font')).toBeNull();
+  });
+
   /* ---------- slice 15: click-on-board targeting ---------- */
 
   function pendingTargetDialog(targets: string[]) {

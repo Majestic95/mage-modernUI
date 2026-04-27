@@ -22,6 +22,16 @@ import type {
 /** Maximum chat history retained per chatId. Older messages drop. */
 const CHAT_HISTORY_CAP = 200;
 
+/**
+ * Maximum game-log entries retained. Engine fires
+ * {@code GAME_UPDATE_AND_INFORM} once per state change ("alice plays
+ * Forest", "Bolt deals 3 to bob", etc.); a 30-turn match can easily
+ * exceed 1000. Keep the most recent 500 — about 15 turns of detail
+ * — so the log isn't unbounded but the user has enough scrollback
+ * to debug "what just happened".
+ */
+const GAME_LOG_CAP = 500;
+
 export type ConnectionState =
   | 'idle'
   | 'connecting'
@@ -86,6 +96,27 @@ export type PendingDialogAbilityPicker = {
 
 export type PendingDialog = PendingDialogClientMessage | PendingDialogAbilityPicker;
 
+/**
+ * One entry in the game log strip. Captures the message text from a
+ * {@code gameInform} / {@code gameOver} frame plus turn metadata for
+ * display ordering. ADR 0008 §B3 / §6.3.
+ *
+ * <p>Slice 18: turn / phase pulled from the gameView snapshot the
+ * {@code gameInform} carries (which is the post-event state). The
+ * webclient renders these in the chat panel below user chat, with
+ * the most recent at the bottom (chat-style).
+ */
+export interface GameLogEntry {
+  /** Monotonic id derived from the inbound frame's messageId. */
+  id: number;
+  /** The upstream message text (may contain {@code <font color>} markup). */
+  message: string;
+  /** Turn number at the moment of dispatch. 0 if no gameView available. */
+  turn: number;
+  /** Phase / step label, e.g. "PRECOMBAT_MAIN". Empty if unavailable. */
+  phase: string;
+}
+
 interface GameState {
   /** Connection lifecycle. {@code 'idle'} before any connect attempt. */
   connection: ConnectionState;
@@ -139,6 +170,14 @@ interface GameState {
   pendingStartGame: WebStartGameInfo | null;
 
   /**
+   * Game-log strip — accumulates {@code gameInform.message} text
+   * across the match for the user's "what just happened?" view.
+   * Capped at {@link GAME_LOG_CAP} (oldest evicted FIFO).
+   * Slice 18 / ADR 0008 B3.
+   */
+  gameLog: GameLogEntry[];
+
+  /**
    * Pending {@code sideboard} frame. Set when upstream fires
    * {@code User.ccSideboard} (between games of a sideboarded match,
    * or at the start of a draft constructing window). The webclient
@@ -179,6 +218,7 @@ const INITIAL: Pick<
   | 'chatMessages'
   | 'pendingStartGame'
   | 'pendingSideboard'
+  | 'gameLog'
 > = {
   connection: 'idle',
   closeReason: '',
@@ -191,6 +231,7 @@ const INITIAL: Pick<
   chatMessages: {},
   pendingStartGame: null,
   pendingSideboard: null,
+  gameLog: [],
 };
 
 export const useGameStore = create<GameState>()((set, get) => ({
@@ -299,9 +340,26 @@ export const useGameStore = create<GameState>()((set, get) => ({
       case 'gameInform':
       case 'gameOver': {
         const wrapped = validatedData as WebGameClientMessage;
+        const nextGv = wrapped.gameView ?? get().gameView;
+        // Slice 18: append to the game log if there's a non-empty
+        // message. Empty-message gameInform frames (engine pushes
+        // these for state-only updates) don't add log noise.
+        let nextLog = get().gameLog;
+        if (wrapped.message && wrapped.message.length > 0) {
+          const entry: GameLogEntry = {
+            id: frame.messageId,
+            message: wrapped.message,
+            turn: nextGv?.turn ?? 0,
+            phase: nextGv?.step || nextGv?.phase || '',
+          };
+          nextLog = nextLog.length >= GAME_LOG_CAP
+            ? [...nextLog.slice(nextLog.length - GAME_LOG_CAP + 1), entry]
+            : [...nextLog, entry];
+        }
         set({
           lastWrapped: wrapped,
-          gameView: wrapped.gameView ?? get().gameView,
+          gameView: nextGv,
+          gameLog: nextLog,
           // Slice 16: do NOT clear pendingDialog on gameInform —
           // the engine fires informs mid-combat ("alice attacks
           // with Grizzly Bears") while declare-attackers is still

@@ -286,6 +286,102 @@ describe('useGameStore', () => {
     expect(useGameStore.getState().lastWrapped?.message).toBe('GG');
   });
 
+  /* ---------- slice 18: gameLog ---------- */
+
+  it('gameInform appends to gameLog with turn/phase metadata', () => {
+    const gv = buildGameView(3);
+    const wrap = webGameClientMessageSchema.parse({
+      gameView: gv,
+      message: 'alice plays Forest',
+      targets: [],
+      cardsView1: {},
+      min: 0,
+      max: 0,
+      flag: false,
+      choice: null,
+    });
+    useGameStore.getState().applyFrame(frame('gameInform', wrap, 17), wrap);
+    const log = useGameStore.getState().gameLog;
+    expect(log).toHaveLength(1);
+    expect(log[0]).toMatchObject({
+      id: 17,
+      message: 'alice plays Forest',
+      turn: 3,
+      phase: 'PRECOMBAT_MAIN',
+    });
+  });
+
+  it('gameInform with empty message does not pollute the log', () => {
+    const gv = buildGameView(1);
+    const wrap = webGameClientMessageSchema.parse({
+      gameView: gv,
+      message: '',
+      targets: [],
+      cardsView1: {},
+      min: 0,
+      max: 0,
+      flag: false,
+      choice: null,
+    });
+    useGameStore.getState().applyFrame(frame('gameInform', wrap, 1), wrap);
+    expect(useGameStore.getState().gameLog).toHaveLength(0);
+  });
+
+  it('gameOver appends to gameLog (winner banner record)', () => {
+    const wrap = webGameClientMessageSchema.parse({
+      gameView: null,
+      message: 'alice has won the game',
+      targets: [],
+      cardsView1: {},
+      min: 0,
+      max: 0,
+      flag: false,
+      choice: null,
+    });
+    useGameStore.getState().applyFrame(frame('gameOver', wrap, 99), wrap);
+    expect(useGameStore.getState().gameLog).toHaveLength(1);
+    expect(useGameStore.getState().gameLog[0]?.message).toContain('won the game');
+  });
+
+  it('gameLog evicts oldest entries past the 500-entry cap', () => {
+    // Push 510 messages, assert head is no longer the first one.
+    for (let i = 0; i < 510; i++) {
+      const wrap = webGameClientMessageSchema.parse({
+        gameView: null,
+        message: `event ${i}`,
+        targets: [],
+        cardsView1: {},
+        min: 0,
+        max: 0,
+        flag: false,
+        choice: null,
+      });
+      useGameStore.getState().applyFrame(frame('gameInform', wrap, i), wrap);
+    }
+    const log = useGameStore.getState().gameLog;
+    expect(log).toHaveLength(500);
+    // Oldest 10 evicted; head should be event 10.
+    expect(log[0]?.message).toBe('event 10');
+    expect(log[log.length - 1]?.message).toBe('event 509');
+  });
+
+  it('reset clears gameLog along with everything else', () => {
+    const wrap = webGameClientMessageSchema.parse({
+      gameView: null,
+      message: 'something',
+      targets: [],
+      cardsView1: {},
+      min: 0,
+      max: 0,
+      flag: false,
+      choice: null,
+    });
+    useGameStore.getState().applyFrame(frame('gameInform', wrap, 1), wrap);
+    expect(useGameStore.getState().gameLog).toHaveLength(1);
+    useGameStore.getState().reset();
+    expect(useGameStore.getState().gameLog).toHaveLength(0);
+  });
+
   it('gameInit still clears pendingDialog (fresh game / reconnect catch-up)', () => {
     const dialog = dialogPayload();
     useGameStore.getState().applyFrame(frame('gameAsk', dialog, 1), dialog);
