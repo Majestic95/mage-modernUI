@@ -121,15 +121,94 @@ describe('ActionPanel', () => {
     );
   });
 
-  it('Concede button sends CONCEDE', async () => {
+  it('Concede button opens confirmation modal; confirm sends CONCEDE', async () => {
     const stream = fakeStream();
     const user = userEvent.setup();
     act(() => {
       useGameStore.setState({ gameView: gameViewWithPriorityOn('alice') });
     });
     render(<ActionPanel stream={stream} />);
-    await user.click(screen.getByRole('button', { name: /concede/i }));
+    await user.click(screen.getByTestId('concede-button'));
+    // Modal opens, no dispatch yet.
+    expect(screen.getByTestId('concede-confirm')).toBeInTheDocument();
+    expect(stream.sendPlayerAction).not.toHaveBeenCalled();
+    await user.click(screen.getByTestId('concede-confirm-yes'));
     expect(stream.sendPlayerAction).toHaveBeenCalledWith('CONCEDE');
+    expect(screen.queryByTestId('concede-confirm')).toBeNull();
+  });
+
+  it('Concede modal Cancel does not dispatch', async () => {
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    act(() => {
+      useGameStore.setState({ gameView: gameViewWithPriorityOn('alice') });
+    });
+    render(<ActionPanel stream={stream} />);
+    await user.click(screen.getByTestId('concede-button'));
+    await user.click(screen.getByRole('button', { name: /^cancel$/i }));
+    expect(stream.sendPlayerAction).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('concede-confirm')).toBeNull();
+  });
+
+  it('Concede modal Esc closes without firing the cancel-passes hotkey', async () => {
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    act(() => {
+      useGameStore.setState({ gameView: gameViewWithPriorityOn('alice') });
+    });
+    render(<ActionPanel stream={stream} />);
+    await user.click(screen.getByTestId('concede-button'));
+    await user.keyboard('{Escape}');
+    expect(screen.queryByTestId('concede-confirm')).toBeNull();
+    // Esc should NOT have fired PASS_PRIORITY_CANCEL_ALL_ACTIONS — the
+    // capture-phase modal listener stopImmediatePropagation'd it.
+    expect(stream.sendPlayerAction).not.toHaveBeenCalled();
+  });
+
+  /* ---------- slice 37: Undo button + Ctrl+Z hotkey ---------- */
+
+  it('Undo button sends UNDO', async () => {
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    act(() => {
+      useGameStore.setState({ gameView: gameViewWithPriorityOn('alice') });
+    });
+    render(<ActionPanel stream={stream} />);
+    await user.click(screen.getByTestId('undo-button'));
+    expect(stream.sendPlayerAction).toHaveBeenCalledWith('UNDO');
+  });
+
+  it('Ctrl+Z fires UNDO', async () => {
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    act(() => {
+      useGameStore.setState({ gameView: gameViewWithPriorityOn('alice') });
+    });
+    render(<ActionPanel stream={stream} />);
+    await user.keyboard('{Control>}z{/Control}');
+    expect(stream.sendPlayerAction).toHaveBeenCalledWith('UNDO');
+  });
+
+  it('bare z (no modifier) does not fire UNDO', async () => {
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    act(() => {
+      useGameStore.setState({ gameView: gameViewWithPriorityOn('alice') });
+    });
+    render(<ActionPanel stream={stream} />);
+    await user.keyboard('z');
+    expect(stream.sendPlayerAction).not.toHaveBeenCalled();
+  });
+
+  it('Ctrl+F2 does not fire pass-step (modifier mismatch)', async () => {
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    act(() => {
+      useGameStore.setState({ gameView: gameViewWithPriorityOn('alice') });
+    });
+    render(<ActionPanel stream={stream} />);
+    await user.keyboard('{Control>}{F2}{/Control}');
+    expect(stream.sendPlayerAction).not.toHaveBeenCalled();
   });
 
   /* ---------- slice 29: keyboard pass shortcuts ---------- */

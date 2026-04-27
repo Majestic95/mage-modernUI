@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuthStore } from '../auth/store';
 import { useGameStore } from '../game/store';
 import type { GameStream } from '../game/stream';
@@ -18,12 +18,21 @@ interface Props {
  * {@code PlayerAction} enum name (whitelisted in
  * {@code PlayerActionAllowList}).
  */
-const HOTKEYS: { key: string; action: string; label: string }[] = [
+interface Hotkey {
+  key: string;
+  action: string;
+  label: string;
+  /** Require Ctrl/Cmd modifier when matching (slice 37 — Ctrl+Z = undo). */
+  ctrl?: boolean;
+}
+
+const HOTKEYS: Hotkey[] = [
   { key: 'F2', action: 'PASS_PRIORITY_UNTIL_TURN_END_STEP', label: 'Pass step' },
   { key: 'F4', action: 'PASS_PRIORITY_UNTIL_NEXT_TURN', label: 'To end turn' },
   { key: 'F6', action: 'PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE', label: 'To next main' },
   { key: 'F8', action: 'PASS_PRIORITY_UNTIL_STACK_RESOLVED', label: 'Resolve stack' },
   { key: 'Escape', action: 'PASS_PRIORITY_CANCEL_ALL_ACTIONS', label: 'Cancel' },
+  { key: 'z', action: 'UNDO', label: 'Undo', ctrl: true },
 ];
 
 /**
@@ -64,9 +73,14 @@ export function ActionPanel({ stream }: Props) {
           return;
         }
       }
-      const match = HOTKEYS.find(
-        (h) => h.key.toLowerCase() === ev.key.toLowerCase(),
-      );
+      const ctrlOrCmd = ev.ctrlKey || ev.metaKey;
+      const match = HOTKEYS.find((h) => {
+        if (h.key.toLowerCase() !== ev.key.toLowerCase()) return false;
+        // Hotkeys with ctrl flag require the modifier; those without
+        // require its absence (so a bare "z" keystroke in chat-like
+        // contexts doesn't fire UNDO).
+        return !!h.ctrl === ctrlOrCmd;
+      });
       if (!match) return;
       ev.preventDefault();
       stream.sendPlayerAction(match.action);
@@ -76,6 +90,11 @@ export function ActionPanel({ stream }: Props) {
       document.removeEventListener('keydown', handler);
     };
   }, [stream]);
+
+  // Slice 37 — confirmation modal for Concede so a stray click
+  // doesn't end the match. Click "Concede" → opens modal; modal
+  // Esc / backdrop / Cancel dismisses; "Yes, concede" sends.
+  const [confirmConcede, setConfirmConcede] = useState(false);
 
   if (!gv || !session) return null;
 
@@ -128,15 +147,104 @@ export function ActionPanel({ stream }: Props) {
         active={true}
         title="Stop any ongoing pass-priority-until automation (Esc)"
       />
+      <button
+        type="button"
+        data-testid="undo-button"
+        onClick={() => send('UNDO')}
+        className="px-3 py-1 rounded text-xs border bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border-zinc-700"
+        title="Undo your last action this priority window (Ctrl+Z)"
+      >
+        Undo
+      </button>
       <div className="flex-1" />
       <button
         type="button"
-        onClick={() => send('CONCEDE')}
+        data-testid="concede-button"
+        onClick={() => setConfirmConcede(true)}
         className="px-3 py-1 rounded text-xs bg-red-900/40 hover:bg-red-800/60 text-red-200 border border-red-900/60"
         title="Concede the current game"
       >
         Concede
       </button>
+      {confirmConcede && (
+        <ConfirmConcedeModal
+          onCancel={() => setConfirmConcede(false)}
+          onConfirm={() => {
+            send('CONCEDE');
+            setConfirmConcede(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Concede confirmation modal (slice 37). Closes on backdrop click,
+ * Cancel button, or Esc keydown — the Esc handler is registered
+ * with capture: true and calls stopImmediatePropagation so it
+ * runs before the panel's bubble-phase hotkey listener and
+ * suppresses the cancel-passes shortcut while the modal is open.
+ * Same pattern as the slice-31 ZoneBrowser modal.
+ */
+function ConfirmConcedeModal({
+  onCancel,
+  onConfirm,
+}: {
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key === 'Escape') {
+        ev.stopImmediatePropagation();
+        ev.preventDefault();
+        onCancel();
+      }
+    };
+    document.addEventListener('keydown', onKey, { capture: true });
+    return () => {
+      document.removeEventListener('keydown', onKey, { capture: true });
+    };
+  }, [onCancel]);
+  return (
+    <div
+      data-testid="concede-confirm"
+      className="fixed inset-0 z-40 flex items-center justify-center"
+    >
+      <div
+        data-testid="concede-confirm-backdrop"
+        className="absolute inset-0 bg-black/60"
+        onClick={onCancel}
+      />
+      <div
+        role="dialog"
+        aria-label="Confirm concede"
+        className="relative bg-zinc-900 border border-zinc-700 rounded-lg shadow-2xl p-5 w-[min(90vw,360px)] space-y-4"
+      >
+        <h2 className="text-sm font-semibold text-zinc-100">Concede game?</h2>
+        <p className="text-sm text-zinc-400">
+          This ends the current game immediately. The match continues
+          if more games remain.
+        </p>
+        <div className="flex justify-end gap-2 pt-1">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="px-3 py-1 rounded text-xs border bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border-zinc-700"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            data-testid="concede-confirm-yes"
+            onClick={onConfirm}
+            className="px-3 py-1 rounded text-xs bg-red-700 hover:bg-red-600 text-white border border-red-800"
+          >
+            Yes, concede
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
