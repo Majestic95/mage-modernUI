@@ -923,6 +923,157 @@ describe('Game page', () => {
     expect(detail).toHaveTextContent('Forest');
   });
 
+  /* ---------- slice 31: zone browsers (graveyard + exile) ---------- */
+
+  function gameViewWithZone(
+    zone: 'graveyard' | 'exile',
+    cards: Record<string, ReturnType<typeof webCardViewSchema.parse>>,
+  ) {
+    const gv = buildGameView();
+    const me = gv.players.find((p) => p.controlled)!;
+    if (zone === 'graveyard') me.graveyard = cards;
+    else me.exile = cards;
+    return gv;
+  }
+
+  it('graveyard count is plain text when empty', () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: buildGameView(),
+      });
+    });
+    const counts = screen.getAllByTestId('zone-count-graveyard');
+    expect(counts[0]!.tagName).toBe('SPAN');
+  });
+
+  it('graveyard count becomes a button when non-empty', () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    const lightning = webCardViewSchema.parse({
+      ...FOREST,
+      id: '99999999-9999-9999-9999-999999999999',
+      name: 'Lightning Bolt',
+      manaCost: '{R}',
+      typeLine: 'Instant',
+      types: ['INSTANT'],
+      subtypes: [],
+      rules: ['Lightning Bolt deals 3 damage to any target.'],
+    });
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: gameViewWithZone('graveyard', { [lightning.id]: lightning }),
+      });
+    });
+    const counts = screen.getAllByTestId('zone-count-graveyard');
+    const myCount = counts.find((el) => el.tagName === 'BUTTON')!;
+    expect(myCount).toBeInTheDocument();
+    expect(myCount).toHaveTextContent('1');
+  });
+
+  it('clicking the graveyard count opens the zone browser', async () => {
+    const userEvent = (await import('@testing-library/user-event')).default;
+    const user = userEvent.setup();
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    const lightning = webCardViewSchema.parse({
+      ...FOREST,
+      id: 'aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa',
+      name: 'Lightning Bolt',
+      manaCost: '{R}',
+      typeLine: 'Instant',
+      types: ['INSTANT'],
+      subtypes: [],
+      rules: ['Lightning Bolt deals 3 damage to any target.'],
+    });
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: gameViewWithZone('graveyard', { [lightning.id]: lightning }),
+      });
+    });
+    const counts = screen.getAllByTestId('zone-count-graveyard');
+    const myButton = counts.find((el) => el.tagName === 'BUTTON')!;
+    await user.click(myButton);
+    expect(screen.getByTestId('zone-browser')).toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toHaveAttribute(
+      'aria-label',
+      expect.stringContaining('graveyard'),
+    );
+    expect(screen.getByTestId('zone-browser-card')).toHaveTextContent(
+      'Lightning Bolt',
+    );
+  });
+
+  it('Esc closes the zone browser without firing ActionPanel hotkeys', async () => {
+    const userEvent = (await import('@testing-library/user-event')).default;
+    const user = userEvent.setup();
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    const card = webCardViewSchema.parse({
+      ...FOREST,
+      id: 'bbbbbbbb-2222-2222-2222-bbbbbbbbbbbb',
+      name: 'Wrath of God',
+      manaCost: '{2}{W}{W}',
+      typeLine: 'Sorcery',
+      types: ['SORCERY'],
+      subtypes: [],
+      rules: ['Destroy all creatures.'],
+    });
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: gameViewWithZone('graveyard', { [card.id]: card }),
+      });
+    });
+    const myButton = screen
+      .getAllByTestId('zone-count-graveyard')
+      .find((el) => el.tagName === 'BUTTON')!;
+    await user.click(myButton);
+    expect(screen.getByTestId('zone-browser')).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByTestId('zone-browser')).toBeNull();
+  });
+
+  it('clicking the backdrop closes the zone browser', async () => {
+    const userEvent = (await import('@testing-library/user-event')).default;
+    const user = userEvent.setup();
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    const card = webCardViewSchema.parse({
+      ...FOREST,
+      id: 'cccccccc-3333-3333-3333-cccccccccccc',
+      name: 'Counterspell',
+      manaCost: '{U}{U}',
+      typeLine: 'Instant',
+      types: ['INSTANT'],
+      subtypes: [],
+      rules: ['Counter target spell.'],
+    });
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: gameViewWithZone('exile', { [card.id]: card }),
+      });
+    });
+    const myButton = screen
+      .getAllByTestId('zone-count-exile')
+      .find((el) => el.tagName === 'BUTTON')!;
+    await user.click(myButton);
+    expect(screen.getByTestId('zone-browser')).toBeInTheDocument();
+    await user.click(screen.getByTestId('zone-browser-backdrop'));
+    expect(screen.queryByTestId('zone-browser')).toBeNull();
+  });
+
+  it('exile counter is rendered alongside the graveyard counter', () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: buildGameView(),
+      });
+    });
+    expect(screen.getAllByTestId('zone-count-exile').length).toBeGreaterThan(0);
+  });
+
   /* ---------- slice 19: game-end overlay ---------- */
 
   it('renders game-over banner when gameOverPending is set and gameEnd is null', () => {
