@@ -542,6 +542,115 @@ describe('Game page', () => {
     ).not.toBeInTheDocument();
   });
 
+  /* ---------- slice 26: combat highlighting + ATK/BLK badges ---------- */
+
+  function pendingDeclareAttackersDialog(possibleAttackers: string[]) {
+    return {
+      method: 'gameSelect' as const,
+      messageId: 77,
+      data: {
+        gameView: null,
+        message: 'Select attackers',
+        targets: [],
+        cardsView1: {},
+        min: 0,
+        max: 0,
+        flag: false,
+        choice: null,
+        options: {
+          leftBtnText: '',
+          rightBtnText: '',
+          possibleAttackers,
+          possibleBlockers: [],
+          specialButton: '',
+        },
+      },
+    };
+  }
+
+  it('marks permanents in POSSIBLE_ATTACKERS as combat-eligible during declare-attackers', () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: buildGameView(),
+        pendingDialog: pendingDeclareAttackersDialog([
+          TAPPED_FOREST_PERMANENT.card.id,
+        ]),
+      });
+    });
+    const perm = screen.getAllByTestId('permanent')[0]!;
+    expect(perm).toHaveAttribute('data-combat-eligible', 'true');
+  });
+
+  it('does not mark permanents as combat-eligible outside combat modes', () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: buildGameView(),
+      });
+    });
+    const perm = screen.getAllByTestId('permanent')[0]!;
+    expect(perm).not.toHaveAttribute('data-combat-eligible');
+  });
+
+  it('renders an ATK badge on permanents in gv.combat[].attackers', () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    const gv = buildGameView();
+    const me = gv.players.find((p) => p.controlled)!;
+    const opponent = gv.players.find((p) => !p.controlled)!;
+    const attackerId = TAPPED_FOREST_PERMANENT.card.id;
+    gv.combat = [
+      {
+        defenderId: opponent.playerId,
+        defenderName: opponent.name,
+        attackers: { [attackerId]: me.battlefield[attackerId]! },
+        blockers: {},
+        blocked: false,
+      },
+    ];
+    act(() => {
+      useGameStore.setState({ connection: 'open', gameView: gv });
+    });
+    expect(screen.getByTestId('combat-badge-attacker')).toBeInTheDocument();
+    expect(screen.queryByTestId('combat-badge-blocker')).toBeNull();
+  });
+
+  it('renders a BLK badge on permanents in gv.combat[].blockers', () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    const gv = buildGameView();
+    const me = gv.players.find((p) => p.controlled)!;
+    const opponent = gv.players.find((p) => !p.controlled)!;
+    const blockerId = TAPPED_FOREST_PERMANENT.card.id;
+    gv.combat = [
+      {
+        defenderId: opponent.playerId,
+        defenderName: opponent.name,
+        attackers: {},
+        blockers: { [blockerId]: me.battlefield[blockerId]! },
+        blocked: true,
+      },
+    ];
+    act(() => {
+      useGameStore.setState({ connection: 'open', gameView: gv });
+    });
+    expect(screen.getByTestId('combat-badge-blocker')).toBeInTheDocument();
+    expect(screen.queryByTestId('combat-badge-attacker')).toBeNull();
+  });
+
+  it('no combat badges when gv.combat[] is empty', () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: buildGameView(),
+      });
+    });
+    expect(screen.queryByTestId('combat-badge-attacker')).toBeNull();
+    expect(screen.queryByTestId('combat-badge-blocker')).toBeNull();
+  });
+
   /* ---------- slice 19: game-end overlay ---------- */
 
   it('renders game-over banner when gameOverPending is set and gameEnd is null', () => {

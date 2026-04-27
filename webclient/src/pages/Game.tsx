@@ -468,6 +468,30 @@ function Battlefield({
   const eligibleTargetIds =
     mode.kind === 'target' ? mode.eligibleIds : new Set<string>();
 
+  // Slice 26 — combat highlighting:
+  // - eligibleCombatIds: legal-attacker / legal-blocker set during the
+  //   matching combat step. Empty in any other mode.
+  // - combatRoles: which permanents are *currently* attacking or
+  //   blocking, per gv.combat[]. Independent of mode — drives the
+  //   ATK / BLK badges so the player can see what they've already
+  //   committed to.
+  const eligibleCombatIds: Set<string> =
+    mode.kind === 'declareAttackers' || mode.kind === 'declareBlockers'
+      ? mode.possibleIds
+      : new Set<string>();
+  const combatRoles = useMemo<Map<string, 'attacker' | 'blocker'>>(() => {
+    const roles = new Map<string, 'attacker' | 'blocker'>();
+    for (const grp of gv.combat ?? []) {
+      for (const id of Object.keys(grp.attackers ?? {})) {
+        roles.set(id, 'attacker');
+      }
+      for (const id of Object.keys(grp.blockers ?? {})) {
+        roles.set(id, 'blocker');
+      }
+    }
+    return roles;
+  }, [gv.combat]);
+
   return (
     <div className="flex-1 flex flex-col">
       {/* Opponents row(s) — top */}
@@ -480,6 +504,8 @@ function Battlefield({
             canAct={canAct}
             onObjectClick={onObjectClick}
             targetable={eligibleTargetIds.has(p.playerId)}
+            eligibleCombatIds={eligibleCombatIds}
+            combatRoles={combatRoles}
           />
         ))}
         {opponents.length === 0 && (
@@ -497,6 +523,8 @@ function Battlefield({
               canAct={canAct}
               onObjectClick={onObjectClick}
               targetable={eligibleTargetIds.has(me.playerId)}
+              eligibleCombatIds={eligibleCombatIds}
+              combatRoles={combatRoles}
             />
             <MyHand
               hand={gv.myHand}
@@ -522,6 +550,8 @@ function PlayerArea({
   canAct,
   onObjectClick,
   targetable,
+  eligibleCombatIds,
+  combatRoles,
 }: {
   player: WebPlayerView;
   perspective: 'self' | 'opponent';
@@ -533,6 +563,17 @@ function PlayerArea({
    * target response. Slice 15.
    */
   targetable: boolean;
+  /**
+   * Slice 26 — IDs the engine considers legal attackers (during
+   * declareAttackers) or legal blockers (during declareBlockers).
+   * Empty set in any other mode.
+   */
+  eligibleCombatIds: Set<string>;
+  /**
+   * Slice 26 — permanents already in a combat group, mapped to
+   * their role. Drives the ATK / BLK badge on each chip.
+   */
+  combatRoles: Map<string, 'attacker' | 'blocker'>;
 }) {
   const battlefield = Object.values(player.battlefield);
   return (
@@ -600,6 +641,8 @@ function PlayerArea({
               perm={perm}
               canAct={canAct}
               onClick={onObjectClick}
+              isEligibleCombat={eligibleCombatIds.has(perm.card.id)}
+              combatRole={combatRoles.get(perm.card.id) ?? null}
             />
           ))
         )}
@@ -692,10 +735,24 @@ function PermanentChip({
   perm,
   canAct,
   onClick,
+  isEligibleCombat,
+  combatRole,
 }: {
   perm: WebPermanentView;
   canAct: boolean;
   onClick: (id: string) => void;
+  /**
+   * Slice 26 — the engine has marked this permanent as a legal
+   * attacker (declareAttackers) or legal blocker (declareBlockers).
+   * Renders an amber highlight ring so the player can see at a
+   * glance which creatures the click-to-toggle gesture applies to.
+   */
+  isEligibleCombat: boolean;
+  /**
+   * Slice 26 — non-null when this permanent is currently in a
+   * combat group ({@code gv.combat[]}). Drives the ATK / BLK badge.
+   */
+  combatRole: 'attacker' | 'blocker' | null;
 }) {
   const tapped = perm.tapped;
   const sick = perm.summoningSickness;
@@ -708,14 +765,23 @@ function PermanentChip({
     canAct
       ? ' cursor-pointer hover:border-fuchsia-500 hover:bg-zinc-800'
       : ' cursor-default opacity-90';
+  // Amber ring on legal-combat permanents during declare-attackers /
+  // declare-blockers. Picked over fuchsia (target highlight) and
+  // emerald (success states) so the three "click-me-now" cues are
+  // visually distinct.
+  const combatRing = isEligibleCombat
+    ? ' ring-2 ring-amber-400/60'
+    : '';
   return (
     <button
       type="button"
       data-testid="permanent"
       data-tapped={tapped}
+      data-combat-eligible={isEligibleCombat || undefined}
+      data-combat-role={combatRole ?? undefined}
       disabled={!canAct}
       onClick={() => onClick(perm.card.id)}
-      className={baseClasses + clickableClasses}
+      className={baseClasses + clickableClasses + combatRing}
       title={
         canAct
           ? `${perm.card.name} — click to tap/activate`
@@ -726,6 +792,24 @@ function PermanentChip({
       {tapped && <span className="text-zinc-500">(T)</span>}
       {perm.damage > 0 && (
         <span className="text-red-300">−{perm.damage}</span>
+      )}
+      {combatRole === 'attacker' && (
+        <span
+          data-testid="combat-badge-attacker"
+          className="text-[10px] font-semibold bg-red-500/30 text-red-200 px-1 rounded"
+          title="Attacking"
+        >
+          ATK
+        </span>
+      )}
+      {combatRole === 'blocker' && (
+        <span
+          data-testid="combat-badge-blocker"
+          className="text-[10px] font-semibold bg-sky-500/30 text-sky-200 px-1 rounded"
+          title="Blocking"
+        >
+          BLK
+        </span>
       )}
     </button>
   );

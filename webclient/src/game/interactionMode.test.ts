@@ -56,7 +56,7 @@ describe('deriveInteractionMode', () => {
     expect(mode.optional).toBe(true);
   });
 
-  it('maps gameSelect "Select attackers" to declareAttackers mode', () => {
+  it('maps gameSelect "Select attackers" to declareAttackers (heuristic fallback)', () => {
     const dialog: PendingDialog = {
       method: 'gameSelect',
       messageId: 11,
@@ -71,13 +71,14 @@ describe('deriveInteractionMode', () => {
         choice: null,
       },
     };
-    expect(deriveInteractionMode(dialog)).toEqual({
-      kind: 'declareAttackers',
-      messageId: 11,
-    });
+    const mode = deriveInteractionMode(dialog);
+    expect(mode.kind).toBe('declareAttackers');
+    if (mode.kind !== 'declareAttackers') return;
+    expect(mode.messageId).toBe(11);
+    expect(mode.possibleIds.size).toBe(0);
   });
 
-  it('maps gameSelect "Select blockers" to declareBlockers mode', () => {
+  it('maps gameSelect "Select blockers" to declareBlockers (heuristic fallback)', () => {
     const dialog: PendingDialog = {
       method: 'gameSelect',
       messageId: 12,
@@ -92,10 +93,72 @@ describe('deriveInteractionMode', () => {
         choice: null,
       },
     };
-    expect(deriveInteractionMode(dialog)).toEqual({
-      kind: 'declareBlockers',
-      messageId: 12,
-    });
+    const mode = deriveInteractionMode(dialog);
+    expect(mode.kind).toBe('declareBlockers');
+    if (mode.kind !== 'declareBlockers') return;
+    expect(mode.messageId).toBe(12);
+    expect(mode.possibleIds.size).toBe(0);
+  });
+
+  it('prefers structured POSSIBLE_ATTACKERS over message text for declareAttackers', () => {
+    const dialog: PendingDialog = {
+      method: 'gameSelect',
+      messageId: 14,
+      data: {
+        gameView: null,
+        // Deliberately NOT the heuristic phrase — proves we read options.
+        message: 'unrelated',
+        targets: [],
+        cardsView1: {},
+        min: 0,
+        max: 0,
+        flag: false,
+        choice: null,
+        options: {
+          leftBtnText: '',
+          rightBtnText: '',
+          possibleAttackers: [
+            'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+            'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+          ],
+          possibleBlockers: [],
+          specialButton: '',
+        },
+      },
+    };
+    const mode = deriveInteractionMode(dialog);
+    expect(mode.kind).toBe('declareAttackers');
+    if (mode.kind !== 'declareAttackers') return;
+    expect(mode.possibleIds.size).toBe(2);
+    expect(mode.possibleIds.has('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')).toBe(true);
+  });
+
+  it('prefers structured POSSIBLE_BLOCKERS over message text for declareBlockers', () => {
+    const dialog: PendingDialog = {
+      method: 'gameSelect',
+      messageId: 15,
+      data: {
+        gameView: null,
+        message: 'unrelated',
+        targets: [],
+        cardsView1: {},
+        min: 0,
+        max: 0,
+        flag: false,
+        choice: null,
+        options: {
+          leftBtnText: '',
+          rightBtnText: '',
+          possibleAttackers: [],
+          possibleBlockers: ['cccccccc-cccc-cccc-cccc-cccccccccccc'],
+          specialButton: '',
+        },
+      },
+    };
+    const mode = deriveInteractionMode(dialog);
+    expect(mode.kind).toBe('declareBlockers');
+    if (mode.kind !== 'declareBlockers') return;
+    expect(mode.possibleIds.has('cccccccc-cccc-cccc-cccc-cccccccccccc')).toBe(true);
   });
 
   it('maps gameSelect with any other message to free mode', () => {

@@ -43,20 +43,32 @@ export type InteractionModeTarget = {
  * Combat: the engine is asking the active player which creatures attack.
  * The dialog stays open across N clicks (each toggles an attacker);
  * an OK button commits via boolean true.
+ *
+ * <p>{@code possibleIds} carries upstream's
+ * {@code POSSIBLE_ATTACKERS} list (slice 17, schema 1.15) — every
+ * permanent the engine considers a legal attacker this turn. Empty
+ * when the structured signal is unavailable (older fixtures, server
+ * pre-1.15); the renderer treats empty as "highlight nothing" and
+ * falls back to letting upstream reject illegal clicks.
  */
 export type InteractionModeDeclareAttackers = {
   kind: 'declareAttackers';
   messageId: number;
+  possibleIds: Set<string>;
 };
 
 /**
  * Combat: the engine is asking the defending player which creatures
  * block, and which attacker each blocks. Blocker selection toggles;
  * for each blocker chosen, a follow-up gameTarget asks which attacker.
+ *
+ * <p>{@code possibleIds} mirrors {@code possibleAttackers} but for
+ * legal blockers ({@code POSSIBLE_BLOCKERS} on the wire).
  */
 export type InteractionModeDeclareBlockers = {
   kind: 'declareBlockers';
   messageId: number;
+  possibleIds: Set<string>;
 };
 
 /**
@@ -129,14 +141,44 @@ export function deriveInteractionMode(
     }
     case 'gameSelect': {
       const data = dialog.data as WebGameClientMessage;
+      // Slice 26: prefer the structured signal (slice-17 wire
+      // forwarding) over the message-text heuristic. A non-empty
+      // POSSIBLE_ATTACKERS / POSSIBLE_BLOCKERS list is unambiguous —
+      // the engine only populates it during the matching combat
+      // step. Empty arrays mean it's not a combat prompt.
+      const possibleAttackers = data.options?.possibleAttackers ?? [];
+      const possibleBlockers = data.options?.possibleBlockers ?? [];
+      if (possibleAttackers.length > 0) {
+        return {
+          kind: 'declareAttackers',
+          messageId: dialog.messageId,
+          possibleIds: new Set(possibleAttackers),
+        };
+      }
+      if (possibleBlockers.length > 0) {
+        return {
+          kind: 'declareBlockers',
+          messageId: dialog.messageId,
+          possibleIds: new Set(possibleBlockers),
+        };
+      }
+      // Fallback heuristic for fixtures / older servers that omit
+      // options — the message text is stable upstream
+      // (HumanPlayer.java:1794, :2043).
       const msg = (data.message ?? '').toLowerCase();
-      // Heuristic — swap for options.POSSIBLE_ATTACKERS when wire
-      // forwards it (ADR 0008 U1).
       if (msg.includes('select attackers')) {
-        return { kind: 'declareAttackers', messageId: dialog.messageId };
+        return {
+          kind: 'declareAttackers',
+          messageId: dialog.messageId,
+          possibleIds: new Set<string>(),
+        };
       }
       if (msg.includes('select blockers')) {
-        return { kind: 'declareBlockers', messageId: dialog.messageId };
+        return {
+          kind: 'declareBlockers',
+          messageId: dialog.messageId,
+          possibleIds: new Set<string>(),
+        };
       }
       // Free-priority "do something". Modal renders nothing for this
       // method (slice 14); the board is the input surface.
