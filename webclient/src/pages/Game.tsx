@@ -711,6 +711,75 @@ function Battlefield({
     routeObjectClick(mode, id, myPriority, out);
   };
 
+  // Slice 36 — drag-to-play from hand. Pointer-events DnD per ADR
+  // 0005 §6 (no third-party library). Anchor the press in a ref so
+  // a quick click (no movement) stays a click; cross a 5px
+  // threshold to enter drag mode and surface a floating preview
+  // following the cursor. PlayerArea elements are the drop zones;
+  // they fire onPointerUp which (when drag is active) routes the
+  // hand-card UUID through the same clickRouter the click path
+  // uses — same engine behavior, just a more natural mouse-first
+  // gesture.
+  const [drag, setDrag] = useState<
+    { cardId: string; x: number; y: number } | null
+  >(null);
+  const dragStartRef = useRef<
+    | { cardId: string; x: number; y: number; pointerId: number }
+    | null
+  >(null);
+
+  const beginHandPress = (cardId: string, ev: React.PointerEvent) => {
+    if (ev.button !== 0) return; // primary button only
+    dragStartRef.current = {
+      cardId,
+      x: ev.clientX,
+      y: ev.clientY,
+      pointerId: ev.pointerId,
+    };
+  };
+
+  // Mount-only listeners. The press anchor is a ref (no re-render
+  // on pointerdown), so binding/unbinding on every drag-state change
+  // would never see the updated ref. Instead, attach once and read
+  // the ref each event.
+  useEffect(() => {
+    const DRAG_THRESHOLD_SQ = 5 * 5;
+    const onMove = (ev: PointerEvent) => {
+      const start = dragStartRef.current;
+      if (!start || ev.pointerId !== start.pointerId) return;
+      const dx = ev.clientX - start.x;
+      const dy = ev.clientY - start.y;
+      if (dx * dx + dy * dy <= DRAG_THRESHOLD_SQ) return;
+      setDrag((curr) =>
+        curr && curr.cardId === start.cardId
+          ? { ...curr, x: ev.clientX, y: ev.clientY }
+          : { cardId: start.cardId, x: ev.clientX, y: ev.clientY },
+      );
+    };
+    const onUp = () => {
+      dragStartRef.current = null;
+      setDrag(null);
+    };
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+    document.addEventListener('pointercancel', onUp);
+    return () => {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      document.removeEventListener('pointercancel', onUp);
+    };
+  }, []);
+
+  // Fired by either PlayerArea on pointerup. If a drag was in
+  // progress, that's a "drop on the board" — route the hand-card
+  // UUID through the same path a click would. The document-level
+  // pointerup listener clears state immediately after.
+  const onBoardDrop = () => {
+    if (drag) {
+      onObjectClick(drag.cardId);
+    }
+  };
+
   // Targetable players: derived from the mode (only target mode
   // exposes player UUIDs as legal clicks).
   const eligibleTargetIds =
@@ -740,8 +809,32 @@ function Battlefield({
     return roles;
   }, [gv.combat]);
 
+  // Slice 36 — surface the dragged card as a floating preview that
+  // tracks the cursor. We resolve the card object from the hand
+  // (the only place drag origins are bound today).
+  const draggedCard = useMemo<WebCardView | null>(() => {
+    if (!drag) return null;
+    return gv.myHand[drag.cardId] ?? null;
+  }, [drag, gv.myHand]);
+
   return (
-    <div className="flex-1 flex flex-col">
+    <div className="flex-1 flex flex-col relative">
+      {drag && draggedCard && (
+        <div
+          data-testid="drag-preview"
+          className="fixed pointer-events-none z-50"
+          style={{ left: drag.x + 12, top: drag.y + 12 }}
+        >
+          <div className="inline-flex items-baseline gap-1 px-2 py-1 rounded text-xs border border-fuchsia-500 bg-zinc-900 shadow-lg">
+            <span className="font-medium text-zinc-100">
+              {draggedCard.name}
+            </span>
+            {draggedCard.manaCost && (
+              <ManaCost cost={draggedCard.manaCost} size="sm" />
+            )}
+          </div>
+        </div>
+      )}
       {/* Opponents row(s) — top */}
       <section className="flex-1 border-b border-zinc-800 p-4 space-y-4 overflow-auto">
         {opponents.map((p) => (
@@ -754,6 +847,8 @@ function Battlefield({
             targetable={eligibleTargetIds.has(p.playerId)}
             eligibleCombatIds={eligibleCombatIds}
             combatRoles={combatRoles}
+            isDropTarget={drag != null}
+            onBoardDrop={onBoardDrop}
           />
         ))}
         {opponents.length === 0 && (
@@ -778,6 +873,8 @@ function Battlefield({
               targetable={eligibleTargetIds.has(me.playerId)}
               eligibleCombatIds={eligibleCombatIds}
               combatRoles={combatRoles}
+              isDropTarget={drag != null}
+              onBoardDrop={onBoardDrop}
             />
             <MyHand
               hand={gv.myHand}
@@ -785,6 +882,8 @@ function Battlefield({
               onObjectClick={onObjectClick}
               isMyTurn={!!me.isActive}
               hasPriority={!!me.hasPriority}
+              onPointerDown={beginHandPress}
+              draggedCardId={drag?.cardId ?? null}
             />
           </>
         ) : (
@@ -867,6 +966,8 @@ function PlayerArea({
   targetable,
   eligibleCombatIds,
   combatRoles,
+  isDropTarget,
+  onBoardDrop,
 }: {
   player: WebPlayerView;
   perspective: 'self' | 'opponent';
@@ -889,12 +990,32 @@ function PlayerArea({
    * their role. Drives the ATK / BLK badge on each chip.
    */
   combatRoles: Map<string, 'attacker' | 'blocker'>;
+  /**
+   * Slice 36 — true while a hand-card drag is in progress. Adds a
+   * dashed ring around the area so the user can see where releasing
+   * will play the card.
+   */
+  isDropTarget: boolean;
+  /**
+   * Slice 36 — fired on pointerup over the area. The Battlefield
+   * checks its own drag state and dispatches the play action when
+   * appropriate; if no drag was active this is a no-op.
+   */
+  onBoardDrop: () => void;
 }) {
   const battlefield = Object.values(player.battlefield);
   return (
     <div
       data-testid={`player-area-${perspective}`}
-      className="rounded border border-zinc-800 bg-zinc-900/40 p-3"
+      data-droppable="board"
+      data-drop-target={isDropTarget || undefined}
+      onPointerUp={onBoardDrop}
+      className={
+        'rounded border bg-zinc-900/40 p-3 transition-colors ' +
+        (isDropTarget
+          ? 'border-fuchsia-500 ring-2 ring-fuchsia-500/40 border-dashed'
+          : 'border-zinc-800')
+      }
     >
       <header className="flex items-baseline justify-between mb-2">
         <div className="flex items-baseline gap-3">
@@ -1144,12 +1265,27 @@ function MyHand({
   onObjectClick,
   isMyTurn,
   hasPriority,
+  onPointerDown,
+  draggedCardId,
 }: {
   hand: Record<string, WebCardView>;
   canAct: boolean;
   onObjectClick: (id: string) => void;
   isMyTurn: boolean;
   hasPriority: boolean;
+  /**
+   * Slice 36 — bound on each hand-card button to start the drag-
+   * to-play gesture. The Battlefield owner decides whether the
+   * press becomes a drag (5px movement threshold) or stays a
+   * click; both paths route through {@code onObjectClick}.
+   */
+  onPointerDown: (cardId: string, ev: React.PointerEvent) => void;
+  /**
+   * Slice 36 — id of the card currently being dragged, if any.
+   * The matching hand chip dims so the user can see which one is
+   * "in flight". Other chips render normally.
+   */
+  draggedCardId: string | null;
 }) {
   const cards = Object.values(hand);
   // Slice 23: clearer reason when hand is disabled.
@@ -1197,27 +1333,36 @@ function MyHand({
         {cards.length === 0 ? (
           <span className="text-xs text-zinc-600 italic">Empty hand.</span>
         ) : (
-          cards.map((card) => (
-            <HoverCardDetail key={card.id} card={card}>
-              <button
-                type="button"
-                data-testid="hand-card"
-                disabled={!canAct}
-                onClick={() => onObjectClick(card.id)}
-                className={
-                  'inline-flex items-baseline gap-1 px-2 py-1 rounded text-xs ' +
-                  'border border-zinc-700 bg-zinc-900 ' +
-                  (canAct
-                    ? 'cursor-pointer hover:border-fuchsia-500 hover:bg-zinc-800'
-                    : 'cursor-default opacity-70')
-                }
-                title={cardTooltip(card)}
-              >
-                <span className="font-medium">{card.name}</span>
-                {card.manaCost && <ManaCost cost={card.manaCost} size="sm" />}
-              </button>
-            </HoverCardDetail>
-          ))
+          cards.map((card) => {
+            const isDragging = draggedCardId === card.id;
+            return (
+              <HoverCardDetail key={card.id} card={card}>
+                <button
+                  type="button"
+                  data-testid="hand-card"
+                  data-card-id={card.id}
+                  data-dragging={isDragging || undefined}
+                  disabled={!canAct}
+                  onClick={() => onObjectClick(card.id)}
+                  onPointerDown={(ev) =>
+                    canAct && onPointerDown(card.id, ev)
+                  }
+                  className={
+                    'inline-flex items-baseline gap-1 px-2 py-1 rounded text-xs ' +
+                    'border border-zinc-700 bg-zinc-900 select-none ' +
+                    (canAct
+                      ? 'cursor-grab active:cursor-grabbing hover:border-fuchsia-500 hover:bg-zinc-800'
+                      : 'cursor-default opacity-70') +
+                    (isDragging ? ' opacity-40' : '')
+                  }
+                  title={cardTooltip(card)}
+                >
+                  <span className="font-medium">{card.name}</span>
+                  {card.manaCost && <ManaCost cost={card.manaCost} size="sm" />}
+                </button>
+              </HoverCardDetail>
+            );
+          })
         )}
       </div>
     </div>

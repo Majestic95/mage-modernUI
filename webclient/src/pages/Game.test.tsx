@@ -924,6 +924,108 @@ describe('Game page', () => {
     expect(detail).toHaveTextContent('Forest');
   });
 
+  /* ---------- slice 36: drag-to-play from hand ---------- */
+
+  it('a quick click (no movement) plays the card via the existing click path', async () => {
+    const userEvent = (await import('@testing-library/user-event')).default;
+    const user = userEvent.setup();
+    const sendObj = vi
+      .spyOn(GameStream.prototype, 'sendObjectClick')
+      .mockImplementation(() => {});
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: buildGameView(),
+      });
+    });
+    await user.click(screen.getByTestId('hand-card'));
+    expect(sendObj).toHaveBeenCalledWith(FOREST.id);
+    sendObj.mockRestore();
+  });
+
+  it('crossing the 5px threshold surfaces a drag preview', async () => {
+    const { fireEvent } = await import('@testing-library/react');
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: buildGameView(),
+      });
+    });
+    expect(screen.queryByTestId('drag-preview')).toBeNull();
+    const handCard = screen.getByTestId('hand-card');
+    fireEvent.pointerDown(handCard, { button: 0, pointerId: 1, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(document, { pointerId: 1, clientX: 130, clientY: 100 });
+    expect(await screen.findByTestId('drag-preview')).toBeInTheDocument();
+    expect(screen.getByTestId('drag-preview')).toHaveTextContent('Forest');
+  });
+
+  it('releasing over a player area dispatches sendObjectClick (drop)', async () => {
+    const { fireEvent } = await import('@testing-library/react');
+    const sendObj = vi
+      .spyOn(GameStream.prototype, 'sendObjectClick')
+      .mockImplementation(() => {});
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: buildGameView(),
+      });
+    });
+    const handCard = screen.getByTestId('hand-card');
+    fireEvent.pointerDown(handCard, { button: 0, pointerId: 1, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(document, { pointerId: 1, clientX: 200, clientY: 200 });
+    // Drop on the player's own area.
+    const selfArea = screen.getByTestId('player-area-self');
+    fireEvent.pointerUp(selfArea, { pointerId: 1, clientX: 200, clientY: 200 });
+    expect(sendObj).toHaveBeenCalledWith(FOREST.id);
+    expect(screen.queryByTestId('drag-preview')).toBeNull();
+    sendObj.mockRestore();
+  });
+
+  it('releasing outside a player area cancels with no dispatch', async () => {
+    const { fireEvent } = await import('@testing-library/react');
+    const sendObj = vi
+      .spyOn(GameStream.prototype, 'sendObjectClick')
+      .mockImplementation(() => {});
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: buildGameView(),
+      });
+    });
+    const handCard = screen.getByTestId('hand-card');
+    fireEvent.pointerDown(handCard, { button: 0, pointerId: 1, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(document, { pointerId: 1, clientX: 200, clientY: 200 });
+    expect(screen.getByTestId('drag-preview')).toBeInTheDocument();
+    // Release on document (outside any droppable).
+    fireEvent.pointerUp(document, { pointerId: 1, clientX: 200, clientY: 200 });
+    expect(sendObj).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('drag-preview')).toBeNull();
+    sendObj.mockRestore();
+  });
+
+  it('player areas show a drop-target ring while a drag is in flight', async () => {
+    const { fireEvent } = await import('@testing-library/react');
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: buildGameView(),
+      });
+    });
+    const selfArea = screen.getByTestId('player-area-self');
+    expect(selfArea).not.toHaveAttribute('data-drop-target');
+    const handCard = screen.getByTestId('hand-card');
+    fireEvent.pointerDown(handCard, { button: 0, pointerId: 1, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(document, { pointerId: 1, clientX: 200, clientY: 200 });
+    expect(selfArea).toHaveAttribute('data-drop-target', 'true');
+    fireEvent.pointerUp(document, { pointerId: 1, clientX: 200, clientY: 200 });
+    expect(selfArea).not.toHaveAttribute('data-drop-target');
+  });
+
   /* ---------- slice 34: scryfall card images ---------- */
 
   it('renders a Scryfall image inside the card detail overlay on hover', async () => {
