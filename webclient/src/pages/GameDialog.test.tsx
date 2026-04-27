@@ -677,6 +677,218 @@ describe('GameDialog', () => {
     expect(useGameStore.getState().pendingDialog).toBeNull();
   });
 
+  /* ---------- slice 27 / ADR 0009: auto-order context menu ---------- */
+
+  function triggerOrderDialog(
+    abilities: Array<{ id: string; rules: string[]; name?: string }>,
+    messageId = 200,
+  ) {
+    const cardsView1: Record<string, unknown> = {};
+    for (const a of abilities) {
+      cardsView1[a.id] = {
+        id: a.id,
+        name: a.name ?? 'Ability',
+        displayName: a.name ?? 'Ability',
+        expansionSetCode: '',
+        cardNumber: '',
+        manaCost: '',
+        manaValue: 0,
+        typeLine: '',
+        supertypes: [],
+        types: [],
+        subtypes: [],
+        colors: [],
+        rarity: '',
+        power: '',
+        toughness: '',
+        startingLoyalty: '',
+        rules: a.rules,
+        faceDown: false,
+        counters: {},
+        transformable: false,
+        transformed: false,
+        secondCardFace: null,
+      };
+    }
+    return {
+      method: 'gameTarget' as const,
+      messageId,
+      data: emptyDialog({
+        message: 'Pick triggered ability',
+        cardsView1,
+        options: {
+          leftBtnText: '',
+          rightBtnText: '',
+          possibleAttackers: [],
+          possibleBlockers: [],
+          specialButton: '',
+          isTriggerOrder: true,
+        },
+      }),
+    };
+  }
+
+  it('OrderTriggersDialog: hamburger button per row toggles the auto-order menu', async () => {
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    act(() => {
+      useGameStore.setState({
+        pendingDialog: triggerOrderDialog([
+          {
+            id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa01',
+            rules: ['When Soul Warden enters the battlefield, you gain 1 life.'],
+          },
+        ]),
+      });
+    });
+    render(<GameDialog stream={stream} />);
+
+    expect(screen.queryByTestId('trigger-order-menu')).toBeNull();
+    await user.click(screen.getByTestId('trigger-order-menu-button'));
+    expect(screen.getByTestId('trigger-order-menu')).toBeInTheDocument();
+    expect(screen.getAllByTestId('trigger-order-menu-item')).toHaveLength(5);
+  });
+
+  it('OrderTriggersDialog: ABILITY_FIRST sends action + uuid response (two-step)', async () => {
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    const id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa02';
+    act(() => {
+      useGameStore.setState({
+        pendingDialog: triggerOrderDialog(
+          [{ id, rules: ['Some trigger.'] }],
+          250,
+        ),
+      });
+    });
+    render(<GameDialog stream={stream} />);
+    await user.click(screen.getByTestId('trigger-order-menu-button'));
+
+    const items = screen.getAllByTestId('trigger-order-menu-item');
+    const firstItem = items.find(
+      (el) => el.getAttribute('data-action') === 'TRIGGER_AUTO_ORDER_ABILITY_FIRST',
+    )!;
+    await user.click(firstItem);
+
+    expect(stream.sendPlayerAction).toHaveBeenCalledWith(
+      'TRIGGER_AUTO_ORDER_ABILITY_FIRST',
+      { abilityId: id },
+    );
+    expect(stream.sendPlayerResponse).toHaveBeenCalledWith(250, 'uuid', id);
+    expect(useGameStore.getState().pendingDialog).toBeNull();
+  });
+
+  it('OrderTriggersDialog: ABILITY_LAST sends action only, closes dialog (no uuid response)', async () => {
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    const id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa03';
+    act(() => {
+      useGameStore.setState({
+        pendingDialog: triggerOrderDialog([{ id, rules: ['Some trigger.'] }]),
+      });
+    });
+    render(<GameDialog stream={stream} />);
+    await user.click(screen.getByTestId('trigger-order-menu-button'));
+    const items = screen.getAllByTestId('trigger-order-menu-item');
+    const lastItem = items.find(
+      (el) => el.getAttribute('data-action') === 'TRIGGER_AUTO_ORDER_ABILITY_LAST',
+    )!;
+    await user.click(lastItem);
+
+    expect(stream.sendPlayerAction).toHaveBeenCalledWith(
+      'TRIGGER_AUTO_ORDER_ABILITY_LAST',
+      { abilityId: id },
+    );
+    expect(stream.sendPlayerResponse).not.toHaveBeenCalled();
+    expect(useGameStore.getState().pendingDialog).toBeNull();
+  });
+
+  it('OrderTriggersDialog: NAME_FIRST substitutes {this} client-side before sending', async () => {
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    const id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa04';
+    act(() => {
+      useGameStore.setState({
+        pendingDialog: triggerOrderDialog([
+          {
+            id,
+            rules: [
+              'When {this} enters the battlefield, you may draw a card.',
+            ],
+          },
+        ]),
+      });
+    });
+    render(<GameDialog stream={stream} />);
+    await user.click(screen.getByTestId('trigger-order-menu-button'));
+    const nameFirst = screen
+      .getAllByTestId('trigger-order-menu-item')
+      .find((el) => el.getAttribute('data-action') === 'TRIGGER_AUTO_ORDER_NAME_FIRST')!;
+    await user.click(nameFirst);
+
+    const call = (stream.sendPlayerAction as ReturnType<typeof vi.fn>).mock
+      .calls[0]!;
+    expect(call[0]).toBe('TRIGGER_AUTO_ORDER_NAME_FIRST');
+    const data = call[1] as { ruleText: string };
+    expect(data.ruleText).not.toContain('{this}');
+    expect(data.ruleText).toMatch(
+      /When Ability enters the battlefield, you may draw a card\./,
+    );
+  });
+
+  it('OrderTriggersDialog: RESET_ALL fires action with null data, closes dialog', async () => {
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    act(() => {
+      useGameStore.setState({
+        pendingDialog: triggerOrderDialog([
+          {
+            id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa05',
+            rules: ['Some trigger.'],
+          },
+        ]),
+      });
+    });
+    render(<GameDialog stream={stream} />);
+    await user.click(screen.getByTestId('trigger-order-menu-button'));
+    const reset = screen
+      .getAllByTestId('trigger-order-menu-item')
+      .find((el) => el.getAttribute('data-action') === 'TRIGGER_AUTO_ORDER_RESET_ALL')!;
+    await user.click(reset);
+
+    expect(stream.sendPlayerAction).toHaveBeenCalledWith(
+      'TRIGGER_AUTO_ORDER_RESET_ALL',
+      null,
+    );
+    expect(useGameStore.getState().pendingDialog).toBeNull();
+  });
+
+  it('OrderTriggersDialog: NAME_* menu items disabled when ability has no rule text', async () => {
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    act(() => {
+      useGameStore.setState({
+        pendingDialog: triggerOrderDialog([
+          {
+            id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa06',
+            rules: [],
+          },
+        ]),
+      });
+    });
+    render(<GameDialog stream={stream} />);
+    await user.click(screen.getByTestId('trigger-order-menu-button'));
+    const items = screen.getAllByTestId('trigger-order-menu-item');
+    const nameFirst = items.find(
+      (el) => el.getAttribute('data-action') === 'TRIGGER_AUTO_ORDER_NAME_FIRST',
+    )!;
+    const nameLast = items.find(
+      (el) => el.getAttribute('data-action') === 'TRIGGER_AUTO_ORDER_NAME_LAST',
+    )!;
+    expect(nameFirst).toBeDisabled();
+    expect(nameLast).toBeDisabled();
+  });
+
   it('OrderTriggersDialog has no Skip button (chooseTriggeredAbility is required)', () => {
     const stream = fakeStream();
     const ability = {

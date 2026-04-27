@@ -368,11 +368,16 @@ public final class GameStreamHandler implements Consumer<WsConfig> {
      *   <li>{@code ROLLBACK_TURNS} — int (number of turns)</li>
      *   <li>{@code REQUEST_AUTO_ANSWER_ID_*} / {@code _TEXT_*} — String
      *       (the id or text the auto-answer applies to)</li>
+     *   <li>{@code TRIGGER_AUTO_ORDER_ABILITY_FIRST} / {@code _LAST} —
+     *       UUID (ability id, slice 27 / ADR 0009)</li>
+     *   <li>{@code TRIGGER_AUTO_ORDER_NAME_FIRST} / {@code _LAST} —
+     *       String (the ability's rule text with {@code {this}}
+     *       substituted client-side, mirroring upstream Swing)</li>
      * </ul>
      * Anything else is silently passed as null. Slice 7 may add
      * per-action validation; slice 6 ships the dispatch contract.
      */
-    private static Object decodeActionData(PlayerAction action, JsonNode dataNode) {
+    static Object decodeActionData(PlayerAction action, JsonNode dataNode) {
         if (dataNode == null || dataNode.isNull()) {
             return null;
         }
@@ -385,8 +390,28 @@ public final class GameStreamHandler implements Consumer<WsConfig> {
                     dataNode.isObject() && dataNode.has("text")
                             ? dataNode.get("text").asText()
                             : (dataNode.isTextual() ? dataNode.asText() : null);
+            case TRIGGER_AUTO_ORDER_ABILITY_FIRST,
+                 TRIGGER_AUTO_ORDER_ABILITY_LAST -> {
+                String idStr = dataNode.isObject() && dataNode.has("abilityId")
+                        ? dataNode.get("abilityId").asText()
+                        : (dataNode.isTextual() ? dataNode.asText() : null);
+                yield idStr == null ? null : safeUuid(idStr);
+            }
+            case TRIGGER_AUTO_ORDER_NAME_FIRST,
+                 TRIGGER_AUTO_ORDER_NAME_LAST ->
+                    dataNode.isObject() && dataNode.has("ruleText")
+                            ? dataNode.get("ruleText").asText()
+                            : (dataNode.isTextual() ? dataNode.asText() : null);
             default -> null;
         };
+    }
+
+    private static UUID safeUuid(String s) {
+        try {
+            return UUID.fromString(s);
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
     }
 
     // ---------- inbound — playerResponse (dialog answers) ----------

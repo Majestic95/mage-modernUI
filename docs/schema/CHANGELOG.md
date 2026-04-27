@@ -19,6 +19,55 @@ minor mismatches.
 
 ---
 
+## 1.17 — 2026-04-27 — Trigger auto-order action data shapes (ADR 0009 slice 27)
+
+Adds per-action `data` shapes for the four `TRIGGER_AUTO_ORDER_*_FIRST/_LAST`
+playerAction enum values. Discriminator is the action enum, not the data
+shape — server-side `decodeActionData` switches on action and pulls the
+right field.
+
+ADR 0009 D5 / slice 27.
+
+### `WebPlayerAction.data` — new accepted shapes
+
+```diff
+   "type": "playerAction",
+   "action": "TRIGGER_AUTO_ORDER_ABILITY_FIRST",
++  "data":   { "abilityId": "<uuid>" }
+ }
+```
+
+```diff
+   "type": "playerAction",
+   "action": "TRIGGER_AUTO_ORDER_NAME_FIRST",
++  "data":   { "ruleText": "When Soul Warden enters..." }
+ }
+```
+
+`_RESET_ALL` keeps `data: null` (existing default). The `_NAME_*` actions
+require the rule text already substituted for `{this}` (engine throws on
+unsubstituted strings); the webclient does this client-side mirroring
+upstream Swing's `GamePanel.handleTriggerOrderPopupMenuEvent` pattern.
+
+### Webclient impact
+
+- New hamburger menu on each row of `OrderTriggersDialog` opens the
+  five `TRIGGER_AUTO_ORDER_*` options.
+- Two-step dispatch for `_FIRST` actions: send the action, then send
+  `playerResponse{kind:"uuid", value: abilityId}` so the engine
+  un-blocks (Swing pattern at `GamePanel.java:3081` / `:3090`).
+- `_LAST` and `_RESET_ALL` close the dialog and wait for the engine
+  to re-fire.
+
+### Server impact
+
+- `GameStreamHandler.decodeActionData` adds four `case` arms for the
+  new action values.
+- No DTO changes — `WebPlayerAction.data` was already a free-form
+  JSON node; the addition is the *accepted shape*, not the schema.
+
+---
+
 ## 1.16 — 2026-04-27 — Trigger-order discriminator (ADR 0009)
 
 Adds an `isTriggerOrder` boolean to `WebClientMessageOptions`. The
