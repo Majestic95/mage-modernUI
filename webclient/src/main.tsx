@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import 'mana-font/css/mana.min.css';
 import './index.css';
 import { App } from './App.tsx';
+import { registerImageCache } from './registerImageCache';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -14,3 +15,5 @@ createRoot(rootElement).render(
     <App />
   </StrictMode>,
 );
+
+registerImageCache();
