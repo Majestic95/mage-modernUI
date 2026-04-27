@@ -783,6 +783,52 @@ describe('Game page', () => {
     expect(screen.getByTestId('active-player-name')).toHaveTextContent('alice');
   });
 
+  it('labels each combat sub-step under its tick', () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: buildGameView(),
+      });
+    });
+    const segments = screen.getAllByTestId('phase-segment');
+    const combat = segments.find(
+      (el) => el.getAttribute('data-phase') === 'Combat',
+    )!;
+    const labels = combat.querySelectorAll(
+      '[data-testid="phase-step-label"]',
+    );
+    expect(labels).toHaveLength(6);
+    const stepNames = Array.from(labels).map((el) =>
+      el.getAttribute('data-step'),
+    );
+    expect(stepNames).toEqual([
+      'BEGIN_COMBAT',
+      'DECLARE_ATTACKERS',
+      'DECLARE_BLOCKERS',
+      'FIRST_COMBAT_DAMAGE',
+      'COMBAT_DAMAGE',
+      'END_COMBAT',
+    ]);
+  });
+
+  it('does not render step labels under single-step phases', () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: buildGameView(),
+      });
+    });
+    const segments = screen.getAllByTestId('phase-segment');
+    const main1 = segments.find(
+      (el) => el.getAttribute('data-phase') === 'Main Phase 1',
+    )!;
+    expect(
+      main1.querySelector('[data-testid="phase-step-labels"]'),
+    ).toBeNull();
+  });
+
   it('renders six combat ticks (5 standard + first-strike)', () => {
     render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
     act(() => {

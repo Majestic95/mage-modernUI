@@ -249,10 +249,16 @@ type PhaseConfig = {
   fgClass: string;
   /** Tailwind background-color class for ticks + active orb. */
   bgClass: string;
-  /** Tailwind background-color class for the dim track bar. */
+  /** Tailwind background-color class for the saturated track bar. */
   trackClass: string;
   /** RGB string used by the bloom inline-style box-shadow. */
   glowRgb: string;
+  /**
+   * Render per-step labels beneath each tick. Only true for Combat —
+   * matches the reference mock where the multi-step combat phase
+   * gets sub-labels but Main / Beginning / End stay clean.
+   */
+  showStepLabels?: boolean;
   steps: { name: string; short: string }[];
 };
 
@@ -261,7 +267,7 @@ const TIMELINE_PHASES: PhaseConfig[] = [
     label: 'Beginning',
     fgClass: 'text-cyan-300',
     bgClass: 'bg-cyan-400',
-    trackClass: 'bg-cyan-700/40',
+    trackClass: 'bg-cyan-500/70',
     glowRgb: '34, 211, 238',
     steps: [
       { name: 'UNTAP', short: 'Untap' },
@@ -273,7 +279,7 @@ const TIMELINE_PHASES: PhaseConfig[] = [
     label: 'Main Phase 1',
     fgClass: 'text-sky-300',
     bgClass: 'bg-sky-400',
-    trackClass: 'bg-sky-700/40',
+    trackClass: 'bg-sky-500/70',
     glowRgb: '56, 189, 248',
     steps: [{ name: 'PRECOMBAT_MAIN', short: 'Main 1' }],
   },
@@ -281,22 +287,23 @@ const TIMELINE_PHASES: PhaseConfig[] = [
     label: 'Combat',
     fgClass: 'text-red-300',
     bgClass: 'bg-red-400',
-    trackClass: 'bg-red-700/40',
+    trackClass: 'bg-red-500/70',
     glowRgb: '248, 113, 113',
+    showStepLabels: true,
     steps: [
       { name: 'BEGIN_COMBAT', short: 'Begin' },
       { name: 'DECLARE_ATTACKERS', short: 'Attackers' },
       { name: 'DECLARE_BLOCKERS', short: 'Blockers' },
-      { name: 'FIRST_COMBAT_DAMAGE', short: 'First Strike' },
+      { name: 'FIRST_COMBAT_DAMAGE', short: '1st Strike' },
       { name: 'COMBAT_DAMAGE', short: 'Damage' },
-      { name: 'END_COMBAT', short: 'End Combat' },
+      { name: 'END_COMBAT', short: 'End' },
     ],
   },
   {
     label: 'Main Phase 2',
     fgClass: 'text-emerald-300',
     bgClass: 'bg-emerald-400',
-    trackClass: 'bg-emerald-700/40',
+    trackClass: 'bg-emerald-500/70',
     glowRgb: '74, 222, 128',
     steps: [{ name: 'POSTCOMBAT_MAIN', short: 'Main 2' }],
   },
@@ -304,7 +311,7 @@ const TIMELINE_PHASES: PhaseConfig[] = [
     label: 'End',
     fgClass: 'text-purple-300',
     bgClass: 'bg-purple-400',
-    trackClass: 'bg-purple-700/40',
+    trackClass: 'bg-purple-500/70',
     glowRgb: '192, 132, 252',
     steps: [
       { name: 'END_TURN', short: 'End Turn' },
@@ -350,7 +357,7 @@ function PhaseTimeline({ gameView }: { gameView: WebGameView }) {
           {gameView.activePlayerName || '—'}
         </div>
       </div>
-      <div className="flex-1 flex items-stretch gap-1.5">
+      <div className="flex-1 flex items-start gap-1.5">
         {TIMELINE_PHASES.map((phase) => (
           <PhaseSegment
             key={phase.label}
@@ -390,10 +397,12 @@ function PhaseSegment({
       >
         {phase.label}
       </div>
-      <div className="relative flex-1 flex items-center min-h-[18px]">
-        {/* Track bar */}
+      <div className="relative flex items-center h-5">
+        {/* Track bar — saturated phase color, slightly thicker than v1 */}
         <div
-          className={'absolute inset-x-0 h-1 rounded-full ' + phase.trackClass}
+          className={
+            'absolute inset-x-0 h-1.5 rounded-full ' + phase.trackClass
+          }
         />
         {/* Step ticks */}
         {phase.steps.map((step, idx) => {
@@ -424,10 +433,10 @@ function PhaseSegment({
               ) : (
                 <div
                   className={
-                    'w-1.5 h-1.5 rounded-full ' +
+                    'w-2 h-2 rounded-full ' +
                     (isActivePhase
-                      ? phase.bgClass + ' opacity-70'
-                      : 'bg-zinc-600')
+                      ? phase.bgClass + ' opacity-80'
+                      : 'bg-zinc-500')
                   }
                 />
               )}
@@ -435,6 +444,36 @@ function PhaseSegment({
           );
         })}
       </div>
+      {/* Per-step labels row — only rendered for phases with showStepLabels
+          (currently Combat) so single-step phases don't get a redundant
+          duplicate of their phase header. */}
+      {phase.showStepLabels && (
+        <div
+          data-testid="phase-step-labels"
+          className="relative h-3 mt-0.5"
+        >
+          {phase.steps.map((step, idx) => {
+            const isActiveStep = step.name === activeStep;
+            const left = `${((idx + 0.5) / phase.steps.length) * 100}%`;
+            return (
+              <span
+                key={step.name}
+                data-testid="phase-step-label"
+                data-step={step.name}
+                className={
+                  'absolute -translate-x-1/2 text-[9px] uppercase tracking-wide whitespace-nowrap ' +
+                  (isActiveStep
+                    ? phase.fgClass + ' font-semibold'
+                    : 'text-zinc-500')
+                }
+                style={{ left, top: 0 }}
+              >
+                {step.short}
+              </span>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
