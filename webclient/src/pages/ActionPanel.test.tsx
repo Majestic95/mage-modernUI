@@ -131,4 +131,54 @@ describe('ActionPanel', () => {
     await user.click(screen.getByRole('button', { name: /concede/i }));
     expect(stream.sendPlayerAction).toHaveBeenCalledWith('CONCEDE');
   });
+
+  /* ---------- slice 29: keyboard pass shortcuts ---------- */
+
+  it.each([
+    ['F2', 'PASS_PRIORITY_UNTIL_TURN_END_STEP'],
+    ['F4', 'PASS_PRIORITY_UNTIL_NEXT_TURN'],
+    ['F6', 'PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE'],
+    ['F8', 'PASS_PRIORITY_UNTIL_STACK_RESOLVED'],
+    ['Escape', 'PASS_PRIORITY_CANCEL_ALL_ACTIONS'],
+  ])('keydown %s dispatches %s', async (key, expectedAction) => {
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    act(() => {
+      useGameStore.setState({ gameView: gameViewWithPriorityOn('alice') });
+    });
+    render(<ActionPanel stream={stream} />);
+    await user.keyboard(`{${key}}`);
+    expect(stream.sendPlayerAction).toHaveBeenCalledWith(expectedAction);
+  });
+
+  it('hotkeys are suppressed when focus is in an input element', async () => {
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    act(() => {
+      useGameStore.setState({ gameView: gameViewWithPriorityOn('alice') });
+    });
+    const { container } = render(
+      <>
+        <input data-testid="chat-input" />
+        <ActionPanel stream={stream} />
+      </>,
+    );
+    const input = container.querySelector(
+      '[data-testid="chat-input"]',
+    ) as HTMLInputElement;
+    input.focus();
+    await user.keyboard('{F2}');
+    expect(stream.sendPlayerAction).not.toHaveBeenCalled();
+  });
+
+  it('unrelated keys do not dispatch any action', async () => {
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    act(() => {
+      useGameStore.setState({ gameView: gameViewWithPriorityOn('alice') });
+    });
+    render(<ActionPanel stream={stream} />);
+    await user.keyboard('{F1}{F3}{F7}{a}{Enter}');
+    expect(stream.sendPlayerAction).not.toHaveBeenCalled();
+  });
 });

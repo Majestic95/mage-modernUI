@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useAuthStore } from '../auth/store';
 import { useGameStore } from '../game/store';
 import type { GameStream } from '../game/stream';
@@ -5,6 +6,25 @@ import type { GameStream } from '../game/stream';
 interface Props {
   stream: GameStream | null;
 }
+
+/**
+ * Keyboard pass-priority shortcuts (slice 29). Mapping mirrors the
+ * upstream Swing client where it doesn't conflict with browser
+ * defaults — F5/F11/F12 are reserved by browsers (refresh,
+ * fullscreen, devtools), so we skip those and use Esc for cancel.
+ *
+ * <p>{@code key} is matched case-insensitively against
+ * {@link KeyboardEvent#key}. {@code action} is the upstream
+ * {@code PlayerAction} enum name (whitelisted in
+ * {@code PlayerActionAllowList}).
+ */
+const HOTKEYS: { key: string; action: string; label: string }[] = [
+  { key: 'F2', action: 'PASS_PRIORITY_UNTIL_TURN_END_STEP', label: 'Pass step' },
+  { key: 'F4', action: 'PASS_PRIORITY_UNTIL_NEXT_TURN', label: 'To end turn' },
+  { key: 'F6', action: 'PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE', label: 'To next main' },
+  { key: 'F8', action: 'PASS_PRIORITY_UNTIL_STACK_RESOLVED', label: 'Resolve stack' },
+  { key: 'Escape', action: 'PASS_PRIORITY_CANCEL_ALL_ACTIONS', label: 'Cancel' },
+];
 
 /**
  * Persistent action bar for the controlling player. Currently:
@@ -24,6 +44,38 @@ interface Props {
 export function ActionPanel({ stream }: Props) {
   const session = useAuthStore((s) => s.session);
   const gv = useGameStore((s) => s.gameView);
+
+  // Slice 29: keyboard pass-priority shortcuts. Listener attaches at
+  // the document level so the user doesn't have to focus the panel —
+  // they can press F2 from anywhere on the page. Skip when focus is
+  // in an input / textarea / contenteditable so chat doesn't trip
+  // the hotkeys.
+  useEffect(() => {
+    if (!stream) return;
+    const handler = (ev: KeyboardEvent) => {
+      const target = ev.target as HTMLElement | null;
+      if (target) {
+        const tag = target.tagName;
+        if (
+          tag === 'INPUT' ||
+          tag === 'TEXTAREA' ||
+          target.isContentEditable
+        ) {
+          return;
+        }
+      }
+      const match = HOTKEYS.find(
+        (h) => h.key.toLowerCase() === ev.key.toLowerCase(),
+      );
+      if (!match) return;
+      ev.preventDefault();
+      stream.sendPlayerAction(match.action);
+    };
+    document.addEventListener('keydown', handler);
+    return () => {
+      document.removeEventListener('keydown', handler);
+    };
+  }, [stream]);
 
   if (!gv || !session) return null;
 
@@ -46,7 +98,7 @@ export function ActionPanel({ stream }: Props) {
         action="PASS_PRIORITY_UNTIL_TURN_END_STEP"
         send={send}
         active={myPriority}
-        title="Pass priority through the current step"
+        title="Pass priority through the current step (F2)"
       />
       <PassButton
         label="To end turn"
@@ -74,7 +126,7 @@ export function ActionPanel({ stream }: Props) {
         action="PASS_PRIORITY_CANCEL_ALL_ACTIONS"
         send={send}
         active={true}
-        title="Stop any ongoing pass-priority-until automation"
+        title="Stop any ongoing pass-priority-until automation (Esc)"
       />
       <div className="flex-1" />
       <button
