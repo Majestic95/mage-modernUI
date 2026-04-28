@@ -95,15 +95,117 @@ describe('SideboardModal', () => {
     expect(screen.getByTestId('sideboard-side')).toHaveTextContent('Sideboard (1)');
   });
 
-  it('shows seconds remaining + limited flag in the header', () => {
+  it('shows m:ss remaining + limited flag in the header', () => {
     act(() => {
       useGameStore.setState({
         pendingSideboard: buildSideboardInfo({ time: 300, limited: true }),
       });
     });
     render(<SideboardModal />);
-    expect(screen.getByText(/300s remaining/)).toBeInTheDocument();
+    // 300s renders as "5:00".
+    expect(screen.getByTestId('sideboard-countdown')).toHaveTextContent(
+      /5:00 remaining/,
+    );
     expect(screen.getByText(/limited/i)).toBeInTheDocument();
+  });
+
+  it('countdown ticks down as time elapses', () => {
+    vi.useFakeTimers();
+    try {
+      act(() => {
+        useGameStore.setState({
+          pendingSideboard: buildSideboardInfo({ time: 180 }),
+        });
+      });
+      render(<SideboardModal />);
+      const countdown = screen.getByTestId('sideboard-countdown');
+      expect(countdown).toHaveTextContent(/3:00 remaining/);
+
+      // Advance the wall clock and the interval together so
+      // {@code Date.now()} actually moves forward inside the tick
+      // callback.
+      act(() => {
+        vi.advanceTimersByTime(1000);
+      });
+      expect(countdown).toHaveTextContent(/2:59 remaining/);
+
+      act(() => {
+        vi.advanceTimersByTime(58_000);
+      });
+      expect(countdown).toHaveTextContent(/2:01 remaining/);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('flips countdown to red urgency styling under 30s', () => {
+    vi.useFakeTimers();
+    try {
+      act(() => {
+        useGameStore.setState({
+          pendingSideboard: buildSideboardInfo({ time: 35 }),
+        });
+      });
+      render(<SideboardModal />);
+      const countdown = screen.getByTestId('sideboard-countdown');
+      // 35s — still in normal styling (>30).
+      expect(countdown.className).not.toMatch(/text-red-400/);
+
+      act(() => {
+        vi.advanceTimersByTime(6_000);
+      });
+      // 29s — urgency colour kicks in.
+      expect(countdown).toHaveTextContent(/0:29 remaining/);
+      expect(countdown.className).toMatch(/text-red-400/);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('persists local main↔side edits across a SIDEBOARD frame replay with smaller time', async () => {
+    // Reconnect-replay regression: the engine's
+    // {@code futureTimeout.getDelay} ticks down on each dispatch, so
+    // the second frame carries a smaller {@code time}. The modal key
+    // must NOT include {@code time}, otherwise React unmounts the
+    // component instance and the user's in-progress moves vanish.
+    const user = userEvent.setup();
+    act(() => {
+      useGameStore.setState({
+        pendingSideboard: buildSideboardInfo({ time: 179 }),
+      });
+    });
+    render(<SideboardModal />);
+
+    // User starts editing — moves a Forest from main to sideboard.
+    const mainPane = screen.getByTestId('sideboard-main');
+    const moveButtons = mainPane.querySelectorAll(
+      '[data-testid="sideboard-move"]',
+    );
+    await user.click(moveButtons[0] as HTMLElement);
+
+    expect(screen.getByTestId('sideboard-main')).toHaveTextContent('Main (1)');
+    expect(screen.getByTestId('sideboard-side')).toHaveTextContent(
+      'Sideboard (2)',
+    );
+
+    // Server re-broadcasts SIDEBOARD with a smaller {@code time}
+    // (reconnect or {@code ?since=} replay). Same {@code tableId},
+    // same authoritative deck.
+    act(() => {
+      useGameStore.setState({
+        pendingSideboard: buildSideboardInfo({ time: 120 }),
+      });
+    });
+
+    // The user's edits MUST persist — no remount, no useState reset.
+    expect(screen.getByTestId('sideboard-main')).toHaveTextContent('Main (1)');
+    expect(screen.getByTestId('sideboard-side')).toHaveTextContent(
+      'Sideboard (2)',
+    );
+    // Countdown re-anchored to the new authoritative remaining time.
+    expect(screen.getByTestId('sideboard-countdown')).toHaveTextContent(
+      /2:00 remaining/,
+    );
   });
 
   it('moves a card from main to sideboard on arrow click', async () => {

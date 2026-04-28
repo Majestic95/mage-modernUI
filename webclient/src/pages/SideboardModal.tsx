@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { ApiError, request } from '../api/client';
 import { useAuthStore } from '../auth/store';
 import { useGameStore } from '../game/store';
@@ -16,10 +16,15 @@ import type { WebSideboardInfo, WebSimpleCardView } from '../api/schemas';
  * 204 success we clear {@link useGameStore.pendingSideboard} and the
  * modal unmounts.
  *
- * <p>Slice 13 keeps the UX list-only — no drag and drop, no sort, no
- * card art, no countdown timer rendering. {@link WebSideboardInfo#time}
- * is shown as a static seconds value so the user knows there's a
- * limit; an actual ticking timer can land in a follow-up.
+ * <p>The header renders a live countdown derived from
+ * {@link WebSideboardInfo#time}: on every fresh frame we capture
+ * {@code Date.now() + time*1000} as the deadline and tick a
+ * derived "remaining" value down via {@code setInterval}. The
+ * server's {@code futureTimeout} is the authoritative timer
+ * (autoSideboard fires at {@code Match.SIDEBOARD_TIME = 180}); a
+ * reconnect-replay re-anchors the deadline to the new frame's
+ * {@code time}. Below 30s the display flips to red so the user
+ * sees the urgency before auto-submission.
  */
 export function SideboardModal() {
   const pending = useGameStore((s) => s.pendingSideboard);
@@ -29,14 +34,18 @@ export function SideboardModal() {
   if (!pending || !session) {
     return null;
   }
-  // The {@code key} forces a fresh component instance whenever a new
-  // sideboard frame arrives (e.g. game 2 → game 3 transition).
-  // Avoids syncing local state to props in a useEffect — that pattern
-  // trips react-hooks/set-state-in-effect — and gives every frame a
-  // clean picker without manual reset wiring.
+  // Key on tableId only. Earlier the key included {@code pending.time},
+  // which decreases on every reconnect-replay of the SIDEBOARD frame
+  // (the engine re-samples {@code futureTimeout.getDelay} on each
+  // dispatch). That would force a fresh component instance — and
+  // therefore a fresh {@code useState} — on every replay, discarding
+  // the user's in-progress main↔side moves. {@code tableId} alone is
+  // unique per sideboarding window (a match never has overlapping
+  // sideboard windows for the same table), so the modal now persists
+  // across reconnects on the same table.
   return (
     <SideboardModalImpl
-      key={pending.tableId + ':' + pending.time}
+      key={pending.tableId}
       pending={pending}
       clear={clear}
       token={session.token}
@@ -61,6 +70,35 @@ function SideboardModalImpl({
   );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Live countdown. The server sends {@code time} (seconds remaining
+  // until {@code autoSideboard} fires); we derive an absolute
+  // {@code deadlineMs} on each fresh frame and tick a {@code remaining}
+  // state down every second. On a reconnect-replay the new frame's
+  // {@code time} is the engine's authoritative residual delay, so we
+  // re-anchor the deadline — a brief jump in the displayed value is
+  // correct (the engine timer is the source of truth).
+  const deadlineMsRef = useRef<number>(Date.now() + pending.time * 1000);
+  const [remaining, setRemaining] = useState<number>(() =>
+    Math.max(0, pending.time),
+  );
+
+  useEffect(() => {
+    deadlineMsRef.current = Date.now() + pending.time * 1000;
+    setRemaining(Math.max(0, pending.time));
+  }, [pending.tableId, pending.time]);
+
+  useEffect(() => {
+    if (pending.time <= 0) return;
+    const id = setInterval(() => {
+      const left = Math.max(
+        0,
+        Math.round((deadlineMsRef.current - Date.now()) / 1000),
+      );
+      setRemaining(left);
+    }, 1000);
+    return () => clearInterval(id);
+  }, [pending.tableId, pending.time]);
 
   const moveToSideboard = (card: WebSimpleCardView) => {
     setMainList((cur) => removeFirstById(cur, card.id));
@@ -107,14 +145,32 @@ function SideboardModalImpl({
         <header className="flex items-baseline justify-between mb-3">
           <h2 className="text-xl font-semibold">Sideboard</h2>
           <span className="text-xs text-zinc-500">
-            {pending.time > 0
-              ? `${pending.time}s remaining`
-              : 'untimed'}
+            {pending.time > 0 ? (
+              <span
+                data-testid="sideboard-countdown"
+                className={
+                  remaining <= 30
+                    ? 'text-red-400 font-semibold'
+                    : 'text-zinc-400'
+                }
+                title="Time runs out → engine auto-submits your current main/side configuration"
+              >
+                {formatRemaining(remaining)} remaining
+              </span>
+            ) : (
+              'untimed'
+            )}
             {pending.limited && (
               <span className="ml-2 text-amber-300">limited</span>
             )}
           </span>
         </header>
+        {pending.time > 0 && (
+          <p className="text-[10px] text-zinc-600 -mt-2 mb-3">
+            Time runs out → engine auto-submits your current
+            main/side configuration.
+          </p>
+        )}
 
         <div className="grid grid-cols-2 gap-3 flex-1 min-h-0">
           <CardPane
@@ -210,6 +266,19 @@ function CardPane({
       </ul>
     </section>
   );
+}
+
+/**
+ * Format the countdown as {@code m:ss} (or {@code 0:ss} for sub-minute
+ * values). Keeping a leading zero on the seconds component ("0:35"
+ * rather than "0:5") matches the conventional egg-timer cadence and
+ * keeps the column width stable as the value ticks down.
+ */
+function formatRemaining(totalSeconds: number): string {
+  const safe = Math.max(0, Math.floor(totalSeconds));
+  const minutes = Math.floor(safe / 60);
+  const seconds = safe % 60;
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
 /**
