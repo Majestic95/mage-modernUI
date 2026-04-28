@@ -279,6 +279,14 @@ export type WebCardView = {
   transformable: boolean;
   transformed: boolean;
   secondCardFace: WebCardView | null;
+  /**
+   * Schema 1.18 (ADR 0009 slice 28). Non-empty when this view came
+   * through the {@code AbilityView} path — carries the source card's
+   * name (e.g. "Soul Warden", "Atraxa, Praetors' Voice") so the
+   * trigger-order panel can render "from: ‹source›" attribution
+   * beneath each rule. Empty for ordinary cards.
+   */
+  sourceLabel: string;
 };
 export const webCardViewSchema: z.ZodType<WebCardView> = z.lazy(() =>
   z.object({
@@ -304,6 +312,7 @@ export const webCardViewSchema: z.ZodType<WebCardView> = z.lazy(() =>
     transformable: z.boolean(),
     transformed: z.boolean(),
     secondCardFace: webCardViewSchema.nullable(),
+    sourceLabel: z.string().default(''),
   }),
 );
 

@@ -467,7 +467,15 @@ function OrderTriggersDialog({ dialog, stream, clearDialog }: ContentProps) {
                 onClick={() => submit(a.id)}
                 className="flex-1 text-left px-3 py-2 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-100 text-sm leading-snug"
               >
-                {ruleText || a.name || '(unlabeled trigger)'}
+                <div>{ruleText || a.name || '(unlabeled trigger)'}</div>
+                {a.sourceLabel && (
+                  <div
+                    data-testid="trigger-order-source"
+                    className="text-[10px] text-zinc-400 italic mt-0.5"
+                  >
+                    from: {a.sourceLabel}
+                  </div>
+                )}
               </button>
               <button
                 type="button"
@@ -498,6 +506,27 @@ function OrderTriggersDialog({ dialog, stream, clearDialog }: ContentProps) {
           </li>
         )}
       </ul>
+      {/* Slice 28: Reset-all footer button. Same dispatch as the
+          per-row menu item, surfaced at the bottom of the panel for
+          discoverability — the per-row menu hides it five clicks
+          deep. */}
+      {abilities.length > 0 && (
+        <div className="pt-2 border-t border-zinc-800">
+          <button
+            type="button"
+            data-testid="trigger-order-reset-all"
+            onClick={() => {
+              if (!stream) return;
+              stream.sendPlayerAction('TRIGGER_AUTO_ORDER_RESET_ALL', null);
+              clearDialog();
+            }}
+            className="text-[10px] text-zinc-500 hover:text-zinc-200 uppercase tracking-wide"
+            title="Forget every saved auto-order rule"
+          >
+            Reset all auto-order settings
+          </button>
+        </div>
+      )}
     </>
   );
 }

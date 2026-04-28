@@ -29,7 +29,7 @@ class CardViewMapperTest {
     private static final ObjectMapper JSON = new ObjectMapper();
 
     @Test
-    void cardView_jsonShape_locksTwentyTwoFields() throws Exception {
+    void cardView_jsonShape_locksTwentyThreeFields() throws Exception {
         WebCardView dto = new WebCardView(
                 "550e8400-e29b-41d4-a716-446655440000",
                 "Lightning Bolt",
@@ -52,22 +52,26 @@ class CardViewMapperTest {
                 Map.of(),
                 false,
                 false,
-                null
+                null,
+                ""
         );
         JsonNode node = JSON.valueToTree(dto);
 
-        assertEquals(22, node.size(),
-                "WebCardView must have exactly 22 fields; got: " + node);
+        assertEquals(23, node.size(),
+                "WebCardView must have exactly 23 fields "
+                        + "(slice 28 / ADR 0009 added sourceLabel); got: " + node);
         // Snapshot the field set explicitly so adding a field forces
         // a CHANGELOG bump. transformable/transformed/secondCardFace
         // landed in 1.12 — DFC + MDFC support per audit §3.
+        // sourceLabel landed in 1.18 — trigger-order source attribution.
         for (String field : List.of(
                 "id", "name", "displayName", "expansionSetCode",
                 "cardNumber", "manaCost", "manaValue", "typeLine",
                 "supertypes", "types", "subtypes", "colors", "rarity",
                 "power", "toughness", "startingLoyalty", "rules",
                 "faceDown", "counters",
-                "transformable", "transformed", "secondCardFace")) {
+                "transformable", "transformed", "secondCardFace",
+                "sourceLabel")) {
             assertTrue(node.has(field), "missing field: " + field);
         }
     }
@@ -80,7 +84,7 @@ class CardViewMapperTest {
                 List.of("Forest"), List.of(), "COMMON",
                 "", "", "", List.of("({T}: Add {G}.)"),
                 false, Map.of(),
-                false, false, null);
+                false, false, null, "");
         WebPermanentView dto = new WebPermanentView(
                 card, "alice", false, false, false, true, false, 0,
                 List.of(), "", false);
@@ -96,7 +100,7 @@ class CardViewMapperTest {
             assertTrue(node.has(field), "missing field: " + field);
         }
         // Composition: the nested card carries the full WebCardView shape.
-        assertEquals(22, node.get("card").size(),
+        assertEquals(23, node.get("card").size(),
                 "permanent.card must be a full WebCardView");
     }
 

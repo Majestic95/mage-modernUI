@@ -5,6 +5,7 @@ import mage.constants.CardType;
 import mage.constants.SubType;
 import mage.constants.SuperType;
 import mage.util.SubTypes;
+import mage.view.AbilityView;
 import mage.view.CardView;
 import mage.view.CounterView;
 import mage.view.PermanentView;
@@ -92,8 +93,30 @@ public final class CardViewMapper {
                 countersFlat(cv.getCounters()),
                 transformable,
                 transformed,
-                secondFace
+                secondFace,
+                extractSourceLabel(cv)
         );
+    }
+
+    /**
+     * For an {@link AbilityView} carrying a triggered / activated
+     * ability, return the source card's name (used by the trigger-
+     * order panel as a "from: ‹source›" attribution under each rule).
+     * For ordinary CardViews, return the empty string.
+     *
+     * <p>{@code AbilityView.sourceName} is a private field with no
+     * public getter, so we read it via {@link AbilityView#getSourceCard()}
+     * which carries the same value (see {@code CardsView.java:140}
+     * where both the {@code sourceName} string and the source CardView
+     * are built from {@code sourceObject.getName()}). For emblem /
+     * dungeon / plane sources the {@code setName(...)} call at
+     * {@code CardsView.java:112-126} keeps the source CardView's name
+     * field aligned.
+     */
+    private static String extractSourceLabel(CardView cv) {
+        if (!(cv instanceof AbilityView av)) return "";
+        CardView source = av.getSourceCard();
+        return source == null ? "" : nullToEmpty(source.getName());
     }
 
     public static WebPermanentView toPermanentDto(PermanentView pv) {

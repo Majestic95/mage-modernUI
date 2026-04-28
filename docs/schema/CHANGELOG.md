@@ -19,6 +19,52 @@ minor mismatches.
 
 ---
 
+## 1.18 — 2026-04-27 — Source-label attribution on AbilityView (ADR 0009 slice 28)
+
+Adds `sourceLabel` to `WebCardView`. Empty for ordinary cards;
+populated with the source card's name when the upstream view is an
+`AbilityView` (i.e. the entry came through the trigger-ordering
+or activated-ability path). Lets the renderer surface
+"from: ‹Soul Warden›" / "from: ‹Atraxa, Praetors' Voice›" /
+"from: ‹Helm of the Host emblem›" attribution beneath each rule.
+
+ADR 0009 slice 28.
+
+### `WebCardView` — added `sourceLabel` field
+
+```diff
+   "transformed":     false,
+   "secondCardFace":  null,
++  "sourceLabel":     ""
+ }
+```
+
+Defaults to empty string (additive minor — older fixtures parse
+cleanly via `z.default('')` on the webclient).
+
+### Webclient impact
+
+- `OrderTriggersDialog` row chrome shows "from: ‹label›" beneath
+  the rule text when `sourceLabel` is present.
+- New "Reset all auto-order settings" footer button on the panel
+  for discoverability — same dispatch as the per-row menu item but
+  always visible.
+
+### Server impact
+
+- `CardViewMapper.toCardDto` adds an `extractSourceLabel` helper
+  that detects `AbilityView` and reads `getSourceCard().getName()`
+  (the public accessor — `sourceName` is a private field with no
+  getter, but the source CardView carries the same name per
+  `CardsView.java:140`).
+
+### Non-impact
+
+- `WebPlayerAction` shapes from 1.17 are unchanged.
+- `WebClientMessageOptions.isTriggerOrder` from 1.16 unchanged.
+
+---
+
 ## 1.17 — 2026-04-27 — Trigger auto-order action data shapes (ADR 0009 slice 27)
 
 Adds per-action `data` shapes for the four `TRIGGER_AUTO_ORDER_*_FIRST/_LAST`

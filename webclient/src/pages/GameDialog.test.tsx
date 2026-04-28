@@ -680,7 +680,12 @@ describe('GameDialog', () => {
   /* ---------- slice 27 / ADR 0009: auto-order context menu ---------- */
 
   function triggerOrderDialog(
-    abilities: Array<{ id: string; rules: string[]; name?: string }>,
+    abilities: Array<{
+      id: string;
+      rules: string[];
+      name?: string;
+      sourceLabel?: string;
+    }>,
     messageId = 200,
   ) {
     const cardsView1: Record<string, unknown> = {};
@@ -708,6 +713,7 @@ describe('GameDialog', () => {
         transformable: false,
         transformed: false,
         secondCardFace: null,
+        sourceLabel: a.sourceLabel ?? '',
       };
     }
     return {
@@ -887,6 +893,65 @@ describe('GameDialog', () => {
     )!;
     expect(nameFirst).toBeDisabled();
     expect(nameLast).toBeDisabled();
+  });
+
+  /* ---------- slice 28 / ADR 0009: source label + footer reset ---------- */
+
+  it('OrderTriggersDialog renders "from: ‹label›" when sourceLabel is set', () => {
+    const stream = fakeStream();
+    act(() => {
+      useGameStore.setState({
+        pendingDialog: triggerOrderDialog([
+          {
+            id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa07',
+            rules: ['Some trigger.'],
+            sourceLabel: 'Soul Warden',
+          },
+        ]),
+      });
+    });
+    render(<GameDialog stream={stream} />);
+    const sourceEl = screen.getByTestId('trigger-order-source');
+    expect(sourceEl).toHaveTextContent(/from:\s*Soul Warden/);
+  });
+
+  it('OrderTriggersDialog hides the source line when sourceLabel is empty', () => {
+    const stream = fakeStream();
+    act(() => {
+      useGameStore.setState({
+        pendingDialog: triggerOrderDialog([
+          {
+            id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa08',
+            rules: ['Some trigger.'],
+            sourceLabel: '',
+          },
+        ]),
+      });
+    });
+    render(<GameDialog stream={stream} />);
+    expect(screen.queryByTestId('trigger-order-source')).toBeNull();
+  });
+
+  it('OrderTriggersDialog footer Reset-all button fires TRIGGER_AUTO_ORDER_RESET_ALL', async () => {
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    act(() => {
+      useGameStore.setState({
+        pendingDialog: triggerOrderDialog([
+          {
+            id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa09',
+            rules: ['Some trigger.'],
+          },
+        ]),
+      });
+    });
+    render(<GameDialog stream={stream} />);
+    await user.click(screen.getByTestId('trigger-order-reset-all'));
+    expect(stream.sendPlayerAction).toHaveBeenCalledWith(
+      'TRIGGER_AUTO_ORDER_RESET_ALL',
+      null,
+    );
+    expect(useGameStore.getState().pendingDialog).toBeNull();
   });
 
   it('OrderTriggersDialog has no Skip button (chooseTriggeredAbility is required)', () => {

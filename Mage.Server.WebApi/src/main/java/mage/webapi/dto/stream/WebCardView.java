@@ -59,6 +59,14 @@ import java.util.Map;
  *     {@code null} on the wire, mirroring upstream's recursive
  *     {@code CardView.secondCardFace} which itself holds a
  *     {@code CardView} but never a third level.
+ * @param sourceLabel     non-empty only when this view is an upstream
+ *     {@code AbilityView} carrying a triggered / activated ability —
+ *     populated from the source object's name ({@code "Soul Warden"},
+ *     {@code "Atraxa, Praetors' Voice"}, an emblem name, etc.). Slice
+ *     28 / ADR 0009 / schema 1.18 — lets the trigger-order panel show
+ *     "from: ‹source›" attribution under each rule, useful for
+ *     emblems / dungeons / planes whose rule text doesn't include the
+ *     source. Empty string for ordinary cards.
  */
 public record WebCardView(
         String id,
@@ -82,6 +90,7 @@ public record WebCardView(
         Map<String, Integer> counters,
         boolean transformable,
         boolean transformed,
-        WebCardView secondCardFace
+        WebCardView secondCardFace,
+        String sourceLabel
 ) {
 }
