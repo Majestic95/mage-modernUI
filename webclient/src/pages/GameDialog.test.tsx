@@ -1275,4 +1275,111 @@ describe('GameDialog', () => {
       'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
     );
   });
+
+  /* ---------- slice 39: modal-spell mode-select Done/Cancel ---------- */
+
+  // Sentinel UUIDs from upstream `Modes.java:27-28` — copied here as
+  // the test fixture; production code keeps the same constants.
+  const DONE_ID = '33e72ad6-17ae-4bfb-a097-6e7aa06b49e9';
+  const CANCEL_ID = '0125bd0c-5610-4eba-bc80-fc6d0a7b9de6';
+
+  it('gameChooseAbility: Done sentinel renders as a primary button (modal spell)', () => {
+    const stream = fakeStream();
+    act(() => {
+      useGameStore.setState({
+        pendingDialog: {
+          method: 'gameChooseAbility',
+          messageId: 80,
+          data: {
+            gameView: null,
+            message: 'Choose mode (selected 1 of 4, min 2)',
+            choices: {
+              'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa': '1. Counter target spell.',
+              'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb': '2. Return target permanent.',
+              [DONE_ID]: 'Done',
+              [CANCEL_ID]: 'Cancel',
+            },
+          },
+        },
+      });
+    });
+    render(<GameDialog stream={stream} />);
+    expect(screen.getByTestId('ability-done')).toHaveTextContent('Done');
+    expect(screen.getByTestId('ability-cancel')).toHaveTextContent('Cancel');
+    // The sentinels should NOT also render as ability rows — the row
+    // count matches the real-mode count.
+    expect(screen.getAllByTestId('ability-row')).toHaveLength(2);
+  });
+
+  it('gameChooseAbility: Done button dispatches the Done sentinel uuid', async () => {
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    act(() => {
+      useGameStore.setState({
+        pendingDialog: {
+          method: 'gameChooseAbility',
+          messageId: 81,
+          data: {
+            gameView: null,
+            message: 'Choose mode (selected 2 of 4, min 2)',
+            choices: {
+              'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa': '1. Counter target spell.',
+              [DONE_ID]: 'Done',
+              [CANCEL_ID]: 'Cancel',
+            },
+          },
+        },
+      });
+    });
+    render(<GameDialog stream={stream} />);
+    await user.click(screen.getByTestId('ability-done'));
+    expect(stream.sendPlayerResponse).toHaveBeenCalledWith(81, 'uuid', DONE_ID);
+  });
+
+  it('gameChooseAbility: Cancel button dispatches the Cancel sentinel uuid', async () => {
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    act(() => {
+      useGameStore.setState({
+        pendingDialog: {
+          method: 'gameChooseAbility',
+          messageId: 82,
+          data: {
+            gameView: null,
+            message: 'Choose mode',
+            choices: {
+              'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa': '1. Counter target spell.',
+              [CANCEL_ID]: 'Cancel',
+            },
+          },
+        },
+      });
+    });
+    render(<GameDialog stream={stream} />);
+    await user.click(screen.getByTestId('ability-cancel'));
+    expect(stream.sendPlayerResponse).toHaveBeenCalledWith(82, 'uuid', CANCEL_ID);
+  });
+
+  it('gameChooseAbility: regular activated-ability picker shows neither Done nor Cancel', () => {
+    const stream = fakeStream();
+    act(() => {
+      useGameStore.setState({
+        pendingDialog: {
+          method: 'gameChooseAbility',
+          messageId: 83,
+          data: {
+            gameView: null,
+            message: 'Choose ability',
+            choices: {
+              'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa': '1. Tap for green',
+              'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb': '2. Tap for blue',
+            },
+          },
+        },
+      });
+    });
+    render(<GameDialog stream={stream} />);
+    expect(screen.queryByTestId('ability-done')).toBeNull();
+    expect(screen.queryByTestId('ability-cancel')).toBeNull();
+  });
 });
