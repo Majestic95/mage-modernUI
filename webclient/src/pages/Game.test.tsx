@@ -650,6 +650,133 @@ describe('Game page', () => {
     expect(screen.queryByTestId('combat-badge-blocker')).toBeNull();
   });
 
+  /* ---------- slice 45: BattlefieldTile (card-shaped permanents) ---------- */
+
+  it('BattlefieldTile shows P/T overlay for creatures', () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    const gv = buildGameView();
+    const grizzlyCard = webCardViewSchema.parse({
+      ...FOREST,
+      id: '66666666-6666-6666-6666-666666666666',
+      name: 'Grizzly Bears',
+      manaCost: '{1}{G}',
+      typeLine: 'Creature — Bear',
+      types: ['CREATURE'],
+      subtypes: ['Bear'],
+      power: '2',
+      toughness: '2',
+    });
+    const grizzlyPerm = webPermanentViewSchema.parse({
+      card: grizzlyCard,
+      controllerName: 'alice',
+      tapped: false,
+      flipped: false,
+      transformed: false,
+      phasedIn: true,
+      summoningSickness: false,
+      damage: 0,
+      attachments: [],
+      attachedTo: '',
+      attachedToPermanent: false,
+    });
+    const me = gv.players.find((p) => p.controlled)!;
+    me.battlefield[grizzlyCard.id] = grizzlyPerm;
+    act(() => {
+      useGameStore.setState({ connection: 'open', gameView: gv });
+    });
+    // The P/T overlay is the only place "2/2" appears on the
+    // battlefield render for this card; assert it's in the DOM.
+    const tileFaces = screen.getAllByTestId('battlefield-tile-face');
+    expect(tileFaces.some((el) => el.textContent?.includes('2/2'))).toBe(true);
+  });
+
+  it('BattlefieldTile rotates 90deg when tapped', () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: buildGameView(),
+      });
+    });
+    // The fixture's only permanent is TAPPED_FOREST_PERMANENT
+    // (tapped: true) — its inner face should carry the 90° rotation.
+    const face = screen.getByTestId('battlefield-tile-face');
+    expect(face.style.transform).toContain('rotate(90deg)');
+  });
+
+  it('BattlefieldTile shows damage chip when damage > 0', () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    const gv = buildGameView();
+    const wounded = webCardViewSchema.parse({
+      ...FOREST,
+      id: '77777777-7777-7777-7777-777777777777',
+      name: 'Wounded Bear',
+      manaCost: '{1}{G}',
+      typeLine: 'Creature — Bear',
+      types: ['CREATURE'],
+      subtypes: ['Bear'],
+      power: '3',
+      toughness: '3',
+    });
+    const woundedPerm = webPermanentViewSchema.parse({
+      card: wounded,
+      controllerName: 'alice',
+      tapped: false,
+      flipped: false,
+      transformed: false,
+      phasedIn: true,
+      summoningSickness: false,
+      damage: 2,
+      attachments: [],
+      attachedTo: '',
+      attachedToPermanent: false,
+    });
+    const me = gv.players.find((p) => p.controlled)!;
+    me.battlefield[wounded.id] = woundedPerm;
+    act(() => {
+      useGameStore.setState({ connection: 'open', gameView: gv });
+    });
+    const chip = screen.getByTestId('permanent-damage');
+    expect(chip).toHaveTextContent('-2');
+  });
+
+  it('BattlefieldTile shows counter chip when counters non-empty', () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    const gv = buildGameView();
+    const buffedCard = webCardViewSchema.parse({
+      ...FOREST,
+      id: '88888888-8888-8888-8888-888888888888',
+      name: 'Buffed Bear',
+      manaCost: '{1}{G}',
+      typeLine: 'Creature — Bear',
+      types: ['CREATURE'],
+      subtypes: ['Bear'],
+      power: '2',
+      toughness: '2',
+      counters: { '+1/+1': 3 },
+    });
+    const buffedPerm = webPermanentViewSchema.parse({
+      card: buffedCard,
+      controllerName: 'alice',
+      tapped: false,
+      flipped: false,
+      transformed: false,
+      phasedIn: true,
+      summoningSickness: false,
+      damage: 0,
+      attachments: [],
+      attachedTo: '',
+      attachedToPermanent: false,
+    });
+    const me = gv.players.find((p) => p.controlled)!;
+    me.battlefield[buffedCard.id] = buffedPerm;
+    act(() => {
+      useGameStore.setState({ connection: 'open', gameView: gv });
+    });
+    const chip = screen.getByTestId('permanent-counters');
+    expect(chip).toHaveTextContent('+1/+1: 3');
+  });
+
   /* ---------- slice 27: stack rendering ---------- */
 
   it('does not render the stack zone when stack is empty', () => {

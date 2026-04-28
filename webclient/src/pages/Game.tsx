@@ -1200,14 +1200,14 @@ function PlayerArea({
           <ManaPool player={player} />
         </div>
       </header>
-      <div className="flex flex-wrap gap-1.5">
+      <div className="flex flex-wrap gap-2">
         {battlefield.length === 0 ? (
           <span className="text-xs text-zinc-600 italic">
             No permanents yet.
           </span>
         ) : (
           battlefield.map((perm) => (
-            <PermanentChip
+            <BattlefieldTile
               key={perm.card.id}
               perm={perm}
               canAct={canAct}
@@ -1302,7 +1302,30 @@ function ManaPool({ player }: { player: WebPlayerView }) {
   );
 }
 
-function PermanentChip({
+/**
+ * Slice 45 — replaces the slice-9-era {@code PermanentChip} text-chip
+ * with a card-shaped tile (5:7 aspect, ~80×112). Mirrors
+ * {@link HandCardFace} for the visual base — Scryfall art, mana cost,
+ * name banner, P/T — and adds the battlefield-specific affordances:
+ * tap rotation (90° clockwise), combat highlight ring, ATK/BLK
+ * badges, damage chip, counter chip, summoning-sickness border.
+ *
+ * <p>Each tile is rendered inside a fixed 112×112 square slot so the
+ * tap rotation (which swaps the tile's bounding box from 80×112
+ * portrait to 112×80 landscape) stays within the slot — neighbors
+ * never reflow when a card taps.
+ *
+ * <p>The slot wrapper sits OUTSIDE {@link HoverCardDetail} on
+ * purpose: HoverCardDetail's trigger span is {@code position:
+ * relative}, and the slice-44a bug demonstrated that any
+ * absolutely-positioned descendant collapses to the left edge of
+ * that inline-flex span. The slot itself is a flex item (no
+ * absolute positioning), so the bug doesn't trigger here, but
+ * keeping the layout box outside HoverCardDetail also makes the
+ * trigger element's bounding box exactly the tile, which gives
+ * cleaner positioning for the popover.
+ */
+function BattlefieldTile({
   perm,
   canAct,
   onClick,
@@ -1326,50 +1349,148 @@ function PermanentChip({
   combatRole: 'attacker' | 'blocker' | null;
 }) {
   const tapped = perm.tapped;
-  const sick = perm.summoningSickness;
-  const baseClasses =
-    'inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs ' +
-    'border border-zinc-700 bg-zinc-900 ' +
-    (tapped ? 'opacity-60 rotate-3' : '') +
-    (sick ? ' italic' : '');
-  const clickableClasses =
-    canAct
-      ? ' cursor-pointer hover:border-fuchsia-500 hover:bg-zinc-800'
-      : ' cursor-default opacity-90';
-  // Amber ring on legal-combat permanents during declare-attackers /
-  // declare-blockers. Picked over fuchsia (target highlight) and
-  // emerald (success states) so the three "click-me-now" cues are
-  // visually distinct.
-  const combatRing = isEligibleCombat
-    ? ' ring-2 ring-amber-400/60'
-    : '';
   return (
-    <HoverCardDetail card={perm.card}>
-    <button
-      type="button"
-      data-testid="permanent"
-      data-tapped={tapped}
-      data-combat-eligible={isEligibleCombat || undefined}
-      data-combat-role={combatRole ?? undefined}
-      disabled={!canAct}
-      onClick={() => onClick(perm.card.id)}
-      className={baseClasses + clickableClasses + combatRing}
-      title={
-        canAct
-          ? `${perm.card.name} — click to tap/activate`
-          : perm.card.typeLine
+    // Fixed 112×112 slot — the tile (80×112 portrait) and its tapped
+    // state (112×80 landscape) both fit. flex centering keeps the
+    // tile aligned regardless of orientation.
+    <div className="w-[112px] h-[112px] flex items-center justify-center">
+      <HoverCardDetail card={perm.card}>
+        <button
+          type="button"
+          data-testid="permanent"
+          data-tapped={tapped}
+          data-combat-eligible={isEligibleCombat || undefined}
+          data-combat-role={combatRole ?? undefined}
+          disabled={!canAct}
+          onClick={() => onClick(perm.card.id)}
+          title={
+            canAct
+              ? `${perm.card.name} — click to tap/activate`
+              : perm.card.typeLine
+          }
+          className={
+            'select-none rounded-lg ' +
+            (canAct
+              ? 'cursor-pointer hover:ring-1 hover:ring-fuchsia-500'
+              : 'cursor-default')
+          }
+        >
+          <BattlefieldTileFace
+            perm={perm}
+            isEligibleCombat={isEligibleCombat}
+            combatRole={combatRole}
+            tapped={tapped}
+          />
+        </button>
+      </HoverCardDetail>
+    </div>
+  );
+}
+
+/**
+ * Inner card layout for {@link BattlefieldTile}. Layered:
+ *   - Scryfall art covering the body via {@code normal} version
+ *   - Mana cost overlay top-right
+ *   - Name banner across the bottom
+ *   - P/T overlay bottom-right (creatures) / loyalty (planeswalkers)
+ *   - Counter chip top-left (when {@code card.counters} non-empty)
+ *   - Damage chip lower-left (when {@code damage > 0})
+ *   - Combat ATK / BLK badge top-left (over the counter chip slot;
+ *     they shouldn't both be present in practice — combat badges
+ *     only appear during declare-blockers/attackers, counters can
+ *     appear any time but the visual collision is mild)
+ *   - Combat-eligible amber ring on the outer card box
+ *   - Tap state: rotate 90° clockwise + opacity 60%
+ *   - Summoning sickness: subtle dashed zinc border (replaces the
+ *     legacy italic text styling — italics don't carry meaning on
+ *     a card-art tile)
+ *
+ * <p>Falls back to a name-only silhouette when Scryfall has no art
+ * (token, ad-hoc emblem, etc.) — same defensive pattern as
+ * {@link HandCardFace}.
+ */
+function BattlefieldTileFace({
+  perm,
+  isEligibleCombat,
+  combatRole,
+  tapped,
+}: {
+  perm: WebPermanentView;
+  isEligibleCombat: boolean;
+  combatRole: 'attacker' | 'blocker' | null;
+  tapped: boolean;
+}) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const card = perm.card;
+  const url = scryfallImageUrl(card, 'normal');
+  const isCreature = !!(card.power || card.toughness);
+  const isPlaneswalker = !!card.startingLoyalty;
+  const sick = perm.summoningSickness;
+  // Counters shape — an object like {"+1/+1": 3, "loyalty": 2}. We
+  // render at most a couple before truncating to keep the chip from
+  // overflowing the 80px-wide tile.
+  const counterEntries = Object.entries(card.counters);
+  const hasCounters = counterEntries.length > 0;
+  const counterText = counterEntries
+    .map(([type, n]) => `${type}: ${n}`)
+    .join(', ');
+  const combatRing = isEligibleCombat ? 'ring-2 ring-amber-400/60' : '';
+  const sickBorder = sick
+    ? 'border-zinc-500/70 border-dashed'
+    : 'border-zinc-700';
+  return (
+    <div
+      data-testid="battlefield-tile-face"
+      className={
+        'relative w-[80px] h-[112px] rounded-lg overflow-hidden border ' +
+        sickBorder +
+        ' bg-zinc-900 shadow-md shadow-black/50 transition-transform duration-150 ease-out ' +
+        combatRing +
+        (tapped ? ' opacity-60' : '')
       }
+      style={{
+        transform: tapped ? 'rotate(90deg)' : undefined,
+      }}
     >
-      <CardThumbnail card={perm.card} size={28} />
-      <span className="font-medium text-zinc-100">{perm.card.name}</span>
-      {tapped && <span className="text-zinc-500">(T)</span>}
-      {perm.damage > 0 && (
-        <span className="text-red-300">−{perm.damage}</span>
+      {url && !imageFailed ? (
+        <img
+          src={url}
+          alt=""
+          loading="lazy"
+          onError={() => setImageFailed(true)}
+          className="absolute inset-0 w-full h-full object-cover"
+        />
+      ) : (
+        <div className="absolute inset-0 bg-gradient-to-b from-zinc-800 via-zinc-850 to-zinc-900 flex items-center justify-center px-1.5">
+          <span className="text-[9px] text-zinc-500 italic text-center leading-tight">
+            {card.name}
+          </span>
+        </div>
       )}
+      {/* Mana cost overlay (top-right) */}
+      {card.manaCost && (
+        <div className="absolute top-0.5 right-0.5 bg-zinc-950/80 backdrop-blur-sm rounded px-1 py-0.5">
+          <ManaCost cost={card.manaCost} size="sm" />
+        </div>
+      )}
+      {/* Counter chip (top-left). Hidden when a combat badge is
+          present so they don't stack — combat is the more urgent
+          information. */}
+      {hasCounters && combatRole === null && (
+        <div
+          data-testid="permanent-counters"
+          className="absolute top-0.5 left-0.5 bg-amber-500/30 text-amber-100 text-[9px] font-mono px-1 rounded max-w-[60px] truncate"
+          title={counterText}
+        >
+          {counterText}
+        </div>
+      )}
+      {/* Combat ATK / BLK badges (top-left). Slice 26 colors
+          preserved. */}
       {combatRole === 'attacker' && (
         <span
           data-testid="combat-badge-attacker"
-          className="text-[10px] font-semibold bg-red-500/30 text-red-200 px-1 rounded"
+          className="absolute top-0.5 left-0.5 text-[9px] font-semibold bg-red-500/40 text-red-100 px-1 rounded"
           title="Attacking"
         >
           ATK
@@ -1378,14 +1499,38 @@ function PermanentChip({
       {combatRole === 'blocker' && (
         <span
           data-testid="combat-badge-blocker"
-          className="text-[10px] font-semibold bg-sky-500/30 text-sky-200 px-1 rounded"
+          className="absolute top-0.5 left-0.5 text-[9px] font-semibold bg-sky-500/40 text-sky-100 px-1 rounded"
           title="Blocking"
         >
           BLK
         </span>
       )}
-    </button>
-    </HoverCardDetail>
+      {/* Damage chip (lower-left, above the name banner). Replaces
+          the old "−{damage}" inline text. */}
+      {perm.damage > 0 && (
+        <div
+          data-testid="permanent-damage"
+          className="absolute bottom-5 left-0.5 bg-red-500/30 text-red-200 text-[10px] font-mono px-1 rounded"
+          title={`${perm.damage} damage marked`}
+        >
+          {`-${perm.damage}`}
+        </div>
+      )}
+      {/* Name banner across the bottom */}
+      <div className="absolute inset-x-0 bottom-0 bg-zinc-950/85 backdrop-blur-sm px-1 py-0.5">
+        <p className="text-[9px] font-medium text-zinc-100 truncate">
+          {card.name}
+        </p>
+      </div>
+      {/* P/T or loyalty (bottom-right, above the name banner) */}
+      {(isCreature || isPlaneswalker) && (
+        <div className="absolute bottom-4 right-0.5 bg-zinc-950/85 backdrop-blur-sm rounded px-1 py-0.5 text-[10px] font-mono text-zinc-100">
+          {isPlaneswalker
+            ? card.startingLoyalty
+            : `${card.power}/${card.toughness}`}
+        </div>
+      )}
+    </div>
   );
 }
 
