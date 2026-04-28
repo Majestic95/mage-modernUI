@@ -1454,4 +1454,129 @@ describe('Game page', () => {
     await user.click(screen.getByRole('button', { name: /leave/i }));
     expect(onLeave).toHaveBeenCalled();
   });
+
+  /* ---------- Phase 5 deliverable: Save game log download ---------- */
+
+  it('renders Save game log button on the match-end modal when gameLog has entries', () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: buildGameView(),
+        gameEnd: {
+          gameInfo: '',
+          matchInfo: 'GG',
+          additionalInfo: '',
+          won: true,
+          wins: 1,
+          winsNeeded: 1,
+          players: [],
+        },
+        gameLog: [
+          { id: 1, message: 'alice plays Forest', turn: 1, phase: 'PRECOMBAT_MAIN' },
+          { id: 2, message: 'alice taps Forest for green', turn: 1, phase: 'PRECOMBAT_MAIN' },
+        ],
+      });
+    });
+    const button = screen.getByTestId('save-game-log');
+    expect(button).toBeInTheDocument();
+    expect(button).not.toBeDisabled();
+    expect(button).toHaveTextContent(/save game log/i);
+  });
+
+  it('Save game log button is disabled when gameLog is empty', () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: buildGameView(),
+        gameEnd: {
+          gameInfo: '',
+          matchInfo: 'GG',
+          additionalInfo: '',
+          won: true,
+          wins: 1,
+          winsNeeded: 1,
+          players: [],
+        },
+        gameLog: [],
+      });
+    });
+    const button = screen.getByTestId('save-game-log');
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('title', expect.stringMatching(/no game-log/i));
+  });
+
+  it('Save game log button triggers a JSON download with the expected payload', async () => {
+    const userEvent = (await import('@testing-library/user-event')).default;
+    const user = userEvent.setup();
+
+    // Capture the Blob fed to URL.createObjectURL so we can read its
+    // text and assert on the JSON payload structure.
+    const capturedBlobs: Blob[] = [];
+    const createObjectURL = vi.fn((blob: Blob) => {
+      capturedBlobs.push(blob);
+      return 'blob:mock-url';
+    });
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal('URL', {
+      ...URL,
+      createObjectURL,
+      revokeObjectURL,
+    });
+
+    // Intercept the synthetic anchor click so the test runner doesn't
+    // actually attempt navigation.
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => {});
+
+    const entries = [
+      { id: 1, message: 'alice plays Forest', turn: 1, phase: 'PRECOMBAT_MAIN' },
+      { id: 2, message: 'alice ends turn', turn: 1, phase: 'CLEANUP' },
+    ];
+
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: buildGameView(),
+        gameEnd: {
+          gameInfo: 'You won the game on turn 7.',
+          matchInfo: 'You won the match!',
+          additionalInfo: '',
+          won: true,
+          wins: 1,
+          winsNeeded: 1,
+          players: [],
+        },
+        gameLog: entries,
+      });
+    });
+
+    await user.click(screen.getByTestId('save-game-log'));
+
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:mock-url');
+
+    expect(capturedBlobs).toHaveLength(1);
+    const blob = capturedBlobs[0]!;
+    expect(blob.type).toBe('application/json');
+    const text = await blob.text();
+    const payload = JSON.parse(text);
+    expect(payload.schemaVersion).toBe('1.18');
+    expect(payload.gameId).toBe(FAKE_GAME_ID);
+    expect(typeof payload.exportedAt).toBe('string');
+    expect(Date.parse(payload.exportedAt)).not.toBeNaN();
+    expect(payload.match).toMatchObject({
+      won: true,
+      wins: 1,
+      winsNeeded: 1,
+      matchInfo: 'You won the match!',
+    });
+    expect(payload.entries).toEqual(entries);
+
+    clickSpy.mockRestore();
+  });
 });

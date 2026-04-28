@@ -164,7 +164,7 @@ Each phase has a single exit gate. Don't move on until the gate is met. Estimate
 - [ ] Graveyard / exile / library (top-card-revealed) browsers
 - [ ] Game log + chat
 - [ ] Concede / draw / undo flow
-- [ ] Game-over screen with replay link
+- [ ] Game-over screen with **game-log download** — JSON transcript of upstream `gameInform` messages exported from the in-memory `gameLog` slice. **Not** a step-through replay; full replay (binary engine state, deterministic playback) is deferred to Phase 6 with a future ADR. See [`docs/decisions/replay-flow-recon.md`](decisions/replay-flow-recon.md) for why upstream's `.game` format is unusable (bit-rotted, opaque Java serialization, "outdated and not used" per upstream author).
 
 **Exit gate:** a complete 1v1 game vs. AI plays from start to finish through the new client, with no graceful-failure modes ("oops can't do that here, please use Swing"). Record a 5-minute screen capture as the exit artifact.
 
