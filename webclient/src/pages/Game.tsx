@@ -1459,43 +1459,189 @@ function MyHand({
           </span>
         )}
       </div>
-      <div className="flex flex-wrap gap-1.5">
+      {/* Slice 44 — arc-fan hand layout per ADR 0005 §5. Cards are
+          absolute-positioned along an arc with subtle per-card
+          rotation, hover lifts the focused card to 0° + scale 1.15
+          + raises z-index. Pointer-events DnD from slice 36 still
+          works because the underlying button keeps the same
+          handlers and testid. The wrapper is `h-44` so the lift
+          has room without pushing layout.*/}
+      <div className="relative h-44">
         {cards.length === 0 ? (
-          <span className="text-xs text-zinc-600 italic">Empty hand.</span>
+          <span className="absolute left-3 top-3 text-xs text-zinc-600 italic">
+            Empty hand.
+          </span>
         ) : (
-          cards.map((card) => {
+          cards.map((card, idx) => {
             const isDragging = draggedCardId === card.id;
             return (
-              <HoverCardDetail key={card.id} card={card}>
-                <button
-                  type="button"
-                  data-testid="hand-card"
-                  data-card-id={card.id}
-                  data-dragging={isDragging || undefined}
-                  disabled={!canAct}
-                  onClick={() => onObjectClick(card.id)}
-                  onPointerDown={(ev) =>
-                    canAct && onPointerDown(card.id, ev)
-                  }
-                  className={
-                    'inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs ' +
-                    'border border-zinc-700 bg-zinc-900 select-none ' +
-                    (canAct
-                      ? 'cursor-grab active:cursor-grabbing hover:border-fuchsia-500 hover:bg-zinc-800'
-                      : 'cursor-default opacity-70') +
-                    (isDragging ? ' opacity-40' : '')
-                  }
-                  title={cardTooltip(card)}
-                >
-                  <CardThumbnail card={card} size={28} />
-                  <span className="font-medium">{card.name}</span>
-                  {card.manaCost && <ManaCost cost={card.manaCost} size="sm" />}
-                </button>
-              </HoverCardDetail>
+              <HandCardSlot
+                key={card.id}
+                card={card}
+                index={idx}
+                total={cards.length}
+                canAct={canAct}
+                isDragging={isDragging}
+                onObjectClick={onObjectClick}
+                onPointerDown={onPointerDown}
+                tooltip={cardTooltip(card)}
+              />
             );
           })
         )}
       </div>
+    </div>
+  );
+}
+
+/* ---------- hand fan layout (slice 44) ---------- */
+
+/**
+ * Compute the resting-state transform + z-index for one card in the
+ * arc fan. Cards spread symmetrically around center; angle and
+ * x-offset scale linearly with distance from center; y-offset is a
+ * shallow downward arc so the leftmost / rightmost cards droop
+ * slightly (matches the way real hands of cards sit). Hover state
+ * overrides this in the slot itself.
+ */
+function fanGeometry(index: number, total: number): {
+  x: number;
+  y: number;
+  rot: number;
+} {
+  if (total <= 1) return { x: 0, y: 0, rot: 0 };
+  const fromCenter = index - (total - 1) / 2;
+  // Tighter spread when the hand is large so cards stay visible.
+  const spreadPx = total > 5 ? Math.max(40, 80 - (total - 5) * 6) : 80;
+  const maxAngle = 12;
+  const x = fromCenter * spreadPx;
+  const y = Math.abs(fromCenter) * 3;
+  const rot = (fromCenter / ((total - 1) / 2)) * maxAngle;
+  return { x, y, rot };
+}
+
+/**
+ * One card in the hand fan. Wraps the existing
+ * {@link HoverCardDetail} (rich popover) and adds an inner local
+ * hover state for the lift / un-rotate / scale-up animation.
+ */
+function HandCardSlot({
+  card,
+  index,
+  total,
+  canAct,
+  isDragging,
+  onObjectClick,
+  onPointerDown,
+  tooltip,
+}: {
+  card: WebCardView;
+  index: number;
+  total: number;
+  canAct: boolean;
+  isDragging: boolean;
+  onObjectClick: (id: string) => void;
+  onPointerDown: (cardId: string, ev: React.PointerEvent) => void;
+  tooltip: string;
+}) {
+  const [lifted, setLifted] = useState(false);
+  const { x, y, rot } = fanGeometry(index, total);
+  // Hover lift cancels the rotation, raises the card, scales it up,
+  // and bumps z so it sits above siblings.
+  const transform = lifted
+    ? `translate(-50%, 0) translateX(${x}px) translateY(-56px) rotate(0deg) scale(1.15)`
+    : `translate(-50%, 0) translateX(${x}px) translateY(${y}px) rotate(${rot}deg)`;
+  return (
+    <HoverCardDetail card={card}>
+      <button
+        type="button"
+        data-testid="hand-card"
+        data-card-id={card.id}
+        data-dragging={isDragging || undefined}
+        data-lifted={lifted || undefined}
+        disabled={!canAct}
+        onClick={() => onObjectClick(card.id)}
+        onPointerDown={(ev) => canAct && onPointerDown(card.id, ev)}
+        onMouseEnter={() => setLifted(true)}
+        onMouseLeave={() => setLifted(false)}
+        onFocus={() => setLifted(true)}
+        onBlur={() => setLifted(false)}
+        title={tooltip}
+        className={
+          'absolute left-1/2 top-2 transition-transform duration-150 ease-out ' +
+          'select-none origin-bottom ' +
+          (canAct
+            ? 'cursor-grab active:cursor-grabbing'
+            : 'cursor-default opacity-70') +
+          (isDragging ? ' opacity-30' : '')
+        }
+        style={{
+          transform,
+          zIndex: lifted ? 100 : index,
+        }}
+      >
+        <HandCardFace card={card} />
+      </button>
+    </HoverCardDetail>
+  );
+}
+
+/**
+ * Card-shaped tile (5:7 aspect) for the hand fan. Layered:
+ *   - Scryfall art via `normal` version covering the upper body
+ *   - Mana cost overlay top-right
+ *   - Name banner across the bottom (over the art's bottom edge)
+ *   - P/T overlay bottom-right for creatures, loyalty for walkers
+ *
+ * Falls back to a name-only card silhouette when Scryfall has no
+ * matching print (token, ad-hoc emblem, etc.) — same defensive
+ * pattern as the slice-43 thumbnail.
+ */
+function HandCardFace({ card }: { card: WebCardView }) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const url = scryfallImageUrl(card, 'normal');
+  const isCreature = !!(card.power || card.toughness);
+  const isPlaneswalker = !!card.startingLoyalty;
+  return (
+    <div
+      data-testid="hand-card-face"
+      className="relative w-[100px] h-[140px] rounded-lg overflow-hidden border border-zinc-700 bg-zinc-900 shadow-lg shadow-black/50"
+    >
+      {url && !imageFailed ? (
+        <img
+          src={url}
+          alt=""
+          loading="lazy"
+          onError={() => setImageFailed(true)}
+          className="absolute inset-0 w-full h-full object-cover"
+        />
+      ) : (
+        <div className="absolute inset-0 bg-gradient-to-b from-zinc-800 via-zinc-850 to-zinc-900 flex items-center justify-center px-2">
+          <span className="text-[10px] text-zinc-500 italic text-center">
+            {card.name}
+          </span>
+        </div>
+      )}
+      {/* Mana cost overlay (top-right) */}
+      {card.manaCost && (
+        <div className="absolute top-1 right-1 bg-zinc-950/80 backdrop-blur-sm rounded px-1 py-0.5">
+          <ManaCost cost={card.manaCost} size="sm" />
+        </div>
+      )}
+      {/* Name banner across the bottom */}
+      <div className="absolute inset-x-0 bottom-0 bg-zinc-950/85 backdrop-blur-sm px-1.5 py-0.5">
+        <p className="text-[10px] font-medium text-zinc-100 truncate">
+          {card.name}
+        </p>
+      </div>
+      {/* P/T or loyalty (bottom-right, above the name banner) */}
+      {(isCreature || isPlaneswalker) && (
+        <div className="absolute bottom-5 right-1 bg-zinc-950/85 backdrop-blur-sm rounded px-1 py-0.5 text-[10px] font-mono text-zinc-200">
+          {isPlaneswalker
+            ? card.startingLoyalty
+            : `${card.power}/${card.toughness}`}
+        </div>
+      )}
     </div>
   );
 }
