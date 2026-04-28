@@ -490,6 +490,51 @@ class GameStreamHandlerTest {
     }
 
     @Test
+    void playerAction_triggerAutoOrderAbilityLast_synthesizesNullUuidNudge() throws Exception {
+        // ADR 0009 D5 / Fix 1 (T27.3): TRIGGER_AUTO_ORDER_*_LAST must
+        // be followed facade-side by a sendPlayerUUID(gameId, null)
+        // call so the engine's chooseTriggeredAbility waitForResponse
+        // (HumanPlayer.java:1550) unblocks. Upstream Swing does this
+        // (GamePanel.java:3085); the webclient cannot mirror it on the
+        // wire because playerResponse{kind:uuid} is type-validated to
+        // require a textual value.
+        //
+        // We can't observe the synthesized call directly without an
+        // active game, but we CAN assert that the action dispatch path
+        // does not emit a streamError when _LAST is sent. If the new
+        // null-UUID branch threw or returned an error, this would
+        // surface as BAD_REQUEST / UPSTREAM_REJECTED.
+        TestListener listener = new TestListener();
+        WebSocket ws = openWs(UUID.randomUUID(), bearer, listener);
+        try {
+            listener.awaitFrame(FRAME_WAIT);
+            UUID abilityId = UUID.randomUUID();
+            ws.sendText("{\"type\":\"playerAction\","
+                    + "\"action\":\"TRIGGER_AUTO_ORDER_ABILITY_LAST\","
+                    + "\"data\":{\"abilityId\":\"" + abilityId + "\"}}", true).join();
+            // No game is active, so upstream sendPlayerAction is a
+            // no-op and the synthesized sendPlayerUUID(null) is also a
+            // no-op (User.sendPlayerUUID logs "session expired" or
+            // routes to a missing GameSessionPlayer that returns
+            // gracefully). The success criterion is no streamError.
+            try {
+                String maybeErr = listener.awaitFrame(Duration.ofMillis(750));
+                JsonNode env = JSON.readTree(maybeErr);
+                if ("streamError".equals(env.get("method").asText())) {
+                    String code = env.get("data").get("code").asText();
+                    assertFalse("BAD_REQUEST".equals(code) || "NOT_ALLOWED".equals(code)
+                                    || "UPSTREAM_REJECTED".equals(code),
+                            "_LAST dispatch should not error: " + maybeErr);
+                }
+            } catch (AssertionError noFrame) {
+                // No frame arrived — expected happy path with no game.
+            }
+        } finally {
+            ws.sendClose(WebSocket.NORMAL_CLOSURE, "test done").join();
+        }
+    }
+
+    @Test
     void playerResponse_missingKind_repliesWithBadRequest() throws Exception {
         TestListener listener = new TestListener();
         WebSocket ws = openWs(UUID.randomUUID(), bearer, listener);

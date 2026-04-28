@@ -391,16 +391,28 @@ function OrderTriggersDialog({ dialog, stream, clearDialog }: ContentProps) {
     clearDialog();
   };
 
-  // Slice 27: substitute {this} client-side before sending, mirroring
-  // upstream Swing (GamePanel.java:3075). Engine throws on unsubstituted
-  // strings (HumanPlayer.setTriggerAutoOrder at :2843-2845). Substitute
-  // with the ability view's `name` field — for permanent-sourced
-  // triggers that's the literal "Ability" (a quirk of upstream's
-  // AbilityView constructor), but the substitution result still
-  // satisfies the no-`{this}` invariant and keeps subsequent
-  // comparisons stable.
-  const substituteThis = (ruleText: string, abilityName: string): string =>
-    ruleText.replace(/\{this\}/g, abilityName || 'Ability');
+  // Slice 27 / 28: substitute {this} client-side before sending,
+  // mirroring upstream Swing (GamePanel.java:3074-3076). Engine throws
+  // on unsubstituted strings (HumanPlayer.setTriggerAutoOrder at
+  // :2843-2845). Prefer slice 28's `sourceLabel` (the real source
+  // permanent's name, populated facade-side from
+  // AbilityView.getSourceCard().getName()), then fall back to the
+  // ability's `name` (which is the literal "Ability" for permanent-
+  // sourced AbilityViews — a quirk of upstream AbilityView.java:21),
+  // then to the literal "Ability" string. With sourceLabel present
+  // the substituted rule matches what HumanPlayer.java:1474-1476
+  // recomputes via ability.getRule(sourceObject.getName()), so the
+  // recorded auto-order key compares correctly against future
+  // triggers. Without sourceLabel the substitution is still safe
+  // (no {this} survives), but the recorded key won't match the
+  // engine's recomputation and the auto-order entry becomes a dead
+  // key — see ADR 0009 D5 / critique E3.
+  const substituteThis = (
+    ruleText: string,
+    sourceLabel: string | undefined,
+    abilityName: string,
+  ): string =>
+    ruleText.replace(/\{this\}/g, sourceLabel || abilityName || 'Ability');
 
   const fireAutoOrder = (
     action:
@@ -426,6 +438,7 @@ function OrderTriggersDialog({ dialog, stream, clearDialog }: ContentProps) {
       : {
           ruleText: substituteThis(
             (ability.rules ?? [])[0] ?? '',
+            ability.sourceLabel,
             ability.name,
           ),
         };

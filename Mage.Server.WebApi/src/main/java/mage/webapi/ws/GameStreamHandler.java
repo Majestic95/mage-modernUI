@@ -349,6 +349,22 @@ public final class GameStreamHandler implements Consumer<WsConfig> {
         try {
             embedded.server().sendPlayerAction(action, gameId,
                     session.upstreamSessionId(), data);
+            // ADR 0009 D5 / Fix 1 (T27.3 deadlock): TRIGGER_AUTO_ORDER_*_LAST
+            // mutates the engine's deferred-last pile (HumanPlayer.setTriggerAutoOrder
+            // at :2811-2856) but never notifies the response monitor that
+            // chooseTriggeredAbility waits on at HumanPlayer.java:1550. Upstream
+            // Swing unblocks via sendPlayerUUID(gameId, null) (GamePanel.java:3085,
+            // :3096). The webclient cannot mirror that on the wire because
+            // playerResponse{kind:uuid} is type-validated to require a textual
+            // value at :447-456 — a JSON null is rejected with BAD_REQUEST.
+            // Synthesize the nudge facade-side. _FIRST actions don't need this;
+            // the webclient already follows them with playerResponse{uuid:abilityId}
+            // which itself unblocks the monitor.
+            if (action == PlayerAction.TRIGGER_AUTO_ORDER_ABILITY_LAST
+                    || action == PlayerAction.TRIGGER_AUTO_ORDER_NAME_LAST) {
+                embedded.server().sendPlayerUUID(gameId,
+                        session.upstreamSessionId(), null);
+            }
         } catch (MageException ex) {
             sendError(ctx, "UPSTREAM_ERROR",
                     "sendPlayerAction failed: " + ex.getMessage());

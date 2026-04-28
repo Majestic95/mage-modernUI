@@ -809,7 +809,13 @@ describe('GameDialog', () => {
     expect(useGameStore.getState().pendingDialog).toBeNull();
   });
 
-  it('OrderTriggersDialog: NAME_FIRST substitutes {this} client-side before sending', async () => {
+  it('OrderTriggersDialog: NAME_FIRST substitutes {this} with sourceLabel client-side before sending', async () => {
+    // Slice 28 / Fix 2: substitution prefers sourceLabel (the real
+    // source permanent name), falling back to ability.name and then
+    // to the literal "Ability". With sourceLabel present, the
+    // substituted rule matches what HumanPlayer.java:1474-1476
+    // recomputes via ability.getRule(sourceObject.getName()), so
+    // the auto-order key compares correctly against future triggers.
     const stream = fakeStream();
     const user = userEvent.setup();
     const id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa04';
@@ -821,6 +827,7 @@ describe('GameDialog', () => {
             rules: [
               'When {this} enters the battlefield, you may draw a card.',
             ],
+            sourceLabel: 'Soul Warden',
           },
         ]),
       });
@@ -835,6 +842,46 @@ describe('GameDialog', () => {
     const call = (stream.sendPlayerAction as ReturnType<typeof vi.fn>).mock
       .calls[0]!;
     expect(call[0]).toBe('TRIGGER_AUTO_ORDER_NAME_FIRST');
+    const data = call[1] as { ruleText: string };
+    expect(data.ruleText).not.toContain('{this}');
+    expect(data.ruleText).toMatch(
+      /When Soul Warden enters the battlefield, you may draw a card\./,
+    );
+  });
+
+  it('OrderTriggersDialog: NAME_FIRST falls back to "Ability" when sourceLabel is empty', async () => {
+    // Without slice 28's sourceLabel populated, substitution falls
+    // back to ability.name (which is the literal "Ability" for
+    // permanent-sourced AbilityViews — AbilityView.java:21). The
+    // wire still ships a {this}-free string so the engine doesn't
+    // throw at HumanPlayer.java:2843-2845, but the recorded key
+    // becomes a dead one — that's the latent bug critique E3 flagged
+    // and slice 28's sourceLabel populates the value upstream.
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    const id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa04b';
+    act(() => {
+      useGameStore.setState({
+        pendingDialog: triggerOrderDialog([
+          {
+            id,
+            rules: [
+              'When {this} enters the battlefield, you may draw a card.',
+            ],
+            // sourceLabel intentionally omitted (defaults to '')
+          },
+        ]),
+      });
+    });
+    render(<GameDialog stream={stream} />);
+    await user.click(screen.getByTestId('trigger-order-menu-button'));
+    const nameFirst = screen
+      .getAllByTestId('trigger-order-menu-item')
+      .find((el) => el.getAttribute('data-action') === 'TRIGGER_AUTO_ORDER_NAME_FIRST')!;
+    await user.click(nameFirst);
+
+    const call = (stream.sendPlayerAction as ReturnType<typeof vi.fn>).mock
+      .calls[0]!;
     const data = call[1] as { ruleText: string };
     expect(data.ruleText).not.toContain('{this}');
     expect(data.ruleText).toMatch(
