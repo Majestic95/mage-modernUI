@@ -8,6 +8,88 @@ interface Props {
 }
 
 /**
+ * Phase-step → next-phase action mapping (slice 38, redesign).
+ *
+ * <p>The user's mental model is the orb on the {@link PhaseTimeline}
+ * at the top of the game window. "Next Phase" should advance the
+ * orb by one phase block (Beginning → Main 1 → Combat → Main 2 →
+ * End → opponent's Beginning). The engine has no single
+ * "advance one phase" action, so we dispatch one of three
+ * pass-priority modes depending on where the orb currently sits.
+ *
+ * <p>Engine semantics (verified in
+ * {@code HumanPlayer.java:1242-1287} and {@code PlayerImpl.java:2667-2705}):
+ * <ul>
+ *   <li>{@code PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE} — only stops at
+ *       {@code PRECOMBAT_MAIN} or {@code POSTCOMBAT_MAIN}.</li>
+ *   <li>{@code PASS_PRIORITY_UNTIL_TURN_END_STEP} — only stops at
+ *       {@code END_TURN}, but with the engine default
+ *       {@code stopOnDeclareAttackers=true} the active player
+ *       still gets prompted at {@code DECLARE_ATTACKERS}, so from
+ *       Main 1 the orb effectively lands inside the Combat phase
+ *       block (close enough to "next phase").</li>
+ *   <li>{@code PASS_PRIORITY_UNTIL_NEXT_TURN} — stops at the next
+ *       {@code UNTAP} (opponent's, in 1v1).</li>
+ * </ul>
+ *
+ * <p>Empty-string default ({@code step === ''}, e.g. pre-game / between
+ * games) returns {@code null} so {@code Next Phase} is a no-op rather
+ * than misfiring an action against an undefined game state.
+ */
+export function nextPhaseAction(step: string): string | null {
+  switch (step) {
+    case 'UNTAP':
+    case 'UPKEEP':
+    case 'DRAW':
+      // Beginning → Main 1
+      return 'PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE';
+    case 'PRECOMBAT_MAIN':
+      // Main 1 → Combat (lands on Declare Attackers under default
+      // stopOnDeclareAttackers; close enough to "next phase").
+      return 'PASS_PRIORITY_UNTIL_TURN_END_STEP';
+    case 'BEGIN_COMBAT':
+    case 'DECLARE_ATTACKERS':
+    case 'DECLARE_BLOCKERS':
+    case 'FIRST_COMBAT_DAMAGE':
+    case 'COMBAT_DAMAGE':
+    case 'END_COMBAT':
+      // Combat → Main 2
+      return 'PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE';
+    case 'POSTCOMBAT_MAIN':
+      // Main 2 → End Turn
+      return 'PASS_PRIORITY_UNTIL_TURN_END_STEP';
+    case 'END_TURN':
+    case 'CLEANUP':
+      // End → opponent's Untap
+      return 'PASS_PRIORITY_UNTIL_NEXT_TURN';
+    default:
+      return null;
+  }
+}
+
+/**
+ * True when the orb is currently in the Beginning or Combat phase
+ * blocks — used to enable/disable {@code Skip combat}, which only
+ * makes sense before/during combat.
+ */
+function isInCombatOrBeginning(step: string): boolean {
+  switch (step) {
+    case 'UNTAP':
+    case 'UPKEEP':
+    case 'DRAW':
+    case 'BEGIN_COMBAT':
+    case 'DECLARE_ATTACKERS':
+    case 'DECLARE_BLOCKERS':
+    case 'FIRST_COMBAT_DAMAGE':
+    case 'COMBAT_DAMAGE':
+    case 'END_COMBAT':
+      return true;
+    default:
+      return false;
+  }
+}
+
+/**
  * Keyboard pass-priority shortcuts (slice 29). Mapping mirrors the
  * upstream Swing client where it doesn't conflict with browser
  * defaults — F5/F11/F12 are reserved by browsers (refresh,
@@ -16,7 +98,8 @@ interface Props {
  * <p>{@code key} is matched case-insensitively against
  * {@link KeyboardEvent#key}. {@code action} is the upstream
  * {@code PlayerAction} enum name (whitelisted in
- * {@code PlayerActionAllowList}).
+ * {@code PlayerActionAllowList}). When {@code action === 'NEXT_PHASE'}
+ * the dispatch is phase-aware — see {@link nextPhaseAction}.
  */
 interface Hotkey {
   key: string;
@@ -26,29 +109,38 @@ interface Hotkey {
   ctrl?: boolean;
 }
 
+const NEXT_PHASE_SENTINEL = 'NEXT_PHASE';
+
 const HOTKEYS: Hotkey[] = [
-  { key: 'F2', action: 'PASS_PRIORITY_UNTIL_TURN_END_STEP', label: 'Pass step' },
-  { key: 'F4', action: 'PASS_PRIORITY_UNTIL_NEXT_TURN', label: 'To end turn' },
-  { key: 'F6', action: 'PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE', label: 'To next main' },
+  { key: 'F2', action: NEXT_PHASE_SENTINEL, label: 'Next Phase' },
+  { key: 'F4', action: 'PASS_PRIORITY_UNTIL_NEXT_TURN', label: 'End turn' },
+  { key: 'F6', action: 'PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE', label: 'Skip combat' },
   { key: 'F8', action: 'PASS_PRIORITY_UNTIL_STACK_RESOLVED', label: 'Resolve stack' },
-  { key: 'Escape', action: 'PASS_PRIORITY_CANCEL_ALL_ACTIONS', label: 'Cancel' },
+  { key: 'Escape', action: 'PASS_PRIORITY_CANCEL_ALL_ACTIONS', label: 'Stop skipping' },
   { key: 'z', action: 'UNDO', label: 'Undo', ctrl: true },
 ];
 
 /**
- * Persistent action bar for the controlling player. Currently:
+ * Persistent action bar for the controlling player. Three visual
+ * groups:
  *
- * <ul>
- *   <li>Pass priority — five canonical pass modes (until-end-of-turn,
- *       until-next-main, until-next-turn, until-stack-resolved, plus
- *       a single-step pass)</li>
- *   <li>Concede — sends {@code PlayerAction.CONCEDE}</li>
- * </ul>
+ * <ol>
+ *   <li><b>Primary action</b> — {@code Next Phase} (fuchsia). Dispatches
+ *       a phase-aware pass that advances the timeline orb by one
+ *       phase block.</li>
+ *   <li><b>Skip-ahead</b> — {@code End turn} / {@code Skip combat} /
+ *       {@code Resolve stack}. Each maps to a single
+ *       {@code PASS_PRIORITY_UNTIL_*} action.</li>
+ *   <li><b>Recovery</b> — {@code Stop skipping} (cancel automation) /
+ *       {@code Undo} (take back last action).</li>
+ * </ol>
  *
- * <p>Priority indicator: buttons are dimmed when the current
- * priority-holder isn't the controlling player, so the user has a
- * visual signal that "passing" right now is a no-op (server will
- * accept but it's already not your priority).
+ * <p>Plus right-aligned {@code Concede} (slice 37) which still
+ * routes through the confirmation modal.
+ *
+ * <p>Priority indicator: the skip-ahead group is dimmed when the
+ * controlling player isn't priority-holder — the server will accept
+ * the action but it's effectively a no-op until priority returns.
  */
 export function ActionPanel({ stream }: Props) {
   const session = useAuthStore((s) => s.session);
@@ -83,7 +175,15 @@ export function ActionPanel({ stream }: Props) {
       });
       if (!match) return;
       ev.preventDefault();
-      stream.sendPlayerAction(match.action);
+      if (match.action === NEXT_PHASE_SENTINEL) {
+        // Read latest store state directly — captured `gv` would
+        // be stale across re-renders without re-binding the listener.
+        const step = useGameStore.getState().gameView?.step ?? '';
+        const action = nextPhaseAction(step);
+        if (action) stream.sendPlayerAction(action);
+      } else {
+        stream.sendPlayerAction(match.action);
+      }
     };
     document.addEventListener('keydown', handler);
     return () => {
@@ -100,6 +200,9 @@ export function ActionPanel({ stream }: Props) {
 
   const myPriority = gv.priorityPlayerName === session.username;
   const send = (action: string) => stream?.sendPlayerAction(action);
+  const stackEmpty = Object.keys(gv.stack).length === 0;
+  const inCombatOrBeginning = isInCombatOrBeginning(gv.step);
+  const nextPhase = nextPhaseAction(gv.step);
 
   return (
     <div
@@ -112,51 +215,85 @@ export function ActionPanel({ stream }: Props) {
       >
         {myPriority ? 'Your priority' : 'Waiting…'}
       </span>
+
+      {/* Group 1 — Primary action (fuchsia). Phase-aware dispatch. */}
+      <button
+        type="button"
+        data-testid="next-phase-button"
+        data-action={nextPhase ?? ''}
+        onClick={() => {
+          if (nextPhase) send(nextPhase);
+        }}
+        disabled={!nextPhase}
+        title={
+          nextPhase
+            ? 'Advance to the next phase on the timeline above (F2)'
+            : 'Disabled — no active phase'
+        }
+        className={
+          'px-3 py-1 rounded text-xs border font-semibold ' +
+          (nextPhase
+            ? 'bg-fuchsia-700 hover:bg-fuchsia-600 text-white border-fuchsia-800'
+            : 'bg-fuchsia-950/40 text-fuchsia-300/40 border-fuchsia-900/40 cursor-not-allowed')
+        }
+      >
+        Next Phase
+      </button>
+
+      {/* Visual divider between groups. */}
+      <span aria-hidden="true" className="w-px h-5 bg-zinc-800 mx-1" />
+
+      {/* Group 2 — Skip-ahead. */}
       <PassButton
-        label="Pass step"
-        action="PASS_PRIORITY_UNTIL_TURN_END_STEP"
-        send={send}
-        active={myPriority}
-        title="Pass priority through the current step (F2)"
-      />
-      <PassButton
-        label="To end turn"
+        label="End turn"
         action="PASS_PRIORITY_UNTIL_NEXT_TURN"
         send={send}
         active={myPriority}
-        title="Skip ahead to your next untap step (F4)"
+        title="Skip everything until your next untap (F4)"
       />
       <PassButton
-        label="To next main"
+        label="Skip combat"
         action="PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE"
         send={send}
         active={myPriority}
-        title="Skip ahead to the next main phase (F6)"
+        disabled={!inCombatOrBeginning}
+        disabledTitle="Disabled — not in combat"
+        title="Skip the rest of combat to the next main phase (F6)"
       />
       <PassButton
         label="Resolve stack"
         action="PASS_PRIORITY_UNTIL_STACK_RESOLVED"
         send={send}
         active={myPriority}
+        disabled={stackEmpty}
+        disabledTitle="Disabled — no stack to resolve"
         title="Pass through every priority window until the stack empties (F8)"
       />
+
+      {/* Visual divider between groups. */}
+      <span aria-hidden="true" className="w-px h-5 bg-zinc-800 mx-1" />
+
+      {/* Group 3 — Recovery. Always enabled regardless of priority. */}
       <PassButton
-        label="Cancel passes"
+        label="Stop skipping"
         action="PASS_PRIORITY_CANCEL_ALL_ACTIONS"
         send={send}
         active={true}
-        title="Stop any ongoing pass-priority-until automation (Esc)"
+        title="Cancel any in-progress automation (Esc)"
       />
       <button
         type="button"
         data-testid="undo-button"
         onClick={() => send('UNDO')}
         className="px-3 py-1 rounded text-xs border bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border-zinc-700"
-        title="Undo your last action this priority window (Ctrl+Z)"
+        title="Take back your last action this priority window (Ctrl+Z)"
       >
         Undo
       </button>
+
       <div className="flex-1" />
+
+      {/* Match action — Concede (slice 37 modal flow). */}
       <button
         type="button"
         data-testid="concede-button"
@@ -255,24 +392,36 @@ function PassButton({
   send,
   active,
   title,
+  disabled,
+  disabledTitle,
 }: {
   label: string;
   action: string;
   send: (action: string) => void;
   active: boolean;
   title: string;
+  /** Force-disabled (e.g. Resolve stack with empty stack). */
+  disabled?: boolean;
+  /** Tooltip override when {@code disabled} is true. */
+  disabledTitle?: string;
 }) {
+  const isDisabled = !!disabled;
   return (
     <button
       type="button"
-      onClick={() => send(action)}
-      title={title}
+      onClick={() => {
+        if (!isDisabled) send(action);
+      }}
+      disabled={isDisabled}
+      title={isDisabled && disabledTitle ? disabledTitle : title}
       data-action={action}
       className={
         'px-3 py-1 rounded text-xs border ' +
-        (active
-          ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border-zinc-700'
-          : 'bg-zinc-900 text-zinc-500 border-zinc-800 hover:bg-zinc-800')
+        (isDisabled
+          ? 'bg-zinc-900 text-zinc-600 border-zinc-800 opacity-50 cursor-not-allowed'
+          : active
+            ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border-zinc-700'
+            : 'bg-zinc-900 text-zinc-500 border-zinc-800 hover:bg-zinc-800')
       }
     >
       {label}

@@ -1,14 +1,41 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { ActionPanel } from './ActionPanel';
+import { ActionPanel, nextPhaseAction } from './ActionPanel';
 import { useAuthStore } from '../auth/store';
 import { useGameStore } from '../game/store';
 import type { GameStream } from '../game/stream';
 import {
+  webCardViewSchema,
   webGameViewSchema,
   webPlayerViewSchema,
 } from '../api/schemas';
+
+/** Minimal card fixture for tests that need a non-empty stack. */
+const STACK_CARD = webCardViewSchema.parse({
+  id: '99999999-9999-9999-9999-999999999999',
+  name: 'Lightning Bolt',
+  displayName: 'Lightning Bolt',
+  expansionSetCode: 'LEA',
+  cardNumber: '161',
+  manaCost: '{R}',
+  manaValue: 1,
+  typeLine: 'Instant',
+  supertypes: [],
+  types: ['INSTANT'],
+  subtypes: [],
+  colors: ['R'],
+  rarity: 'COMMON',
+  power: '',
+  toughness: '',
+  startingLoyalty: '',
+  rules: ['Lightning Bolt deals 3 damage to any target.'],
+  faceDown: false,
+  counters: {},
+  transformable: false,
+  transformed: false,
+  secondCardFace: null,
+});
 
 const ANON_SESSION = {
   schemaVersion: '1.15',
@@ -19,7 +46,10 @@ const ANON_SESSION = {
   expiresAt: '2026-04-27T00:00:00Z',
 };
 
-function gameViewWithPriorityOn(priorityName: string) {
+function gameViewWithPriorityOn(
+  priorityName: string,
+  opts: { step?: string; stack?: Record<string, typeof STACK_CARD> } = {},
+) {
   const me = webPlayerViewSchema.parse({
     playerId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
     name: 'alice',
@@ -32,8 +62,8 @@ function gameViewWithPriorityOn(priorityName: string) {
   });
   return webGameViewSchema.parse({
     turn: 1,
-    phase: 'PRECOMBAT_MAIN',
-    step: 'PRECOMBAT_MAIN',
+    phase: opts.step ?? 'PRECOMBAT_MAIN',
+    step: opts.step ?? 'PRECOMBAT_MAIN',
     activePlayerName: 'alice',
     priorityPlayerName: priorityName,
     special: false,
@@ -43,7 +73,7 @@ function gameViewWithPriorityOn(priorityName: string) {
     gameCycle: 0,
     myPlayerId: me.playerId,
     myHand: {},
-    stack: {},
+    stack: opts.stack ?? {},
     combat: [],
     players: [me],
   });
@@ -95,31 +125,176 @@ describe('ActionPanel', () => {
     expect(screen.getByText(/waiting/i)).toBeInTheDocument();
   });
 
-  it('Pass-step button sends PASS_PRIORITY_UNTIL_TURN_END_STEP', async () => {
-    const stream = fakeStream();
-    const user = userEvent.setup();
-    act(() => {
-      useGameStore.setState({ gameView: gameViewWithPriorityOn('alice') });
+  /* ---------- slice 38: Next Phase (phase-aware) ---------- */
+
+  describe('nextPhaseAction helper', () => {
+    it.each([
+      ['UNTAP', 'PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE'],
+      ['UPKEEP', 'PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE'],
+      ['DRAW', 'PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE'],
+      ['PRECOMBAT_MAIN', 'PASS_PRIORITY_UNTIL_TURN_END_STEP'],
+      ['BEGIN_COMBAT', 'PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE'],
+      ['DECLARE_ATTACKERS', 'PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE'],
+      ['DECLARE_BLOCKERS', 'PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE'],
+      ['FIRST_COMBAT_DAMAGE', 'PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE'],
+      ['COMBAT_DAMAGE', 'PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE'],
+      ['END_COMBAT', 'PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE'],
+      ['POSTCOMBAT_MAIN', 'PASS_PRIORITY_UNTIL_TURN_END_STEP'],
+      ['END_TURN', 'PASS_PRIORITY_UNTIL_NEXT_TURN'],
+      ['CLEANUP', 'PASS_PRIORITY_UNTIL_NEXT_TURN'],
+    ])('maps step %s → %s', (step, expected) => {
+      expect(nextPhaseAction(step)).toBe(expected);
     });
-    render(<ActionPanel stream={stream} />);
-    await user.click(screen.getByRole('button', { name: /pass step/i }));
-    expect(stream.sendPlayerAction).toHaveBeenCalledWith(
-      'PASS_PRIORITY_UNTIL_TURN_END_STEP',
-    );
+
+    it('returns null for empty step (pre-game / between-game)', () => {
+      expect(nextPhaseAction('')).toBeNull();
+    });
+
+    it('returns null for unknown step values', () => {
+      expect(nextPhaseAction('SIDEBOARD')).toBeNull();
+    });
   });
 
-  it('To-end-turn button sends PASS_PRIORITY_UNTIL_NEXT_TURN', async () => {
+  it.each([
+    ['UNTAP', 'PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE'],
+    ['PRECOMBAT_MAIN', 'PASS_PRIORITY_UNTIL_TURN_END_STEP'],
+    ['DECLARE_ATTACKERS', 'PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE'],
+    ['POSTCOMBAT_MAIN', 'PASS_PRIORITY_UNTIL_TURN_END_STEP'],
+    ['END_TURN', 'PASS_PRIORITY_UNTIL_NEXT_TURN'],
+  ])('Next Phase button from %s dispatches %s', async (step, expected) => {
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    act(() => {
+      useGameStore.setState({
+        gameView: gameViewWithPriorityOn('alice', { step }),
+      });
+    });
+    render(<ActionPanel stream={stream} />);
+    await user.click(screen.getByTestId('next-phase-button'));
+    expect(stream.sendPlayerAction).toHaveBeenCalledWith(expected);
+  });
+
+  it('Next Phase button is disabled when step is empty', () => {
+    act(() => {
+      useGameStore.setState({
+        gameView: gameViewWithPriorityOn('alice', { step: '' }),
+      });
+    });
+    render(<ActionPanel stream={fakeStream()} />);
+    const btn = screen.getByTestId('next-phase-button') as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+  });
+
+  it('End-turn button sends PASS_PRIORITY_UNTIL_NEXT_TURN', async () => {
     const stream = fakeStream();
     const user = userEvent.setup();
     act(() => {
       useGameStore.setState({ gameView: gameViewWithPriorityOn('alice') });
     });
     render(<ActionPanel stream={stream} />);
-    await user.click(screen.getByRole('button', { name: /to end turn/i }));
+    await user.click(screen.getByRole('button', { name: /end turn/i }));
     expect(stream.sendPlayerAction).toHaveBeenCalledWith(
       'PASS_PRIORITY_UNTIL_NEXT_TURN',
     );
   });
+
+  it('Skip-combat button sends PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE', async () => {
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    act(() => {
+      useGameStore.setState({
+        gameView: gameViewWithPriorityOn('alice', { step: 'BEGIN_COMBAT' }),
+      });
+    });
+    render(<ActionPanel stream={stream} />);
+    await user.click(screen.getByRole('button', { name: /skip combat/i }));
+    expect(stream.sendPlayerAction).toHaveBeenCalledWith(
+      'PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE',
+    );
+  });
+
+  it('Skip-combat button is disabled outside combat / beginning phases', () => {
+    act(() => {
+      useGameStore.setState({
+        gameView: gameViewWithPriorityOn('alice', { step: 'POSTCOMBAT_MAIN' }),
+      });
+    });
+    render(<ActionPanel stream={fakeStream()} />);
+    const btn = screen.getByRole('button', {
+      name: /skip combat/i,
+    }) as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+    expect(btn.title.toLowerCase()).toContain('not in combat');
+  });
+
+  it('Resolve-stack button is disabled when stack is empty', () => {
+    act(() => {
+      useGameStore.setState({ gameView: gameViewWithPriorityOn('alice') });
+    });
+    render(<ActionPanel stream={fakeStream()} />);
+    const btn = screen.getByRole('button', {
+      name: /resolve stack/i,
+    }) as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+    expect(btn.title.toLowerCase()).toContain('no stack');
+  });
+
+  it('Resolve-stack button sends PASS_PRIORITY_UNTIL_STACK_RESOLVED when stack non-empty', async () => {
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    act(() => {
+      useGameStore.setState({
+        gameView: gameViewWithPriorityOn('alice', {
+          stack: { [STACK_CARD.id]: STACK_CARD },
+        }),
+      });
+    });
+    render(<ActionPanel stream={stream} />);
+    await user.click(screen.getByRole('button', { name: /resolve stack/i }));
+    expect(stream.sendPlayerAction).toHaveBeenCalledWith(
+      'PASS_PRIORITY_UNTIL_STACK_RESOLVED',
+    );
+  });
+
+  it('Stop-skipping button always enabled, sends PASS_PRIORITY_CANCEL_ALL_ACTIONS', async () => {
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    act(() => {
+      useGameStore.setState({
+        gameView: gameViewWithPriorityOn('COMPUTER_MONTE_CARLO'),
+      });
+    });
+    render(<ActionPanel stream={stream} />);
+    await user.click(screen.getByRole('button', { name: /stop skipping/i }));
+    expect(stream.sendPlayerAction).toHaveBeenCalledWith(
+      'PASS_PRIORITY_CANCEL_ALL_ACTIONS',
+    );
+  });
+
+  it('all primary/skip buttons carry tooltips (title attribute)', () => {
+    act(() => {
+      useGameStore.setState({
+        gameView: gameViewWithPriorityOn('alice', {
+          step: 'BEGIN_COMBAT',
+          stack: { [STACK_CARD.id]: STACK_CARD },
+        }),
+      });
+    });
+    render(<ActionPanel stream={fakeStream()} />);
+    for (const name of [
+      /next phase/i,
+      /end turn/i,
+      /skip combat/i,
+      /resolve stack/i,
+      /stop skipping/i,
+      /undo/i,
+    ]) {
+      const btn = screen.getByRole('button', { name });
+      expect(btn.getAttribute('title')).toBeTruthy();
+    }
+  });
+
+  /* ---------- Concede flow (slice 37, unchanged) ---------- */
 
   it('Concede button opens confirmation modal; confirm sends CONCEDE', async () => {
     const stream = fakeStream();
@@ -200,7 +375,7 @@ describe('ActionPanel', () => {
     expect(stream.sendPlayerAction).not.toHaveBeenCalled();
   });
 
-  it('Ctrl+F2 does not fire pass-step (modifier mismatch)', async () => {
+  it('Ctrl+F2 does not fire next-phase (modifier mismatch)', async () => {
     const stream = fakeStream();
     const user = userEvent.setup();
     act(() => {
@@ -211,10 +386,9 @@ describe('ActionPanel', () => {
     expect(stream.sendPlayerAction).not.toHaveBeenCalled();
   });
 
-  /* ---------- slice 29: keyboard pass shortcuts ---------- */
+  /* ---------- slice 29: keyboard pass shortcuts (now phase-aware F2) ---------- */
 
   it.each([
-    ['F2', 'PASS_PRIORITY_UNTIL_TURN_END_STEP'],
     ['F4', 'PASS_PRIORITY_UNTIL_NEXT_TURN'],
     ['F6', 'PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE'],
     ['F8', 'PASS_PRIORITY_UNTIL_STACK_RESOLVED'],
@@ -228,6 +402,38 @@ describe('ActionPanel', () => {
     render(<ActionPanel stream={stream} />);
     await user.keyboard(`{${key}}`);
     expect(stream.sendPlayerAction).toHaveBeenCalledWith(expectedAction);
+  });
+
+  it.each([
+    ['UNTAP', 'PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE'],
+    ['PRECOMBAT_MAIN', 'PASS_PRIORITY_UNTIL_TURN_END_STEP'],
+    ['DECLARE_ATTACKERS', 'PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE'],
+    ['POSTCOMBAT_MAIN', 'PASS_PRIORITY_UNTIL_TURN_END_STEP'],
+    ['END_TURN', 'PASS_PRIORITY_UNTIL_NEXT_TURN'],
+  ])('F2 from step %s dispatches %s (phase-aware)', async (step, expected) => {
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    act(() => {
+      useGameStore.setState({
+        gameView: gameViewWithPriorityOn('alice', { step }),
+      });
+    });
+    render(<ActionPanel stream={stream} />);
+    await user.keyboard('{F2}');
+    expect(stream.sendPlayerAction).toHaveBeenCalledWith(expected);
+  });
+
+  it('F2 dispatches no action when step is empty', async () => {
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    act(() => {
+      useGameStore.setState({
+        gameView: gameViewWithPriorityOn('alice', { step: '' }),
+      });
+    });
+    render(<ActionPanel stream={stream} />);
+    await user.keyboard('{F2}');
+    expect(stream.sendPlayerAction).not.toHaveBeenCalled();
   });
 
   it('hotkeys are suppressed when focus is in an input element', async () => {
