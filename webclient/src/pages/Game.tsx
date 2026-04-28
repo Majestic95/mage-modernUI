@@ -1547,42 +1547,50 @@ function HandCardSlot({
   const [lifted, setLifted] = useState(false);
   const { x, y, rot } = fanGeometry(index, total);
   // Hover lift cancels the rotation, raises the card, scales it up,
-  // and bumps z so it sits above siblings.
+  // and bumps z so it sits above siblings. Transform applied to the
+  // OUTER absolute-positioned wrapper rather than the button — the
+  // button is wrapped by HoverCardDetail's `relative inline-flex`
+  // span, which would otherwise become the positioned ancestor and
+  // collapse every card to the left edge of its own tiny span (the
+  // bug fix from slice 44 follow-up).
   const transform = lifted
     ? `translate(-50%, 0) translateX(${x}px) translateY(-56px) rotate(0deg) scale(1.15)`
     : `translate(-50%, 0) translateX(${x}px) translateY(${y}px) rotate(${rot}deg)`;
   return (
-    <HoverCardDetail card={card}>
-      <button
-        type="button"
-        data-testid="hand-card"
-        data-card-id={card.id}
-        data-dragging={isDragging || undefined}
-        data-lifted={lifted || undefined}
-        disabled={!canAct}
-        onClick={() => onObjectClick(card.id)}
-        onPointerDown={(ev) => canAct && onPointerDown(card.id, ev)}
-        onMouseEnter={() => setLifted(true)}
-        onMouseLeave={() => setLifted(false)}
-        onFocus={() => setLifted(true)}
-        onBlur={() => setLifted(false)}
-        title={tooltip}
-        className={
-          'absolute left-1/2 top-2 transition-transform duration-150 ease-out ' +
-          'select-none origin-bottom ' +
-          (canAct
-            ? 'cursor-grab active:cursor-grabbing'
-            : 'cursor-default opacity-70') +
-          (isDragging ? ' opacity-30' : '')
-        }
-        style={{
-          transform,
-          zIndex: lifted ? 100 : index,
-        }}
-      >
-        <HandCardFace card={card} />
-      </button>
-    </HoverCardDetail>
+    <div
+      className="absolute left-1/2 top-2 transition-transform duration-150 ease-out origin-bottom"
+      style={{
+        transform,
+        zIndex: lifted ? 100 : index,
+      }}
+    >
+      <HoverCardDetail card={card}>
+        <button
+          type="button"
+          data-testid="hand-card"
+          data-card-id={card.id}
+          data-dragging={isDragging || undefined}
+          data-lifted={lifted || undefined}
+          disabled={!canAct}
+          onClick={() => onObjectClick(card.id)}
+          onPointerDown={(ev) => canAct && onPointerDown(card.id, ev)}
+          onMouseEnter={() => setLifted(true)}
+          onMouseLeave={() => setLifted(false)}
+          onFocus={() => setLifted(true)}
+          onBlur={() => setLifted(false)}
+          title={tooltip}
+          className={
+            'select-none ' +
+            (canAct
+              ? 'cursor-grab active:cursor-grabbing'
+              : 'cursor-default opacity-70') +
+            (isDragging ? ' opacity-30' : '')
+          }
+        >
+          <HandCardFace card={card} />
+        </button>
+      </HoverCardDetail>
+    </div>
   );
 }
 
