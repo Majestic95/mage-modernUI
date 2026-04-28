@@ -1062,11 +1062,12 @@ function StackZone({ stack }: { stack: Record<string, WebCardView> }) {
               <div
                 data-testid="stack-entry"
                 className={
-                  'inline-flex items-baseline gap-1 px-2 py-1 rounded text-xs ' +
+                  'inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs ' +
                   'border border-zinc-700 bg-zinc-900'
                 }
                 title={tooltip || card.name}
               >
+                <CardThumbnail card={card} size={28} />
                 <span className="font-medium text-zinc-100">{card.name}</span>
                 {card.manaCost && <ManaCost cost={card.manaCost} size="sm" />}
                 {idx === 0 && (
@@ -1327,7 +1328,7 @@ function PermanentChip({
   const tapped = perm.tapped;
   const sick = perm.summoningSickness;
   const baseClasses =
-    'inline-flex items-baseline gap-1 px-2 py-1 rounded text-xs ' +
+    'inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs ' +
     'border border-zinc-700 bg-zinc-900 ' +
     (tapped ? 'opacity-60 rotate-3' : '') +
     (sick ? ' italic' : '');
@@ -1359,6 +1360,7 @@ function PermanentChip({
           : perm.card.typeLine
       }
     >
+      <CardThumbnail card={perm.card} size={28} />
       <span className="font-medium text-zinc-100">{perm.card.name}</span>
       {tapped && <span className="text-zinc-500">(T)</span>}
       {perm.damage > 0 && (
@@ -1476,7 +1478,7 @@ function MyHand({
                     canAct && onPointerDown(card.id, ev)
                   }
                   className={
-                    'inline-flex items-baseline gap-1 px-2 py-1 rounded text-xs ' +
+                    'inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs ' +
                     'border border-zinc-700 bg-zinc-900 select-none ' +
                     (canAct
                       ? 'cursor-grab active:cursor-grabbing hover:border-fuchsia-500 hover:bg-zinc-800'
@@ -1485,6 +1487,7 @@ function MyHand({
                   }
                   title={cardTooltip(card)}
                 >
+                  <CardThumbnail card={card} size={28} />
                   <span className="font-medium">{card.name}</span>
                   {card.manaCost && <ManaCost cost={card.manaCost} size="sm" />}
                 </button>
@@ -1575,11 +1578,54 @@ function CardDetail({ card }: { card: WebCardView }) {
  * later if rate limits or offline-play matter; for now the
  * native cache is sufficient.
  */
-export function scryfallImageUrl(card: WebCardView): string | null {
+export type ScryfallVersion = 'normal' | 'small' | 'art_crop';
+
+export function scryfallImageUrl(
+  card: WebCardView,
+  version: ScryfallVersion = 'normal',
+): string | null {
   if (!card.expansionSetCode || !card.cardNumber) return null;
   const set = card.expansionSetCode.toLowerCase();
   const num = encodeURIComponent(card.cardNumber);
-  return `https://api.scryfall.com/cards/${set}/${num}?format=image&version=normal`;
+  return `https://api.scryfall.com/cards/${set}/${num}?format=image&version=${version}`;
+}
+
+/**
+ * Inline mini-art thumbnail for chip-style renders (slice 43). Pulls
+ * Scryfall's {@code art_crop} version (just the framed illustration,
+ * no name banner / cost / type strip) and renders it as a small
+ * square at the leading edge of the chip. Hides itself on error so
+ * a missing print falls back to text-only chip — no broken-image
+ * icon.
+ *
+ * <p>Service worker (slice 35) caches every Scryfall response; the
+ * second time the same card renders, the image is on disk.
+ *
+ * <p>{@code alt=""} marks the image as decorative — every chip
+ * pairs the thumbnail with the card's name in text, so a screen
+ * reader gets the full information without the redundant alt text.
+ */
+function CardThumbnail({
+  card,
+  size = 28,
+}: {
+  card: WebCardView;
+  size?: number;
+}) {
+  const [failed, setFailed] = useState(false);
+  const url = scryfallImageUrl(card, 'art_crop');
+  if (failed || !url) return null;
+  return (
+    <img
+      src={url}
+      alt=""
+      loading="lazy"
+      onError={() => setFailed(true)}
+      data-testid="card-thumbnail"
+      className="rounded-sm object-cover shrink-0"
+      style={{ width: size, height: size }}
+    />
+  );
 }
 
 /**
@@ -1896,8 +1942,9 @@ function ZoneBrowser({
             <HoverCardDetail key={card.id} card={card}>
               <div
                 data-testid="zone-browser-card"
-                className="inline-flex items-baseline gap-1 px-2 py-1 rounded text-xs border border-zinc-700 bg-zinc-950"
+                className="inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs border border-zinc-700 bg-zinc-950"
               >
+                <CardThumbnail card={card} size={28} />
                 <span className="font-medium text-zinc-100">{card.name}</span>
                 {card.manaCost && <ManaCost cost={card.manaCost} size="sm" />}
               </div>
