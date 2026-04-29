@@ -28,6 +28,7 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -214,6 +215,25 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
             new ConcurrentHashMap<>();
 
     /**
+     * Slice 68b — count of essential-frame evictions on the
+     * fallback path of {@link #evictForOverflow}. Every fallback
+     * fire increments this; only every Nth fire emits a WARN log
+     * (see {@link #ESSENTIAL_EVICTION_WARN_INTERVAL}) so a 4p FFA
+     * burst doesn't spam the log thousands of lines.
+     *
+     * <p>The volume signal lives on
+     * {@link mage.webapi.metrics.MetricsRegistry#BUFFER_OVERFLOW_DROPS_TOTAL}
+     * — every overflow eviction (chat-droppable AND fallback) is
+     * counted there. The WARN's job is to mark *that the
+     * pathological regime is occurring*, not to narrate every frame.
+     */
+    private final java.util.concurrent.atomic.AtomicLong essentialEvictionsSinceWarn =
+            new java.util.concurrent.atomic.AtomicLong();
+
+    /** WARN every Nth essential-frame eviction. Throttle, not silence. */
+    private static final long ESSENTIAL_EVICTION_WARN_INTERVAL = 100L;
+
+    /**
      * Per-game slice-49/61 diagnostic state. One instance per gameId in
      * {@link #diagnosticsByGame}. Mutations are guarded by
      * {@code synchronized (this)} on the instance because two
@@ -389,6 +409,30 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
     int bufferSize() {
         synchronized (buffer) {
             return buffer.size();
+        }
+    }
+
+    /**
+     * Slice 68b — test-only accessor for driving buffer state
+     * directly. Production code uses {@link #appendBuffer} (private)
+     * via the {@link #dispatch} pipeline. Tests use this to fill the
+     * buffer to capacity with synthetic frames in a single setup
+     * step rather than firing 64+ real callbacks. Mirrors the
+     * {@code leaversForTest} / {@code diagnosticsForTest} pattern
+     * used elsewhere in this class.
+     */
+    void appendBufferForTest(WebStreamFrame frame) {
+        appendBuffer(frame);
+    }
+
+    /**
+     * Slice 68b — test-only snapshot of the entire buffer (not just
+     * frames-since). Returns a copy so the caller can inspect
+     * eviction-priority state without holding the lock.
+     */
+    List<WebStreamFrame> bufferSnapshotForTest() {
+        synchronized (buffer) {
+            return new ArrayList<>(buffer);
         }
     }
 
@@ -1032,18 +1076,113 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
     private void appendBuffer(WebStreamFrame frame) {
         synchronized (buffer) {
             if (buffer.size() >= BUFFER_CAPACITY) {
-                buffer.removeFirst();
-                // Slice 70 (ADR 0010 v2 D10) — count buffer overflow
-                // drops for the admin /metrics endpoint. The slice-3
-                // ring-buffer evicts oldest-first when full; this
-                // counter surfaces non-zero when reconnect-via-?since=
-                // would miss frames the user disconnected past.
-                mage.webapi.metrics.MetricsRegistry.increment(
-                        mage.webapi.metrics.MetricsRegistry
-                                .BUFFER_OVERFLOW_DROPS_TOTAL);
+                evictForOverflow();
             }
             buffer.addLast(frame);
         }
+    }
+
+    /**
+     * Slice 68b (ADR 0010 v2 D6) — priority-aware buffer eviction.
+     * Pre-fix the buffer naively dropped the oldest frame regardless
+     * of method. ADR D6 mandates dropping non-state frames first
+     * (chat, pulse, informational) and preserving state / dialog
+     * frames whenever possible — they're the ones the resume buffer
+     * actually needs to replay correctly on reconnect.
+     *
+     * <p><b>Eviction order:</b>
+     * <ol>
+     *   <li>Walk oldest → newest. Evict the first
+     *       {@link #isDroppable droppable} frame found. Single
+     *       eviction per overflow — caller's loop or repeated
+     *       overflow drives further evictions naturally.</li>
+     *   <li>If no droppable frame is buffered, evict the oldest
+     *       (last-resort fallback). This means the resume buffer
+     *       lost a state/dialog frame the client may need on
+     *       reconnect — log WARN so ops sees it.</li>
+     * </ol>
+     *
+     * <p><b>v2 droppable methods:</b> {@code chatMessage} (chat) +
+     * {@code gameInform} (the engine's free-text "alice plays
+     * Forest" log stream — upstream's
+     * {@code GAME_UPDATE_AND_INFORM} per
+     * {@code ClientCallbackMethod.java:52}). Both carry state in the
+     * sense that {@code gameInform} wraps a {@code GameView}, but
+     * the state is cumulative — every subsequent
+     * {@code gameInform}/{@code gameUpdate} carries the latest
+     * snapshot, so dropping one mid-stream is replay-safe. The cost
+     * is the slice-18 game-log strip may miss one descriptive entry
+     * during overflow; the cost is bounded and the alternative
+     * (dropping a true state/dialog frame the client needs to
+     * resume) is materially worse. Pulse frames (slice 71+
+     * spectator) will extend {@link #isDroppable} when they ship.
+     * {@code dialogClear} (slice 69c D11b) is intentionally NOT
+     * droppable — it's a one-shot teardown signal and a missed
+     * dialogClear can leave a stuck modal until the next gameUpdate
+     * arrives. Cheaper to keep it than reason about the recovery
+     * path. (Per the ADR D11b reconnect ordering caveat, the
+     * synthesized dialogClear shares a messageId with its
+     * triggering gameUpdate; if the gameUpdate is preserved here,
+     * the client can infer teardown from the GameView's
+     * {@code hasLeft=true} regardless of whether dialogClear made
+     * it through.)
+     *
+     * <p>Caller holds the buffer lock — {@link #appendBuffer}'s
+     * {@code synchronized (buffer)} block.
+     */
+    private void evictForOverflow() {
+        // Slice 70 (ADR 0010 v2 D10) — count every overflow eviction
+        // for the admin /metrics endpoint. Non-zero values surface
+        // when reconnect-via-?since= would have caught replay-worthy
+        // frames the buffer dropped before the resume cursor.
+        mage.webapi.metrics.MetricsRegistry.increment(
+                mage.webapi.metrics.MetricsRegistry.BUFFER_OVERFLOW_DROPS_TOTAL);
+        Iterator<WebStreamFrame> it = buffer.iterator();
+        while (it.hasNext()) {
+            WebStreamFrame candidate = it.next();
+            if (isDroppable(candidate.method())) {
+                it.remove();
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("WS buffer overflow: evicted droppable {} (msgId={}, user={})",
+                            candidate.method(), candidate.messageId(), username);
+                }
+                return;
+            }
+        }
+        // No droppable frames present — the buffer is full of
+        // state/dialog frames. Last-resort: evict the oldest. The
+        // metrics counter (above) already increments per drop, so
+        // ops sees the volume there. The WARN log is THROTTLED to
+        // every Nth eviction (ESSENTIAL_EVICTION_WARN_INTERVAL) —
+        // a 4p FFA burst can hit this path dozens of times per
+        // turn, and an unthrottled WARN would drown the log.
+        WebStreamFrame evicted = buffer.removeFirst();
+        long n = essentialEvictionsSinceWarn.incrementAndGet();
+        if (n == 1L || n % ESSENTIAL_EVICTION_WARN_INTERVAL == 0L) {
+            LOG.warn("WS buffer overflow: ALL frames essential, evicted oldest "
+                    + "{} (msgId={}, user={}, totalEssentialEvictions={}). "
+                    + "Reconnect via ?since= older than this messageId will "
+                    + "miss replay frames; see metrics counter "
+                    + "xmage_buffer_overflow_drops_total. Throttled to every "
+                    + "{}th occurrence.",
+                    evicted.method(), evicted.messageId(), username, n,
+                    ESSENTIAL_EVICTION_WARN_INTERVAL);
+        }
+    }
+
+    /**
+     * Slice 68b — eviction-priority predicate. Returns true when a
+     * frame can be safely evicted from the resume buffer without
+     * breaking the client's reconnect contract. v2 droppable set:
+     * {@code chatMessage} only. Game state, dialogs, and the slice-
+     * 69c {@code dialogClear} envelope are all preserved.
+     *
+     * <p>Static + package-private — kept out of the synchronized
+     * critical section in {@link #evictForOverflow} so future tests
+     * can drive it directly without instantiating the handler.
+     */
+    static boolean isDroppable(String method) {
+        return "chatMessage".equals(method) || "gameInform".equals(method);
     }
 
     private void broadcast(ClientCallback cc, WebStreamFrame frame) {
