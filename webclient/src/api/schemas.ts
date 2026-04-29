@@ -258,6 +258,16 @@ export type WebManaPoolView = z.infer<typeof webManaPoolViewSchema>;
  */
 export type WebCardView = {
   id: string;
+  /**
+   * Schema 1.19 (slice 52a). Stable underlying-Card UUID — same value
+   * across stack / battlefield / hand / graveyard for the same physical
+   * Magic card. Used by the webclient as a Framer Motion {@code
+   * layoutId} for cross-zone animation (stack → battlefield glide on
+   * spell resolution). For non-stack zones {@code cardId === id}; the
+   * stack is the only zone where they differ (server recovers
+   * {@code Spell.getCard().getId()} via a per-frame upstream lookup).
+   */
+  cardId: string;
   name: string;
   displayName: string;
   expansionSetCode: string;
@@ -291,6 +301,10 @@ export type WebCardView = {
 export const webCardViewSchema: z.ZodType<WebCardView> = z.lazy(() =>
   z.object({
     id: z.string(),
+    // Slice 52a / schema 1.19. Defaulted to '' for older fixtures and
+    // any defensive path where a frame somehow ships without it; the
+    // animation layer treats empty-string cardId as "do not animate."
+    cardId: z.string().default(''),
     name: z.string(),
     displayName: z.string(),
     expansionSetCode: z.string(),
