@@ -2,7 +2,7 @@
 
 > Living document. Update as phases close, decisions firm up, or assumptions change. See [`decisions/`](decisions/) for ADRs locking in specific choices.
 
-**Last reviewed:** 2026-04-25
+**Last reviewed:** 2026-04-28
 
 ---
 
@@ -147,26 +147,38 @@ Each phase has a single exit gate. Don't move on until the gate is met. Estimate
 
 ### Phase 5 — Game window MVP (16-24 weeks)
 
-**Goal:** the hardest UI in the project. Full 1v1 game playable through the new client. No multiplayer, no draft yet — focused parity for one game type.
+**Status (2026-04-28): functional gate met.** A complete 1v1 game vs. AI plays start-to-finish through the new client. Slices 1-49 shipped the surface area below; slices 50-52c added cross-zone Framer Motion animation foundation that originally belonged to Phase 7 but was pulled forward to validate the visual feel. **The "v1 MVP refinement" track in slices 52d-60 is a closing pass to harden Phase 5 before declaring it shipped:** animation foundation extraction (52d-e), battlefield zone rows (53), cast/resolve animations (54-55), CI stand-up (56), tap/damage/counter polish (57-58), `Game.tsx` decomposition to cap LOC (59), Mad-AI empty-tree fallback (60). See the in-session SE audit (2026-04-28) for the full rationale.
 
 **Deliverables:**
-- [ ] Battlefield rendering — your permanents + opponent's permanents, with attack/block highlighting
-- [ ] Hand — drag-or-click-to-play, hover-to-zoom
-- [ ] Stack — visible, with rules-text-on-hover for each entry
-- [ ] Mana pool — interactive, showing pending mana
-- [ ] Phase / turn / priority indicators
-- [ ] Targeting UI — click target, multi-target, illegal-target feedback
-- [ ] Combat declaration — declare attackers, declare blockers, damage assignment order
-- [ ] Triggered ability ordering UI (when multiple triggers stack)
-- [ ] "Choose one" / "X is" / mode-select dialogs
-- [ ] Mulligan flow
-- [ ] Card-detail overlay (zoom + full text)
-- [ ] Graveyard / exile / library (top-card-revealed) browsers
-- [ ] Game log + chat
-- [ ] Concede / draw / undo flow
-- [ ] Game-over screen with **game-log download** — JSON transcript of upstream `gameInform` messages exported from the in-memory `gameLog` slice. **Not** a step-through replay; full replay (binary engine state, deterministic playback) is deferred to Phase 6 with a future ADR. See [`docs/decisions/replay-flow-recon.md`](decisions/replay-flow-recon.md) for why upstream's `.game` format is unusable (bit-rotted, opaque Java serialization, "outdated and not used" per upstream author).
+- [x] Battlefield rendering — your permanents + opponent's permanents, with attack/block highlighting (slice 45 BattlefieldTile + Scryfall art)
+- [x] Hand — drag-or-click-to-play, hover-to-zoom (slices 36 DnD, 44 fan layout)
+- [x] Stack — visible, with rules-text-on-hover for each entry (slice 48 card-shaped tiles)
+- [x] Mana pool — interactive, showing pending mana (slice 21 manual mana panel)
+- [x] Phase / turn / priority indicators (PhaseTimeline + ActionPanel through slice 42)
+- [x] Targeting UI — click target, multi-target, illegal-target feedback (slices 14-15)
+- [x] Combat declaration — declare attackers, declare blockers, damage assignment order (slice 20)
+- [x] Triggered ability ordering UI (slices 26-28; ADR 0009)
+- [x] "Choose one" / "X is" / mode-select dialogs (GameDialog family)
+- [x] Mulligan flow
+- [x] Card-detail overlay (slice 30 HoverCardDetail)
+- [x] Graveyard / exile / library (top-card-revealed) browsers
+- [x] Game log + chat
+- [x] Concede / draw / undo flow
+- [x] Game-over screen with **game-log download** — JSON transcript of upstream `gameInform` messages exported from the in-memory `gameLog` slice (slice 41). **Not** a step-through replay; full replay (binary engine state, deterministic playback) is deferred to Phase 6 with a future ADR. See [`docs/decisions/replay-flow-recon.md`](decisions/replay-flow-recon.md) for why upstream's `.game` format is unusable.
 
-**Exit gate:** a complete 1v1 game vs. AI plays from start to finish through the new client, with no graceful-failure modes ("oops can't do that here, please use Swing"). Record a 5-minute screen capture as the exit artifact.
+**v1 refinement track (audit-driven, slices 52d-60):**
+- [ ] **52d** — animation transitions module (`webclient/src/animation/transitions.ts` named-preset registry)
+- [ ] **52e** — `<CardFace>` shared component (DRY across hand / stack / battlefield / future zones)
+- [ ] **53** — battlefield zone rows (lands / creatures / other-permanents) matching MTGA/MTGO layout
+- [ ] **54** — cast animation (hand → stack glide using slice 52a cardId layoutId)
+- [ ] **55** — resolve animation (stack → battlefield or stack → graveyard glide)
+- [ ] **56** — CI stand-up (GitHub Actions: mvn verify + pnpm test + schema snapshot gate)
+- [ ] **57** — mana tap rotation + mana-pool enter/leave on tap/payment
+- [ ] **58** — damage flash + counter pop
+- [ ] **59** — `Game.tsx` decomposition (extract HandFan / BattlefieldZone / StackZone; cap Game.tsx <800 LOC)
+- [ ] **60** — Mad-AI empty-tree fallback (slice 49 telemetry → swap player type after 3 empty priorities)
+
+**Exit gate:** all 10 refinement slices shipped, tests green, CI gating every commit, `prefers-reduced-motion` honored across both Framer and CSS, single Playwright e2e ("log in → create table → add AI → play 5 turns → game-over") passing. Then publish a `v1.0` tag.
 
 **Risks:**
 - This is the project's defining phase. If it slips, ship it slipped — don't compromise on correctness. A game that mostly works ruins the project's value.
@@ -292,3 +304,4 @@ These need answers before the phase that depends on them. Track here; convert to
 ## Update log
 
 - **2026-04-25** — Doc created. Path C confirmed via [ADR 0001](decisions/0001-path-c-strategy.md). Tech stack confirmed via [ADR 0002](decisions/0002-tech-stack.md). Phase plan locked through Phase 5; Phase 6+ scoped at high level only.
+- **2026-04-28** — Phase 5 functional gate marked met (slices 1-49 shipped the deliverable list; a complete 1v1 vs AI game plays end-to-end). Animation foundation work (slices 50-52c) pulled forward from Phase 7 to validate visual feel. SE audit conducted in-session; v1 refinement track (slices 52d-60) added under Phase 5 as the closing pass before declaring Phase 5 shipped. v1.0 tag estimated end of June 2026 at 2-4 slices/session cadence.
