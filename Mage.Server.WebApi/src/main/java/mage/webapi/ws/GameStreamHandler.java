@@ -241,9 +241,18 @@ public final class GameStreamHandler implements Consumer<WsConfig> {
         // chars so a 4 KB chatSend doesn't spam the log.
         String username = (String) ctx.attribute(ATTR_USERNAME);
         UUID gameId = (UUID) ctx.attribute(ATTR_GAME_ID);
-        String preview = body.length() > 200 ? body.substring(0, 200) + "..." : body;
-        LOG.info("WS msg: user={}, game={}, type={}, body={}",
-                username, gameId, type, preview);
+        // Auditor #2 (2026-04-29) flagged this slice-22 diagnostic as
+        // over-verbose at INFO: it fires per-frame on the hot path, and
+        // chatSend bodies can carry user-typed text → potential PII.
+        // Demoted to DEBUG. The {type, username, gameId} triplet stays
+        // at INFO via the surrounding handlers' own logs (chatSend at
+        // :handleChatSend, playerAction at :handlePlayerAction, etc.)
+        // which don't include body content.
+        if (LOG.isDebugEnabled()) {
+            String preview = body.length() > 200 ? body.substring(0, 200) + "..." : body;
+            LOG.debug("WS msg: user={}, game={}, type={}, body={}",
+                    username, gameId, type, preview);
+        }
         switch (type) {
             case "chatSend" -> handleChatSend(ctx, parsed);
             case "playerAction" -> handlePlayerAction(ctx, parsed);

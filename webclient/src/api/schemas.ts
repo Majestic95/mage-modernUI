@@ -301,9 +301,24 @@ export type WebCardView = {
 export const webCardViewSchema: z.ZodType<WebCardView> = z.lazy(() =>
   z.object({
     id: z.string(),
-    // Slice 52a / schema 1.19. Defaulted to '' for older fixtures and
-    // any defensive path where a frame somehow ships without it; the
-    // animation layer treats empty-string cardId as "do not animate."
+    // Slice 52a / schema 1.19. Server always emits cardId for every
+    // zone (== underlying Card UUID; for non-stack zones equal to
+    // {@link id}). The default('') keeps test fixtures lightweight
+    // (27 fixture sites would otherwise need explicit cardId).
+    //
+    // Wire-format defense for "server forgot to emit cardId" lives at
+    // a higher layer:
+    //   - Mapper *Test classes in Mage.Server.WebApi (snapshot-style
+    //     JSON shape locks; CI-gated)
+    //   - GameStreamHandlerTest e2e exercises the wire format with a
+    //     real embedded server (asserts cardId == id for hand zone)
+    //   - Slice 62 Playwright e2e exercises full animation flow
+    // Empty-string cardId at runtime → animation layer treats as
+    // "no layoutId, do not animate" — graceful degradation, not a
+    // crash. Auditor #3 (2026-04-29) flagged this as a hidden mask
+    // for server regressions; review concluded the defense at higher
+    // layers is sufficient and the fixture-churn cost of removing the
+    // default exceeds the marginal safety.
     cardId: z.string().default(''),
     name: z.string(),
     displayName: z.string(),

@@ -114,16 +114,20 @@ class WebApiServerTest {
     }
 
     @Test
-    void postSession_admin_correctPassword_returnsAdminSession() throws Exception {
-        // EmbeddedServer.boot passes adminPassword="" — empty matches empty.
+    void postSession_admin_emptyPassword_failsBecauseAdminDisabledByDefault() throws Exception {
+        // Auditor #4 fix (2026-04-29): EmbeddedServer.boot now reads
+        // XMAGE_ADMIN_PASSWORD from env. When unset (default in tests),
+        // a random UUID is generated and admin login is effectively
+        // disabled. Pre-fix, MageServerImpl was constructed with
+        // adminPassword="" — anyone calling connectAdmin("") gained
+        // admin. Test now pins the secure default: empty password is
+        // refused.
         HttpResponse<String> r = postJson("/api/session/admin",
                 "{\"adminPassword\":\"\"}");
-        assertEquals(200, r.statusCode());
+        assertEquals(401, r.statusCode());
 
         JsonNode body = JSON.readTree(r.body());
-        assertTrue(body.get("isAdmin").asBoolean());
-        assertFalse(body.get("isAnonymous").asBoolean());
-        assertEquals("Admin", body.get("username").asText());
+        assertEquals("INVALID_ADMIN_PASSWORD", body.get("code").asText());
     }
 
     @Test

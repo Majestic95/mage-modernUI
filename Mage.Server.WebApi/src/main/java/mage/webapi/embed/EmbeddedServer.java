@@ -21,6 +21,8 @@ import mage.server.util.config.Plugin;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.UUID;
+
 /**
  * Boots {@link MageServerImpl} in-process for our JSON/WebSocket facade.
  *
@@ -85,7 +87,23 @@ public final class EmbeddedServer {
             loadPlugins(config);
 
             ManagerFactory factory = new MainManagerFactory(config);
-            MageServerImpl mageServer = new MageServerImpl(factory, "", false, false);
+            // Auditor #4 (2026-04-29) — admin password fail-closed.
+            // Pre-fix: hardcoded "" → anyone calling connectAdmin("")
+            // gained admin (effectively unauthenticated for any
+            // deployment beyond solo dev). Now reads from
+            // XMAGE_ADMIN_PASSWORD env var; if unset, generates a
+            // random UUID so admin login is impossible without
+            // explicit operator setup. Logs the posture loudly.
+            String adminPassword = System.getenv("XMAGE_ADMIN_PASSWORD");
+            if (adminPassword == null || adminPassword.isEmpty()) {
+                adminPassword = UUID.randomUUID().toString();
+                LOG.warn("XMAGE_ADMIN_PASSWORD env var unset — admin login "
+                        + "DISABLED (random password generated, not logged). "
+                        + "Set the env var to enable admin auth.");
+            } else {
+                LOG.info("XMAGE_ADMIN_PASSWORD configured — admin login enabled.");
+            }
+            MageServerImpl mageServer = new MageServerImpl(factory, adminPassword, false, false);
 
             instance = new EmbeddedServer(factory, mageServer);
             LOG.info("EmbeddedServer ready (game types: {}, player types: {})",

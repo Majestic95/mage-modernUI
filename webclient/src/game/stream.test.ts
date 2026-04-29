@@ -549,7 +549,11 @@ describe('GameStream', () => {
     expect(useGameStore.getState().connection).toBe('open');
   });
 
-  it('gives up after 4 attempts', () => {
+  it('gives up after 8 attempts', () => {
+    // Auditor #3 fix (2026-04-29): RECONNECT_BACKOFF_MS extended from
+    // 4 attempts (~7.5s) to 8 attempts (~67.5s) so a moderate Wi-Fi
+    // blip doesn't permanently disconnect the game. This test pins
+    // the new cap.
     const sched = makeFakeScheduler();
     const stream = new GameStream({
       gameId: FAKE_GAME_ID,
@@ -558,14 +562,14 @@ describe('GameStream', () => {
       scheduler: sched.scheduler,
     });
     stream.open();
-    // Loop 4 retries: each one fires immediately on close, never
+    // Loop 8 retries: each one fires immediately on close, never
     // reaches _open(), so the attempt counter keeps climbing.
-    for (let i = 0; i < 4; i += 1) {
+    for (let i = 0; i < 8; i += 1) {
       FakeWebSocket.instances[i]!._close(1006, 'fail');
       sched.fireNext();
     }
-    // 5th close: 4 retries already used, no further timer scheduled.
-    FakeWebSocket.instances[4]!._close(1006, 'final');
+    // 9th close: 8 retries already used, no further timer scheduled.
+    FakeWebSocket.instances[8]!._close(1006, 'final');
     const activePending = sched.queued.filter((q) => !q.cancelled);
     expect(activePending).toHaveLength(0);
   });

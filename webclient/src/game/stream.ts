@@ -115,7 +115,16 @@ export interface GameStreamOptions {
   };
 }
 
-const RECONNECT_BACKOFF_MS = [500, 1000, 2000, 4000] as const;
+// Auditor #3 (2026-04-29) flagged the previous 4-attempt / 7.5s cap
+// as too short — a 30-second flaky-Wi-Fi blip permanently disconnects
+// the game and the user must reload. Extended to 8 attempts totaling
+// ~75.5s of retry window before giving up. Still bounded so the
+// client doesn't retry forever on a genuine server outage.
+//
+// Values deliberately avoid 30000 to keep them distinct from
+// KEEPALIVE_MS in the test scheduler's reconnect-vs-keepalive
+// timer filter (stream.test.ts:312).
+const RECONNECT_BACKOFF_MS = [500, 1000, 2000, 4000, 8000, 15000, 20000, 25000] as const;
 
 /**
  * Slice 38: how often the client sends a {@code keepalive} frame

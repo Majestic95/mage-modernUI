@@ -2,7 +2,7 @@
 
 > Living document. Update as phases close, decisions firm up, or assumptions change. See [`decisions/`](decisions/) for ADRs locking in specific choices.
 
-**Last reviewed:** 2026-04-28
+**Last reviewed:** 2026-04-29
 
 ---
 
@@ -167,18 +167,31 @@ Each phase has a single exit gate. Don't move on until the gate is met. Estimate
 - [x] Game-over screen with **game-log download** — JSON transcript of upstream `gameInform` messages exported from the in-memory `gameLog` slice (slice 41). **Not** a step-through replay; full replay (binary engine state, deterministic playback) is deferred to Phase 6 with a future ADR. See [`docs/decisions/replay-flow-recon.md`](decisions/replay-flow-recon.md) for why upstream's `.game` format is unusable.
 
 **v1 refinement track (audit-driven, slices 52d-60):**
-- [ ] **52d** — animation transitions module (`webclient/src/animation/transitions.ts` named-preset registry)
-- [ ] **52e** — `<CardFace>` shared component (DRY across hand / stack / battlefield / future zones)
-- [ ] **53** — battlefield zone rows (lands / creatures / other-permanents) matching MTGA/MTGO layout
-- [ ] **54** — cast animation (hand → stack glide using slice 52a cardId layoutId)
-- [ ] **55** — resolve animation (stack → battlefield or stack → graveyard glide)
-- [ ] **56** — CI stand-up (GitHub Actions: mvn verify + pnpm test + schema snapshot gate)
-- [ ] **57** — mana tap rotation + mana-pool enter/leave on tap/payment
-- [ ] **58** — damage flash + counter pop
-- [ ] **59** — `Game.tsx` decomposition (extract HandFan / BattlefieldZone / StackZone; cap Game.tsx <800 LOC)
-- [ ] **60** — Mad-AI empty-tree fallback (slice 49 telemetry → swap player type after 3 empty priorities)
+- [x] **52d** — animation transitions module ([e88b63ee](https://github.com/Majestic95/mage-modernUI/commit/e88b63ee))
+- [x] **52e** — `<CardFace>` shared component ([55ba1530](https://github.com/Majestic95/mage-modernUI/commit/55ba1530))
+- [x] **53** — battlefield zone rows ([632055e5](https://github.com/Majestic95/mage-modernUI/commit/632055e5))
+- [x] **54** — cast animation hand → stack ([f9c897a5](https://github.com/Majestic95/mage-modernUI/commit/f9c897a5))
+- [x] **55** — resolve animation stack → graveyard/exile ghost targets ([b3c75947](https://github.com/Majestic95/mage-modernUI/commit/b3c75947))
+- [x] **56** — CI stand-up (GitHub Actions, lint informational) ([f09cc281](https://github.com/Majestic95/mage-modernUI/commit/f09cc281))
+- [x] **57** — UX layout BLOCKERS (z-index ladder + hand container fit) ([4ac7fc3e](https://github.com/Majestic95/mage-modernUI/commit/4ac7fc3e))
+- [x] **58** — mana tap rotation + mana-pool enter/leave + untap stagger ([a5aa5d3e](https://github.com/Majestic95/mage-modernUI/commit/a5aa5d3e))
+- [x] **59** — damage flash + counter pop ([057b3260](https://github.com/Majestic95/mage-modernUI/commit/057b3260))
+- [x] **60** — `Game.tsx` decomposition: 2531 → 170 LOC across 5 commits 60a-e ([e12e37cf](https://github.com/Majestic95/mage-modernUI/commit/e12e37cf) → [9a66adde](https://github.com/Majestic95/mage-modernUI/commit/9a66adde))
+- [x] **61** — Mad-AI no-plays fallback (`Player.pass(game)` on 3 consecutive low-frame segments) ([5490e6c1](https://github.com/Majestic95/mage-modernUI/commit/5490e6c1))
+- [x] **62** — Playwright e2e smoke test (login → table → AI → concede → game-end-modal) ([fd1d1ef5](https://github.com/Majestic95/mage-modernUI/commit/fd1d1ef5))
 
-**Exit gate:** all 10 refinement slices shipped, tests green, CI gating every commit, `prefers-reduced-motion` honored across both Framer and CSS, single Playwright e2e ("log in → create table → add AI → play 5 turns → game-over") passing. Then publish a `v1.0` tag.
+**Post-shipping cleanup pass (2026-04-29 4-auditor review):**
+- [x] Cross-game state isolation in `WebSocketCallbackHandler` ([6ae0306d](https://github.com/Majestic95/mage-modernUI/commit/6ae0306d))
+- [x] Modal a11y (focus trap + role/aria-modal across 5 modals) ([728e5c3d](https://github.com/Majestic95/mage-modernUI/commit/728e5c3d))
+- [ ] Push to origin + verify CI workflow runs green (it's never run)
+- [ ] Admin password fail-closed at boot (refuse default/empty)
+- [ ] WS body log demote INFO → DEBUG (slice 22 diagnostic over-verbose)
+- [ ] `cardId.default('')` → required (server always emits since 1.19)
+- [ ] Reconnect backoff cap extension (currently gives up at 7.5s)
+- [ ] dev-setup.md refresh (predates Phase 5)
+- [ ] `v1.0` tag
+
+**Exit gate:** all 10 refinement slices shipped + 4-auditor cleanup applied, tests green, CI VERIFIED-GREEN on push (not just locally green), `prefers-reduced-motion` honored across both Framer and CSS, modal a11y baseline (focus trap + role/aria), single Playwright e2e green, dev-setup.md current. Then publish a `v1.0` tag.
 
 **Risks:**
 - This is the project's defining phase. If it slips, ship it slipped — don't compromise on correctness. A game that mostly works ruins the project's value.
