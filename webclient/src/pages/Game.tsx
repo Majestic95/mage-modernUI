@@ -25,6 +25,7 @@ import type {
 } from '../api/schemas';
 import { ActionPanel } from './ActionPanel';
 import { GameDialog } from './GameDialog';
+import { isSlowmoActive, slow, SLOWMO } from '../animation/debug';
 
 interface Props {
   gameId: string;
@@ -768,6 +769,15 @@ function Header({
         </div>
       )}
       <div className="flex items-center gap-3 text-xs">
+        {isSlowmoActive && (
+          <span
+            data-testid="slowmo-badge"
+            title={`Animation slow-motion debug. Remove ?slowmo=${SLOWMO} from the URL to disable.`}
+            className="px-2 py-0.5 rounded bg-fuchsia-500/20 text-fuchsia-300 font-mono uppercase tracking-wide"
+          >
+            slowmo {SLOWMO}×
+          </span>
+        )}
         <ConnectionDot state={connection} reason={closeReason} />
         <button
           type="button"
@@ -1144,13 +1154,13 @@ function StackZone({ stack }: { stack: Record<string, WebCardView> }) {
                 initial={{ opacity: 0, y: -16, scale: 0.85 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 24, scale: 0.85 }}
-                transition={{
+                transition={slow({
                   type: 'spring',
                   stiffness: 380,
                   damping: 30,
                   mass: 0.6,
-                  layout: LAYOUT_TRANSITION,
-                }}
+                  layout: slow(LAYOUT_TRANSITION),
+                })}
               >
                 <HoverCardDetail card={card}>
                   <div
@@ -1371,13 +1381,13 @@ function PlayerArea({
                   initial={{ opacity: 0, y: 24, scale: 0.85 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: -16, scale: 0.85 }}
-                  transition={{
+                  transition={slow({
                     type: 'spring',
                     stiffness: 360,
                     damping: 32,
                     mass: 0.7,
-                    layout: LAYOUT_TRANSITION,
-                  }}
+                    layout: slow(LAYOUT_TRANSITION),
+                  })}
                 >
                   <BattlefieldTile
                     perm={perm}
@@ -1506,7 +1516,7 @@ function LifeTotal({ value }: { value: number }) {
         key={flash ?? 'idle'}
         initial={{ scale: flash ? 1.25 : 1 }}
         animate={{ scale: 1 }}
-        transition={{ type: 'spring', stiffness: 500, damping: 18 }}
+        transition={slow({ type: 'spring', stiffness: 500, damping: 18 })}
         className={`font-mono transition-colors duration-300 ${numberClass}`}
       >
         {value}
@@ -1522,7 +1532,7 @@ function LifeTotal({ value }: { value: number }) {
               initial={{ opacity: 0, y: 0, scale: 0.85 }}
               animate={{ opacity: 1, y: -18, scale: 1 }}
               exit={{ opacity: 0, y: -32 }}
-              transition={{ duration: 0.7, ease: 'easeOut' }}
+              transition={slow({ duration: 0.7, ease: 'easeOut' })}
               className={`absolute left-0 text-xs font-bold font-mono ${
                 d.amount > 0 ? 'text-emerald-300' : 'text-rose-400'
               }`}
@@ -1706,12 +1716,13 @@ function BattlefieldTileFace({
       className={
         'relative w-[80px] h-[112px] rounded-lg overflow-hidden border ' +
         sickBorder +
-        ' bg-zinc-900 shadow-md shadow-black/50 transition-transform duration-150 ease-out ' +
+        ' bg-zinc-900 shadow-md shadow-black/50 transition-transform ease-out ' +
         combatRing +
         (tapped ? ' opacity-60' : '')
       }
       style={{
         transform: tapped ? 'rotate(90deg)' : undefined,
+        transitionDuration: `${150 * SLOWMO}ms`,
       }}
     >
       {url && !imageFailed ? (
@@ -1978,10 +1989,11 @@ function HandCardSlot({
   const layoutId = card.cardId ? card.cardId : undefined;
   return (
     <div
-      className="absolute left-1/2 top-2 transition-transform duration-150 ease-out origin-bottom"
+      className="absolute left-1/2 top-2 transition-transform ease-out origin-bottom"
       style={{
         transform,
         zIndex: lifted ? 100 : index,
+        transitionDuration: `${150 * SLOWMO}ms`,
       }}
     >
       <HoverCardDetail card={card}>
@@ -2010,7 +2022,7 @@ function HandCardSlot({
           <motion.div
             layoutId={layoutId}
             data-layout-id={layoutId}
-            transition={{ layout: LAYOUT_TRANSITION }}
+            transition={{ layout: slow(LAYOUT_TRANSITION) }}
           >
             <HandCardFace card={card} />
           </motion.div>
