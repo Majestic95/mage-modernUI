@@ -1713,4 +1713,68 @@ describe('Game page', () => {
 
     clickSpy.mockRestore();
   });
+
+  /* ---------- slice 51: animated life total ---------- */
+
+  it('shows each player\'s current life total verbatim', () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: buildGameView(),
+      });
+    });
+    const totals = screen
+      .getAllByTestId('life-total')
+      .map((el) => el.textContent);
+    // alice = 18, AI = 20 (per buildGameView).
+    expect(totals).toEqual(expect.arrayContaining(['18', '20']));
+  });
+
+  it('floats a delta indicator when life decreases', async () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: buildGameView(),
+      });
+    });
+    // No deltas before any life change.
+    expect(screen.queryAllByTestId('life-delta')).toHaveLength(0);
+
+    // Apply 3 damage → life 18 → 15.
+    const after = buildGameView();
+    after.players[0].life = 15;
+    act(() => {
+      useGameStore.setState({ gameView: after });
+    });
+
+    const deltas = screen.getAllByTestId('life-delta');
+    expect(deltas.length).toBeGreaterThanOrEqual(1);
+    // Loss → rose-tinted delta showing -3.
+    const loss = deltas.find((el) => el.textContent === '-3');
+    expect(loss).toBeDefined();
+    expect(loss).toHaveClass('text-rose-400');
+  });
+
+  it('floats a positive delta with emerald tint when life increases', () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: buildGameView(),
+      });
+    });
+
+    const after = buildGameView();
+    after.players[0].life = 22; // +4 from 18
+    act(() => {
+      useGameStore.setState({ gameView: after });
+    });
+
+    const deltas = screen.getAllByTestId('life-delta');
+    const gain = deltas.find((el) => el.textContent === '+4');
+    expect(gain).toBeDefined();
+    expect(gain).toHaveClass('text-emerald-300');
+  });
 });

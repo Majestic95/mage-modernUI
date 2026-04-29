@@ -1236,10 +1236,8 @@ function PlayerArea({
           )}
         </div>
         <div className="flex items-baseline gap-4 text-sm text-zinc-400">
-          <span>
-            <span className="text-zinc-500">Life</span>{' '}
-            <span className="text-zinc-100 font-mono">{player.life}</span>
-          </span>
+          <LifeTotal value={player.life} />
+
           <span>
             <span className="text-zinc-500">Lib</span>{' '}
             <span className="font-mono">{player.libraryCount}</span>
@@ -1354,6 +1352,94 @@ function CommandChip({ entry }: { entry: WebCommandObjectView }) {
         {entry.kind}
       </span>
       <span className="font-medium">{entry.name || '<unknown>'}</span>
+    </span>
+  );
+}
+
+/**
+ * Slice 51 — animated life total. The number flashes red on damage
+ * and green on gain, with a floating ±N delta that drifts up and
+ * fades out. Most-watched number in any MTG game; making it visceral
+ * is the highest-leverage polish per pixel.
+ *
+ * <p>Tracks the previous value via {@code useRef}. On change, captures
+ * a {@code delta} entry with a unique sequence id and pushes it into a
+ * short-lived list — {@code AnimatePresence} renders the float-up +
+ * fade-out, then the entry is cleared after 900ms (slightly longer
+ * than the animation so the exit completes cleanly).
+ *
+ * <p>Stacks deltas if multiple changes land in quick succession (e.g.
+ * Lightning Bolt + Shock in the same priority pass) — each gets its
+ * own +N/-N indicator drifting up alongside the prior one.
+ */
+function LifeTotal({ value }: { value: number }) {
+  const prevRef = useRef(value);
+  const seqRef = useRef(0);
+  const [deltas, setDeltas] = useState<Array<{ id: number; amount: number }>>(
+    [],
+  );
+  const [flash, setFlash] = useState<'gain' | 'loss' | null>(null);
+
+  useEffect(() => {
+    const prev = prevRef.current;
+    if (value === prev) return;
+    const amount = value - prev;
+    prevRef.current = value;
+    const id = ++seqRef.current;
+    setDeltas((current) => [...current, { id, amount }]);
+    setFlash(amount > 0 ? 'gain' : 'loss');
+    const flashTimer = setTimeout(() => setFlash(null), 500);
+    const dropTimer = setTimeout(() => {
+      setDeltas((current) => current.filter((d) => d.id !== id));
+    }, 900);
+    return () => {
+      clearTimeout(flashTimer);
+      clearTimeout(dropTimer);
+    };
+  }, [value]);
+
+  const numberClass =
+    flash === 'gain'
+      ? 'text-emerald-300'
+      : flash === 'loss'
+        ? 'text-rose-400'
+        : 'text-zinc-100';
+
+  return (
+    <span className="relative inline-flex items-baseline gap-1">
+      <span className="text-zinc-500">Life</span>{' '}
+      <motion.span
+        data-testid="life-total"
+        key={flash ?? 'idle'}
+        initial={{ scale: flash ? 1.25 : 1 }}
+        animate={{ scale: 1 }}
+        transition={{ type: 'spring', stiffness: 500, damping: 18 }}
+        className={`font-mono transition-colors duration-300 ${numberClass}`}
+      >
+        {value}
+      </motion.span>
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute -right-2 top-0 h-full w-8"
+      >
+        <AnimatePresence>
+          {deltas.map((d) => (
+            <motion.span
+              key={d.id}
+              initial={{ opacity: 0, y: 0, scale: 0.85 }}
+              animate={{ opacity: 1, y: -18, scale: 1 }}
+              exit={{ opacity: 0, y: -32 }}
+              transition={{ duration: 0.7, ease: 'easeOut' }}
+              className={`absolute left-0 text-xs font-bold font-mono ${
+                d.amount > 0 ? 'text-emerald-300' : 'text-rose-400'
+              }`}
+              data-testid="life-delta"
+            >
+              {d.amount > 0 ? `+${d.amount}` : `${d.amount}`}
+            </motion.span>
+          ))}
+        </AnimatePresence>
+      </span>
     </span>
   );
 }
