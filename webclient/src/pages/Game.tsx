@@ -1804,22 +1804,30 @@ function MyHand({
             Empty hand.
           </span>
         ) : (
-          cards.map((card, idx) => {
-            const isDragging = draggedCardId === card.id;
-            return (
-              <HandCardSlot
-                key={card.id}
-                card={card}
-                index={idx}
-                total={cards.length}
-                canAct={canAct}
-                isDragging={isDragging}
-                onObjectClick={onObjectClick}
-                onPointerDown={onPointerDown}
-                tooltip={cardTooltip(card)}
-              />
-            );
-          })
+          // Slice 54 — wrap in AnimatePresence so a card removed from
+          // the hand (cast / discard / shuffle-into-library) gets its
+          // exit phase. Without this, Framer never sees the source
+          // bbox and the layoutId={card.cardId} match (slices 52a-c)
+          // can't fire — the stack tile pops up from above instead of
+          // gliding from the hand position.
+          <AnimatePresence mode="popLayout" initial={false}>
+            {cards.map((card, idx) => {
+              const isDragging = draggedCardId === card.id;
+              return (
+                <HandCardSlot
+                  key={card.id}
+                  card={card}
+                  index={idx}
+                  total={cards.length}
+                  canAct={canAct}
+                  isDragging={isDragging}
+                  onObjectClick={onObjectClick}
+                  onPointerDown={onPointerDown}
+                  tooltip={cardTooltip(card)}
+                />
+              );
+            })}
+          </AnimatePresence>
         )}
       </div>
     </div>
