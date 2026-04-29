@@ -85,16 +85,47 @@ function SideboardModalImpl({
   // {@code time} is the engine's authoritative residual delay, so we
   // re-anchor the deadline — a brief jump in the displayed value is
   // correct (the engine timer is the source of truth).
-  const deadlineMsRef = useRef<number>(Date.now() + pending.time * 1000);
+  //
+  // <p>Slice 66a lint refactor: the deadline ref starts at a sentinel
+  // ({@code 0}) and is populated lazily by the interval effect using
+  // {@code pendingTimeRef} — keeping the {@code useRef} initializer
+  // pure (no {@code Date.now()} during render). The display value
+  // {@code remaining} is mirrored from {@code pending.time} via the
+  // React-recommended "adjust state during render" pattern (storing
+  // the previous prop alongside state), which provides the immediate
+  // re-anchor on a reconnect-replay frame without triggering
+  // {@code react-hooks/set-state-in-effect}.
+  const deadlineMsRef = useRef<number>(0);
+  // {@code remaining} is the displayed countdown value. We mirror it
+  // from {@code pending.time} on every fresh frame using the
+  // "adjust state during render" pattern
+  // (https://react.dev/reference/react/useState#storing-information-from-previous-renders),
+  // which is the React-recommended way to derive state from a prop
+  // change without an effect — keeping us clear of
+  // {@code react-hooks/set-state-in-effect}. The {@code useEffect}
+  // below then anchors {@code deadlineMsRef} (ref mutation in effects
+  // is allowed) and an interval drives {@code setRemaining} from
+  // its tick callback (allowed) for the once-per-second decrement.
+  const [prevPendingTime, setPrevPendingTime] = useState<number>(pending.time);
   const [remaining, setRemaining] = useState<number>(() =>
     Math.max(0, pending.time),
   );
+  if (prevPendingTime !== pending.time) {
+    setPrevPendingTime(pending.time);
+    setRemaining(Math.max(0, pending.time));
+  }
 
+  // Anchor the deadline ref on every fresh frame. Ref mutation +
+  // {@code Date.now()} are both fine inside an effect body — the
+  // restriction is only on synchronous {@code setState} (and on
+  // calling them during render).
   useEffect(() => {
     deadlineMsRef.current = Date.now() + pending.time * 1000;
-    setRemaining(Math.max(0, pending.time));
   }, [pending.tableId, pending.time]);
 
+  // Tick {@code remaining} down once per second from the anchored
+  // deadline. {@code setState} fires inside the interval callback,
+  // not synchronously in the effect body.
   useEffect(() => {
     if (pending.time <= 0) return;
     const id = setInterval(() => {

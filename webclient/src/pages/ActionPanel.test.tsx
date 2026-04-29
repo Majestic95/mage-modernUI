@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { ActionPanel, nextPhaseAction } from './ActionPanel';
+import { ActionPanel } from './ActionPanel';
+import { nextPhaseAction } from './actionPanelHelpers';
 import { useAuthStore } from '../auth/store';
 import { useGameStore } from '../game/store';
 import type { GameStream } from '../game/stream';

@@ -124,10 +124,12 @@ export function HoverCardDetail({
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
 
   useLayoutEffect(() => {
-    if (!show) {
-      setPos(null);
-      return;
-    }
+    // When show flips false the popover unmounts (the {show && ...}
+    // guard below), so any stale {@code pos} is unobservable until the
+    // next show=true cycle, which immediately recomputes it. We
+    // therefore intentionally do not setPos(null) here — that synchronous
+    // setState in an effect body would lint-fail without changing UX.
+    if (!show) return;
     if (!triggerRef.current || !popoverRef.current) return;
     const tr = triggerRef.current.getBoundingClientRect();
     const pr = popoverRef.current.getBoundingClientRect();
