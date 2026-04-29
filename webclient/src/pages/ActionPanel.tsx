@@ -207,7 +207,15 @@ export function ActionPanel({ stream }: Props) {
   return (
     <div
       data-testid="action-panel"
-      className="border-t border-zinc-800 bg-zinc-950 px-4 py-2 flex flex-wrap gap-2 items-center"
+      // Slice 57 (UX audit fix A) — relative z-30 flex-shrink-0:
+      //   - relative + z-30 establishes a stacking context above the
+      //     hand fan (whose hover-lift uses z-20 post-fix). Without
+      //     this, lifted hand cards paint over the buttons and
+      //     intercept clicks.
+      //   - flex-shrink-0 prevents the panel from compressing when
+      //     the flex column is tight on vertical space; main shrinks
+      //     instead. The panel must always be reachable.
+      className="relative z-30 flex-shrink-0 border-t border-zinc-800 bg-zinc-950 px-4 py-2 flex flex-wrap gap-2 items-center"
     >
       <span
         className="text-xs uppercase tracking-wide text-zinc-500 mr-2"

@@ -1012,7 +1012,20 @@ function Battlefield({
   }, [drag, gv.myHand]);
 
   return (
-    <div className="flex-1 flex flex-col relative">
+    // Slice 57 (UX audit fix B) — Battlefield restructure. Pre-fix:
+    // self section was flex-1 overflow-auto and contained MyHand,
+    // so when the self battlefield + hand overflowed, MyHand scrolled
+    // off the bottom and the action panel sat behind clipped cards.
+    //
+    // Post-fix: opponent section + stack + self battlefield section
+    // each handle their own intrinsic content (no per-section scroll).
+    // MyHand is pulled OUT of the self section into its own
+    // flex-shrink-0 slot at the bottom of Battlefield, so it's
+    // always visible at full height regardless of how many
+    // permanents are out. The whole Battlefield wrapper gets
+    // overflow-y-auto for the rare case the combined intrinsic
+    // height exceeds the viewport on a small laptop.
+    <div className="flex-1 flex flex-col relative overflow-y-auto">
       {drag && draggedCard && (
         <div
           data-testid="drag-preview"
@@ -1029,8 +1042,8 @@ function Battlefield({
           </div>
         </div>
       )}
-      {/* Opponents row(s) — top */}
-      <section className="flex-1 border-b border-zinc-800 p-4 space-y-4 overflow-auto">
+      {/* Opponents row(s) — top. flex-shrink-0 = intrinsic height. */}
+      <section className="flex-shrink-0 border-b border-zinc-800 p-4 space-y-4">
         {opponents.map((p) => (
           <PlayerArea
             key={p.playerId}
@@ -1051,41 +1064,47 @@ function Battlefield({
       </section>
 
       {/* Stack — between players (slice 27). Collapses to nothing
-          when empty so the 50/50 opponents/self vertical split is
-          undisturbed. */}
+          when empty so the surrounding layout doesn't shift. */}
       <StackZone stack={gv.stack} />
 
-      {/* Self — bottom */}
-      <section className="flex-1 p-4 space-y-4 overflow-auto">
+      {/* Self battlefield — middle-bottom. flex-1 so it absorbs
+          excess vertical space when small (no awkward gap to hand). */}
+      <section className="flex-1 p-4 space-y-4 min-h-0">
         {me ? (
-          <>
-            <PlayerArea
-              player={me}
-              perspective="self"
-              canAct={canAct}
-              onObjectClick={onObjectClick}
-              targetable={eligibleTargetIds.has(me.playerId)}
-              eligibleCombatIds={eligibleCombatIds}
-              combatRoles={combatRoles}
-              isDropTarget={drag != null}
-              onBoardDrop={onBoardDrop}
-            />
-            <MyHand
-              hand={gv.myHand}
-              canAct={canAct}
-              onObjectClick={onObjectClick}
-              isMyTurn={!!me.isActive}
-              hasPriority={!!me.hasPriority}
-              onPointerDown={beginHandPress}
-              draggedCardId={drag?.cardId ?? null}
-            />
-          </>
+          <PlayerArea
+            player={me}
+            perspective="self"
+            canAct={canAct}
+            onObjectClick={onObjectClick}
+            targetable={eligibleTargetIds.has(me.playerId)}
+            eligibleCombatIds={eligibleCombatIds}
+            combatRoles={combatRoles}
+            isDropTarget={drag != null}
+            onBoardDrop={onBoardDrop}
+          />
         ) : (
           <p className="text-zinc-500 italic">
             Spectator view — no controlling player.
           </p>
         )}
       </section>
+
+      {/* My hand — bottom slot, ALWAYS visible at full height. Was
+          inside self section pre-slice-57; moved out so an
+          overflowing battlefield can't scroll the hand off-screen. */}
+      {me && (
+        <div className="flex-shrink-0 border-t border-zinc-800 px-4 pb-2">
+          <MyHand
+            hand={gv.myHand}
+            canAct={canAct}
+            onObjectClick={onObjectClick}
+            isMyTurn={!!me.isActive}
+            hasPriority={!!me.hasPriority}
+            onPointerDown={beginHandPress}
+            draggedCardId={drag?.cardId ?? null}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -1798,7 +1817,16 @@ function MyHand({
           works because the underlying button keeps the same
           handlers and testid. The wrapper is `h-44` so the lift
           has room without pushing layout.*/}
-      <div className="relative h-44">
+      {/*
+        Slice 57 (UX audit fix C) — h-44 (176px) was 20px short for
+        the 140px card + 56px hover-lift (= 196px needed). The
+        lifted card was clipping at the top against the MyHand border.
+        h-52 = 208px gives 12px overhead headroom plus pt-14 ensures
+        the lift origin sits below the section header so a hovered
+        card can fully float above without intersecting the "Your hand"
+        label.
+      */}
+      <div className="relative h-52 pt-2">
         {cards.length === 0 ? (
           <span className="absolute left-3 top-3 text-xs text-zinc-600 italic">
             Empty hand.
@@ -1914,7 +1942,11 @@ function HandCardSlot({
       className="absolute left-1/2 top-2 transition-transform ease-out origin-bottom"
       style={{
         transform,
-        zIndex: lifted ? 100 : index,
+        // Slice 57 — z-index ladder (audit finding 8): hand-lift caps
+        // at 20 so it stays UNDER ActionPanel (z-30), drag preview
+        // (z-40 → z-50), modals (z-50), and hover popover portals.
+        // Pre-fix this was 100 — paints over ActionPanel + GameDialog.
+        zIndex: lifted ? 20 : index,
         transitionDuration: `${HAND_HOVER_LIFT_MS * SLOWMO}ms`,
       }}
     >
