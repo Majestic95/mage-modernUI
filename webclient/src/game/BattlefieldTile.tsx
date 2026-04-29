@@ -1,0 +1,143 @@
+import type { WebPermanentView } from '../api/schemas';
+import { CardFace } from './CardFace';
+import { HoverCardDetail } from './HoverCardDetail';
+
+/**
+ * Slice 45 â€” replaces the slice-9-era {@code PermanentChip} text-chip
+ * with a card-shaped tile (5:7 aspect, ~80Ã—112). Mirrors
+ * {@link HandCardFace} for the visual base â€” Scryfall art, mana cost,
+ * name banner, P/T â€” and adds the battlefield-specific affordances:
+ * tap rotation (90Â° clockwise), combat highlight ring, ATK/BLK
+ * badges, damage chip, counter chip, summoning-sickness border.
+ *
+ * <p>Each tile is rendered inside a fixed 112Ã—112 square slot so the
+ * tap rotation (which swaps the tile's bounding box from 80Ã—112
+ * portrait to 112Ã—80 landscape) stays within the slot â€” neighbors
+ * never reflow when a card taps.
+ *
+ * <p>The slot wrapper sits OUTSIDE {@link HoverCardDetail} on
+ * purpose: HoverCardDetail's trigger span is {@code position:
+ * relative}, and the slice-44a bug demonstrated that any
+ * absolutely-positioned descendant collapses to the left edge of
+ * that inline-flex span. The slot itself is a flex item (no
+ * absolute positioning), so the bug doesn't trigger here, but
+ * keeping the layout box outside HoverCardDetail also makes the
+ * trigger element's bounding box exactly the tile, which gives
+ * cleaner positioning for the popover.
+ */
+export function BattlefieldTile({
+  perm,
+  canAct,
+  onClick,
+  isEligibleCombat,
+  combatRole,
+  rotateDelay,
+}: {
+  perm: WebPermanentView;
+  canAct: boolean;
+  onClick: (id: string) => void;
+  /**
+   * Slice 26 â€” the engine has marked this permanent as a legal
+   * attacker (declareAttackers) or legal blocker (declareBlockers).
+   * Renders an amber highlight ring so the player can see at a
+   * glance which creatures the click-to-toggle gesture applies to.
+   */
+  isEligibleCombat: boolean;
+  /**
+   * Slice 26 â€” non-null when this permanent is currently in a
+   * combat group ({@code gv.combat[]}). Drives the ATK / BLK badge.
+   */
+  combatRole: 'attacker' | 'blocker' | null;
+  /**
+   * Slice 58 â€” index-based stagger delay (in seconds) applied to the
+   * tap/untap rotation spring. Produces a wave on start-of-turn untap.
+   */
+  rotateDelay?: number;
+}) {
+  const tapped = perm.tapped;
+  return (
+    // Fixed 112Ã—112 slot â€” the tile (80Ã—112 portrait) and its tapped
+    // state (112Ã—80 landscape) both fit. flex centering keeps the
+    // tile aligned regardless of orientation.
+    <div className="w-[112px] h-[112px] flex items-center justify-center">
+      <HoverCardDetail card={perm.card}>
+        <button
+          type="button"
+          data-testid="permanent"
+          data-tapped={tapped}
+          data-combat-eligible={isEligibleCombat || undefined}
+          data-combat-role={combatRole ?? undefined}
+          disabled={!canAct}
+          onClick={() => onClick(perm.card.id)}
+          title={
+            canAct
+              ? `${perm.card.name} â€” click to tap/activate`
+              : perm.card.typeLine
+          }
+          className={
+            'select-none rounded-lg ' +
+            (canAct
+              ? 'cursor-pointer hover:ring-1 hover:ring-fuchsia-500'
+              : 'cursor-default')
+          }
+        >
+          <BattlefieldTileFace
+            perm={perm}
+            isEligibleCombat={isEligibleCombat}
+            combatRole={combatRole}
+            tapped={tapped}
+            rotateDelay={rotateDelay}
+          />
+        </button>
+      </HoverCardDetail>
+    </div>
+  );
+}
+
+/**
+ * Inner card layout for {@link BattlefieldTile}. Layered:
+ *   - Scryfall art covering the body via {@code normal} version
+ *   - Mana cost overlay top-right
+ *   - Name banner across the bottom
+ *   - P/T overlay bottom-right (creatures) / loyalty (planeswalkers)
+ *   - Counter chip top-left (when {@code card.counters} non-empty)
+ *   - Damage chip lower-left (when {@code damage > 0})
+ *   - Combat ATK / BLK badge top-left (over the counter chip slot;
+ *     they shouldn't both be present in practice â€” combat badges
+ *     only appear during declare-blockers/attackers, counters can
+ *     appear any time but the visual collision is mild)
+ *   - Combat-eligible amber ring on the outer card box
+ *   - Tap state: rotate 90Â° clockwise + opacity 60%
+ *   - Summoning sickness: subtle dashed zinc border (replaces the
+ *     legacy italic text styling â€” italics don't carry meaning on
+ *     a card-art tile)
+ *
+ * <p>Falls back to a name-only silhouette when Scryfall has no art
+ * (token, ad-hoc emblem, etc.) â€” same defensive pattern as
+ * {@link HandCardFace}.
+ */
+function BattlefieldTileFace({
+  perm,
+  isEligibleCombat,
+  combatRole,
+  tapped,
+  rotateDelay,
+}: {
+  perm: WebPermanentView;
+  isEligibleCombat: boolean;
+  combatRole: 'attacker' | 'blocker' | null;
+  tapped: boolean;
+  rotateDelay?: number;
+}) {
+  return (
+    <CardFace
+      card={perm.card}
+      size="battlefield"
+      perm={perm}
+      isEligibleCombat={isEligibleCombat}
+      combatRole={combatRole}
+      tapped={tapped}
+      rotateDelay={rotateDelay}
+    />
+  );
+}
