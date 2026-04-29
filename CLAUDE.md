@@ -221,6 +221,37 @@ WebApi instantiates `MageServerImpl` in-process and calls its existing methods. 
 
 ---
 
+## Audit & Review Cadence
+
+Tests catch correctness regressions; audits catch scope, layout, and architectural drift that tests can't see. The agentic loop (research → builder → critic → fixer) is the project's standard delivery shape — don't drift from it. Run audits proactively at the cadence below, not only when something visibly breaks.
+
+### Per-slice cadence (the standard loop)
+
+Every non-trivial slice runs through:
+1. **Recon agent (Explore subagent)** — read-only investigation, file:line citations, scope map.
+2. **Builder (general-purpose agent)** — implements per the recon's findings; stages but does not commit.
+3. **Critic (general-purpose agent)** — read-only review of the staged diff; numbered findings with severity.
+4. **Fixer** — apply blockers/notables; queue nits as follow-up slices.
+5. **Tests + commit + (server bounce if Java changed).**
+
+Trivial slices (≤50 LOC, single file, no architectural impact) can skip the recon and run builder→critic only. Truly mechanical fixes (the critic's own findings, lockfile bumps, doc typos) can be applied inline.
+
+### Periodic sweeps (don't wait for symptoms)
+
+- **UX audit — every 5-10 slices** that affect layout, visuals, animation, or `Game.tsx` / `ActionPanel.tsx`. Read-only audit agent looks for: viewport overflow, z-index ladder, scrolling clip, click accessibility, narrow-viewport behavior. Catches what "live testing on one screen" doesn't.
+- **SE audit — every 15-20 slices**, or at major milestones. Read-only senior-engineer agent reviews: roadmap drift, file LOC trajectory, test coverage gaps, CI health, dependency hygiene, risk register, architectural smells. Output is a forward-looking roadmap.
+- **Live-test loop** — irreplaceable for "feel" verification (animation timing, spring tuning, pacing). Humans notice these; agents don't. Use the `?slowmo=N` URL knob (`webclient/src/animation/debug.ts`) to inspect animations frame-by-frame.
+
+### Locked invariants (CI gates)
+
+CI runs typecheck + tests + (lint informational) on every commit affecting `Mage.Server.WebApi/`, `webclient/`, `docs/schema/`, or the workflow file (`.github/workflows/webapi-and-client.yml`, slice 56). Adding a Playwright e2e for layout invariants is queued — once it ships it joins the gate.
+
+### Why this cadence (don't shortcut)
+
+A user-reported-bug-by-bug approach handles symptoms one at a time and misses shared root causes. The slice-57 UX audit found 12 issues in one sweep; the user had only noticed the 2 most visible. Catching 10 latent issues in the same hour is the leverage. Run the sweeps.
+
+---
+
 ## Mandatory Breakage Analysis — ALWAYS Before Coding
 
 **Every change** — no matter how small — gets a written breakage analysis **before** any code is written. This is a hard constraint, not a guideline. The goal is **scope-locked, mindful** changes; the cost is one minute of typing.
