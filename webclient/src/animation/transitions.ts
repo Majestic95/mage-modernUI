@@ -85,6 +85,25 @@ export const MANA_POOL_FADE: Transition = {
   ease: 'easeOut',
 };
 
+// Damage flash overlay — short red pulse (opacity 0 → 0.4 → 0) when
+// a creature takes damage. Duration short enough (~250ms) to complete
+// before the BATTLEFIELD_ENTER_EXIT exit fires for a damaged-to-death
+// creature, so the user sees the flicker before the slide-out.
+//
+// Used as keyframe values + transition together at the call site:
+//   animate={{ opacity: [0, 0.4, 0] }}
+//   transition={slow(DAMAGE_FLASH)}
+export const DAMAGE_FLASH: Transition = {
+  duration: 0.25,
+  times: [0, 0.4, 1],
+};
+
+// Counter chip scale-pop on +1/+1 (or any counter) increase. Same
+// energy as LIFE_FLASH_POP — both communicate "you just gained
+// something." Aliased rather than duplicated so the call-site
+// vocabulary reads as the intent (counter pop, not life flash).
+export const COUNTER_POP = LIFE_FLASH_POP;
+
 // Stagger delay between successive untap rotations (in milliseconds).
 // 50ms × N creatures gives a wave effect at start-of-turn untap.
 export const UNTAP_STAGGER_DELAY_MS = 50;

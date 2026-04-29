@@ -1,9 +1,13 @@
-import { useState, type JSX } from 'react';
+import { useEffect, useRef, useState, type JSX } from 'react';
 import { motion } from 'framer-motion';
 import type { WebCardView, WebPermanentView } from '../api/schemas';
 import { ManaCost, scryfallImageUrl, type ScryfallVersion } from '../pages/Game';
 import { slow } from '../animation/debug';
-import { MANA_TAP_ROTATE } from '../animation/transitions';
+import {
+  COUNTER_POP,
+  DAMAGE_FLASH,
+  MANA_TAP_ROTATE,
+} from '../animation/transitions';
 
 /**
  * Slice 52e — shared card-face renderer used by hand, stack, and
@@ -160,6 +164,32 @@ export function CardFace(props: CardFaceProps): JSX.Element {
   const damage = isBattlefield ? perm!.damage : 0;
   const role = isBattlefield ? (combatRole ?? null) : null;
 
+  // Slice 59 — transient flash state for damage and counter increases.
+  // Pattern mirrors LifeTotal in Game.tsx: useRef tracks prev value,
+  // useEffect detects an INCREASE (not decrease — heal/counter-removal
+  // shouldn't fire), useState bumps a key counter to force a fresh
+  // motion.div remount. The damage flash self-unmounts via
+  // onAnimationComplete; the counter pop relies on the key remount
+  // pattern — no setTimeout needed in either path.
+  const prevDamageRef = useRef(damage);
+  const [damageFlashKey, setDamageFlashKey] = useState(0);
+  useEffect(() => {
+    if (damage > prevDamageRef.current) {
+      setDamageFlashKey((k) => k + 1);
+    }
+    prevDamageRef.current = damage;
+  }, [damage]);
+
+  const counterTotal = counterEntries.reduce((sum, [, n]) => sum + n, 0);
+  const prevCounterTotalRef = useRef(counterTotal);
+  const [counterPopKey, setCounterPopKey] = useState(0);
+  useEffect(() => {
+    if (counterTotal > prevCounterTotalRef.current) {
+      setCounterPopKey((k) => k + 1);
+    }
+    prevCounterTotalRef.current = counterTotal;
+  }, [counterTotal]);
+
   // Battlefield-specific border + ring + tap transform.
   const sickBorder =
     isBattlefield && sick ? 'border-zinc-500/70 border-dashed' : spec.border;
@@ -250,15 +280,26 @@ export function CardFace(props: CardFaceProps): JSX.Element {
         </div>
       )}
       {/* Counter chip (top-left). Hidden during combat so the
-          ATK/BLK badge can take that slot. */}
+          ATK/BLK badge can take that slot. Slice 59 — scale-pops on
+          counter total increase. The key={`counter-${counterPopKey}`}
+          forces a fresh motion component on each pop, so the
+          initial: scale 1.3 → animate: scale 1 runs once per increase.
+          The counterPopKey > 0 conditional ensures the FIRST render
+          (when the chip first mounts) doesn't pop — only subsequent
+          increases. */}
       {isBattlefield && hasCounters && role === null && (
-        <div
+        <motion.div
+          key={`counter-${counterPopKey}`}
           data-testid="permanent-counters"
+          data-counter-pop-key={counterPopKey}
+          initial={counterPopKey > 0 ? { scale: 1.3 } : { scale: 1 }}
+          animate={{ scale: 1 }}
+          transition={slow(COUNTER_POP)}
           className="absolute top-0.5 left-0.5 bg-amber-500/30 text-amber-100 text-[9px] font-mono px-1 rounded max-w-[60px] truncate"
           title={counterText}
         >
           {counterText}
-        </div>
+        </motion.div>
       )}
       {/* Combat ATK / BLK badge (top-left, replaces counter chip
           during combat). Slice 26 colors preserved. */}
@@ -322,6 +363,40 @@ export function CardFace(props: CardFaceProps): JSX.Element {
             ? card.startingLoyalty
             : `${card.power}/${card.toughness}`}
         </div>
+      )}
+      {/* Slice 59 — damage flash overlay. Mounts when damageFlashKey
+          increments (from a damage increase), pulses 0 → 0.4 → 0
+          opacity over 250ms, then self-unmounts via the
+          onAnimationComplete callback. pointer-events-none so it
+          doesn't block clicks during its lifetime; rounded-[inherit]
+          so it respects the parent CardFace's rounded corners. Sits
+          INSIDE the rotating motion.div so a tapped creature taking
+          damage flashes with the card's rotation. */}
+      {damageFlashKey > 0 && (
+        <motion.div
+          key={`damage-flash-${damageFlashKey}`}
+          data-testid="damage-flash"
+          data-damage-flash-key={damageFlashKey}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: [0, 0.4, 0] }}
+          transition={slow(DAMAGE_FLASH)}
+          onAnimationComplete={() => {
+            // Self-cleanup so the overlay unmounts after the flash —
+            // otherwise it would stay mounted at opacity 0 forever,
+            // accumulating one motion.div per damage event over the
+            // course of a game.
+            //
+            // Compare-and-set: only zero out if THIS key is still the
+            // current one. Guards the rapid-double-damage race where a
+            // second flash mounts (key=2) before the first finishes;
+            // the stale onAnimationComplete from key=1 would otherwise
+            // wipe out the active key=2 overlay's state.
+            const thisKey = damageFlashKey;
+            setDamageFlashKey((k) => (k === thisKey ? 0 : k));
+          }}
+          className="absolute inset-0 bg-red-500 pointer-events-none rounded-[inherit]"
+          aria-hidden="true"
+        />
       )}
     </motion.div>
   );
