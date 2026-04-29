@@ -76,6 +76,42 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
     static final int BUFFER_CAPACITY = 64;
 
     /**
+     * Slice 63 — auditor #4 / recon agent BLOCKER: hard cap on the
+     * number of simultaneous WebSockets a single WebSession (i.e. one
+     * authenticated user-token) may hold open. Without this cap, a
+     * malicious or buggy client could open thousands of sockets, each
+     * holding Jetty's per-connection buffers (~32 KB) — 50 such users
+     * = memory exhaustion.
+     *
+     * <p>Calibrated at 4: legitimate concurrent need is 1 lobby socket
+     * + 1 game socket + 1 spectator (future) + 1 reconnect-headroom for
+     * the close/reopen race during a network blip. Above this is not a
+     * legitimate UI shape.
+     *
+     * <p>Caveat: the cap is per-WebSession, not per-user. A user logged
+     * in twice (two browsers / private tab) has two WebSessions and so
+     * 2× the cap; that's acceptable because the duplicate-login path
+     * (newest-wins, see {@code AuthService.revokePriorTokensForSameUsername})
+     * already disconnects the older session.
+     *
+     * <p>Race acceptance: the {@code sockets} set is concurrent and a
+     * race between two simultaneous {@code register} calls might briefly
+     * allow 5 sockets through. That's a diagnostic-best-effort window,
+     * not a security boundary — explicit synchronisation is unnecessary
+     * for this slice.
+     */
+    static final int MAX_SOCKETS_PER_USER = 4;
+
+    /**
+     * WS close code used when {@link #register} rejects an over-cap
+     * socket. Picked from the application-defined 4xxx range; 4008
+     * (RFC-6455 closes are 1xxx, application closes are 4xxx) signals
+     * "policy violation: too many sockets" so the webclient can
+     * back off rather than retry-storm.
+     */
+    static final int CLOSE_TOO_MANY_SOCKETS = 4008;
+
+    /**
      * Slice 49 — AI-action diagnostic threshold. A turn segment with
      * fewer than this many GameView frames raises a WARN. Slice 47
      * mitigated the Mad AI no-plays cliff (skill 1 → 4, more think
@@ -222,10 +258,50 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
         this.embedded = embedded;
     }
 
-    /** Add a freshly-opened socket. Called from Javalin's {@code onConnect}. */
-    public void register(WsContext ctx) {
-        sockets.add(ctx);
-        LOG.debug("WS register: user={}, total sockets={}", username, sockets.size());
+    /**
+     * Add a freshly-opened socket. Called from Javalin's
+     * {@code onConnect}. Returns {@code true} on successful registration.
+     *
+     * <p>Slice 63 — auditor #4 / recon agent BLOCKER: enforces the
+     * {@link #MAX_SOCKETS_PER_USER} cap. When the user is already at
+     * cap, the new socket is closed with {@link #CLOSE_TOO_MANY_SOCKETS}
+     * and {@code "TOO_MANY_SOCKETS"} as the reason; the caller (the WS
+     * upgrade handler) MUST observe the {@code false} return and skip
+     * any further per-socket setup (attribute attach / streamHello)
+     * because the socket is already closed.
+     *
+     * <p>Slice 63 fixer (critic finding #4): the check + add is
+     * atomic under {@code synchronized (sockets)} so concurrent
+     * register calls from N>>cap threads can't slip past in lockstep
+     * and overshoot by N. The lock is held only for the size+add
+     * window; the post-add LOG and the close-on-rejection happen
+     * outside it. Negligible contention at WS-upgrade frequency.
+     */
+    public boolean register(WsContext ctx) {
+        boolean accepted;
+        int sizeAfter;
+        synchronized (sockets) {
+            if (sockets.size() >= MAX_SOCKETS_PER_USER) {
+                accepted = false;
+                sizeAfter = sockets.size();
+            } else {
+                sockets.add(ctx);
+                accepted = true;
+                sizeAfter = sockets.size();
+            }
+        }
+        if (!accepted) {
+            LOG.warn("WS register rejected (cap reached): user={}, sockets={}, cap={}",
+                    username, sizeAfter, MAX_SOCKETS_PER_USER);
+            try {
+                ctx.closeSession(CLOSE_TOO_MANY_SOCKETS, "TOO_MANY_SOCKETS");
+            } catch (RuntimeException ex) {
+                LOG.debug("WS close-on-cap failed for user={}: {}", username, ex.getMessage());
+            }
+            return false;
+        }
+        LOG.debug("WS register: user={}, total sockets={}", username, sizeAfter);
+        return true;
     }
 
     /** Remove a closed socket. Called from Javalin's {@code onClose}. */

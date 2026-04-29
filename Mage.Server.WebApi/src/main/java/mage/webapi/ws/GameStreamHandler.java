@@ -19,9 +19,11 @@ import mage.webapi.dto.stream.WebStreamError;
 import mage.webapi.dto.stream.WebStreamFrame;
 import mage.webapi.dto.stream.WebStreamHello;
 import mage.webapi.embed.EmbeddedServer;
+import mage.webapi.upstream.GameLookup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -44,8 +46,13 @@ import java.util.function.Consumer;
  *   <li>{@code 4001} — auth failed at upgrade (token missing, unknown,
  *       or expired)</li>
  *   <li>{@code 4003} — request well-formed but rejected (gameId
- *       malformed; future slices will also reject when the user is not
- *       seated at this game)</li>
+ *       malformed, or — slice 63 — the authenticated user is not a
+ *       seated player in this game; reason
+ *       {@code "NOT_A_PLAYER_IN_GAME"})</li>
+ *   <li>{@code 4008} — too many sockets per WebSession; the
+ *       per-user socket cap (see
+ *       {@link WebSocketCallbackHandler#MAX_SOCKETS_PER_USER}) was hit
+ *       (slice 63 DoS defence)</li>
  * </ul>
  */
 public final class GameStreamHandler implements Consumer<WsConfig> {
@@ -130,12 +137,60 @@ public final class GameStreamHandler implements Consumer<WsConfig> {
             return;
         }
 
+        // Slice 63 — auditor #4 / recon agent BLOCKER: gate the WS
+        // upgrade on game membership. Pre-slice-63, any authenticated
+        // user could open a WS to any gameId they could guess and (with
+        // the slice-63 manaType ownership fix above) at minimum receive
+        // the entire game state via fan-out — spectator-griefing on
+        // arbitrary games. Verifying userPlayerMap.containsKey(userId)
+        // BEFORE register() ensures only seated players observe the
+        // stream.
+        //
+        // Spectator support is intentionally out of scope here — the
+        // current 1v1-vs-AI flow has no spectator UX. When spectator
+        // mode lands, this gate extends with a spectator-allow-list
+        // (see GameController.watch()).
+        //
+        // Fail-closed: any reflection failure / null controller / null
+        // session-userId path returns null from resolveSessionPlayerId,
+        // which closes the upgrade. The legitimate join-table flow is not
+        // affected because userPlayerMap is populated at game-start
+        // (TableController.startGame populates it before the upstream
+        // ccGameStarted callback fires that triggers the webclient's
+        // WS-open).
+        // Slice 63 fixer (critic finding #3): membership gate now
+        // reuses resolveSessionPlayerId so the upgrade and the
+        // dispatchManaType path go through ONE resolver. Previously
+        // both call sites independently walked sessionManager →
+        // userPlayerMap; that's two reflection paths per upgrade and
+        // two places that can drift. Consolidating here means a
+        // future change to the resolution semantics (e.g., spectator
+        // allow-list) only touches resolveSessionPlayerId.
+        UUID playerId = resolveSessionPlayerId(gameId, session);
+        if (playerId == null) {
+            LOG.warn("WS upgrade rejected: user={} not seated at game={}",
+                    session.username(), gameId);
+            closeWith(ctx, 4003, "NOT_A_PLAYER_IN_GAME");
+            return;
+        }
+
+        // Slice 63 — auditor #4 / recon agent BLOCKER: enforce the
+        // per-user socket cap BEFORE attaching state to the WsContext
+        // and before sending streamHello. WebSocketCallbackHandler.register
+        // returns false (and has already closed the socket itself) when
+        // the user is at MAX_SOCKETS_PER_USER; in that case we must NOT
+        // attach attributes or send the hello — the socket is gone.
+        // chatId binding stays attribute-side (cheap idempotent lookup)
+        // and is set before register so chat fan-out, if any callback
+        // races it, sees the bound chatId.
         ctx.attribute(ATTR_HANDLER, handler.get());
         ctx.attribute(ATTR_GAME_ID, gameId);
         ctx.attribute(ATTR_USERNAME, session.username());
         ctx.attribute(ATTR_SESSION, session);
         bindGameChatId(ctx, gameId);
-        handler.get().register(ctx);
+        if (!handler.get().register(ctx)) {
+            return;
+        }
 
         LOG.info("WS connect: user={}, game={}", session.username(), gameId);
         sendFrame(ctx, "streamHello", gameId.toString(),
@@ -157,6 +212,11 @@ public final class GameStreamHandler implements Consumer<WsConfig> {
 
         replayBufferIfRequested(ctx, handler.get());
     }
+
+    // userIsInGame + resolveSessionUserId removed in slice 63 fixer
+    // pass (critic finding #3): the upgrade gate now calls
+    // resolveSessionPlayerId directly and treats null as "no access".
+    // Single resolution path.
 
     private void joinGameUpstream(UUID gameId, SessionEntry session) {
         try {
@@ -571,24 +631,67 @@ public final class GameStreamHandler implements Consumer<WsConfig> {
     private void dispatchManaType(WsMessageContext ctx, UUID gameId,
                                    SessionEntry session, JsonNode valueNode)
             throws MageException {
-        // sendPlayerManaType also takes a playerId — upstream uses the
-        // session's user as the source. The current signature requires
-        // both gameId and playerId; we use the active player's id from
-        // the value's optional "playerId" field, falling back to the
-        // session's username-resolved player. Slice 7 will tighten via
-        // explicit dialog-correlation.
-        JsonNode pidNode = valueNode.get("playerId");
+        // Slice 63 — auditor #4 / recon agent BLOCKER: the playerId for a
+        // manaType choice MUST be derived from the WebSocket session's
+        // upstream userId, never from the inbound frame. The pre-slice-63
+        // code trusted a frame-supplied {playerId: ...} which let any
+        // authenticated user submit manaType choices on behalf of any
+        // other player whose UUID they could observe (gameInit, etc.).
+        //
+        // Pattern mirrors handlePlayerAction (line 365+): the session →
+        // upstreamSessionId → User → playerId chain is server-side only.
+        // sendPlayerManaType is the only Game* dispatch method that takes
+        // playerId as a parameter (others derive it inside MageServerImpl
+        // from sessionId), so we resolve it ourselves via GameLookup's
+        // reflective userPlayerMap accessor.
         JsonNode mtNode = valueNode.get("manaType");
-        if (pidNode == null || !pidNode.isTextual() || mtNode == null || !mtNode.isTextual()) {
+        if (mtNode == null || !mtNode.isTextual()) {
             sendError(ctx, "BAD_REQUEST",
                     "playerResponse{kind:manaType} value must be "
-                            + "{ playerId: <uuid>, manaType: <enum> }.");
+                            + "{ manaType: <enum> }.");
             return;
         }
-        UUID playerId = UUID.fromString(pidNode.asText());
         ManaType mt = ManaType.valueOf(mtNode.asText());
+
+        UUID playerId = resolveSessionPlayerId(gameId, session);
+        if (playerId == null) {
+            // User isn't seated at this game. Either the session's
+            // upstream User is gone, the game has no controller yet, or
+            // (the security-relevant case) an authenticated user is
+            // trying to act on a game they don't belong to.
+            LOG.warn("dispatchManaType: user={} not seated at game={} — rejecting",
+                    session.username(), gameId);
+            sendError(ctx, "BAD_REQUEST",
+                    "User is not a player in this game.");
+            return;
+        }
         embedded.server().sendPlayerManaType(gameId, playerId,
                 session.upstreamSessionId(), mt);
+    }
+
+    /**
+     * Resolve the {@code playerId} the supplied session's user controls
+     * in the supplied game. Returns {@code null} if the session has no
+     * upstream user, the game has no controller, or the user isn't in
+     * this game's {@code userPlayerMap}.
+     *
+     * <p>Slice 63 — used by {@link #dispatchManaType} (FIX A) and by
+     * the WS-upgrade game-membership gate (FIX B, in {@code onConnect}).
+     * Centralised here so both call sites use identical resolution
+     * semantics — fixer pass after critic finding #3 collapsed the
+     * earlier {@code userIsInGame} duplicate path into this method.
+     */
+    private UUID resolveSessionPlayerId(UUID gameId, SessionEntry session) {
+        UUID userId = embedded.managerFactory().sessionManager()
+                .getSession(session.upstreamSessionId())
+                .map(mage.server.Session::getUserId)
+                .orElse(null);
+        if (userId == null) {
+            return null;
+        }
+        Optional<Map<UUID, UUID>> map = GameLookup.findUserPlayerMap(
+                gameId, embedded.managerFactory());
+        return map.map(m -> m.get(userId)).orElse(null);
     }
 
     private static SessionEntry sessionFromCtx(WsMessageContext ctx) {

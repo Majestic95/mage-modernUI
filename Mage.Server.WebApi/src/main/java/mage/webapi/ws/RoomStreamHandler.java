@@ -142,7 +142,13 @@ public final class RoomStreamHandler implements Consumer<WsConfig> {
         ctx.attribute(ATTR_USERNAME, session.username());
         ctx.attribute(ATTR_SESSION, session);
         ctx.attribute(WebSocketCallbackHandler.ATTR_BOUND_CHAT_ID, chatId);
-        handler.get().register(ctx);
+        // Slice 63 — auditor #4 / recon agent BLOCKER: register can
+        // reject (and pre-close the socket) when the user is at the
+        // per-WebSession socket cap. In that case we must NOT send the
+        // streamHello — the socket is already closed by register itself.
+        if (!handler.get().register(ctx)) {
+            return;
+        }
 
         LOG.info("WS room connect: user={}, room={}, chat={}",
                 session.username(), roomId, chatId);

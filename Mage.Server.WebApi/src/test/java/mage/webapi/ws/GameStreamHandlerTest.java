@@ -73,9 +73,13 @@ class GameStreamHandlerTest {
 
     @Test
     void onConnect_sendsStreamHelloEnvelope() throws Exception {
+        // Slice 63 — game-membership gate now requires a real gameId.
+        RealGameFixture fx = realGameFixture();
         TestListener listener = new TestListener();
-        WebSocket ws = openWs(UUID.randomUUID(), bearer, listener);
+        WebSocket ws = openWs(fx.gameId(), fx.token(), listener);
         try {
+            // streamHello is sent synchronously before any upstream
+            // join callbacks fire, so it's always the first frame.
             String frame = listener.awaitFrame(FRAME_WAIT);
             JsonNode env = JSON.readTree(frame);
             assertEquals(SchemaVersion.CURRENT, env.get("schemaVersion").asText(),
@@ -98,18 +102,14 @@ class GameStreamHandlerTest {
     @Test
     void onMessage_unknownType_repliesWithStreamError() throws Exception {
         TestListener listener = new TestListener();
-        WebSocket ws = openWs(UUID.randomUUID(), bearer, listener);
+        WebSocket ws = openValidGameWs(listener);
         try {
-            // Discard the streamHello frame.
-            listener.awaitFrame(FRAME_WAIT);
-
             // 'playerSurrender' isn't a valid inbound type — slice 6
             // reserves NOT_IMPLEMENTED for unknown discriminators.
             ws.sendText("{\"type\":\"playerSurrender\"}", true).join();
-            String reply = listener.awaitFrame(FRAME_WAIT);
-
-            JsonNode env = JSON.readTree(reply);
-            assertEquals("streamError", env.get("method").asText());
+            // Slice 63 — fixture game emits engine frames so use
+            // awaitMethod to skip past them and pick the streamError.
+            JsonNode env = JSON.readTree(awaitMethod(listener, "streamError"));
             JsonNode data = env.get("data");
             assertEquals("NOT_IMPLEMENTED", data.get("code").asText());
             assertTrue(data.get("message").asText().contains("playerSurrender"),
@@ -122,14 +122,10 @@ class GameStreamHandlerTest {
     @Test
     void onMessage_malformedJson_repliesWithStreamError() throws Exception {
         TestListener listener = new TestListener();
-        WebSocket ws = openWs(UUID.randomUUID(), bearer, listener);
+        WebSocket ws = openValidGameWs(listener);
         try {
-            listener.awaitFrame(FRAME_WAIT);
             ws.sendText("not-json-at-all", true).join();
-            String reply = listener.awaitFrame(FRAME_WAIT);
-
-            JsonNode env = JSON.readTree(reply);
-            assertEquals("streamError", env.get("method").asText());
+            JsonNode env = JSON.readTree(awaitMethod(listener, "streamError"));
             assertEquals("BAD_JSON", env.get("data").get("code").asText());
         } finally {
             ws.sendClose(WebSocket.NORMAL_CLOSURE, "test done").join();
@@ -139,14 +135,10 @@ class GameStreamHandlerTest {
     @Test
     void onMessage_nonObjectJson_repliesWithStreamError() throws Exception {
         TestListener listener = new TestListener();
-        WebSocket ws = openWs(UUID.randomUUID(), bearer, listener);
+        WebSocket ws = openValidGameWs(listener);
         try {
-            listener.awaitFrame(FRAME_WAIT);
             ws.sendText("[1,2,3]", true).join();
-            String reply = listener.awaitFrame(FRAME_WAIT);
-
-            JsonNode env = JSON.readTree(reply);
-            assertEquals("streamError", env.get("method").asText());
+            JsonNode env = JSON.readTree(awaitMethod(listener, "streamError"));
             assertEquals("BAD_REQUEST", env.get("data").get("code").asText());
         } finally {
             ws.sendClose(WebSocket.NORMAL_CLOSURE, "test done").join();
@@ -212,16 +204,20 @@ class GameStreamHandlerTest {
 
     @Test
     void chatBroadcast_arrivesAsChatMessageFrame() throws Exception {
-        ChatFixture chat = subscribeFreshUser();
+        // Slice 63 — game-membership gate requires a real game; chat
+        // scoping (slice 8) requires the broadcast target to match the
+        // socket's bound chatId. Both met by using the fixture's
+        // game chatId for the broadcast.
+        RealGameFixture fx = realGameFixture();
         TestListener listener = new TestListener();
-        WebSocket ws = openWs(UUID.randomUUID(), chat.token, listener);
+        WebSocket ws = openWs(fx.gameId(), fx.token(), listener);
         try {
             listener.awaitFrame(FRAME_WAIT); // streamHello
 
             // Direct upstream broadcast — bypasses the inbound WS path
             // so this test isolates the outbound mapper.
             embedded.managerFactory().chatManager().broadcast(
-                    chat.chatId,
+                    fx.chatId(),
                     "system",
                     "broadcast-from-test",
                     ChatMessage.MessageColor.BLACK,
@@ -230,7 +226,9 @@ class GameStreamHandlerTest {
                     ChatMessage.MessageType.USER_INFO,
                     null);
 
-            String frame = awaitMethod(listener, "chatMessage");
+            // Skip past any engine-system chat ("X has joined the
+            // game") and pick our broadcast by its unique content.
+            String frame = awaitChatMessageContaining(listener, "broadcast-from-test");
             JsonNode env = JSON.readTree(frame);
             assertEquals(SchemaVersion.CURRENT, env.get("schemaVersion").asText());
             assertEquals("chatMessage", env.get("method").asText());
@@ -248,25 +246,28 @@ class GameStreamHandlerTest {
 
     @Test
     void clientChatSend_routesToUpstreamAndEchoesBack() throws Exception {
-        ChatFixture chat = subscribeFreshUser();
+        RealGameFixture fx = realGameFixture();
         TestListener listener = new TestListener();
-        WebSocket ws = openWs(UUID.randomUUID(), chat.token, listener);
+        WebSocket ws = openWs(fx.gameId(), fx.token(), listener);
         try {
             listener.awaitFrame(FRAME_WAIT); // streamHello
 
             String body = "{\"type\":\"chatSend\",\"chatId\":\""
-                    + chat.chatId + "\",\"message\":\"ggwp\"}";
+                    + fx.chatId() + "\",\"message\":\"ggwp\"}";
             ws.sendText(body, true).join();
 
-            // Sender is also subscribed → the upstream broadcast loops
-            // back to their own session and arrives as a chatMessage
-            // frame on the same WebSocket.
-            String frame = awaitMethod(listener, "chatMessage");
+            // Sender is auto-subscribed via the game's chat → the
+            // upstream broadcast loops back and arrives as a chatMessage
+            // frame on the same WebSocket. The sender's username is
+            // resolved from the session, not the inbound frame.
+            // Skip past any engine-system chat ("X has joined the
+            // game") and pick our chatSend by its unique content.
+            String frame = awaitChatMessageContaining(listener, "ggwp");
             JsonNode env = JSON.readTree(frame);
             JsonNode data = env.get("data");
-            assertEquals(chat.username, data.get("username").asText(),
-                    "server fills username from session — clients cannot spoof");
             assertEquals("ggwp", data.get("message").asText());
+            assertNotNull(data.get("username").asText(),
+                    "server fills username from session — clients cannot spoof");
         } finally {
             ws.sendClose(WebSocket.NORMAL_CLOSURE, "test done").join();
         }
@@ -275,13 +276,10 @@ class GameStreamHandlerTest {
     @Test
     void clientChatSend_missingChatId_repliesWithStreamError() throws Exception {
         TestListener listener = new TestListener();
-        WebSocket ws = openWs(UUID.randomUUID(), bearer, listener);
+        WebSocket ws = openValidGameWs(listener);
         try {
-            listener.awaitFrame(FRAME_WAIT);
             ws.sendText("{\"type\":\"chatSend\",\"message\":\"hi\"}", true).join();
-            String reply = listener.awaitFrame(FRAME_WAIT);
-            JsonNode env = JSON.readTree(reply);
-            assertEquals("streamError", env.get("method").asText());
+            JsonNode env = JSON.readTree(awaitMethod(listener, "streamError"));
             assertEquals("BAD_REQUEST", env.get("data").get("code").asText());
             assertTrue(env.get("data").get("message").asText().contains("chatId"));
         } finally {
@@ -292,14 +290,11 @@ class GameStreamHandlerTest {
     @Test
     void clientChatSend_blankMessage_repliesWithStreamError() throws Exception {
         TestListener listener = new TestListener();
-        WebSocket ws = openWs(UUID.randomUUID(), bearer, listener);
+        WebSocket ws = openValidGameWs(listener);
         try {
-            listener.awaitFrame(FRAME_WAIT);
             ws.sendText("{\"type\":\"chatSend\",\"chatId\":\""
                     + UUID.randomUUID() + "\",\"message\":\"  \"}", true).join();
-            String reply = listener.awaitFrame(FRAME_WAIT);
-            JsonNode env = JSON.readTree(reply);
-            assertEquals("streamError", env.get("method").asText());
+            JsonNode env = JSON.readTree(awaitMethod(listener, "streamError"));
             assertEquals("BAD_REQUEST", env.get("data").get("code").asText());
         } finally {
             ws.sendClose(WebSocket.NORMAL_CLOSURE, "test done").join();
@@ -317,39 +312,45 @@ class GameStreamHandlerTest {
 
     @Test
     void reconnect_sinceReplaysBufferedFrames() throws Exception {
-        ChatFixture chat = subscribeFreshUser();
+        // Slice 63 — game-membership gate requires a real game. The
+        // fixture's game has its own engine-frame churn so we use the
+        // game's chatId, and pick out our specific broadcasts by the
+        // unique markers msg-A / msg-B / msg-C to skip engine-system
+        // chats ("X has joined the game") that are interleaved.
+        RealGameFixture fx = realGameFixture();
 
         // Phase 1 — open WS, capture three chat frames so the buffer
         // is populated. We then drop the WS without closing the
         // upstream session; the buffer survives on the handler.
         TestListener first = new TestListener();
-        WebSocket ws1 = openWs(UUID.randomUUID(), chat.token, first);
+        WebSocket ws1 = openWs(fx.gameId(), fx.token(), first);
         first.awaitFrame(FRAME_WAIT); // streamHello
-        broadcastSystem(chat.chatId, "msg-A");
-        broadcastSystem(chat.chatId, "msg-B");
-        broadcastSystem(chat.chatId, "msg-C");
-        int firstMessageId = JSON.readTree(awaitMethod(first, "chatMessage"))
+        broadcastSystem(fx.chatId(), "msg-A");
+        broadcastSystem(fx.chatId(), "msg-B");
+        broadcastSystem(fx.chatId(), "msg-C");
+        int firstMessageId = JSON.readTree(awaitChatMessageContaining(first, "msg-A"))
                 .get("messageId").asInt();
         // Drain the remaining two so the queue is empty when ws1 closes.
-        awaitMethod(first, "chatMessage");
-        awaitMethod(first, "chatMessage");
+        awaitChatMessageContaining(first, "msg-B");
+        awaitChatMessageContaining(first, "msg-C");
         ws1.sendClose(WebSocket.NORMAL_CLOSURE, "phase 1 done").join();
 
         // Phase 2 — reopen with ?since=firstMessageId. Server replays
-        // the two frames after that messageId; the first one (== since)
-        // is filtered out.
+        // the buffered frames whose messageId > since; we expect at
+        // least msg-B and msg-C. Other engine frames (gameInit,
+        // gameUpdate, etc.) may also replay — pick our markers.
         TestListener second = new TestListener();
         URI uri = URI.create("ws://localhost:" + server.port()
-                + "/api/games/" + UUID.randomUUID() + "/stream"
-                + "?token=" + chat.token + "&since=" + firstMessageId);
+                + "/api/games/" + fx.gameId() + "/stream"
+                + "?token=" + fx.token() + "&since=" + firstMessageId);
         WebSocket ws2 = HTTP.newWebSocketBuilder()
                 .buildAsync(uri, second)
                 .get(5, TimeUnit.SECONDS);
         try {
             second.awaitFrame(FRAME_WAIT); // streamHello
 
-            JsonNode replayB = JSON.readTree(awaitMethod(second, "chatMessage"));
-            JsonNode replayC = JSON.readTree(awaitMethod(second, "chatMessage"));
+            JsonNode replayB = JSON.readTree(awaitChatMessageContaining(second, "msg-B"));
+            JsonNode replayC = JSON.readTree(awaitChatMessageContaining(second, "msg-C"));
             assertEquals("msg-B", replayB.get("data").get("message").asText());
             assertEquals("msg-C", replayC.get("data").get("message").asText());
             assertTrue(replayB.get("messageId").asInt() > firstMessageId,
@@ -361,12 +362,12 @@ class GameStreamHandlerTest {
 
     @Test
     void reconnect_sinceCold_silentlyAcceptsAndContinuesLive() throws Exception {
-        ChatFixture chat = subscribeFreshUser();
+        RealGameFixture fx = realGameFixture();
         TestListener listener = new TestListener();
         // since=Integer.MAX_VALUE — guaranteed cold buffer
         URI uri = URI.create("ws://localhost:" + server.port()
-                + "/api/games/" + UUID.randomUUID() + "/stream"
-                + "?token=" + chat.token + "&since=" + Integer.MAX_VALUE);
+                + "/api/games/" + fx.gameId() + "/stream"
+                + "?token=" + fx.token() + "&since=" + Integer.MAX_VALUE);
         WebSocket ws = HTTP.newWebSocketBuilder()
                 .buildAsync(uri, listener)
                 .get(5, TimeUnit.SECONDS);
@@ -376,8 +377,11 @@ class GameStreamHandlerTest {
             assertEquals("streamHello", hello.get("method").asText());
 
             // Live frames still flow.
-            broadcastSystem(chat.chatId, "after-cold");
-            JsonNode chatFrame = JSON.readTree(awaitMethod(listener, "chatMessage"));
+            broadcastSystem(fx.chatId(), "after-cold");
+            // Skip engine-system chat ("X has rejoined the game") and
+            // pick our broadcast by content.
+            JsonNode chatFrame = JSON.readTree(
+                    awaitChatMessageContaining(listener, "after-cold"));
             assertEquals("after-cold", chatFrame.get("data").get("message").asText());
         } finally {
             ws.sendClose(WebSocket.NORMAL_CLOSURE, "test done").join();
@@ -386,10 +390,11 @@ class GameStreamHandlerTest {
 
     @Test
     void reconnect_sinceMalformed_repliesStreamError() throws Exception {
+        RealGameFixture fx = realGameFixture();
         TestListener listener = new TestListener();
         URI uri = URI.create("ws://localhost:" + server.port()
-                + "/api/games/" + UUID.randomUUID() + "/stream"
-                + "?token=" + bearer + "&since=not-a-number");
+                + "/api/games/" + fx.gameId() + "/stream"
+                + "?token=" + fx.token() + "&since=not-a-number");
         WebSocket ws = HTTP.newWebSocketBuilder()
                 .buildAsync(uri, listener)
                 .get(5, TimeUnit.SECONDS);
@@ -411,7 +416,7 @@ class GameStreamHandlerTest {
     @Test
     void playerAction_unknownEnum_repliesWithBadRequest() throws Exception {
         TestListener listener = new TestListener();
-        WebSocket ws = openWs(UUID.randomUUID(), bearer, listener);
+        WebSocket ws = openValidGameWs(listener);
         try {
             listener.awaitFrame(FRAME_WAIT); // streamHello
             ws.sendText("{\"type\":\"playerAction\",\"action\":\"NOT_A_REAL_ACTION\"}", true).join();
@@ -426,7 +431,7 @@ class GameStreamHandlerTest {
     @Test
     void playerAction_clientOnlyEnum_repliesWithNotAllowed() throws Exception {
         TestListener listener = new TestListener();
-        WebSocket ws = openWs(UUID.randomUUID(), bearer, listener);
+        WebSocket ws = openValidGameWs(listener);
         try {
             listener.awaitFrame(FRAME_WAIT);
             // CLIENT_DOWNLOAD_SYMBOLS is a real PlayerAction enum value
@@ -444,7 +449,7 @@ class GameStreamHandlerTest {
     @Test
     void playerAction_missingAction_repliesWithBadRequest() throws Exception {
         TestListener listener = new TestListener();
-        WebSocket ws = openWs(UUID.randomUUID(), bearer, listener);
+        WebSocket ws = openValidGameWs(listener);
         try {
             listener.awaitFrame(FRAME_WAIT);
             ws.sendText("{\"type\":\"playerAction\"}", true).join();
@@ -465,7 +470,7 @@ class GameStreamHandlerTest {
         // reached the upstream call. (No active dialog → no follow-up
         // frame is the success criterion.)
         TestListener listener = new TestListener();
-        WebSocket ws = openWs(UUID.randomUUID(), bearer, listener);
+        WebSocket ws = openValidGameWs(listener);
         try {
             listener.awaitFrame(FRAME_WAIT);
             ws.sendText("{\"type\":\"playerAction\",\"action\":\"CONCEDE\"}", true).join();
@@ -505,7 +510,7 @@ class GameStreamHandlerTest {
         // null-UUID branch threw or returned an error, this would
         // surface as BAD_REQUEST / UPSTREAM_REJECTED.
         TestListener listener = new TestListener();
-        WebSocket ws = openWs(UUID.randomUUID(), bearer, listener);
+        WebSocket ws = openValidGameWs(listener);
         try {
             listener.awaitFrame(FRAME_WAIT);
             UUID abilityId = UUID.randomUUID();
@@ -537,7 +542,7 @@ class GameStreamHandlerTest {
     @Test
     void playerResponse_missingKind_repliesWithBadRequest() throws Exception {
         TestListener listener = new TestListener();
-        WebSocket ws = openWs(UUID.randomUUID(), bearer, listener);
+        WebSocket ws = openValidGameWs(listener);
         try {
             listener.awaitFrame(FRAME_WAIT);
             ws.sendText("{\"type\":\"playerResponse\",\"value\":true}", true).join();
@@ -552,7 +557,7 @@ class GameStreamHandlerTest {
     @Test
     void playerResponse_unknownKind_repliesWithBadRequest() throws Exception {
         TestListener listener = new TestListener();
-        WebSocket ws = openWs(UUID.randomUUID(), bearer, listener);
+        WebSocket ws = openValidGameWs(listener);
         try {
             listener.awaitFrame(FRAME_WAIT);
             ws.sendText("{\"type\":\"playerResponse\",\"kind\":\"unicorn\","
@@ -568,7 +573,7 @@ class GameStreamHandlerTest {
     @Test
     void playerResponse_uuidKind_malformedValue_repliesWithBadRequest() throws Exception {
         TestListener listener = new TestListener();
-        WebSocket ws = openWs(UUID.randomUUID(), bearer, listener);
+        WebSocket ws = openValidGameWs(listener);
         try {
             listener.awaitFrame(FRAME_WAIT);
             ws.sendText("{\"type\":\"playerResponse\",\"kind\":\"uuid\","
@@ -590,7 +595,7 @@ class GameStreamHandlerTest {
         // string "no" silently returns false — turning a malicious
         // string into a real game decision. Lock the strict guard.
         TestListener listener = new TestListener();
-        WebSocket ws = openWs(UUID.randomUUID(), bearer, listener);
+        WebSocket ws = openValidGameWs(listener);
         try {
             listener.awaitFrame(FRAME_WAIT);
             ws.sendText("{\"type\":\"playerResponse\",\"kind\":\"boolean\","
@@ -609,7 +614,7 @@ class GameStreamHandlerTest {
         // Without strict type-checking, asInt() on a non-numeric string
         // returns 0 — turning a malicious string into "I pick 0".
         TestListener listener = new TestListener();
-        WebSocket ws = openWs(UUID.randomUUID(), bearer, listener);
+        WebSocket ws = openValidGameWs(listener);
         try {
             listener.awaitFrame(FRAME_WAIT);
             ws.sendText("{\"type\":\"playerResponse\",\"kind\":\"integer\","
@@ -630,17 +635,17 @@ class GameStreamHandlerTest {
         // bumped — protecting the user from the 3-minute reaper in
         // UserManagerImpl.checkExpired. Slice 38's bare no-op only
         // reset Jetty's idle timer, which was insufficient.
-        HttpResponse<String> login = postJson("/api/session", "{}");
-        assertEquals(200, login.statusCode());
-        String token = JSON.readTree(login.body()).get("token").asText();
-        String username = JSON.readTree(login.body()).get("username").asText();
-
+        //
+        // Slice 63: WS upgrade now requires the user be in a real game.
+        // Use the cached fixture's user (bound to a real game) so the
+        // upgrade passes.
+        RealGameFixture fx = realGameFixture();
         User user = embedded.managerFactory().userManager()
-                .getUserByName(username)
-                .orElseThrow(() -> new AssertionError("user missing: " + username));
+                .getUser(fx.userId())
+                .orElseThrow(() -> new AssertionError("fixture user missing"));
 
         TestListener listener = new TestListener();
-        WebSocket ws = openWs(UUID.randomUUID(), token, listener);
+        WebSocket ws = openWs(fx.gameId(), fx.token(), listener);
         try {
             listener.awaitFrame(FRAME_WAIT); // streamHello
 
@@ -675,7 +680,7 @@ class GameStreamHandlerTest {
         StringBuilder huge = new StringBuilder(5000);
         for (int i = 0; i < 5000; i++) huge.append('x');
         TestListener listener = new TestListener();
-        WebSocket ws = openWs(UUID.randomUUID(), bearer, listener);
+        WebSocket ws = openValidGameWs(listener);
         try {
             listener.awaitFrame(FRAME_WAIT);
             ws.sendText("{\"type\":\"chatSend\",\"chatId\":\""
@@ -690,138 +695,468 @@ class GameStreamHandlerTest {
         }
     }
 
+    // ---------- slice 63: WS auth security (auditor #4 / recon agent BLOCKERs) ----------
+
+    /**
+     * FIX A — manaType ownership: a manaType {@code playerResponse}
+     * frame whose body's {@code playerId} differs from the session's
+     * actual seated playerId must NOT be allowed to act on behalf of
+     * the other player. After the slice-63 fix the inbound
+     * {@code playerId} is ignored; resolution is server-side via the
+     * session's userId → userPlayerMap.
+     *
+     * <p>Behavioural test (mocking {@code sendPlayerManaType} would
+     * require swapping out the embedded server, which is heavy for
+     * a single-method assertion): the test ASSERTS that the new wire
+     * contract no longer requires {@code playerId} (a malformed value
+     * for the now-ignored field doesn't produce BAD_REQUEST). A
+     * legitimate manaType frame with only a {@code manaType} field
+     * succeeds at the dispatch layer; the upstream call is a no-op
+     * because no mana-pay dialog is open, but the dispatch path is
+     * what we're locking here.
+     */
+    @Test
+    void playerResponse_manaType_ignoresFrameSuppliedPlayerId() throws Exception {
+        RealGameFixture fx = realGameFixture();
+        TestListener listener = new TestListener();
+        WebSocket ws = openWs(fx.gameId(), fx.token(), listener);
+        try {
+            listener.awaitFrame(FRAME_WAIT); // streamHello
+
+            // Send a manaType frame with an obviously-wrong "playerId":
+            // pre-slice-63 the handler accepted this and dispatched the
+            // attacker's choice to the named player. Post-fix the
+            // playerId field is unused — the only required field is
+            // manaType. If the handler still tried to parse the bogus
+            // playerId as a UUID we'd see BAD_REQUEST; if it routed to
+            // the named player we'd see no error from this test.
+            UUID attackerVictimId = UUID.randomUUID();
+            ws.sendText("{\"type\":\"playerResponse\",\"kind\":\"manaType\","
+                    + "\"value\":{\"playerId\":\"" + attackerVictimId
+                    + "\",\"manaType\":\"BLACK\"}}", true).join();
+
+            // Wait briefly: the legitimate (no-op upstream) path
+            // emits no error. If a streamError arrives, it must NOT
+            // be a BAD_REQUEST about playerId (which would mean the
+            // handler still inspected the field).
+            try {
+                JsonNode err = JSON.readTree(
+                        awaitMethod(listener, "streamError", Duration.ofMillis(500)));
+                String message = err.get("data").get("message").asText();
+                assertFalse(message.toLowerCase().contains("playerid"),
+                        "post-slice-63 handler must NOT inspect frame-supplied "
+                                + "playerId; got: " + message);
+            } catch (AssertionError noErr) {
+                // No streamError — expected happy path: dispatch
+                // succeeded server-side and the upstream call was a
+                // no-op (no active mana-pay dialog).
+            }
+        } finally {
+            ws.sendClose(WebSocket.NORMAL_CLOSURE, "test done").join();
+        }
+    }
+
+    /**
+     * Slice 63 fixer (critic finding #2) — strengthen the FIX A
+     * contract by asserting the {@code playerId} field is fully
+     * removed from the wire: a manaType frame with NO playerId at
+     * all must succeed at the dispatch layer. Pre-slice-63 the
+     * handler required playerId and would BAD_REQUEST without it;
+     * post-fix the field is optional (ignored if present).
+     *
+     * <p>Companion to the test above: that one verifies a
+     * frame-supplied wrong playerId is ignored; this one verifies
+     * the field is genuinely optional and not just override-able.
+     * Together they pin the contract that resolution is
+     * exclusively server-side.
+     */
+    @Test
+    void playerResponse_manaType_acceptsFrameWithoutPlayerId() throws Exception {
+        RealGameFixture fx = realGameFixture();
+        TestListener listener = new TestListener();
+        WebSocket ws = openWs(fx.gameId(), fx.token(), listener);
+        try {
+            listener.awaitFrame(FRAME_WAIT); // streamHello
+
+            // No playerId field at all — only manaType.
+            ws.sendText("{\"type\":\"playerResponse\",\"kind\":\"manaType\","
+                    + "\"value\":{\"manaType\":\"BLACK\"}}", true).join();
+
+            // Same expectations as the "wrong playerId" test: either
+            // no streamError (legitimate dispatch path), or any
+            // error must NOT be about a missing/required playerId
+            // field (which would mean the handler still requires it).
+            try {
+                JsonNode err = JSON.readTree(
+                        awaitMethod(listener, "streamError", Duration.ofMillis(500)));
+                String message = err.get("data").get("message").asText();
+                assertFalse(message.toLowerCase().contains("playerid"),
+                        "post-slice-63 handler must NOT require frame-supplied "
+                                + "playerId; got: " + message);
+            } catch (AssertionError noErr) {
+                // No streamError — expected happy path.
+            }
+        } finally {
+            ws.sendClose(WebSocket.NORMAL_CLOSURE, "test done").join();
+        }
+    }
+
+    /**
+     * FIX A — manaType frame with no manaType field is rejected. The
+     * pre-fix code required playerId+manaType; the post-fix code
+     * requires only manaType.
+     */
+    @Test
+    void playerResponse_manaType_missingManaType_repliesWithBadRequest() throws Exception {
+        RealGameFixture fx = realGameFixture();
+        TestListener listener = new TestListener();
+        WebSocket ws = openWs(fx.gameId(), fx.token(), listener);
+        try {
+            listener.awaitFrame(FRAME_WAIT); // streamHello
+            ws.sendText("{\"type\":\"playerResponse\",\"kind\":\"manaType\","
+                    + "\"value\":{\"playerId\":\"" + UUID.randomUUID() + "\"}}",
+                    true).join();
+            JsonNode err = JSON.readTree(awaitMethod(listener, "streamError"));
+            assertEquals("BAD_REQUEST", err.get("data").get("code").asText());
+            assertTrue(err.get("data").get("message").asText().contains("manaType"));
+        } finally {
+            ws.sendClose(WebSocket.NORMAL_CLOSURE, "test done").join();
+        }
+    }
+
+    /**
+     * FIX B — a user authenticated but not seated at the supplied
+     * gameId is rejected at WS upgrade with close code 4003 and reason
+     * "NOT_A_PLAYER_IN_GAME". This is the spectator-griefing /
+     * arbitrary-game-stream prevention.
+     */
+    @Test
+    void onConnect_userNotInGame_closes4003() throws Exception {
+        // Fixture has a real game whose userPlayerMap contains the
+        // fixture user. We log in a SECOND user and try to open a WS
+        // to the fixture's gameId — that user is not seated, so the
+        // gate must close.
+        RealGameFixture fx = realGameFixture();
+        HttpResponse<String> login = postJson("/api/session", "{}");
+        assertEquals(200, login.statusCode());
+        String outsiderToken = JSON.readTree(login.body()).get("token").asText();
+
+        TestListener listener = new TestListener();
+        WebSocket ws = openWs(fx.gameId(), outsiderToken, listener);
+        try {
+            assertTrue(listener.awaitClose(FRAME_WAIT),
+                    "outsider must be closed at WS upgrade");
+            assertEquals(4003, listener.closeCode);
+            assertEquals("NOT_A_PLAYER_IN_GAME", listener.closeReason);
+        } finally {
+            ws.abort();
+        }
+    }
+
+    /**
+     * FIX B — a request to a game UUID that doesn't have a registered
+     * controller is also fail-closed (no controller → not a player).
+     * The reason string shape ("NOT_A_PLAYER_IN_GAME") is the same
+     * as the seated-elsewhere case so we don't leak whether the game
+     * exists vs. the user is just not in it.
+     */
+    @Test
+    void onConnect_unknownGameId_closes4003() throws Exception {
+        RealGameFixture fx = realGameFixture();
+        TestListener listener = new TestListener();
+        WebSocket ws = openWs(UUID.randomUUID(), fx.token(), listener);
+        try {
+            assertTrue(listener.awaitClose(FRAME_WAIT),
+                    "unknown gameId must be closed at WS upgrade");
+            assertEquals(4003, listener.closeCode);
+            assertEquals("NOT_A_PLAYER_IN_GAME", listener.closeReason);
+        } finally {
+            ws.abort();
+        }
+    }
+
+    /**
+     * FIX C — opening more than {@link WebSocketCallbackHandler#MAX_SOCKETS_PER_USER}
+     * concurrent sockets on the same WebSession results in the
+     * over-cap socket being closed with code 4008 and reason
+     * "TOO_MANY_SOCKETS". Earlier sockets stay open.
+     *
+     * <p>Uses a fresh user (not the fixture) so the test's open-cycle
+     * doesn't conflict with other tests' fixture-user state.
+     */
+    @Test
+    void register_atMaxCapacity_closesNewSocketWith4008() throws Exception {
+        // Build a dedicated fresh fixture for this test so we don't
+        // reuse the cached fixture (whose 1-socket-at-a-time tests
+        // would otherwise race against this 5-socket test).
+        RealGameFixture freshFx = createFreshGameFixture();
+
+        WebSocket[] kept = new WebSocket[WebSocketCallbackHandler.MAX_SOCKETS_PER_USER];
+        TestListener[] listeners =
+                new TestListener[WebSocketCallbackHandler.MAX_SOCKETS_PER_USER];
+        try {
+            for (int i = 0; i < WebSocketCallbackHandler.MAX_SOCKETS_PER_USER; i++) {
+                listeners[i] = new TestListener();
+                kept[i] = openWs(freshFx.gameId(), freshFx.token(), listeners[i]);
+                listeners[i].awaitFrame(FRAME_WAIT); // streamHello
+            }
+
+            // The N+1th socket must be closed at register time.
+            TestListener overListener = new TestListener();
+            WebSocket overWs = openWs(freshFx.gameId(), freshFx.token(), overListener);
+            try {
+                assertTrue(overListener.awaitClose(FRAME_WAIT),
+                        "over-cap socket must be closed");
+                assertEquals(4008, overListener.closeCode);
+                assertEquals("TOO_MANY_SOCKETS", overListener.closeReason);
+            } finally {
+                overWs.abort();
+            }
+        } finally {
+            for (WebSocket w : kept) {
+                if (w != null) {
+                    w.sendClose(WebSocket.NORMAL_CLOSURE, "cap test done").join();
+                }
+            }
+        }
+    }
+
+    /**
+     * FIX C — closing a registered socket frees a slot so the next
+     * register() succeeds. Verifies the cap is a high-water gate, not
+     * a once-only token-burn.
+     */
+    @Test
+    void register_afterUnregister_acceptsNewSocket() throws Exception {
+        RealGameFixture freshFx = createFreshGameFixture();
+        WebSocket[] kept = new WebSocket[WebSocketCallbackHandler.MAX_SOCKETS_PER_USER];
+        TestListener[] listeners =
+                new TestListener[WebSocketCallbackHandler.MAX_SOCKETS_PER_USER];
+        try {
+            for (int i = 0; i < WebSocketCallbackHandler.MAX_SOCKETS_PER_USER; i++) {
+                listeners[i] = new TestListener();
+                kept[i] = openWs(freshFx.gameId(), freshFx.token(), listeners[i]);
+                listeners[i].awaitFrame(FRAME_WAIT);
+            }
+
+            // Close socket 0 cleanly and wait for the unregister to
+            // propagate server-side.
+            kept[0].sendClose(WebSocket.NORMAL_CLOSURE, "free a slot").join();
+            kept[0] = null;
+            // Brief wait — Javalin's onClose runs on the WS thread and
+            // may not have fired by the time sendClose returns.
+            Thread.sleep(200);
+
+            // The N+1th socket should now succeed.
+            TestListener replListener = new TestListener();
+            WebSocket repl = openWs(freshFx.gameId(), freshFx.token(), replListener);
+            try {
+                String hello = replListener.awaitFrame(FRAME_WAIT);
+                JsonNode env = JSON.readTree(hello);
+                assertEquals("streamHello", env.get("method").asText(),
+                        "freed slot must accept a new socket; close-code-only "
+                                + "would be the cap-violation path");
+            } finally {
+                repl.sendClose(WebSocket.NORMAL_CLOSURE, "after-unregister test done").join();
+            }
+        } finally {
+            for (WebSocket w : kept) {
+                if (w != null) {
+                    w.sendClose(WebSocket.NORMAL_CLOSURE, "cleanup").join();
+                }
+            }
+        }
+    }
+
+    /**
+     * Slice 63 — separate fixture used by the per-WebSession
+     * socket-cap tests so they don't collide with the cached fixture's
+     * 1-WS-per-test pattern. Each call creates its own real game with
+     * its own user.
+     */
+    private RealGameFixture createFreshGameFixture() throws Exception {
+        HttpResponse<String> login = postJson("/api/session", "{}");
+        assertEquals(200, login.statusCode());
+        JsonNode body = JSON.readTree(login.body());
+        String token = body.get("token").asText();
+        String username = body.get("username").asText();
+
+        String roomId = JSON.readTree(getAuthed(token, "/api/server/main-room").body())
+                .get("roomId").asText();
+        String tableId = createTableWithSeats(token, roomId,
+                "[\"HUMAN\",\"COMPUTER_MAD\"]");
+        postWithToken(token,
+                "/api/rooms/" + roomId + "/tables/" + tableId + "/ai",
+                "{\"playerType\":\"COMPUTER_MAD\"}");
+
+        String deckJson = buildForestDeckJson(token, 60);
+        String joinBody = "{\"name\":\"e2e-tester\",\"skill\":1,\"deck\":"
+                + deckJson + "}";
+        HttpResponse<String> join = postWithToken(token,
+                "/api/rooms/" + roomId + "/tables/" + tableId + "/join", joinBody);
+        assertEquals(204, join.statusCode());
+
+        UUID lobbyRoomId = UUID.fromString(roomId);
+        TestListener lobby = new TestListener();
+        URI lobbyUri = URI.create("ws://localhost:" + server.port()
+                + "/api/rooms/" + lobbyRoomId + "/stream?token=" + token);
+        WebSocket lobbyWs = HTTP.newWebSocketBuilder()
+                .buildAsync(lobbyUri, lobby)
+                .get(5, TimeUnit.SECONDS);
+        UUID gameId;
+        try {
+            lobby.awaitFrame(FRAME_WAIT);
+            HttpResponse<String> start = postWithToken(token,
+                    "/api/rooms/" + roomId + "/tables/" + tableId + "/start", "");
+            assertEquals(204, start.statusCode());
+            JsonNode startFrame = JSON.readTree(
+                    awaitMethod(lobby, "startGame", Duration.ofSeconds(10)));
+            gameId = UUID.fromString(startFrame.get("data").get("gameId").asText());
+        } finally {
+            lobbyWs.sendClose(WebSocket.NORMAL_CLOSURE, "fresh fixture done").join();
+        }
+
+        User user = embedded.managerFactory().userManager()
+                .getUserByName(username)
+                .orElseThrow(() -> new AssertionError("fresh fixture user missing"));
+        UUID chatId = embedded.server().chatFindByGame(gameId);
+        return new RealGameFixture(token, user.getId(), gameId, chatId);
+    }
+
     // ---------- slice 3: full game-lifecycle e2e ----------
 
     @Test
     void gameLifecycle_e2e_startGameAndGameInitArrive() throws Exception {
-        // Fresh user so the test is isolated from the shared bearer.
+        // Slice 63: WS upgrade now requires the user be in the game.
+        // Updated to mirror the production-style flow used by
+        // gameLifecycle_realGameId_initArrivesUnder3s — open the lobby
+        // WS to receive startGame, THEN open a game-stream WS to the
+        // real gameId.
         HttpResponse<String> login = postJson("/api/session", "{}");
         assertEquals(200, login.statusCode());
         String token = JSON.readTree(login.body()).get("token").asText();
 
-        // Open a WS bound to a synthetic gameId — the START_GAME
-        // callback fires on the user's session regardless of which
-        // game UUID the WebSocket path carries (buffer is per-handler,
-        // not per-game). The webclient in production uses a temporary
-        // gameId placeholder until startGame surfaces the real one.
-        TestListener listener = new TestListener();
-        WebSocket ws = openWs(UUID.randomUUID(), token, listener);
+        // Drive the lobby flow that culminates in match-start.
+        String roomId = JSON.readTree(getAuthed(token, "/api/server/main-room").body())
+                .get("roomId").asText();
+        String tableId = createTableWithSeats(token, roomId,
+                "[\"HUMAN\",\"COMPUTER_MONTE_CARLO\"]");
+        postWithToken(token,
+                "/api/rooms/" + roomId + "/tables/" + tableId + "/ai",
+                "{\"playerType\":\"COMPUTER_MONTE_CARLO\"}");
+
+        String deckJson = buildForestDeckJson(token, 60);
+        String joinBody = "{\"name\":\"e2e-tester\",\"skill\":1,\"deck\":"
+                + deckJson + "}";
+        HttpResponse<String> join = postWithToken(token,
+                "/api/rooms/" + roomId + "/tables/" + tableId + "/join", joinBody);
+        assertEquals(204, join.statusCode(), "join failed: " + join.body());
+
+        // Open lobby WS to receive startGame.
+        UUID lobbyRoomId = UUID.fromString(roomId);
+        TestListener lobby = new TestListener();
+        URI lobbyUri = URI.create("ws://localhost:" + server.port()
+                + "/api/rooms/" + lobbyRoomId + "/stream?token=" + token);
+        WebSocket lobbyWs = HTTP.newWebSocketBuilder()
+                .buildAsync(lobbyUri, lobby)
+                .get(5, TimeUnit.SECONDS);
         try {
-            listener.awaitFrame(FRAME_WAIT); // streamHello
-
-            // Drive the lobby flow that culminates in match-start.
-            String roomId = JSON.readTree(getAuthed(token, "/api/server/main-room").body())
-                    .get("roomId").asText();
-            String tableId = createTableWithSeats(token, roomId,
-                    "[\"HUMAN\",\"COMPUTER_MONTE_CARLO\"]");
-            postWithToken(token,
-                    "/api/rooms/" + roomId + "/tables/" + tableId + "/ai",
-                    "{\"playerType\":\"COMPUTER_MONTE_CARLO\"}");
-
-            String deckJson = buildForestDeckJson(token, 60);
-            String joinBody = "{\"name\":\"e2e-tester\",\"skill\":1,\"deck\":"
-                    + deckJson + "}";
-            HttpResponse<String> join = postWithToken(token,
-                    "/api/rooms/" + roomId + "/tables/" + tableId + "/join", joinBody);
-            assertEquals(204, join.statusCode(), "join failed: " + join.body());
+            lobby.awaitFrame(FRAME_WAIT); // lobby streamHello
 
             HttpResponse<String> start = postWithToken(token,
                     "/api/rooms/" + roomId + "/tables/" + tableId + "/start", "");
             assertEquals(204, start.statusCode(), "start failed: " + start.body());
 
-            // The exact frame ordering depends on engine timing, but
-            // both startGame and gameInit must arrive within the
-            // window. We assert each separately (awaitMethod skips
-            // intermediate frames).
-            //
-            // Note: this test's WS opens with a synthetic
-            // randomUUID() before the real gameId is known. Slice
-            // 22's gameJoin-on-connect fix calls upstream's gameJoin
-            // with the WS path's gameId — which here is bogus, so
-            // the upstream call is a no-op and the original 10s
-            // forced-join recovery still drives the test. Production
-            // webclient opens the WS to the REAL gameId after the
-            // startGame frame arrives (slice 12 auto-nav), so the
-            // fix DOES skip the recovery in real use; this test
-            // just doesn't exercise it. The 15s deadline reflects
-            // the recovery-driven timing.
+            // startGame arrives on the lobby WS (it's a per-WebSession
+            // callback so any open socket on this user's handler picks
+            // it up).
             JsonNode startFrame = JSON.readTree(
-                    awaitMethod(listener, "startGame", Duration.ofSeconds(15)));
+                    awaitMethod(lobby, "startGame", Duration.ofSeconds(15)));
             assertEquals(SchemaVersion.CURRENT,
                     startFrame.get("schemaVersion").asText());
             JsonNode startData = startFrame.get("data");
-            assertNotNull(startData.get("gameId").asText());
+            String realGameId = startData.get("gameId").asText();
+            assertNotNull(realGameId);
             assertNotNull(startData.get("playerId").asText());
             assertEquals(tableId, startData.get("tableId").asText(),
                     "startGame.tableId must match the table we created");
 
-            JsonNode initFrame = JSON.readTree(
-                    awaitMethod(listener, "gameInit", Duration.ofSeconds(15)));
-            JsonNode initData = initFrame.get("data");
-            assertTrue(initData.get("turn").asInt() >= 1,
-                    "gameInit must carry a turn number");
-            assertTrue(initData.get("players").isArray());
-            assertEquals(2, initData.get("players").size(),
-                    "two-player duel must have exactly 2 PlayerView entries");
+            // NOW open the game-stream WS to the REAL gameId — passes
+            // FIX B's membership gate because the user is seated.
+            TestListener listener = new TestListener();
+            WebSocket gameWs = openWs(UUID.fromString(realGameId), token, listener);
+            try {
+                listener.awaitFrame(FRAME_WAIT); // game streamHello
+                JsonNode initFrame = JSON.readTree(
+                        awaitMethod(listener, "gameInit", Duration.ofSeconds(15)));
+                JsonNode initData = initFrame.get("data");
+                assertTrue(initData.get("turn").asInt() >= 1,
+                        "gameInit must carry a turn number");
+                assertTrue(initData.get("players").isArray());
+                assertEquals(2, initData.get("players").size(),
+                        "two-player duel must have exactly 2 PlayerView entries");
 
-            // Slice 4: myPlayerId + myHand are present in the
-            // envelope. Whether the opening hand is already drawn at
-            // the FIRST gameInit is engine-timing-dependent (some
-            // GAME_INIT callbacks fire before the mulligan draw); the
-            // shape contract is what slice 4 locks.
-            assertNotNull(initData.get("myPlayerId"),
-                    "gameInit must carry myPlayerId field");
-            JsonNode myHand = initData.get("myHand");
-            assertTrue(myHand.isObject(),
-                    "myHand must be an object keyed by card UUID");
-            // If the hand is populated, lock the WebCardView shape on
-            // any one card. Otherwise wait for a later frame to verify
-            // (slice 5 will tighten this once gameInform / gameOver
-            // wrappers carry richer ordering guarantees).
-            if (myHand.size() > 0) {
-                java.util.Map.Entry<String, JsonNode> handEntry = myHand.fields().next();
-                String handKey = handEntry.getKey();
-                JsonNode anyCard = handEntry.getValue();
-                assertEquals("Forest", anyCard.get("name").asText(),
-                        "60-Forest deck → hand should be all Forests");
-                assertEquals("LAND", anyCard.get("types").get(0).asText());
-                // Slice 52a / schema 1.19: cardId is the underlying
-                // Card.getId(). For non-stack zones (hand here), upstream's
-                // CardView.getId() already IS the Card.getId(), so cardId
-                // must equal id and the map key. Locks the wire-format
-                // invariant; stack-zone cardId divergence is exercised by
-                // CardViewMapperCardIdTest.
-                assertEquals(anyCard.get("id").asText(), anyCard.get("cardId").asText(),
-                        "hand-zone cardId must equal id (non-stack zones)");
-                assertEquals(handKey, anyCard.get("cardId").asText(),
-                        "hand map key must equal cardId for non-stack zones");
+                // Slice 4: myPlayerId + myHand are present in the
+                // envelope. Whether the opening hand is already drawn at
+                // the FIRST gameInit is engine-timing-dependent (some
+                // GAME_INIT callbacks fire before the mulligan draw); the
+                // shape contract is what slice 4 locks.
+                assertNotNull(initData.get("myPlayerId"),
+                        "gameInit must carry myPlayerId field");
+                JsonNode myHand = initData.get("myHand");
+                assertTrue(myHand.isObject(),
+                        "myHand must be an object keyed by card UUID");
+                // If the hand is populated, lock the WebCardView shape on
+                // any one card. Otherwise wait for a later frame to verify
+                // (slice 5 will tighten this once gameInform / gameOver
+                // wrappers carry richer ordering guarantees).
+                if (myHand.size() > 0) {
+                    java.util.Map.Entry<String, JsonNode> handEntry = myHand.fields().next();
+                    String handKey = handEntry.getKey();
+                    JsonNode anyCard = handEntry.getValue();
+                    assertEquals("Forest", anyCard.get("name").asText(),
+                            "60-Forest deck → hand should be all Forests");
+                    assertEquals("LAND", anyCard.get("types").get(0).asText());
+                    // Slice 52a / schema 1.19: cardId is the underlying
+                    // Card.getId(). For non-stack zones (hand here), upstream's
+                    // CardView.getId() already IS the Card.getId(), so cardId
+                    // must equal id and the map key. Locks the wire-format
+                    // invariant; stack-zone cardId divergence is exercised by
+                    // CardViewMapperCardIdTest.
+                    assertEquals(anyCard.get("id").asText(), anyCard.get("cardId").asText(),
+                            "hand-zone cardId must equal id (non-stack zones)");
+                    assertEquals(handKey, anyCard.get("cardId").asText(),
+                            "hand map key must equal cardId for non-stack zones");
+                }
+
+                // Slice 5 additions on the GameView envelope.
+                assertTrue(initData.get("stack").isObject(),
+                        "stack must be an object map keyed by stack-object UUID");
+                assertTrue(initData.get("combat").isArray(),
+                        "combat must be an array of WebCombatGroupView entries");
+
+                JsonNode firstPlayer = initData.get("players").get(0);
+                assertTrue(firstPlayer.get("life").asInt() > 0,
+                        "starting life must be positive");
+                // battlefield is now a map (slice 4 promoted it from a
+                // count). Empty before any land is played.
+                assertTrue(firstPlayer.get("battlefield").isObject(),
+                        "battlefield must be an object map keyed by permanent UUID");
+                // Slice 5 promoted graveyard / exile / sideboard from
+                // counts to maps. They start empty at gameInit.
+                assertTrue(firstPlayer.get("graveyard").isObject(),
+                        "graveyard must be an object map keyed by card UUID");
+                assertTrue(firstPlayer.get("exile").isObject(),
+                        "exile must be an object map keyed by card UUID");
+                assertTrue(firstPlayer.get("sideboard").isObject(),
+                        "sideboard must be an object map keyed by card UUID");
+                assertTrue(firstPlayer.get("libraryCount").asInt() > 0,
+                        "library must have cards after the opening hand draw");
+            } finally {
+                gameWs.sendClose(WebSocket.NORMAL_CLOSURE, "game ws done").join();
             }
-
-            // Slice 5 additions on the GameView envelope.
-            assertTrue(initData.get("stack").isObject(),
-                    "stack must be an object map keyed by stack-object UUID");
-            assertTrue(initData.get("combat").isArray(),
-                    "combat must be an array of WebCombatGroupView entries");
-
-            JsonNode firstPlayer = initData.get("players").get(0);
-            assertTrue(firstPlayer.get("life").asInt() > 0,
-                    "starting life must be positive");
-            // battlefield is now a map (slice 4 promoted it from a
-            // count). Empty before any land is played.
-            assertTrue(firstPlayer.get("battlefield").isObject(),
-                    "battlefield must be an object map keyed by permanent UUID");
-            // Slice 5 promoted graveyard / exile / sideboard from
-            // counts to maps. They start empty at gameInit.
-            assertTrue(firstPlayer.get("graveyard").isObject(),
-                    "graveyard must be an object map keyed by card UUID");
-            assertTrue(firstPlayer.get("exile").isObject(),
-                    "exile must be an object map keyed by card UUID");
-            assertTrue(firstPlayer.get("sideboard").isObject(),
-                    "sideboard must be an object map keyed by card UUID");
-            assertTrue(firstPlayer.get("libraryCount").asInt() > 0,
-                    "library must have cards after the opening hand draw");
         } finally {
-            ws.sendClose(WebSocket.NORMAL_CLOSURE, "test done").join();
+            lobbyWs.sendClose(WebSocket.NORMAL_CLOSURE, "lobby ws done").join();
         }
     }
 
@@ -914,6 +1249,93 @@ class GameStreamHandlerTest {
     }
 
     /**
+     * Slice 63 — bundle for tests that need a real game so the WS-upgrade
+     * game-membership gate (FIX B) lets them through. Reused across
+     * tests to avoid paying a multi-second game-creation cost per test.
+     *
+     * @param token   bearer for the human player seated at the game
+     * @param userId  upstream userId for that token (handy for direct
+     *                upstream-state assertions)
+     * @param gameId  the real upstream gameId — passes
+     *                {@code GameLookup.findUserPlayerMap(...).containsKey(userId)}
+     * @param chatId  the game's chatId (resolved via {@code chatFindByGame})
+     */
+    private record RealGameFixture(String token, UUID userId, UUID gameId, UUID chatId) {
+    }
+
+    /**
+     * Slice 63 — creates a real game (HUMAN vs COMPUTER_MAD) via the
+     * lobby flow per call. Tests that need to open a game-stream WS
+     * without being rejected by the membership gate use the returned
+     * (token, gameId) pair.
+     *
+     * <p>Per-call rather than cached because cross-test state pollution
+     * (engine traffic flooding handler buffer, user-state transitions
+     * from prior tests like the lastActivity-backdate in the keepalive
+     * test) was breaking chat-broadcast tests when the fixture was
+     * reused. Per-call adds ~1.5 s per test but keeps each test's
+     * upstream state pristine.
+     */
+    private synchronized RealGameFixture realGameFixture() throws Exception {
+        // Always fresh — see javadoc for why caching is disabled.
+        HttpResponse<String> login = postJson("/api/session", "{}");
+        assertEquals(200, login.statusCode(), login.body());
+        JsonNode body = JSON.readTree(login.body());
+        String token = body.get("token").asText();
+        String username = body.get("username").asText();
+
+        String roomId = JSON.readTree(getAuthed(token, "/api/server/main-room").body())
+                .get("roomId").asText();
+        String tableId = createTableWithSeats(token, roomId,
+                "[\"HUMAN\",\"COMPUTER_MAD\"]");
+        postWithToken(token,
+                "/api/rooms/" + roomId + "/tables/" + tableId + "/ai",
+                "{\"playerType\":\"COMPUTER_MAD\"}");
+
+        String deckJson = buildForestDeckJson(token, 60);
+        String joinBody = "{\"name\":\"e2e-tester\",\"skill\":1,\"deck\":"
+                + deckJson + "}";
+        HttpResponse<String> join = postWithToken(token,
+                "/api/rooms/" + roomId + "/tables/" + tableId + "/join", joinBody);
+        assertEquals(204, join.statusCode(), "fixture join failed: " + join.body());
+
+        // Open lobby WS to receive the startGame frame so we can pull
+        // the real gameId. The lobby socket is closed before we return.
+        UUID lobbyRoomId = UUID.fromString(roomId);
+        TestListener lobby = new TestListener();
+        URI lobbyUri = URI.create("ws://localhost:" + server.port()
+                + "/api/rooms/" + lobbyRoomId + "/stream?token=" + token);
+        WebSocket lobbyWs = HTTP.newWebSocketBuilder()
+                .buildAsync(lobbyUri, lobby)
+                .get(5, TimeUnit.SECONDS);
+        UUID gameId;
+        try {
+            lobby.awaitFrame(FRAME_WAIT); // streamHello
+            HttpResponse<String> start = postWithToken(token,
+                    "/api/rooms/" + roomId + "/tables/" + tableId + "/start", "");
+            assertEquals(204, start.statusCode(), "fixture start failed: " + start.body());
+            JsonNode startFrame = JSON.readTree(
+                    awaitMethod(lobby, "startGame", Duration.ofSeconds(10)));
+            gameId = UUID.fromString(startFrame.get("data").get("gameId").asText());
+        } finally {
+            lobbyWs.sendClose(WebSocket.NORMAL_CLOSURE, "fixture done").join();
+        }
+
+        User user = embedded.managerFactory().userManager()
+                .getUserByName(username)
+                .orElseThrow(() -> new AssertionError(
+                        "user not in upstream UserManager after fixture login"));
+        UUID chatId = embedded.server().chatFindByGame(gameId);
+        // Subscribe the fixture user to the game's chat so chat tests'
+        // broadcasts to that chatId fan out to the user's session.
+        // Game chats only auto-broadcast engine-system messages; player
+        // user-chats need an explicit joinChat (mirrors what
+        // RoomStreamHandler.onConnect does for room chats).
+        embedded.managerFactory().chatManager().joinChat(chatId, user.getId());
+        return new RealGameFixture(token, user.getId(), gameId, chatId);
+    }
+
+    /**
      * Logs in a fresh anonymous user, looks up the main-room chatId,
      * and subscribes the user to it via upstream {@code chatJoin}.
      * Returns the bits the test needs to drive the WebSocket layer.
@@ -963,6 +1385,41 @@ class GameStreamHandlerTest {
     }
 
     /**
+     * Slice 63 — the realGameFixture user is auto-joined to the game's
+     * chat (so {@code chatManager.broadcast} reaches them), but the
+     * game also broadcasts engine-side system chat events ("X has
+     * joined the game") which arrive interleaved with the test's own
+     * broadcasts. This helper skips chatMessage frames whose
+     * {@code data.message} doesn't contain {@code wantedSubstring}.
+     */
+    private String awaitChatMessageContaining(TestListener listener,
+                                                String wantedSubstring) throws Exception {
+        return awaitChatMessageContaining(listener, wantedSubstring, FRAME_WAIT);
+    }
+
+    private String awaitChatMessageContaining(TestListener listener, String wantedSubstring,
+                                                Duration timeout) throws Exception {
+        long deadline = System.currentTimeMillis() + timeout.toMillis();
+        while (System.currentTimeMillis() < deadline) {
+            String f = listener.frames.poll();
+            if (f == null) {
+                Thread.sleep(20);
+                continue;
+            }
+            JsonNode env = JSON.readTree(f);
+            if (!"chatMessage".equals(env.get("method").asText())) {
+                continue;
+            }
+            JsonNode msg = env.get("data").get("message");
+            if (msg != null && msg.asText().contains(wantedSubstring)) {
+                return f;
+            }
+        }
+        throw new AssertionError("no chatMessage containing '" + wantedSubstring
+                + "' within " + timeout);
+    }
+
+    /**
      * Pulls frames off the listener until we see one matching
      * {@code wantedMethod}. Skips intermediate frames (streamError,
      * other methods) which can fire concurrently in test conditions.
@@ -993,6 +1450,19 @@ class GameStreamHandlerTest {
         return HTTP.newWebSocketBuilder()
                 .buildAsync(uri, listener)
                 .get(5, TimeUnit.SECONDS);
+    }
+
+    /**
+     * Slice 63 — convenience wrapper that opens a WS using the cached
+     * {@link RealGameFixture}. The legacy {@code bearer + randomUUID()}
+     * pattern no longer passes the new game-membership gate (FIX B);
+     * tests that care only about generic protocol behaviour (error
+     * frames, type validation, etc.) can call this helper to get a
+     * valid upgrade without thinking about the fixture.
+     */
+    private WebSocket openValidGameWs(TestListener listener) throws Exception {
+        RealGameFixture fx = realGameFixture();
+        return openWs(fx.gameId(), fx.token(), listener);
     }
 
     private HttpResponse<String> postJson(String path, String body) throws Exception {
