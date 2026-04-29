@@ -31,7 +31,12 @@ import { ManaCost } from '../game/ManaCost';
 import { HoverCardDetail } from '../game/HoverCardDetail';
 import { CardThumbnail } from '../game/CardThumbnail';
 import { GameDialog } from './GameDialog';
-import { isSlowmoActive, slow, SLOWMO } from '../animation/debug';
+import { GameEndOverlay } from '../game/GameEndOverlay';
+import { PhaseTimeline } from '../game/PhaseTimeline';
+import { GameLog } from '../game/GameLog';
+import { GameHeader } from '../game/GameHeader';
+import { Waiting } from '../game/Waiting';
+import { slow, SLOWMO } from '../animation/debug';
 import {
   BATTLEFIELD_ENTER_EXIT,
   DELTA_FLOAT_UP,
@@ -52,16 +57,16 @@ interface Props {
 }
 
 /**
- * Slice A static game window — read-only render of the latest
- * {@link WebGameView} (per ADR 0005 §5.1).
+ * Slice A static game window â€” read-only render of the latest
+ * {@link WebGameView} (per ADR 0005 Â§5.1).
  *
  * <p>Layout: opponent at top, controlling player at bottom. Each side
  * shows life total, hand count (or hand cards for self), zone counts,
  * mana pool, and battlefield as named cards with tapped/sick markers.
  * Stack, combat groups, graveyard / exile / sideboard panels and chat
- * land in slice B; player input lands in slice C (ADR §5.2).
+ * land in slice B; player input lands in slice C (ADR Â§5.2).
  *
- * <p>The component owns one {@link GameStream} for its lifetime — open
+ * <p>The component owns one {@link GameStream} for its lifetime â€” open
  * on mount, close on unmount or {@code onLeave}. Frame dispatch goes
  * to {@link useGameStore}; this component just reads.
  */
@@ -83,13 +88,13 @@ export function Game({ gameId, onLeave }: Props) {
 
   useEffect(() => {
     if (!stream) return;
-    // React 19 StrictMode dev runs effects setup → cleanup → setup
+    // React 19 StrictMode dev runs effects setup â†’ cleanup â†’ setup
     // in quick succession. A naive synchronous open() fires a real
     // WebSocket connect on the first mount. The connect triggers
     // upstream's joinGame on the server, the cleanup immediately
     // closes the socket (EofException + 1006), and upstream is left
     // in a half-joined state until its 10-second recovery timer
-    // fires "Forced join" — by which time the AI has played its
+    // fires "Forced join" â€” by which time the AI has played its
     // turn assuming the user is unresponsive, leaving the user
     // staring at someone else's Turn 1.
     //
@@ -134,7 +139,7 @@ export function Game({ gameId, onLeave }: Props) {
     // exceeded the screen and the user had to scroll the entire
     // window to read the log / reach the action panel.
     //
-    // Slice 52c — MotionConfig + LayoutGroup wrap the whole game
+    // Slice 52c â€” MotionConfig + LayoutGroup wrap the whole game
     // window so the three card-face components (StackTileFace,
     // BattlefieldTile, HandCardSlot) participate in one shared
     // Framer-Motion layoutId graph. Without LayoutGroup, layoutId
@@ -142,7 +147,7 @@ export function Game({ gameId, onLeave }: Props) {
     // zones live in separate AnimatePresences (stack vs.
     // battlefield), so cross-zone glides need the LayoutGroup to
     // bridge them. MotionConfig.reducedMotion="user" honors the
-    // OS-level prefers-reduced-motion setting — users with it on
+    // OS-level prefers-reduced-motion setting â€” users with it on
     // see instant transitions instead of glides.
     //
     // Sideboard/draft zones don't yet exist as separate components
@@ -152,26 +157,26 @@ export function Game({ gameId, onLeave }: Props) {
     // performance hit.
     //
     // SCOPE CONTRACT (read before adding new animated UI):
-    //   • Anything that should glide via layoutId must render as a
+    //   â€¢ Anything that should glide via layoutId must render as a
     //     descendant of THIS LayoutGroup. The hand fan, stack zone,
-    //     and battlefield are all reached via Battlefield → so they
+    //     and battlefield are all reached via Battlefield â†’ so they
     //     qualify.
-    //   • Anything modal/overlay that should NOT participate in
+    //   â€¢ Anything modal/overlay that should NOT participate in
     //     layoutId matching (sideboard panels, deck builder, future
     //     spell-history panel, etc.) must render outside this tree
-    //     — preferably via a portal at App.tsx level. SideboardModal
+    //     â€” preferably via a portal at App.tsx level. SideboardModal
     //     already lives in App.tsx for that reason. HoverCardDetail
     //     uses createPortal to escape this scope; that's intentional.
-    //   • Performance budget: keep tracked motion elements inside the
-    //     LayoutGroup ≤ ~50 during a turn. A typical game is ≤7 hand
-    //     + ≤20 battlefield + ≤3 stack ≈ 30 elements, well within
+    //   â€¢ Performance budget: keep tracked motion elements inside the
+    //     LayoutGroup â‰¤ ~50 during a turn. A typical game is â‰¤7 hand
+    //     + â‰¤20 battlefield + â‰¤3 stack â‰ˆ 30 elements, well within
     //     budget. If a future feature would exceed that (e.g. a
     //     graveyard popover that shows 60 cards with layoutId), put
     //     it in its own LayoutGroup or no LayoutGroup at all.
     <MotionConfig reducedMotion="user">
       <LayoutGroup>
         <div className="h-screen flex flex-col bg-zinc-950 text-zinc-100 overflow-hidden">
-          <Header
+          <GameHeader
             gameId={gameId}
             connection={connection}
             closeReason={closeReason}
@@ -203,651 +208,6 @@ export function Game({ gameId, onLeave }: Props) {
   );
 }
 
-/* ---------- game-log download (slice 19 / Phase 5) ---------- */
-
-/**
- * Wire-format major+minor used in saved game-log JSON exports. Kept
- * in lock-step with WebApi's {@code SchemaVersion.CURRENT}; bump
- * here whenever the server schema bumps so a future loader can
- * route by version. Pure metadata — the export is purely
- * client-side, no server round-trip.
- */
-const GAME_LOG_EXPORT_SCHEMA_VERSION = '1.19';
-
-/**
- * Trigger a browser download of {@code payload} serialized to JSON.
- * Builds an in-memory {@code Blob}, points an offscreen anchor at
- * a {@code blob:} URL, clicks it, then revokes the URL so the
- * blob can be GC'd.
- *
- * <p>Extracted as a module-scope helper so the GameEndOverlay
- * stays declarative and the download path is unit-testable in
- * isolation (mock {@code URL.createObjectURL} + intercept the
- * anchor's {@code click()}).
- */
-function downloadJson(filename: string, payload: unknown): void {
-  const blob = new Blob([JSON.stringify(payload, null, 2)], {
-    type: 'application/json',
-  });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.rel = 'noopener';
-  // Append → click → remove. Some browsers require the anchor to be
-  // in the document for the synthetic click to fire.
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-
-/**
- * Build a "xmage-game-<gameId8>-<YYYYMMDD-HHmm>.json" filename for a
- * saved game-log export. {@code gameIdSlice} is the first 8 chars of
- * the game UUID (enough for a human to disambiguate exports without
- * cluttering the filename with a full UUID).
- */
-function buildGameLogFilename(gameId: string, now: Date): string {
-  const pad = (n: number) => n.toString().padStart(2, '0');
-  const stamp =
-    `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}` +
-    `-${pad(now.getHours())}${pad(now.getMinutes())}`;
-  const slice = gameId.slice(0, 8);
-  return `xmage-game-${slice}-${stamp}.json`;
-}
-
-/* ---------- game-end overlay (slice 19 / B5) ---------- */
-
-/**
- * Game / match end overlay. Two states:
- *
- * <ul>
- *   <li>{@code gameEnd} set (match over) → modal summary with the
- *       upstream {@code matchInfo}, win/wins-needed score, a
- *       "Save game log" download button, and a Back-to-lobby
- *       button.</li>
- *   <li>{@code gameOverPending} set but no {@code gameEnd} yet
- *       (best-of-N: game ended, match continues) → centered
- *       banner with the {@code lastWrapped.message} and "waiting
- *       for next game" hint. Cleared by the next {@code gameInit}.</li>
- * </ul>
- *
- * <p>The board stays visible behind the banner / modal so the
- * user can see the final state. The match-end modal is
- * blocking — the only path forward is Leave (no rematch flow yet).
- *
- * <p>Phase 5 deliverable "Game-over screen with game-log download":
- * the Save-game-log button serializes the in-memory
- * {@code gameLog} slice (slice 18 — running transcript of upstream
- * {@code gameInform} messages) plus the match-end summary into a
- * single JSON file. Pure client-side; no server route, no
- * dependency on upstream's bit-rotted {@code .game} replay
- * format. See {@code docs/decisions/replay-flow-recon.md} for
- * the rationale.
- */
-function GameEndOverlay({
-  gameId,
-  onLeave,
-}: {
-  gameId: string;
-  onLeave: () => void;
-}) {
-  const gameEnd = useGameStore((s) => s.gameEnd);
-  const gameOverPending = useGameStore((s) => s.gameOverPending);
-  const lastWrapped = useGameStore((s) => s.lastWrapped);
-  // Subscribe to the count rather than the array itself: the
-  // download click reads the array fresh from getState() at
-  // emit time, and we only need re-renders to flip the disabled
-  // state when entries appear / disappear.
-  const gameLogCount = useGameStore((s) => s.gameLog.length);
-
-  if (gameEnd) {
-    const noLog = gameLogCount === 0;
-    const handleSaveGameLog = () => {
-      // Snapshot at click-time so a late inform doesn't slip in
-      // partway through serialization.
-      const state = useGameStore.getState();
-      const log = state.gameLog;
-      if (log.length === 0) {
-        return;
-      }
-      const exportedAt = new Date();
-      const payload = {
-        schemaVersion: GAME_LOG_EXPORT_SCHEMA_VERSION,
-        exportedAt: exportedAt.toISOString(),
-        gameId,
-        match: {
-          won: gameEnd.won,
-          wins: gameEnd.wins,
-          winsNeeded: gameEnd.winsNeeded,
-          matchInfo: gameEnd.matchInfo,
-          gameInfo: gameEnd.gameInfo,
-          additionalInfo: gameEnd.additionalInfo,
-        },
-        entries: log,
-      };
-      downloadJson(buildGameLogFilename(gameId, exportedAt), payload);
-    };
-    return (
-      <div
-        role="dialog"
-        aria-modal="true"
-        data-testid="game-end-modal"
-        className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-6"
-      >
-        <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-8 max-w-md w-full space-y-4 shadow-2xl text-center">
-          <h2
-            className={
-              'text-2xl font-semibold ' +
-              (gameEnd.won ? 'text-emerald-300' : 'text-red-300')
-            }
-          >
-            {gameEnd.won ? 'Match won' : 'Match lost'}
-          </h2>
-          {gameEnd.matchInfo && (
-            <p className="text-sm text-zinc-300">{gameEnd.matchInfo}</p>
-          )}
-          {gameEnd.gameInfo && (
-            <p className="text-sm text-zinc-400">{gameEnd.gameInfo}</p>
-          )}
-          <p className="text-zinc-200">
-            <span className="text-zinc-500 mr-2">Score:</span>
-            <span className="font-mono">
-              {gameEnd.wins}/{gameEnd.winsNeeded}
-            </span>
-          </p>
-          {gameEnd.additionalInfo && (
-            <p className="text-xs text-zinc-500">{gameEnd.additionalInfo}</p>
-          )}
-          <div className="flex justify-center gap-3 pt-2">
-            <button
-              type="button"
-              data-testid="save-game-log"
-              onClick={handleSaveGameLog}
-              disabled={noLog}
-              title={
-                noLog
-                  ? 'No game-log entries to export'
-                  : 'Download a JSON transcript of this match'
-              }
-              className={
-                'px-5 py-2 rounded font-medium ' +
-                (noLog
-                  ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
-                  : 'bg-zinc-700 hover:bg-zinc-600 text-zinc-100')
-              }
-            >
-              Save game log
-            </button>
-            <button
-              type="button"
-              onClick={onLeave}
-              className="px-5 py-2 rounded bg-fuchsia-600 hover:bg-fuchsia-500 text-white font-medium"
-            >
-              Back to lobby
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (gameOverPending) {
-    return (
-      <div
-        data-testid="game-over-banner"
-        className="fixed inset-x-0 top-16 z-40 flex justify-center pointer-events-none"
-      >
-        <div className="bg-zinc-900/95 border border-amber-700/60 rounded-lg px-6 py-3 shadow-xl text-center">
-          <p className="text-amber-300 font-semibold">Game over</p>
-          {lastWrapped?.message && (
-            <p className="text-sm text-zinc-300 mt-1">
-              {lastWrapped.message.replace(/<[^>]+>/g, '')}
-            </p>
-          )}
-          <p className="text-xs text-zinc-500 mt-1">
-            Waiting for the next game…
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  return null;
-}
-
-/* ---------- phase timeline (slice 28) ---------- */
-
-/**
- * Each phase is a colored segment on the timeline. {@code steps} are
- * the upstream {@code PhaseStep} enum names that fall within the
- * phase, in turn order. {@code accent} is the Tailwind color stem
- * used for the segment fill, label, and active-step glow. {@code label}
- * is the human-readable phase name shown above the segment.
- *
- * <p>Segment widths are weighted by step count (3 + 1 + 6 + 1 + 2 =
- * 13 ticks total) so the visual density matches the time density of
- * the actual turn — combat dominates because it has the most
- * sub-steps.
- */
-type PhaseConfig = {
-  label: string;
-  /** Tailwind text color for the phase label (active state). */
-  fgClass: string;
-  /** Tailwind background-color class for ticks + active orb. */
-  bgClass: string;
-  /** Tailwind background-color class for the saturated track bar. */
-  trackClass: string;
-  /** RGB string used by the bloom inline-style box-shadow. */
-  glowRgb: string;
-  /**
-   * Render per-step labels beneath each tick. Only true for Combat —
-   * matches the reference mock where the multi-step combat phase
-   * gets sub-labels but Main / Beginning / End stay clean.
-   */
-  showStepLabels?: boolean;
-  steps: { name: string; short: string }[];
-};
-
-const TIMELINE_PHASES: PhaseConfig[] = [
-  {
-    label: 'Beginning',
-    fgClass: 'text-cyan-300',
-    bgClass: 'bg-cyan-400',
-    trackClass: 'bg-cyan-500/70',
-    glowRgb: '34, 211, 238',
-    steps: [
-      { name: 'UNTAP', short: 'Untap' },
-      { name: 'UPKEEP', short: 'Upkeep' },
-      { name: 'DRAW', short: 'Draw' },
-    ],
-  },
-  {
-    label: 'Main Phase 1',
-    fgClass: 'text-sky-300',
-    bgClass: 'bg-sky-400',
-    trackClass: 'bg-sky-500/70',
-    glowRgb: '56, 189, 248',
-    steps: [{ name: 'PRECOMBAT_MAIN', short: 'Main 1' }],
-  },
-  {
-    label: 'Combat',
-    fgClass: 'text-red-300',
-    bgClass: 'bg-red-400',
-    trackClass: 'bg-red-500/70',
-    glowRgb: '248, 113, 113',
-    showStepLabels: true,
-    steps: [
-      { name: 'BEGIN_COMBAT', short: 'Begin' },
-      { name: 'DECLARE_ATTACKERS', short: 'Attackers' },
-      { name: 'DECLARE_BLOCKERS', short: 'Blockers' },
-      { name: 'FIRST_COMBAT_DAMAGE', short: '1st Strike' },
-      { name: 'COMBAT_DAMAGE', short: 'Damage' },
-      { name: 'END_COMBAT', short: 'End' },
-    ],
-  },
-  {
-    label: 'Main Phase 2',
-    fgClass: 'text-emerald-300',
-    bgClass: 'bg-emerald-400',
-    trackClass: 'bg-emerald-500/70',
-    glowRgb: '74, 222, 128',
-    steps: [{ name: 'POSTCOMBAT_MAIN', short: 'Main 2' }],
-  },
-  {
-    label: 'End',
-    fgClass: 'text-purple-300',
-    bgClass: 'bg-purple-400',
-    trackClass: 'bg-purple-500/70',
-    glowRgb: '192, 132, 252',
-    steps: [
-      { name: 'END_TURN', short: 'End Turn' },
-      { name: 'CLEANUP', short: 'Cleanup' },
-    ],
-  },
-];
-
-/**
- * Horizontal turn-progress timeline. Highlights the current step
- * with a pulsing bloom orb in the phase's accent color; all other
- * ticks dim out. Mirrors the visual idiom from the user's reference
- * mock — colored segments, ticks at each sub-step, glowing
- * "current position" orb.
- *
- * <p>The wire serializes upstream's {@code PhaseStep} enum via
- * {@code .name()} (see GameViewMapper), so we match {@code step}
- * directly against the enum names in {@link TIMELINE_PHASES}.
- * {@code FIRST_COMBAT_DAMAGE} only fires when first strike or double
- * strike is in play; the tick is always rendered (so the phase
- * geometry is consistent across turns) but only lights up when the
- * engine actually visits that step.
- */
-function PhaseTimeline({ gameView }: { gameView: WebGameView }) {
-  const totalSteps = TIMELINE_PHASES.reduce(
-    (n, p) => n + p.steps.length,
-    0,
-  );
-  return (
-    <div
-      data-testid="phase-timeline"
-      className="flex items-stretch gap-2 px-4 py-2 bg-zinc-950 border-b border-zinc-800 select-none"
-    >
-      <div className="flex flex-col justify-center pr-3 border-r border-zinc-800 min-w-[5.5rem]">
-        <div className="text-[10px] uppercase tracking-wider text-zinc-500">
-          Turn {gameView.turn}
-        </div>
-        <div
-          data-testid="active-player-name"
-          className="text-sm font-medium text-zinc-200 truncate"
-          title={gameView.activePlayerName}
-        >
-          {gameView.activePlayerName || '—'}
-        </div>
-      </div>
-      <div className="flex-1 flex items-start gap-1.5">
-        {TIMELINE_PHASES.map((phase) => (
-          <PhaseSegment
-            key={phase.label}
-            phase={phase}
-            activeStep={gameView.step}
-            totalSteps={totalSteps}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function PhaseSegment({
-  phase,
-  activeStep,
-  totalSteps,
-}: {
-  phase: PhaseConfig;
-  activeStep: string;
-  totalSteps: number;
-}) {
-  const isActivePhase = phase.steps.some((s) => s.name === activeStep);
-  return (
-    <div
-      data-testid="phase-segment"
-      data-phase={phase.label}
-      data-active-phase={isActivePhase || undefined}
-      className="flex flex-col"
-      style={{ flex: phase.steps.length / totalSteps }}
-    >
-      <div
-        className={
-          'text-[10px] uppercase tracking-wider mb-1 ' +
-          (isActivePhase ? phase.fgClass + ' font-semibold' : 'text-zinc-600')
-        }
-      >
-        {phase.label}
-      </div>
-      <div className="relative flex items-center h-5">
-        {/* Track bar — saturated phase color, slightly thicker than v1 */}
-        <div
-          className={
-            'absolute inset-x-0 h-1.5 rounded-full ' + phase.trackClass
-          }
-        />
-        {/* Step ticks */}
-        {phase.steps.map((step, idx) => {
-          const isActiveStep = step.name === activeStep;
-          const left = `${((idx + 0.5) / phase.steps.length) * 100}%`;
-          return (
-            <div
-              key={step.name}
-              data-testid="phase-tick"
-              data-step={step.name}
-              data-active-step={isActiveStep || undefined}
-              className="absolute -translate-x-1/2 -translate-y-1/2"
-              style={{ left, top: '50%' }}
-              title={step.short}
-            >
-              {isActiveStep ? (
-                <div
-                  data-testid="active-step-orb"
-                  className={
-                    'w-3.5 h-3.5 rounded-full animate-pulse ' + phase.bgClass
-                  }
-                  style={{
-                    boxShadow:
-                      `0 0 22px 6px rgba(${phase.glowRgb}, 0.55), ` +
-                      `0 0 8px 2px rgba(${phase.glowRgb}, 0.95)`,
-                  }}
-                />
-              ) : (
-                <div
-                  className={
-                    'w-2 h-2 rounded-full ' +
-                    (isActivePhase
-                      ? phase.bgClass + ' opacity-80'
-                      : 'bg-zinc-500')
-                  }
-                />
-              )}
-            </div>
-          );
-        })}
-      </div>
-      {/* Per-step labels row — only rendered for phases with showStepLabels
-          (currently Combat) so single-step phases don't get a redundant
-          duplicate of their phase header. */}
-      {phase.showStepLabels && (
-        <div
-          data-testid="phase-step-labels"
-          className="relative h-3 mt-0.5"
-        >
-          {phase.steps.map((step, idx) => {
-            const isActiveStep = step.name === activeStep;
-            const left = `${((idx + 0.5) / phase.steps.length) * 100}%`;
-            return (
-              <span
-                key={step.name}
-                data-testid="phase-step-label"
-                data-step={step.name}
-                className={
-                  'absolute -translate-x-1/2 text-[9px] uppercase tracking-wide whitespace-nowrap ' +
-                  (isActiveStep
-                    ? phase.fgClass + ' font-semibold'
-                    : 'text-zinc-500')
-                }
-                style={{ left, top: 0 }}
-              >
-                {step.short}
-              </span>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ---------- game log (slice 18) ---------- */
-
-/**
- * Right-side strip showing the engine's running commentary —
- * "alice plays Forest", "Bolt deals 3 to bob", "alice's turn", etc.
- * Each entry is a {@code gameInform} message accumulated by the
- * store (see {@link useGameStore.gameLog}). Auto-scrolls to bottom
- * on new entries.
- *
- * <p>Slice 18 / ADR 0008 B3. Closes the largest debugging gap in
- * 1v1 play: previously the user had no record of what just
- * happened beyond the live board state.
- */
-function GameLog() {
-  const entries = useGameStore((s) => s.gameLog);
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [entries]);
-
-  return (
-    <aside
-      data-testid="game-log"
-      className="w-72 border-l border-zinc-800 bg-zinc-900/40 flex flex-col"
-    >
-      <header className="text-xs text-zinc-500 uppercase tracking-wide px-3 py-2 border-b border-zinc-800">
-        Game log ({entries.length})
-      </header>
-      <div
-        ref={scrollRef}
-        data-testid="game-log-entries"
-        className="flex-1 overflow-y-auto p-2 space-y-1 text-xs"
-      >
-        {entries.length === 0 ? (
-          <p className="text-zinc-600 italic">No events yet.</p>
-        ) : (
-          entries.map((e) => (
-            <div
-              key={`${e.id}-${e.turn}`}
-              data-testid="game-log-entry"
-              className="text-zinc-300 leading-snug"
-            >
-              {(e.turn > 0 || e.phase) && (
-                <span className="text-zinc-600 mr-1.5 font-mono">
-                  T{e.turn}
-                  {e.phase && `·${e.phase.slice(0, 4)}`}
-                </span>
-              )}
-              <LogMessage text={e.message} />
-            </div>
-          ))
-        )}
-      </div>
-    </aside>
-  );
-}
-
-/**
- * Strip upstream's HTML-flavored markup safely (same approach as
- * GameDialog's renderer; see GameDialog.tsx renderUpstreamMarkup).
- * Inline here to avoid coupling — log entries are plain prose with
- * occasional &lt;font color&gt; highlights; we just render text and
- * drop any tags upstream emitted.
- */
-function LogMessage({ text }: { text: string }) {
-  const stripped = text.replace(/<[^>]+>/g, '');
-  return <span>{stripped}</span>;
-}
-
-/* ---------- header ---------- */
-
-function Header({
-  gameId,
-  connection,
-  closeReason,
-  gameView,
-  onLeave,
-}: {
-  gameId: string;
-  connection: string;
-  closeReason: string;
-  gameView: WebGameView | null;
-  onLeave: () => void;
-}) {
-  // Slice 23: prominent "Your turn / Opponent's turn" indicator.
-  // Compare by playerId (not name) — slice-16 U5 fix; controller-
-  // hint suffixes can decorate priorityPlayerName in some flows.
-  const me =
-    gameView?.players.find((p) => p.playerId === gameView.myPlayerId) ?? null;
-  const isMyTurn = !!me?.isActive;
-  const hasMyPriority = !!me?.hasPriority;
-  return (
-    <header className="border-b border-zinc-800 px-6 py-2 flex items-center justify-between">
-      <div className="flex items-baseline gap-4 text-sm">
-        <span className="text-zinc-500">Game</span>
-        <span className="font-mono text-xs text-zinc-400">{gameId}</span>
-      </div>
-      {gameView && (
-        <div className="text-sm text-zinc-300 flex items-baseline gap-3">
-          <span data-testid="turn-indicator"
-                className={
-                  'px-2 py-0.5 rounded text-xs font-semibold uppercase tracking-wide '
-                  + (isMyTurn
-                    ? 'bg-emerald-600/30 text-emerald-200'
-                    : 'bg-zinc-700/50 text-zinc-400')
-                }>
-            {isMyTurn ? 'Your turn' : "Opponent's turn"}
-          </span>
-          <span
-            data-testid="priority-indicator"
-            className={
-              'text-xs '
-              + (hasMyPriority ? 'text-amber-300' : 'text-zinc-500')
-            }
-          >
-            {hasMyPriority ? 'Your priority' : 'Waiting for opponent'}
-          </span>
-        </div>
-      )}
-      <div className="flex items-center gap-3 text-xs">
-        {isSlowmoActive && (
-          <span
-            data-testid="slowmo-badge"
-            title={`Animation slow-motion debug. Remove ?slowmo=${SLOWMO} from the URL to disable.`}
-            className="px-2 py-0.5 rounded bg-fuchsia-500/20 text-fuchsia-300 font-mono uppercase tracking-wide"
-          >
-            slowmo {SLOWMO}×
-          </span>
-        )}
-        <ConnectionDot state={connection} reason={closeReason} />
-        <button
-          type="button"
-          onClick={onLeave}
-          className="text-zinc-400 hover:text-zinc-100"
-        >
-          Leave
-        </button>
-      </div>
-    </header>
-  );
-}
-
-function ConnectionDot({ state, reason }: { state: string; reason: string }) {
-  const color =
-    state === 'open'
-      ? 'bg-emerald-400'
-      : state === 'connecting'
-        ? 'bg-amber-400 animate-pulse'
-        : state === 'error'
-          ? 'bg-red-500'
-          : 'bg-zinc-600';
-  const label = state === 'closed' && reason ? `closed: ${reason}` : state;
-  return (
-    <span className="flex items-center gap-1.5 text-zinc-500" title={label}>
-      <span className={`inline-block h-2 w-2 rounded-full ${color}`} />
-      {label}
-    </span>
-  );
-}
-
-/* ---------- waiting ---------- */
-
-function Waiting({ connection }: { connection: string }) {
-  if (connection === 'connecting') {
-    return <Centered>Connecting…</Centered>;
-  }
-  if (connection === 'error' || connection === 'closed') {
-    return <Centered>Connection {connection}.</Centered>;
-  }
-  return <Centered>Waiting for game state…</Centered>;
-}
-
-function Centered({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex-1 flex items-center justify-center text-zinc-500">
-      {children}
-    </div>
-  );
-}
-
 /* ---------- battlefield ---------- */
 
 function Battlefield({
@@ -870,7 +230,7 @@ function Battlefield({
 
   // Slice 16: derive the interaction mode and route board clicks
   // through the shared clickRouter. The mode is a function of the
-  // pending dialog + game view — pure derivation, no stored state.
+  // pending dialog + game view â€” pure derivation, no stored state.
   // Each mode (free, target, manaPay, declareAttackers,
   // declareBlockers, modal) has explicit dispatch in clickRouter,
   // replacing the slice-15 "if (targeting) ..." pattern.
@@ -908,14 +268,14 @@ function Battlefield({
     routeObjectClick(mode, id, myPriority, out);
   };
 
-  // Slice 36 — drag-to-play from hand. Pointer-events DnD per ADR
-  // 0005 §6 (no third-party library). Anchor the press in a ref so
+  // Slice 36 â€” drag-to-play from hand. Pointer-events DnD per ADR
+  // 0005 Â§6 (no third-party library). Anchor the press in a ref so
   // a quick click (no movement) stays a click; cross a 5px
   // threshold to enter drag mode and surface a floating preview
   // following the cursor. PlayerArea elements are the drop zones;
   // they fire onPointerUp which (when drag is active) routes the
   // hand-card UUID through the same clickRouter the click path
-  // uses — same engine behavior, just a more natural mouse-first
+  // uses â€” same engine behavior, just a more natural mouse-first
   // gesture.
   const [drag, setDrag] = useState<
     { cardId: string; x: number; y: number } | null
@@ -968,7 +328,7 @@ function Battlefield({
   }, []);
 
   // Fired by either PlayerArea on pointerup. If a drag was in
-  // progress, that's a "drop on the board" — route the hand-card
+  // progress, that's a "drop on the board" â€” route the hand-card
   // UUID through the same path a click would. The document-level
   // pointerup listener clears state immediately after.
   const onBoardDrop = () => {
@@ -982,11 +342,11 @@ function Battlefield({
   const eligibleTargetIds =
     mode.kind === 'target' ? mode.eligibleIds : new Set<string>();
 
-  // Slice 26 — combat highlighting:
+  // Slice 26 â€” combat highlighting:
   // - eligibleCombatIds: legal-attacker / legal-blocker set during the
   //   matching combat step. Empty in any other mode.
   // - combatRoles: which permanents are *currently* attacking or
-  //   blocking, per gv.combat[]. Independent of mode — drives the
+  //   blocking, per gv.combat[]. Independent of mode â€” drives the
   //   ATK / BLK badges so the player can see what they've already
   //   committed to.
   const eligibleCombatIds: Set<string> =
@@ -1006,7 +366,7 @@ function Battlefield({
     return roles;
   }, [gv.combat]);
 
-  // Slice 36 — surface the dragged card as a floating preview that
+  // Slice 36 â€” surface the dragged card as a floating preview that
   // tracks the cursor. We resolve the card object from the hand
   // (the only place drag origins are bound today).
   const draggedCard = useMemo<WebCardView | null>(() => {
@@ -1015,7 +375,7 @@ function Battlefield({
   }, [drag, gv.myHand]);
 
   return (
-    // Slice 57 (UX audit fix B) — Battlefield restructure. Pre-fix:
+    // Slice 57 (UX audit fix B) â€” Battlefield restructure. Pre-fix:
     // self section was flex-1 overflow-auto and contained MyHand,
     // so when the self battlefield + hand overflowed, MyHand scrolled
     // off the bottom and the action panel sat behind clipped cards.
@@ -1045,7 +405,7 @@ function Battlefield({
           </div>
         </div>
       )}
-      {/* Opponents row(s) — top. flex-shrink-0 = intrinsic height. */}
+      {/* Opponents row(s) â€” top. flex-shrink-0 = intrinsic height. */}
       <section className="flex-shrink-0 border-b border-zinc-800 p-4 space-y-4">
         {opponents.map((p) => (
           <PlayerArea
@@ -1066,11 +426,11 @@ function Battlefield({
         )}
       </section>
 
-      {/* Stack — between players (slice 27). Collapses to nothing
+      {/* Stack â€” between players (slice 27). Collapses to nothing
           when empty so the surrounding layout doesn't shift. */}
       <StackZone stack={gv.stack} />
 
-      {/* Self battlefield — middle-bottom. flex-1 so it absorbs
+      {/* Self battlefield â€” middle-bottom. flex-1 so it absorbs
           excess vertical space when small (no awkward gap to hand). */}
       <section className="flex-1 p-4 space-y-4 min-h-0">
         {me ? (
@@ -1087,12 +447,12 @@ function Battlefield({
           />
         ) : (
           <p className="text-zinc-500 italic">
-            Spectator view — no controlling player.
+            Spectator view â€” no controlling player.
           </p>
         )}
       </section>
 
-      {/* My hand — bottom slot, ALWAYS visible at full height. Was
+      {/* My hand â€” bottom slot, ALWAYS visible at full height. Was
           inside self section pre-slice-57; moved out so an
           overflowing battlefield can't scroll the hand off-screen. */}
       {me && (
@@ -1113,7 +473,7 @@ function Battlefield({
 }
 
 /**
- * Stack zone — slice 27. Renders the spells / abilities currently on
+ * Stack zone â€” slice 27. Renders the spells / abilities currently on
  * the stack between the opponents row and the self row. Collapses to
  * {@code null} when empty so the surrounding layout doesn't shift.
  *
@@ -1122,14 +482,14 @@ function Battlefield({
  * (oldest first); reversing matches the MTGO/MTGA convention of
  * showing the top-of-stack at the top of the UI.
  *
- * <p>No click handlers in this slice — interacting with stack
+ * <p>No click handlers in this slice â€” interacting with stack
  * objects is rare in 1v1 and would conflict with the free-priority
  * click router. The tooltip surfaces the rules text so the player
  * can see what's about to resolve.
  */
 function StackZone({ stack }: { stack: Record<string, WebCardView> }) {
   const entries = Object.values(stack).reverse();
-  // Slice 50 — keep the section mounted while AnimatePresence flushes
+  // Slice 50 â€” keep the section mounted while AnimatePresence flushes
   // the last exit animation, otherwise the stack tile pops out
   // immediately when the spell resolves and the section unmounts.
   const isEmpty = entries.length === 0;
@@ -1142,7 +502,7 @@ function StackZone({ stack }: { stack: Record<string, WebCardView> }) {
       style={{ transitionDuration: `${STACK_ZONE_COLLAPSE_MS * SLOWMO}ms` }}
     >
       <div className="text-xs text-zinc-500 uppercase tracking-wide mb-1.5">
-        Stack ({entries.length}) — top resolves first
+        Stack ({entries.length}) â€” top resolves first
       </div>
       <div className="flex flex-wrap items-end gap-2">
         <AnimatePresence mode="popLayout" initial={false}>
@@ -1150,16 +510,16 @@ function StackZone({ stack }: { stack: Record<string, WebCardView> }) {
             const tooltip = [card.typeLine, ...(card.rules ?? [])]
               .filter(Boolean)
               .join('\n');
-            // Slice 52c — layoutId={card.cardId} ties this stack tile
+            // Slice 52c â€” layoutId={card.cardId} ties this stack tile
             // to the resolved permanent's battlefield tile (same
             // cardId after the spell resolves, since cardId is the
-            // underlying-Card UUID — Spell.id ≠ Permanent.id but
+            // underlying-Card UUID â€” Spell.id â‰  Permanent.id but
             // Spell.getCard().getId() === Permanent.id). LayoutGroup
             // at the Game-page root crosses the AnimatePresence
             // boundary so Framer matches the two siblings.
             //
             // Empty-string cardId is a defensive default for older
-            // fixtures (slice 52b) — passing '' as layoutId would
+            // fixtures (slice 52b) â€” passing '' as layoutId would
             // collide every "missing" card into one shared id.
             // {@code undefined} disables layout-id matching for
             // that tile.
@@ -1204,11 +564,11 @@ function StackZone({ stack }: { stack: Record<string, WebCardView> }) {
 /**
  * Small card-shaped tile for stack entries (slice 48). Same 5:7
  * shape as HandCardFace / BattlefieldTileFace, scaled down to
- * 60×84 — the stack rarely holds more than 1-3 entries in 1v1, but
+ * 60Ã—84 â€” the stack rarely holds more than 1-3 entries in 1v1, but
  * the tile needs to stay narrow so the stack-zone header doesn't
  * eat too much battlefield real estate.
  *
- * <p>Defensive image-fail fallback identical to HandCardFace —
+ * <p>Defensive image-fail fallback identical to HandCardFace â€”
  * a name-only gradient silhouette so a missing print doesn't
  * leave a broken-image icon on the stack.
  */
@@ -1238,31 +598,31 @@ function PlayerArea({
    */
   targetable: boolean;
   /**
-   * Slice 26 — IDs the engine considers legal attackers (during
+   * Slice 26 â€” IDs the engine considers legal attackers (during
    * declareAttackers) or legal blockers (during declareBlockers).
    * Empty set in any other mode.
    */
   eligibleCombatIds: Set<string>;
   /**
-   * Slice 26 — permanents already in a combat group, mapped to
+   * Slice 26 â€” permanents already in a combat group, mapped to
    * their role. Drives the ATK / BLK badge on each chip.
    */
   combatRoles: Map<string, 'attacker' | 'blocker'>;
   /**
-   * Slice 36 — true while a hand-card drag is in progress. Adds a
+   * Slice 36 â€” true while a hand-card drag is in progress. Adds a
    * dashed ring around the area so the user can see where releasing
    * will play the card.
    */
   isDropTarget: boolean;
   /**
-   * Slice 36 — fired on pointerup over the area. The Battlefield
+   * Slice 36 â€” fired on pointerup over the area. The Battlefield
    * checks its own drag state and dispatches the play action when
    * appropriate; if no drag was active this is a no-op.
    */
   onBoardDrop: () => void;
 }) {
   const battlefield = Object.values(player.battlefield);
-  // Slice 53 — group permanents into MTGA-style rows (creatures /
+  // Slice 53 â€” group permanents into MTGA-style rows (creatures /
   // other / lands), mirrored for the opponent so lands sit closest
   // to each player's hand. Empty rows render nothing so a turn-1
   // board with one Forest shows just the lands row.
@@ -1339,23 +699,23 @@ function PlayerArea({
             No permanents yet.
           </span>
         ) : (
-          // Slice 50 — ETB animation. Slides up from below + scales
+          // Slice 50 â€” ETB animation. Slides up from below + scales
           // so the eye reads "spell resolves into permanent" as one
           // motion.
           //
-          // Slice 52c — pairs with the StackZone {@code layoutId} so
+          // Slice 52c â€” pairs with the StackZone {@code layoutId} so
           // a resolving creature spell glides from its stack tile to
           // its battlefield tile (same {@code cardId}). LayoutGroup
           // at the Game root bridges the two AnimatePresences so
           // Framer can match the IDs across zones. The
           // {@code initial}/{@code exit} y+scale springs above keep
-          // working alongside layoutId — layout-driven motion uses
+          // working alongside layoutId â€” layout-driven motion uses
           // the {@code transition.layout} spring (LAYOUT_GLIDE, baked
           // into BATTLEFIELD_ENTER_EXIT), and the regular
           // {@code initial}/{@code exit} keys use the default spring
           // on this transition.
           //
-          // Slice 53 — split into three type-grouped rows. Each row
+          // Slice 53 â€” split into three type-grouped rows. Each row
           // owns its own AnimatePresence so a permanent leaving its
           // row triggers its exit animation independently. The row
           // container itself is plain DOM (no motion wrapper), so an
@@ -1386,12 +746,12 @@ function PlayerArea({
 }
 
 /**
- * Slice 53 — one MTGA-style row of permanents. Owns its own
+ * Slice 53 â€” one MTGA-style row of permanents. Owns its own
  * {@link AnimatePresence} so enter / exit animations fire
  * independently per row when permanents move between rows (e.g. an
  * animated land flipping in / out of creature status) or land here
- * from another zone. The wrapper {@code <div>} is plain DOM — no
- * motion — so a row container appearing or disappearing is a
+ * from another zone. The wrapper {@code <div>} is plain DOM â€” no
+ * motion â€” so a row container appearing or disappearing is a
  * structural change, not an animation, and won't orphan any tile
  * springs mid-flight.
  */
@@ -1447,7 +807,7 @@ function BattlefieldRowGroup({
 }
 
 /**
- * Command-zone strip — renders any commanders / emblems / dungeons /
+ * Command-zone strip â€” renders any commanders / emblems / dungeons /
  * planes the player has, keyed by upstream UUID. Slice 11 ships the
  * placeholder shape (chip with kind tag + name + tooltip on rules);
  * full card art lookup for the {@code commander} kind lands later
@@ -1499,19 +859,19 @@ function CommandChip({ entry }: { entry: WebCommandObjectView }) {
 }
 
 /**
- * Slice 51 — animated life total. The number flashes red on damage
- * and green on gain, with a floating ±N delta that drifts up and
+ * Slice 51 â€” animated life total. The number flashes red on damage
+ * and green on gain, with a floating Â±N delta that drifts up and
  * fades out. Most-watched number in any MTG game; making it visceral
  * is the highest-leverage polish per pixel.
  *
  * <p>Tracks the previous value via {@code useRef}. On change, captures
  * a {@code delta} entry with a unique sequence id and pushes it into a
- * short-lived list — {@code AnimatePresence} renders the float-up +
+ * short-lived list â€” {@code AnimatePresence} renders the float-up +
  * fade-out, then the entry is cleared after 900ms (slightly longer
  * than the animation so the exit completes cleanly).
  *
  * <p>Stacks deltas if multiple changes land in quick succession (e.g.
- * Lightning Bolt + Shock in the same priority pass) — each gets its
+ * Lightning Bolt + Shock in the same priority pass) â€” each gets its
  * own +N/-N indicator drifting up alongside the prior one.
  */
 function LifeTotal({ value }: { value: number }) {
@@ -1597,8 +957,8 @@ function ManaPool({ player }: { player: WebPlayerView }) {
     ['G', pool.green, 'text-emerald-400'],
     ['C', pool.colorless, 'text-zinc-400'],
   ];
-  // Slice 58 — wrap symbols in AnimatePresence so each color pops in
-  // (scale 0 → 1) when first added and fades out when consumed. The
+  // Slice 58 â€” wrap symbols in AnimatePresence so each color pops in
+  // (scale 0 â†’ 1) when first added and fades out when consumed. The
   // wrapper renders unconditionally even when total === 0 so
   // AnimatePresence has a stable parent to flush exits from.
   return (
@@ -1625,16 +985,16 @@ function ManaPool({ player }: { player: WebPlayerView }) {
 }
 
 /**
- * Slice 45 — replaces the slice-9-era {@code PermanentChip} text-chip
- * with a card-shaped tile (5:7 aspect, ~80×112). Mirrors
- * {@link HandCardFace} for the visual base — Scryfall art, mana cost,
- * name banner, P/T — and adds the battlefield-specific affordances:
- * tap rotation (90° clockwise), combat highlight ring, ATK/BLK
+ * Slice 45 â€” replaces the slice-9-era {@code PermanentChip} text-chip
+ * with a card-shaped tile (5:7 aspect, ~80Ã—112). Mirrors
+ * {@link HandCardFace} for the visual base â€” Scryfall art, mana cost,
+ * name banner, P/T â€” and adds the battlefield-specific affordances:
+ * tap rotation (90Â° clockwise), combat highlight ring, ATK/BLK
  * badges, damage chip, counter chip, summoning-sickness border.
  *
- * <p>Each tile is rendered inside a fixed 112×112 square slot so the
- * tap rotation (which swaps the tile's bounding box from 80×112
- * portrait to 112×80 landscape) stays within the slot — neighbors
+ * <p>Each tile is rendered inside a fixed 112Ã—112 square slot so the
+ * tap rotation (which swaps the tile's bounding box from 80Ã—112
+ * portrait to 112Ã—80 landscape) stays within the slot â€” neighbors
  * never reflow when a card taps.
  *
  * <p>The slot wrapper sits OUTSIDE {@link HoverCardDetail} on
@@ -1659,27 +1019,27 @@ function BattlefieldTile({
   canAct: boolean;
   onClick: (id: string) => void;
   /**
-   * Slice 26 — the engine has marked this permanent as a legal
+   * Slice 26 â€” the engine has marked this permanent as a legal
    * attacker (declareAttackers) or legal blocker (declareBlockers).
    * Renders an amber highlight ring so the player can see at a
    * glance which creatures the click-to-toggle gesture applies to.
    */
   isEligibleCombat: boolean;
   /**
-   * Slice 26 — non-null when this permanent is currently in a
+   * Slice 26 â€” non-null when this permanent is currently in a
    * combat group ({@code gv.combat[]}). Drives the ATK / BLK badge.
    */
   combatRole: 'attacker' | 'blocker' | null;
   /**
-   * Slice 58 — index-based stagger delay (in seconds) applied to the
+   * Slice 58 â€” index-based stagger delay (in seconds) applied to the
    * tap/untap rotation spring. Produces a wave on start-of-turn untap.
    */
   rotateDelay?: number;
 }) {
   const tapped = perm.tapped;
   return (
-    // Fixed 112×112 slot — the tile (80×112 portrait) and its tapped
-    // state (112×80 landscape) both fit. flex centering keeps the
+    // Fixed 112Ã—112 slot â€” the tile (80Ã—112 portrait) and its tapped
+    // state (112Ã—80 landscape) both fit. flex centering keeps the
     // tile aligned regardless of orientation.
     <div className="w-[112px] h-[112px] flex items-center justify-center">
       <HoverCardDetail card={perm.card}>
@@ -1693,7 +1053,7 @@ function BattlefieldTile({
           onClick={() => onClick(perm.card.id)}
           title={
             canAct
-              ? `${perm.card.name} — click to tap/activate`
+              ? `${perm.card.name} â€” click to tap/activate`
               : perm.card.typeLine
           }
           className={
@@ -1725,17 +1085,17 @@ function BattlefieldTile({
  *   - Counter chip top-left (when {@code card.counters} non-empty)
  *   - Damage chip lower-left (when {@code damage > 0})
  *   - Combat ATK / BLK badge top-left (over the counter chip slot;
- *     they shouldn't both be present in practice — combat badges
+ *     they shouldn't both be present in practice â€” combat badges
  *     only appear during declare-blockers/attackers, counters can
  *     appear any time but the visual collision is mild)
  *   - Combat-eligible amber ring on the outer card box
- *   - Tap state: rotate 90° clockwise + opacity 60%
+ *   - Tap state: rotate 90Â° clockwise + opacity 60%
  *   - Summoning sickness: subtle dashed zinc border (replaces the
- *     legacy italic text styling — italics don't carry meaning on
+ *     legacy italic text styling â€” italics don't carry meaning on
  *     a card-art tile)
  *
  * <p>Falls back to a name-only silhouette when Scryfall has no art
- * (token, ad-hoc emblem, etc.) — same defensive pattern as
+ * (token, ad-hoc emblem, etc.) â€” same defensive pattern as
  * {@link HandCardFace}.
  */
 function BattlefieldTileFace({
@@ -1779,14 +1139,14 @@ function MyHand({
   isMyTurn: boolean;
   hasPriority: boolean;
   /**
-   * Slice 36 — bound on each hand-card button to start the drag-
+   * Slice 36 â€” bound on each hand-card button to start the drag-
    * to-play gesture. The Battlefield owner decides whether the
    * press becomes a drag (5px movement threshold) or stays a
    * click; both paths route through {@code onObjectClick}.
    */
   onPointerDown: (cardId: string, ev: React.PointerEvent) => void;
   /**
-   * Slice 36 — id of the card currently being dragged, if any.
+   * Slice 36 â€” id of the card currently being dragged, if any.
    * The matching hand chip dims so the user can see which one is
    * "in flight". Other chips render normally.
    */
@@ -1794,8 +1154,8 @@ function MyHand({
 }) {
   const cards = Object.values(hand);
   // Slice 23: clearer reason when hand is disabled.
-  // - !hasPriority → engine isn't waiting on you
-  // - hasPriority && !isMyTurn → you can react with instants but
+  // - !hasPriority â†’ engine isn't waiting on you
+  // - hasPriority && !isMyTurn â†’ you can react with instants but
   //   not play lands / sorceries; the user-typical click on a
   //   Forest is silently rejected by upstream because it's not
   //   their main phase.
@@ -1804,16 +1164,16 @@ function MyHand({
   const disabledHint = !hasPriority
     ? 'Waiting for opponent'
     : !isMyTurn
-      ? 'Wait for your turn — most cards are sorcery-speed'
+      ? 'Wait for your turn â€” most cards are sorcery-speed'
       : '';
 
   const cardTooltip = (card: WebCardView) => {
-    if (canAct && isMyTurn) return `${card.name} — click to play/cast`;
+    if (canAct && isMyTurn) return `${card.name} â€” click to play/cast`;
     if (canAct && !isMyTurn) {
       // Instant-speed only on opponent's turn. Today we don't
       // distinguish instants in the UI; the engine will gameError
       // on illegal sorcery-speed clicks. Hint accordingly.
-      return `${card.name} — only instants are playable on opponent's turn`;
+      return `${card.name} â€” only instants are playable on opponent's turn`;
     }
     return card.typeLine;
   };
@@ -1834,15 +1194,15 @@ function MyHand({
           </span>
         )}
       </div>
-      {/* Slice 44 — arc-fan hand layout per ADR 0005 §5. Cards are
+      {/* Slice 44 â€” arc-fan hand layout per ADR 0005 Â§5. Cards are
           absolute-positioned along an arc with subtle per-card
-          rotation, hover lifts the focused card to 0° + scale 1.15
+          rotation, hover lifts the focused card to 0Â° + scale 1.15
           + raises z-index. Pointer-events DnD from slice 36 still
           works because the underlying button keeps the same
           handlers and testid. The wrapper is `h-44` so the lift
           has room without pushing layout.*/}
       {/*
-        Slice 57 (UX audit fix C) — h-44 (176px) was 20px short for
+        Slice 57 (UX audit fix C) â€” h-44 (176px) was 20px short for
         the 140px card + 56px hover-lift (= 196px needed). The
         lifted card was clipping at the top against the MyHand border.
         h-52 = 208px gives 12px overhead headroom plus pt-14 ensures
@@ -1856,11 +1216,11 @@ function MyHand({
             Empty hand.
           </span>
         ) : (
-          // Slice 54 — wrap in AnimatePresence so a card removed from
+          // Slice 54 â€” wrap in AnimatePresence so a card removed from
           // the hand (cast / discard / shuffle-into-library) gets its
           // exit phase. Without this, Framer never sees the source
           // bbox and the layoutId={card.cardId} match (slices 52a-c)
-          // can't fire — the stack tile pops up from above instead of
+          // can't fire â€” the stack tile pops up from above instead of
           // gliding from the hand position.
           <AnimatePresence mode="popLayout" initial={false}>
             {cards.map((card, idx) => {
@@ -1940,7 +1300,7 @@ function HandCardSlot({
   const { x, y, rot } = fanGeometry(index, total);
   // Hover lift cancels the rotation, raises the card, scales it up,
   // and bumps z so it sits above siblings. Transform applied to the
-  // OUTER absolute-positioned wrapper rather than the button — the
+  // OUTER absolute-positioned wrapper rather than the button â€” the
   // button is wrapped by HoverCardDetail's `relative inline-flex`
   // span, which would otherwise become the positioned ancestor and
   // collapse every card to the left edge of its own tiny span (the
@@ -1948,28 +1308,28 @@ function HandCardSlot({
   const transform = lifted
     ? `translate(-50%, 0) translateX(${x}px) translateY(-56px) rotate(0deg) scale(1.15)`
     : `translate(-50%, 0) translateX(${x}px) translateY(${y}px) rotate(${rot}deg)`;
-  // Slice 52c — layoutId pinned to an INNER motion.div so the
+  // Slice 52c â€” layoutId pinned to an INNER motion.div so the
   // fan-arc CSS transform on the OUTER div doesn't conflict with
   // Framer's layout-tracking. Framer reads the motion element's
-  // bounding-client-rect to compute glide trajectories — putting
+  // bounding-client-rect to compute glide trajectories â€” putting
   // layoutId on the outer (fan-positioned) div would make Framer
   // think every hand card is already at the rotated/translated
   // position, and the cross-zone glide would start from the wrong
   // spot. The inner motion.div sits inside the button at the
-  // visible 100×140 face position, so its bbox matches what the
+  // visible 100Ã—140 face position, so its bbox matches what the
   // user actually sees.
   //
-  // Empty cardId → omit layoutId (defensive default; see slice 52b).
+  // Empty cardId â†’ omit layoutId (defensive default; see slice 52b).
   const layoutId = card.cardId ? card.cardId : undefined;
   return (
     <div
       className="absolute left-1/2 top-2 transition-transform ease-out origin-bottom"
       style={{
         transform,
-        // Slice 57 — z-index ladder (audit finding 8): hand-lift caps
+        // Slice 57 â€” z-index ladder (audit finding 8): hand-lift caps
         // at 20 so it stays UNDER ActionPanel (z-30), drag preview
-        // (z-40 → z-50), modals (z-50), and hover popover portals.
-        // Pre-fix this was 100 — paints over ActionPanel + GameDialog.
+        // (z-40 â†’ z-50), modals (z-50), and hover popover portals.
+        // Pre-fix this was 100 â€” paints over ActionPanel + GameDialog.
         zIndex: lifted ? 20 : index,
         transitionDuration: `${HAND_HOVER_LIFT_MS * SLOWMO}ms`,
       }}
@@ -2018,7 +1378,7 @@ function HandCardSlot({
  *   - P/T overlay bottom-right for creatures, loyalty for walkers
  *
  * Falls back to a name-only card silhouette when Scryfall has no
- * matching print (token, ad-hoc emblem, etc.) — same defensive
+ * matching print (token, ad-hoc emblem, etc.) â€” same defensive
  * pattern as the slice-43 thumbnail.
  */
 function HandCardFace({ card }: { card: WebCardView }) {
@@ -2034,7 +1394,7 @@ function HandCardFace({ card }: { card: WebCardView }) {
  *
  * <p>Phase 5 deliverable from PATH_C_PLAN.md "Graveyard / exile /
  * library (top-card-revealed) browsers". Library is intentionally
- * NOT browsable (face-down by default — only revealed when
+ * NOT browsable (face-down by default â€” only revealed when
  * something specifically reveals top cards; that flow comes later
  * via gameTarget on the revealed cards).
  */
@@ -2072,12 +1432,12 @@ function ZoneCounter({
         </button>
       )}
       {/*
-        Slice 55 — resolve animation: zero-size hidden motion.div per
+        Slice 55 â€” resolve animation: zero-size hidden motion.div per
         graveyard / exile card so the cross-zone layoutId graph has a
         destination to glide INTO when an instant or sorcery resolves.
         Without these, a Lightning Bolt resolving from the stack would
         animate its exit (opacity-fade + slide) but the player would
-        never see it "land" anywhere — the chip count would just bump
+        never see it "land" anywhere â€” the chip count would just bump
         in silence. With these, Framer matches the exiting stack tile
         against the cardId-paired hidden div at the chip's position
         and glides between them. Fades to zero on arrival; the chip
@@ -2087,7 +1447,7 @@ function ZoneCounter({
         triggers the glide, regardless of order. Zero-size +
         opacity-0 + pointer-events-none means they cost ~nothing in
         layout/paint. Performance budget on this whole LayoutGroup is
-        ≤50 elements (see Game.tsx:163); a long game's combined
+        â‰¤50 elements (see Game.tsx:163); a long game's combined
         graveyards rarely exceed 30 cards.
       */}
       <span
@@ -2189,7 +1549,7 @@ function ZoneBrowser({
             className="text-zinc-400 hover:text-zinc-100 text-sm"
             aria-label="Close"
           >
-            ✕
+            âœ•
           </button>
         </header>
         <div className="flex flex-wrap gap-1.5 p-3 overflow-y-auto">
