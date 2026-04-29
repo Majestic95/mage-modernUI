@@ -19,6 +19,91 @@ minor mismatches.
 
 ---
 
+## 1.21 — 2026-04-29 — Deck-legality surface (slice 72-A)
+
+Adds the structured deck-validator surface: a new pre-flight endpoint,
+a new error code, and an additive `validationErrors` field on the
+`WebError` envelope. All changes are additive — older clients ignore
+the new field and fall back to displaying `WebError.message` alone.
+
+### New endpoint — `POST /api/decks/validate?deckType=...`
+
+Authed, takes a `WebDeckCardLists` body, returns
+`WebDeckValidationResult`:
+
+```json
+{
+  "schemaVersion": "1.21",
+  "valid":         false,
+  "partlyLegal":   true,
+  "errors": [
+    { "errorType":   "DECK_SIZE",
+      "group":       "Deck",
+      "message":     "Must contain at least 100 cards: has only 60 cards",
+      "cardName":    null,
+      "partlyLegal": true,
+      "synthetic":   false }
+  ]
+}
+```
+
+Always 200 OK — the endpoint succeeded; only the deck failed. Errors
+are pre-sorted by upstream's
+`DeckValidator.getErrorsListSorted(maxErrors)` (PRIMARY → DECK_SIZE →
+BANNED → WRONG_SET → OTHER) and capped at 50 entries with the engine's
+overflow sentinel (`OTHER, "...", "and more N error[s]"`) appended when
+the cap is hit. The mapper marks the sentinel via `synthetic=true` so
+clients render it as a non-clickable footer rather than a real error.
+
+The deck-LEVEL `partlyLegal` field is the rollup: true iff `valid` is
+true OR every remaining error has `partlyLegal=true` (today only
+`DECK_SIZE` qualifies). This is the boolean to switch on for the
+amber "legal once finished" badge vs. red "needs card changes" — do
+not re-derive it from `errors[].partlyLegal` client-side.
+
+`deckType` must match a value from `/api/server/state` `deckTypes`.
+Unknown deckType → `400 UNKNOWN_DECK_TYPE`. Unparseable deck (cards
+missing from the local repository) → `400 INVALID_DECK_FORMAT`. Deck
+exceeding 250 line entries → `413 DECK_TOO_LARGE` (CPU-budget cap;
+1 MB body cap also applies globally).
+
+### New error code — `DECK_INVALID`
+
+Distinct from existing `UPSTREAM_REJECTED`. Surfaces from the
+table-join path when the joining player's deck fails the table's
+format validator. Pairs with the new `validationErrors` field below.
+
+### `WebError` — added `validationErrors` field
+
+```diff
+ {
+   "schemaVersion":    "1.21",
+   "code":             "DECK_INVALID",
+   "message":          "Deck failed validation for the Commander format.",
++  "validationErrors": [ WebDeckValidationError, ... ]
+ }
+```
+
+Optional, list-shaped. Present (and non-null) only when
+`code == "DECK_INVALID"`. For all other 4xx/5xx paths the field is
+absent from the wire — Jackson omits it via `@JsonInclude(NON_NULL)`.
+Same `WebDeckValidationError` shape as the pre-flight endpoint, so
+clients have one renderer for both surfaces. Note: the join-time
+422 surface intentionally does NOT include the deck-level
+`partlyLegal` rollup — at table-join the verdict is binary (the
+table rejected you), and the per-error `partlyLegal` flag suffices
+for any per-row styling.
+
+### Forward-compat note
+
+Older 1.20 clients hitting a 1.21 server: the new `validationErrors`
+field is dropped silently (Jackson `FAIL_ON_UNKNOWN_PROPERTIES=false`
+is the default), so the existing `message` text is what they render.
+The pre-flight endpoint is opt-in — older clients simply don't call
+it.
+
+---
+
 ## 1.20 — 2026-04-29 — Multiplayer wire shape (slice 69a, ADR 0010 v2)
 
 Adds three additive fields to land the v2 multiplayer wire contract.

@@ -21,6 +21,7 @@ import mage.webapi.dto.WebHealth;
 import mage.webapi.dto.WebJoinTableRequest;
 import mage.webapi.dto.WebSessionRequest;
 import mage.webapi.embed.EmbeddedServer;
+import mage.webapi.lobby.DeckValidationService;
 import mage.webapi.lobby.LobbyService;
 import mage.webapi.mapper.CardInfoMapper;
 import mage.webapi.mapper.DeckMapper;
@@ -78,6 +79,7 @@ public final class WebApiServer {
     private final WebSessionStore sessionStore;
     private final AuthService authService;
     private final LobbyService lobbyService;
+    private final DeckValidationService deckValidationService;
     private List<String> corsOrigins = List.of();
     private Javalin app;
 
@@ -86,6 +88,7 @@ public final class WebApiServer {
         this.sessionStore = new WebSessionStore();
         this.authService = new AuthService(embedded, sessionStore);
         this.lobbyService = new LobbyService(embedded);
+        this.deckValidationService = new DeckValidationService();
     }
 
     public WebApiServer allowCorsOrigins(List<String> origins) {
@@ -263,6 +266,22 @@ public final class WebApiServer {
             ctx.status(204);
         });
 
+        // Slice 72-A — pre-flight deck-legality check. Authed; takes a
+        // deckType query param (canonical name from /api/server/state)
+        // and a WebDeckCardLists body. Always 200 OK with
+        // {valid, errors[]} — even when the deck fails validation, the
+        // endpoint succeeded; only the deck didn't.
+        //
+        // Distinct from the join-time DECK_INVALID surface: that's a
+        // 422 hard rejection, this is the deck builder's diagnostic
+        // loop. Same WebDeckValidationError shape on the wire either
+        // way so clients have one renderer.
+        app.post("/api/decks/validate", ctx -> {
+            String deckType = requireParam(ctx.queryParam("deckType"), "deckType");
+            WebDeckCardLists req = parseBody(ctx.body(), WebDeckCardLists.class);
+            ctx.json(deckValidationService.validate(deckType, DeckMapper.toUpstream(req)));
+        });
+
         // Sideboard / construction submit (slice 13). Body shape
         // mirrors WebDeckCardLists used at table-join time. The
         // `update` query param picks autosave (true → deckSave) vs
@@ -283,7 +302,11 @@ public final class WebApiServer {
     private static void registerExceptionHandlers(Javalin app) {
         app.exception(WebApiException.class, (ex, ctx) -> {
             ctx.status(ex.status());
-            ctx.json(new WebError(SchemaVersion.CURRENT, ex.code(), ex.getMessage()));
+            // Slice 72-A — forward the optional validationErrors payload
+            // when present (DECK_INVALID path). For every other error
+            // path it's null and Jackson omits the field via NON_NULL.
+            ctx.json(new WebError(SchemaVersion.CURRENT, ex.code(), ex.getMessage(),
+                    ex.validationErrors()));
         });
         app.exception(BadRequestResponse.class, (ex, ctx) -> {
             ctx.status(400);

@@ -1,10 +1,15 @@
 package mage.webapi.lobby;
 
 import mage.MageException;
+import mage.cards.decks.Deck;
 import mage.cards.decks.DeckCardInfo;
 import mage.cards.decks.DeckCardLists;
+import mage.cards.decks.DeckValidator;
+import mage.cards.decks.DeckValidatorError;
 import mage.cards.repository.CardInfo;
 import mage.cards.repository.CardRepository;
+import mage.game.GameException;
+import mage.game.Table;
 import mage.game.match.MatchOptions;
 import mage.players.PlayerType;
 import mage.server.Session;
@@ -14,6 +19,7 @@ import mage.webapi.dto.WebRoomRef;
 import mage.webapi.dto.WebTable;
 import mage.webapi.dto.WebTableListing;
 import mage.webapi.embed.EmbeddedServer;
+import mage.webapi.mapper.DeckValidationMapper;
 import mage.webapi.mapper.TableMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -83,8 +89,37 @@ public final class LobbyService {
         }
     }
 
+    /**
+     * Slice 72-A — pre-flight deck validation BEFORE delegating to
+     * upstream. Upstream's {@code TableController.joinTable} runs the
+     * same validation as a side effect and silently drops the error
+     * list (returns boolean), then on failure removes the table when
+     * the failing player is the owner — so reading
+     * {@code Table.getValidator().getErrorsListSorted()} after-the-fact
+     * is racey (the table object may already be gone).
+     *
+     * <p>Pre-validating here lets us throw {@code DECK_INVALID} with
+     * the structured error payload before upstream ever sees the
+     * request. We mint a fresh validator instance per call (same
+     * class, no-arg constructor) rather than reusing
+     * {@code Table.getValidator()} — that field is a per-table
+     * singleton and concurrent {@code joinTable} calls on the same
+     * table would corrupt its shared {@code errorsList}
+     * (clear/add/clear/add interleavings under
+     * {@code TableController.joinTable}'s {@code synchronized} that
+     * doesn't extend to our pre-validation path).
+     *
+     * <p>If pre-validation passes, the upstream call's own validation
+     * runs against the table's actual validator instance and produces
+     * the same verdict (verdict-determinism is the validator-class
+     * contract). On the upstream-rejection branch our 422 surface is
+     * {@code UPSTREAM_REJECTED} for the non-deck failure modes — wrong
+     * password, no seats, already joined.
+     */
     public void joinTable(String upstreamSessionId, UUID roomId, UUID tableId,
                           String name, int skill, DeckCardLists deck, String password) {
+        preValidateDeck(tableId, deck);
+
         boolean ok;
         try {
             ok = embedded.server().roomJoinTable(
@@ -96,8 +131,69 @@ public final class LobbyService {
             throw upstream("joining table", ex);
         }
         if (!ok) {
+            // Pre-validation already ruled out DECK_INVALID, so any
+            // remaining false here is wrong password, no seats, etc.
             throw new WebApiException(422, "UPSTREAM_REJECTED",
-                    "Server rejected the join (illegal deck, wrong password, table full, etc.).");
+                    "Server rejected the join (wrong password, table full, already seated, etc.).");
+        }
+    }
+
+    /**
+     * Slice 72-A — runs validation against a freshly-minted validator
+     * (NOT {@link Table#getValidator()}, see the joinTable javadoc for
+     * why) and throws {@code DECK_INVALID} with the structured error
+     * payload if it fails. No-op when the table has no validator
+     * (limited tournament tables that supply decks via draft).
+     */
+    private void preValidateDeck(UUID tableId, DeckCardLists deckList) {
+        Table table = embedded.managerFactory().tableManager().getTable(tableId);
+        if (table == null) {
+            throw new WebApiException(404, "NOT_FOUND",
+                    "Table not found: " + tableId);
+        }
+        DeckValidator tableValidator = table.getValidator();
+        if (tableValidator == null) {
+            return;
+        }
+        DeckValidator fresh = newValidatorLike(tableValidator);
+        Deck loaded;
+        try {
+            loaded = Deck.load(deckList, false, false);
+        } catch (GameException ex) {
+            throw new WebApiException(400, "INVALID_DECK_FORMAT",
+                    "Could not load deck: " + ex.getMessage());
+        }
+        if (fresh.validate(loaded)) {
+            return;
+        }
+        List<DeckValidatorError> errors =
+                fresh.getErrorsListSorted(DeckValidationMapper.DEFAULT_ERROR_LIMIT);
+        throw new WebApiException(422, "DECK_INVALID",
+                "Deck failed validation for the " + fresh.getName() + " format.",
+                DeckValidationMapper.toDtoList(errors));
+    }
+
+    /**
+     * Mints a fresh validator of the same class as the table's
+     * validator. Used to avoid the shared-instance race described in
+     * {@link #joinTable}. Falls back to logging + treating the table
+     * as having no validator if reflective construction fails — that's
+     * a paranoid path (every shipped {@code DeckValidator} subclass
+     * has a public no-arg constructor; that's how
+     * {@code DeckValidatorFactory} mints them in the first place).
+     */
+    private static DeckValidator newValidatorLike(DeckValidator template) {
+        try {
+            return template.getClass().getDeclaredConstructor().newInstance();
+        } catch (ReflectiveOperationException ex) {
+            // Defensive — should never happen in practice. Surface as
+            // an upstream error rather than silently skipping
+            // validation (which would let invalid decks through).
+            LOG.error("Could not mint a fresh {} validator for pre-flight: {}",
+                    template.getClass().getSimpleName(), ex.getMessage(), ex);
+            throw new WebApiException(500, "UPSTREAM_ERROR",
+                    "Could not construct a deck validator for pre-flight: "
+                            + template.getClass().getSimpleName());
         }
     }
 
