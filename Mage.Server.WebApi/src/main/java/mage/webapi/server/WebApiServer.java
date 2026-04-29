@@ -109,7 +109,11 @@ public final class WebApiServer {
             // stream expands to gigabytes during JSON parse.
             cfg.http.maxRequestSize = 1_048_576L;
             if (!frozenOrigins.isEmpty()) {
-                cfg.plugins.enableCors(cors -> cors.add(it -> {
+                // Javalin 6 — `cfg.plugins` was renamed to
+                // `cfg.bundledPlugins` and `cors.add` to `cors.addRule`
+                // (migration guide §11). Behavior is identical:
+                // each frozenOrigin gets allowHost'd in one CORS rule.
+                cfg.bundledPlugins.enableCors(cors -> cors.addRule(it -> {
                     for (String host : frozenOrigins) {
                         it.allowHost(host);
                     }

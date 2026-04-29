@@ -1,10 +1,42 @@
+# Dependabot configuration for xmage personal fork.
+#
+# Path scoping rationale:
+#   - The root pom.xml and Mage/Mage.* modules track upstream magefree/mage and
+#     must NOT be auto-bumped from this fork — version drift would break merges
+#     from upstream. Only Mage.Server.WebApi/ is fork-owned and safe to bump.
+#   - webclient/ is fork-owned (new client) and gets its own npm ecosystem.
+#   - Mon (maven) vs Tue (npm) staggering avoids same-day PR floods.
 version: 2
 updates:
+  # GitHub Actions — root workflows
   - package-ecosystem: 'github-actions'
     directory: '/'
     schedule:
       interval: 'weekly'
+    open-pull-requests-limit: 5
+
+  # Maven — Mage.Server.WebApi module only (skip upstream pom.xml + Mage modules)
   - package-ecosystem: 'maven'
-    directory: '/'
+    directory: '/Mage.Server.WebApi'
     schedule:
       interval: 'weekly'
+      day: 'monday'
+      time: '09:00'
+    open-pull-requests-limit: 5
+    ignore:
+      # Upstream-tracked deps; never bump from dependabot
+      - dependency-name: 'org.mage:*'
+      - dependency-name: 'org.jboss.remoting:*'
+    commit-message:
+      prefix: 'deps(webapi)'
+
+  # npm — webclient
+  - package-ecosystem: 'npm'
+    directory: '/webclient'
+    schedule:
+      interval: 'weekly'
+      day: 'tuesday'
+      time: '09:00'
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: 'deps(webclient)'
