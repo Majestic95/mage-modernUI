@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type JSX } from 'react';
 import { motion } from 'framer-motion';
 import type { WebCardView, WebPermanentView } from '../api/schemas';
-import { ManaCost, scryfallImageUrl, type ScryfallVersion } from '../pages/Game';
+import { ManaCost } from './ManaCost';
+import { scryfallImageUrl, type ScryfallVersion } from './scryfall';
 import { slow } from '../animation/debug';
 import {
   COUNTER_POP,
