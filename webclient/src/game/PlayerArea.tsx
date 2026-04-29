@@ -16,6 +16,7 @@ export function PlayerArea({
   combatRoles,
   isDropTarget,
   onBoardDrop,
+  tabIndex,
 }: {
   player: WebPlayerView;
   perspective: 'self' | 'opponent';
@@ -50,6 +51,13 @@ export function PlayerArea({
    * appropriate; if no drag was active this is a no-op.
    */
   onBoardDrop: () => void;
+  /**
+   * Slice 69b (ADR 0010 v2 D13) â€” explicit tab order for keyboard
+   * navigation. Battlefield assigns clockwise indices to opponents so
+   * a 4p FFA target picker traverses you â†’ opp-right â†’ opp-top â†’
+   * opp-left. Optional â€” undefined falls back to natural DOM order.
+   */
+  tabIndex?: number;
 }) {
   const battlefield = Object.values(player.battlefield);
   // Slice 53 â€” group permanents into MTGA-style rows (creatures /
@@ -58,12 +66,54 @@ export function PlayerArea({
   // board with one Forest shows just the lands row.
   const rows = bucketBattlefield(battlefield);
   const orderedRows = rowOrder(perspective);
+
+  // Slice 69b (ADR 0010 v2 D5) â€” active / priority glow rings.
+  // Stack additively: a player who is both active AND has priority
+  // (the typical 1v1 case during their own turn) shows both glows
+  // composed via box-shadow. Tokens (--active-glow / --priority-glow)
+  // route through tokens.css so Phase 7 light theme can override.
+  // Drop-target dashed ring is mutually exclusive with status glows
+  // â€” a hand-drag in progress is a UI mode, not a status, and the
+  // dashed border makes the destination unambiguous at FFA densities.
+  const statusBoxShadow = isDropTarget
+    ? undefined
+    : [
+        player.isActive ? '0 0 0 2px var(--active-glow)' : null,
+        player.hasPriority ? '0 0 1.25rem var(--priority-glow)' : null,
+      ]
+        .filter(Boolean)
+        .join(', ') || undefined;
+
+  // Slice 69b (ADR 0010 v2 D13) â€” aria-label on the focusable
+  // container. With tabIndex set (D13 keyboard-nav contract), screen
+  // readers will announce the seat when it gains focus; without an
+  // explicit label the announcement is "group" or the entire
+  // concatenated text content of the seat (life total, mana, every
+  // permanent name) â€” unusable. Synthesizes the seat's persona
+  // (name + life + status flags) into one short announcement.
+  const ariaLabel = [
+    player.name || 'Unknown player',
+    `${player.life} life`,
+    perspective === 'self' ? 'your seat' : null,
+    player.isActive ? 'active turn' : null,
+    player.hasPriority ? 'has priority' : null,
+    player.hasLeft ? 'eliminated' : null,
+  ]
+    .filter(Boolean)
+    .join(', ');
+
   return (
     <div
       data-testid={`player-area-${perspective}`}
       data-droppable="board"
       data-drop-target={isDropTarget || undefined}
+      data-active={player.isActive || undefined}
+      data-priority={player.hasPriority || undefined}
+      tabIndex={tabIndex}
+      role="group"
+      aria-label={ariaLabel}
       onPointerUp={onBoardDrop}
+      style={statusBoxShadow ? { boxShadow: statusBoxShadow } : undefined}
       className={
         'rounded border bg-zinc-900/40 p-3 transition-colors ' +
         (isDropTarget

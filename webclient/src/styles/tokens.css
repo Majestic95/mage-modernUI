@@ -1,0 +1,49 @@
+/*
+ * Slice 69b (ADR 0010 v2 D7) — semantic-color design tokens scoped to
+ * the v2 multiplayer surfaces. Per ADR D7 this is a *wedge*, not a
+ * big-bang refactor of index.css: only newly-added semantic surfaces
+ * (status / team / mana identity) are required to flow through tokens.
+ * Pre-existing literal Tailwind color classes stay where they are.
+ *
+ * Rule of thumb: if the color carries *meaning* (you-active, you-have-
+ * priority, this-team-vs-that-team, mana-color), use a token. If the
+ * color is purely structural (panel background, border without
+ * semantic role), Tailwind utilities are fine.
+ *
+ * Phase 7 (light theme) will use this same token surface as its
+ * override target; no consumer of these tokens should hardcode the
+ * literal hex values.
+ */
+:root {
+  /* 2HG / multi-team formats. Each team gets a ring color paired with
+   * a shape badge per ADR 0005 D10 (no information by color alone).
+   * 4 slots reserved for 3HG / Star / grand-melee formats (v3+). */
+  --team-ring-a: #4a90e2; /* blue, paired with shield badge */
+  --team-ring-b: #d04a4a; /* red, paired with crest badge */
+  --team-ring-c: #4ad04a; /* future 3-team formats */
+  --team-ring-d: #d0c04a; /* future 4-team formats */
+
+  /* Active player + priority holder. Active = whose turn it is.
+   * Priority = who can take an action right now. They stack — common
+   * case in 1v1 is "active and has priority" simultaneously. Both
+   * ride alongside redundant text-pill labels and z-index ordering
+   * (D9 redundant-encoding rule), so blind / color-blind users get
+   * the same information. */
+  --active-glow: rgba(168, 85, 247, 0.6);   /* fuchsia-500 @ 60% */
+  --priority-glow: rgba(245, 158, 11, 0.7); /* amber-500 @ 70% */
+
+  /* Targeting / focus. Used when a target dialog is pending and the
+   * surface is a legal target. Distinct hue from active/priority so
+   * the three signals (active / priority / targetable) don't blur
+   * into one indeterminate purple haze at FFA densities. */
+  --targetable-accent: rgba(168, 85, 247, 0.4);
+  --focus-ring: rgba(168, 85, 247, 0.9);
+
+  /* Status badges. Slice 69d (2HG client) consumes the team and goad
+   * variants; monarch + initiative reused from the existing 1v1 UI
+   * (which today uses literal Tailwind classes — migration is a slice-
+   * 73-77 polish task per D7 consequences). */
+  --badge-fill-goad: rgba(245, 158, 11, 0.85);
+  --badge-fill-monarch: rgba(234, 179, 8, 0.9);
+  --badge-fill-initiative: rgba(99, 102, 241, 0.9);
+}

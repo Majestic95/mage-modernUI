@@ -11,6 +11,7 @@ import { ManaCost } from './ManaCost';
 import { MyHand } from './MyHand';
 import { StackZone } from './StackZone';
 import { PlayerArea } from './PlayerArea';
+import { opponentRowClassname, selectOpponents } from './battlefieldLayout';
 
 export function Battlefield({
   gv,
@@ -26,7 +27,7 @@ export function Battlefield({
     [gv.players, gv.myPlayerId],
   );
   const opponents = useMemo(
-    () => gv.players.filter((p) => p.playerId !== gv.myPlayerId),
+    () => selectOpponents(gv.players, gv.myPlayerId),
     [gv.players, gv.myPlayerId],
   );
 
@@ -191,6 +192,30 @@ export function Battlefield({
     // overflow-y-auto for the rare case the combined intrinsic
     // height exceeds the viewport on a small laptop.
     <div className="flex-1 flex flex-col relative overflow-y-auto">
+      {/* Slice 69b (ADR 0010 v2 D5 + D13 + synthesis miss #2) â€” screen-
+          reader announcer for priority / phase transitions. Lives at
+          the Battlefield root so the live region is dedicated, not
+          buried inside a section that mutates for unrelated reasons
+          (cards entering / leaving the battlefield etc.). The text
+          here is the ONLY content of the live region, so a screen
+          reader announces exactly the transition â€” "Priority: Alice,
+          PRECOMBAT_MAIN" â€” and nothing else. role=status + aria-live
+          polite is the standard pattern: queues behind any open dialog
+          and doesn't interrupt mid-utterance (vs assertive). The
+          sr-only class hides it visually â€” the visual surfaces are
+          the PlayerArea glow rings (D5) + the existing PRIORITY /
+          ACTIVE pills (D9 redundant-encoding rule). */}
+      <div
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        data-testid="priority-announcer"
+        className="sr-only"
+      >
+        Priority: {gv.priorityPlayerName || '—'},{' '}
+        Active: {gv.activePlayerName || '—'},{' '}
+        {gv.phase || ''} {gv.step || ''}
+      </div>
       {drag && draggedCard && (
         <div
           data-testid="drag-preview"
@@ -207,9 +232,23 @@ export function Battlefield({
           </div>
         </div>
       )}
-      {/* Opponents row(s) â€” top. flex-shrink-0 = intrinsic height. */}
-      <section className="flex-shrink-0 border-b border-zinc-800 p-4 space-y-4">
-        {opponents.map((p) => (
+      {/* Opponents row(s) â€” top. flex-shrink-0 = intrinsic height.
+          Slice 69b (ADR 0010 v2 D5): layout adapts to opponent count
+          via CSS Grid. 1 opponent = vertical stack (1v1 unchanged); 2
+          opponents = 2-col grid (3p FFA / 2HG-opp-row); 3 opponents =
+          3-col grid (4p FFA). Asymmetric 12-o'clock / 9 / 3 layout is
+          deferred to v3 polish. The text-pill ACTIVE / PRIORITY
+          labels stay alongside the new glow rings (D9 redundant-
+          encoding rule). Priority announcement for screen readers
+          lives in the dedicated sr-only announcer at the Battlefield
+          root above â€” NOT here, because cards entering / leaving
+          permanents would mutate this section and trigger spurious
+          "priority change" announcements. */}
+      <section
+        data-testid="opponents-row"
+        className={opponentRowClassname(opponents.length)}
+      >
+        {opponents.map((p, idx) => (
           <PlayerArea
             key={p.playerId}
             player={p}
@@ -221,6 +260,12 @@ export function Battlefield({
             combatRoles={combatRoles}
             isDropTarget={drag != null}
             onBoardDrop={onBoardDrop}
+            // Slice 69b (D13) — explicit tab order. Clockwise from your
+            // seat: opp-right (idx 0) → opp-top (idx 1) → opp-left
+            // (idx 2) for 4p FFA. Index increments so a future v3
+            // asymmetric layout can preserve the convention without
+            // changing the consumer's contract.
+            tabIndex={10 + idx}
           />
         ))}
         {opponents.length === 0 && (
@@ -246,6 +291,13 @@ export function Battlefield({
             combatRoles={combatRoles}
             isDropTarget={drag != null}
             onBoardDrop={onBoardDrop}
+            // Slice 69b (D13) â€” "you" is FIRST in the clockwise tab
+            // order: you (9) â†’ opp-right (10) â†’ opp-top (11) â†’
+            // opp-left (12). Without this index, natural DOM order
+            // puts self LAST (it's the third section), which breaks
+            // self-targeting flows (Lightning Bolt face) under
+            // keyboard nav.
+            tabIndex={9}
           />
         ) : (
           <p className="text-zinc-500 italic">

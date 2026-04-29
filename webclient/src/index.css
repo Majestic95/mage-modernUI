@@ -1,4 +1,9 @@
 @import "tailwindcss";
+/* Slice 69b (ADR 0010 v2 D7) — semantic-color design tokens. Scoped
+ * wedge: only newly-added v2 multiplayer surfaces use tokens; the
+ * pre-existing 1v1 literal Tailwind classes stay where they are.
+ * Phase 7 light theme targets this same token surface. */
+@import "./styles/tokens.css";
 
 /* Project-wide CSS custom properties go here. Theme palette per
  * ADR 0005 (dark default; light is Phase 7). Specific component
