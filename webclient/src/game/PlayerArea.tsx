@@ -70,16 +70,18 @@ export function PlayerArea({
   // Slice 69b (ADR 0010 v2 D5) â€” active / priority glow rings.
   // Stack additively: a player who is both active AND has priority
   // (the typical 1v1 case during their own turn) shows both glows
-  // composed via box-shadow. Tokens (--active-glow / --priority-glow)
-  // route through tokens.css so Phase 7 light theme can override.
-  // Drop-target dashed ring is mutually exclusive with status glows
-  // â€” a hand-drag in progress is a UI mode, not a status, and the
-  // dashed border makes the destination unambiguous at FFA densities.
+  // composed via box-shadow. Tokens route through tokens.css so
+  // Phase 7 light theme can override. Drop-target dashed ring is
+  // mutually exclusive with status glows â€” a hand-drag in progress
+  // is a UI mode, not a status, and the dashed border makes the
+  // destination unambiguous at FFA densities.
+  // Slice 70-A (ADR 0011 D4) â€” renamed from --active-glow /
+  // --priority-glow to the --color-* namespace. Values unchanged.
   const statusBoxShadow = isDropTarget
     ? undefined
     : [
-        player.isActive ? '0 0 0 2px var(--active-glow)' : null,
-        player.hasPriority ? '0 0 1.25rem var(--priority-glow)' : null,
+        player.isActive ? '0 0 0 2px var(--color-team-active-glow)' : null,
+        player.hasPriority ? '0 0 1.25rem var(--color-team-priority-glow)' : null,
       ]
         .filter(Boolean)
         .join(', ') || undefined;

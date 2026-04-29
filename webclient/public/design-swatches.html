@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>xmage v2 — design token swatches (slice 70-A sign-off)</title>
+<style>
+  /* ============================================================
+     PROPOSED TOKENS — slice 70-A sign-off candidates
+     Tuned for the dark teal-black canvas in target-visual-reference.md.
+     ============================================================ */
+  :root {
+    /* Surface / background */
+    --color-bg-base:        #0E1A20;
+    --color-bg-elevated:    #152229;
+    --color-bg-overlay:     rgba(0, 0, 0, 0.7);
+    --color-surface-card:   #1A2630;
+
+    /* Text */
+    --color-text-primary:   #E8EDF0;
+    --color-text-secondary: #9BA8B0;
+    --color-text-muted:     #5F6E78;
+
+    /* Accent (End Step button — proposed) */
+    --color-accent-primary:        #8B5CF6;
+    --color-accent-primary-hover:  #A78BFA;
+    --color-accent-primary-active: #7C3AED;
+
+    /* Mana */
+    --color-mana-white:           #F8EFD4;
+    --color-mana-white-glow:      rgba(248, 239, 212, 0.55);
+    --color-mana-blue:            #5BC0F0;
+    --color-mana-blue-glow:       rgba(91, 192, 240, 0.5);
+    --color-mana-black:           #A78BC4;
+    --color-mana-black-glow:      rgba(167, 139, 196, 0.5);
+    --color-mana-red:             #F26A4B;
+    --color-mana-red-glow:        rgba(242, 106, 75, 0.55);
+    --color-mana-green:           #5BB872;
+    --color-mana-green-glow:      rgba(91, 184, 114, 0.5);
+    --color-mana-colorless:       #C9CDD4;
+    --color-mana-colorless-glow:  rgba(201, 205, 212, 0.45);
+    --color-mana-multicolor:      #E8C56C;
+    --color-mana-multicolor-glow: rgba(232, 197, 108, 0.55);
+
+    /* Team / player states */
+    --color-team-neutral:           #7A8FA8;
+    --color-eliminated-slash:       #E5483D;
+    --color-eliminated-slash-outline: #FFFFFF;
+
+    /* Status */
+    --color-status-success: #5BB872;
+    --color-status-danger:  #E5483D;
+    --color-status-warning: #E8C56C;
+    --color-status-info:    #5BC0F0;
+
+    /* Existing slice-69b values (preserved verbatim under new names) */
+    --color-team-active-glow:   rgba(168, 85, 247, 0.6);
+    --color-team-priority-glow: rgba(245, 158, 11, 0.7);
+  }
+
+  body {
+    margin: 0;
+    padding: 32px 48px;
+    background: var(--color-bg-base);
+    color: var(--color-text-primary);
+    font: 14px/1.5 system-ui, "Segoe UI", Roboto, sans-serif;
+  }
+
+  /* Slight gradient toward corners — proposed for --gradient-bg-base */
+  body {
+    background:
+      radial-gradient(ellipse at top left,    rgba(14, 26, 32, 1)  0%, #070C10 80%),
+      radial-gradient(ellipse at bottom right, rgba(14, 26, 32, 1) 0%, #070C10 80%);
+    background-blend-mode: screen;
+  }
+
+  h1 { font-size: 28px; margin: 0 0 8px; letter-spacing: -0.02em; }
+  h2 { font-size: 18px; margin: 32px 0 12px; color: var(--color-accent-primary); letter-spacing: 0.05em; text-transform: uppercase; font-weight: 600; }
+  p.lead { color: var(--color-text-secondary); margin: 0 0 24px; max-width: 720px; }
+  .hex { font-family: "SF Mono", Consolas, monospace; font-size: 12px; color: var(--color-text-secondary); }
+  .label { font-size: 13px; font-weight: 500; }
+  .note { font-size: 12px; color: var(--color-text-muted); }
+
+  /* ----- mana row layout ----- */
+  .mana-grid {
+    display: grid;
+    grid-template-columns: 60px 100px 240px 1fr;
+    gap: 16px;
+    align-items: center;
+    padding: 14px 0;
+    border-top: 1px solid var(--color-surface-card);
+  }
+  .mana-grid:last-child { border-bottom: 1px solid var(--color-surface-card); }
+  .mana-orb {
+    width: 48px; height: 48px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.08);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 20px; color: rgba(0,0,0,0.55);
+  }
+  .mana-orb-dark { color: rgba(255,255,255,0.85); }
+  .glow-tile {
+    width: 70px; height: 100px;
+    background: var(--color-surface-card);
+    border-radius: 6px;
+    border: 1px solid rgba(255,255,255,0.08);
+  }
+
+  /* ----- card-shaped tile for frame demos ----- */
+  .card-tile {
+    width: 110px; height: 154px;
+    background: linear-gradient(180deg, #2a3640 0%, #1a2630 100%);
+    border-radius: 8px;
+    position: relative;
+    overflow: hidden;
+  }
+  .card-tile-art {
+    position: absolute; inset: 8px 8px 50%; border-radius: 4px;
+    background: linear-gradient(135deg, #3a4a55 0%, #1f2c34 100%);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--color-text-muted); font-size: 11px;
+  }
+  .card-tile-meta {
+    position: absolute; left: 8px; right: 8px; bottom: 8px;
+    color: var(--color-text-secondary); font-size: 10px;
+  }
+
+  /* ----- player frame (halo demo) ----- */
+  .player-frame {
+    width: 80px; height: 80px;
+    border-radius: 50%;
+    background: var(--color-surface-card);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--color-text-secondary);
+    font-weight: 600;
+    position: relative;
+  }
+  .halo-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 24px;
+    margin-top: 8px;
+  }
+  .halo-cell { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+
+  /* ----- accent button samples ----- */
+  .button {
+    display: inline-block;
+    padding: 12px 24px;
+    background: var(--color-accent-primary);
+    color: var(--color-text-primary);
+    border: none; border-radius: 8px;
+    font-weight: 600; font-size: 14px;
+    cursor: pointer;
+    margin-right: 12px;
+  }
+  .button.hover { background: var(--color-accent-primary-hover); }
+  .button.active { background: var(--color-accent-primary-active); }
+
+  /* ----- status pill ----- */
+  .pill {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    margin-right: 8px;
+  }
+
+  /* ----- elimination slash ----- */
+  .slash-tile {
+    width: 110px; height: 154px;
+    position: relative;
+    background: var(--color-surface-card);
+    border-radius: 8px;
+    overflow: hidden;
+    filter: grayscale(0.85);
+  }
+  .slash-tile::before {
+    content: '';
+    position: absolute;
+    inset: -10%;
+    background: linear-gradient(
+      135deg,
+      transparent calc(50% - 8px),
+      var(--color-eliminated-slash-outline) calc(50% - 6px),
+      var(--color-eliminated-slash) calc(50% - 4px),
+      var(--color-eliminated-slash) calc(50% + 4px),
+      var(--color-eliminated-slash-outline) calc(50% + 6px),
+      transparent calc(50% + 8px)
+    );
+  }
+  .slash-tile span {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--color-text-muted); font-size: 11px;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.7);
+  }
+
+  /* ----- existing-vs-proposed compare strip ----- */
+  .compare-strip {
+    display: flex; gap: 24px; margin-top: 12px;
+  }
+  .compare-cell {
+    padding: 12px;
+    background: var(--color-surface-card);
+    border-radius: 6px;
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+  }
+
+  /* ----- sections ----- */
+  section { margin-bottom: 48px; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
+
+  /* ----- footer note ----- */
+  footer {
+    margin-top: 64px;
+    padding-top: 24px;
+    border-top: 1px solid var(--color-surface-card);
+    font-size: 12px;
+    color: var(--color-text-muted);
+  }
+</style>
+</head>
+<body>
+
+<h1>xmage v2 — slice 70-A token swatches</h1>
+<p class="lead">
+  Sign-off preview for the 17 user-decision hex values. Each swatch is rendered against the proposed
+  <code class="hex">--color-bg-base: #0E1A20</code> with a slight corner gradient toward
+  <code class="hex">#070C10</code>, matching the canonical reference screenshot.
+  All hex values defined in <code class="hex">:root</code> at the top of this page —
+  edit there to A/B test alternates.
+</p>
+
+<!-- ============================================================
+     1. SURFACE & BACKGROUND
+     ============================================================ -->
+<section>
+  <h2>Surface &amp; background</h2>
+  <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;">
+    <div>
+      <div style="height: 100px; background: #0E1A20; border-radius: 8px; border: 1px solid var(--color-surface-card);"></div>
+      <div class="label" style="margin-top: 8px;">--color-bg-base</div>
+      <div class="hex">#0E1A20</div>
+    </div>
+    <div>
+      <div style="height: 100px; background: #152229; border-radius: 8px; border: 1px solid var(--color-surface-card);"></div>
+      <div class="label" style="margin-top: 8px;">--color-bg-elevated</div>
+      <div class="hex">#152229</div>
+      <div class="note">panels &amp; cards above the base</div>
+    </div>
+    <div>
+      <div style="height: 100px; background: #1A2630; border-radius: 8px; border: 1px solid var(--color-surface-card);"></div>
+      <div class="label" style="margin-top: 8px;">--color-surface-card</div>
+      <div class="hex">#1A2630</div>
+      <div class="note">interactive surfaces (buttons, tiles)</div>
+    </div>
+    <div>
+      <div style="height: 100px; background: rgba(0,0,0,0.7); border-radius: 8px; border: 1px solid var(--color-surface-card);"></div>
+      <div class="label" style="margin-top: 8px;">--color-bg-overlay</div>
+      <div class="hex">rgba(0, 0, 0, 0.7)</div>
+      <div class="note">modal backdrop dim</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     2. TEXT HIERARCHY
+     ============================================================ -->
+<section>
+  <h2>Text hierarchy</h2>
+  <div style="background: var(--color-bg-elevated); padding: 24px; border-radius: 12px;">
+    <div style="font-size: 24px; font-weight: 700; color: var(--color-text-primary);">Primary text — body, headlines, life totals</div>
+    <div class="hex" style="margin-bottom: 12px;">--color-text-primary: #E8EDF0</div>
+    <div style="font-size: 14px; color: var(--color-text-secondary);">Secondary text — labels, captions, less-important content</div>
+    <div class="hex" style="margin-bottom: 12px;">--color-text-secondary: #9BA8B0</div>
+    <div style="font-size: 13px; color: var(--color-text-muted);">Muted text — placeholders, disabled, decorative notes</div>
+    <div class="hex">--color-text-muted: #5F6E78</div>
+  </div>
+</section>
+
+<!-- ============================================================
+     3. MANA COLORS — base + glow halo + on-tile
+     ============================================================ -->
+<section>
+  <h2>Mana colors — 7 base + 7 glow variants</h2>
+  <p class="lead">
+    Left to right: filled mana orb (base hex) → halo around a card-tile (glow variant) → token name → rationale.
+    Glow variants are alpha-tuned for use as <code class="hex">box-shadow: 0 0 1.25rem var(--color-mana-blue-glow)</code>.
+  </p>
+
+  <div class="mana-grid">
+    <div class="mana-orb" style="background: var(--color-mana-white);">W</div>
+    <div class="glow-tile" style="box-shadow: 0 0 1.25rem var(--color-mana-white-glow);"></div>
+    <div>
+      <div class="label">--color-mana-white</div>
+      <div class="hex">#F8EFD4 / rgba(248, 239, 212, 0.55)</div>
+    </div>
+    <div class="note">soft warm off-white, slight cream — avoids pure-white glare on dark teal</div>
+  </div>
+
+  <div class="mana-grid">
+    <div class="mana-orb" style="background: var(--color-mana-blue);">U</div>
+    <div class="glow-tile" style="box-shadow: 0 0 1.25rem var(--color-mana-blue-glow);"></div>
+    <div>
+      <div class="label">--color-mana-blue</div>
+      <div class="hex">#5BC0F0 / rgba(91, 192, 240, 0.5)</div>
+    </div>
+    <div class="note">clear sky blue, slightly cyan-leaning to harmonize with teal-black BG</div>
+  </div>
+
+  <div class="mana-grid">
+    <div class="mana-orb mana-orb-dark" style="background: var(--color-mana-black);">B</div>
+    <div class="glow-tile" style="box-shadow: 0 0 1.25rem var(--color-mana-black-glow);"></div>
+    <div>
+      <div class="label">--color-mana-black</div>
+      <div class="hex">#A78BC4 / rgba(167, 139, 196, 0.5)</div>
+    </div>
+    <div class="note">purple-tinged lavender — pure black is unreadable on dark BG; reads "swamp" via hue</div>
+  </div>
+
+  <div class="mana-grid">
+    <div class="mana-orb" style="background: var(--color-mana-red);">R</div>
+    <div class="glow-tile" style="box-shadow: 0 0 1.25rem var(--color-mana-red-glow);"></div>
+    <div>
+      <div class="label">--color-mana-red</div>
+      <div class="hex">#F26A4B / rgba(242, 106, 75, 0.55)</div>
+    </div>
+    <div class="note">saturated red-orange — leans warm so it doesn't fight the cool BG</div>
+  </div>
+
+  <div class="mana-grid">
+    <div class="mana-orb" style="background: var(--color-mana-green);">G</div>
+    <div class="glow-tile" style="box-shadow: 0 0 1.25rem var(--color-mana-green-glow);"></div>
+    <div>
+      <div class="label">--color-mana-green</div>
+      <div class="hex">#5BB872 / rgba(91, 184, 114, 0.5)</div>
+    </div>
+    <div class="note">forest green, mid-saturation — pops against teal without going neon</div>
+  </div>
+
+  <div class="mana-grid">
+    <div class="mana-orb" style="background: var(--color-mana-colorless);">C</div>
+    <div class="glow-tile" style="box-shadow: 0 0 1.25rem var(--color-mana-colorless-glow);"></div>
+    <div>
+      <div class="label">--color-mana-colorless</div>
+      <div class="hex">#C9CDD4 / rgba(201, 205, 212, 0.45)</div>
+    </div>
+    <div class="note">silver/grey, faint cool tint — doubles as colorless-commander halo</div>
+  </div>
+
+  <div class="mana-grid">
+    <div class="mana-orb" style="background: var(--color-mana-multicolor);">M</div>
+    <div class="glow-tile" style="box-shadow: 0 0 1.25rem var(--color-mana-multicolor-glow);"></div>
+    <div>
+      <div class="label">--color-mana-multicolor</div>
+      <div class="hex">#E8C56C / rgba(232, 197, 108, 0.55)</div>
+    </div>
+    <div class="note">gold (fallback when alternating-band rendering isn't possible)</div>
+  </div>
+</section>
+
+<!-- ============================================================
+     4. ACCENT / END STEP BUTTON
+     ============================================================ -->
+<section>
+  <h2>Accent — End Step button</h2>
+  <p class="lead">
+    Proposed <code class="hex">--color-accent-primary</code> is Tailwind's <code>violet-500</code>
+    family — distinct from the existing slice-69b <code>--active-glow</code> fuchsia, leaning more
+    blue-violet to match the screenshot's End Step button.
+  </p>
+  <button class="button" type="button">End Step (default)</button>
+  <button class="button hover" type="button">End Step (hover)</button>
+  <button class="button active" type="button">End Step (active)</button>
+
+  <div style="margin-top: 16px;">
+    <div class="hex">--color-accent-primary:        #8B5CF6 (violet-500)</div>
+    <div class="hex">--color-accent-primary-hover:  #A78BFA (violet-400)</div>
+    <div class="hex">--color-accent-primary-active: #7C3AED (violet-600)</div>
+  </div>
+</section>
+
+<!-- ============================================================
+     5. PLAYER STATES — halo demo
+     ============================================================ -->
+<section>
+  <h2>Player halos — by state</h2>
+  <div class="halo-row">
+    <div class="halo-cell">
+      <div class="player-frame" style="box-shadow: 0 0 1.5rem var(--color-mana-blue-glow), 0 0 0 3px var(--color-mana-blue);">P</div>
+      <div class="label">Single-color (Blue)</div>
+      <div class="note">e.g., Atraxa monochrome</div>
+    </div>
+    <div class="halo-cell">
+      <div class="player-frame" style="box-shadow: 0 0 1.5rem var(--color-mana-multicolor-glow), 0 0 0 3px var(--color-mana-multicolor);">P</div>
+      <div class="label">Multicolor (gold fallback)</div>
+      <div class="note">single-band shown; spec calls for rotating bands</div>
+    </div>
+    <div class="halo-cell">
+      <div class="player-frame" style="box-shadow: 0 0 1.5rem var(--color-mana-colorless-glow), 0 0 0 3px var(--color-mana-colorless);">P</div>
+      <div class="label">Colorless commander</div>
+      <div class="note">silver/grey ring</div>
+    </div>
+    <div class="halo-cell">
+      <div class="player-frame" style="box-shadow: 0 0 1.5rem rgba(122, 143, 168, 0.5), 0 0 0 3px var(--color-team-neutral);">P</div>
+      <div class="label">Non-Commander format</div>
+      <div class="note">--color-team-neutral slate-blue, NOT grey</div>
+    </div>
+    <div class="halo-cell">
+      <div class="player-frame" style="filter: grayscale(1); box-shadow: 0 0 1rem rgba(255,255,255,0.1), 0 0 0 2px #5F6E78; opacity: 0.6;">P</div>
+      <div class="label">Disconnected</div>
+      <div class="note">desaturated; "DISCONNECTED" overlay (not shown)</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     6. ELIMINATION SLASH
+     ============================================================ -->
+<section>
+  <h2>Elimination slash — keep-with-slash overlay</h2>
+  <p class="lead">
+    Per ADR D2, eliminated players' pods stay visible with a paired
+    <code class="hex">--color-eliminated-slash</code> red fill +
+    <code class="hex">--color-eliminated-slash-outline</code> white outline so the
+    diagonal-slash <em>shape</em> signals elimination under all forms of color blindness.
+  </p>
+  <div class="grid-2" style="grid-template-columns: 200px 1fr; align-items: center;">
+    <div class="slash-tile"><span>Defeated foe</span></div>
+    <div>
+      <div class="hex">--color-eliminated-slash:         #E5483D</div>
+      <div class="hex">--color-eliminated-slash-outline: #FFFFFF</div>
+      <div class="note" style="margin-top: 8px;">
+        Slash stroke ≥4px; white outline below red fill so the diagonal shape persists under
+        deuteranopia/protanopia/tritanopia where the red collapses to grey.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     7. STATUS COLORS
+     ============================================================ -->
+<section>
+  <h2>Status — semantic state</h2>
+  <p class="lead">
+    Reuses the mana palette where the semantics align (success = green, danger = red, warning = gold, info = blue) —
+    keeps the system coherent and saves 4 distinct hex picks.
+  </p>
+  <span class="pill" style="background: rgba(91, 184, 114, 0.18); color: var(--color-status-success); border: 1px solid var(--color-status-success);">Success +5 life</span>
+  <span class="pill" style="background: rgba(229, 72, 61, 0.18); color: var(--color-status-danger); border: 1px solid var(--color-status-danger);">Danger -3 life</span>
+  <span class="pill" style="background: rgba(232, 197, 108, 0.18); color: var(--color-status-warning); border: 1px solid var(--color-status-warning);">Time pressure</span>
+  <span class="pill" style="background: rgba(91, 192, 240, 0.18); color: var(--color-status-info); border: 1px solid var(--color-status-info);">Phase Update</span>
+
+  <div style="margin-top: 12px;">
+    <div class="hex">--color-status-success: #5BB872 (mirrors --color-mana-green)</div>
+    <div class="hex">--color-status-danger:  #E5483D (mirrors --color-eliminated-slash)</div>
+    <div class="hex">--color-status-warning: #E8C56C (mirrors --color-mana-multicolor)</div>
+    <div class="hex">--color-status-info:    #5BC0F0 (mirrors --color-mana-blue)</div>
+  </div>
+</section>
+
+<!-- ============================================================
+     8. EXISTING vs PROPOSED — slice-69b values preserved
+     ============================================================ -->
+<section>
+  <h2>Existing slice-69b values — preserved</h2>
+  <p class="lead">
+    The 8 existing tokens are renamed only (per ADR D4 migration table) — values are <strong>unchanged</strong>.
+    Active glow + priority glow shown below; if these still look right, the rename is safe.
+  </p>
+  <div class="compare-strip">
+    <div class="compare-cell">
+      <div class="player-frame" style="box-shadow: 0 0 0 2px var(--color-team-active-glow), 0 0 1.25rem var(--color-team-priority-glow);">A+P</div>
+      <div class="label">Active + priority (stacked)</div>
+      <div class="note">your-turn 1v1 case</div>
+    </div>
+    <div class="compare-cell">
+      <div class="player-frame" style="box-shadow: 0 0 0 2px var(--color-team-active-glow);">Active</div>
+      <div class="label">--color-team-active-glow</div>
+      <div class="hex">rgba(168, 85, 247, 0.6)</div>
+      <div class="note">was --active-glow; fuchsia-500 @ 60%</div>
+    </div>
+    <div class="compare-cell">
+      <div class="player-frame" style="box-shadow: 0 0 1.25rem var(--color-team-priority-glow);">Priority</div>
+      <div class="label">--color-team-priority-glow</div>
+      <div class="hex">rgba(245, 158, 11, 0.7)</div>
+      <div class="note">was --priority-glow; amber-500 @ 70%</div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <strong>How to sign off:</strong>
+  scroll the page and tell me which hex values to keep, change, or replace. Edit
+  <code class="hex">webclient/public/design-swatches.html</code> at the <code class="hex">:root</code> block to
+  A/B test alternates locally — refresh the browser to see changes. Once approved,
+  slice 70-A's builder phase commits these to <code class="hex">webclient/src/styles/tokens.css</code>.
+  <br><br>
+  Decisions still open per ADR D8 — gradient-bg-base stops, header-text color, focal-zone glow CSS impl,
+  portrait art source, tooltip preview semantics — all have explicit slice owners and decision gates.
+  Slice 70-A only locks the 17 hex values shown above.
+</footer>
+
+</body>
+</html>

@@ -5,13 +5,19 @@ import type { WebPlayerView } from '../api/schemas';
 
 export function ManaPool({ player }: { player: WebPlayerView }) {
   const pool = player.manaPool;
+  // Slice 70-A (ADR 0011 D4) — migrate from literal Tailwind color
+  // classes to the design-system mana tokens. Tailwind v4's @theme
+  // block in index.css generates `text-mana-*` utilities from the
+  // --color-mana-* tokens, so the existing className-based ergonomic
+  // is preserved. See docs/design/design-system.md §1.5 for hue
+  // rationale (e.g., black → lavender so it reads on dark BG).
   const cells: Array<[string, number, string]> = [
-    ['W', pool.white, 'text-amber-100'],
-    ['U', pool.blue, 'text-sky-300'],
-    ['B', pool.black, 'text-zinc-300'],
-    ['R', pool.red, 'text-red-400'],
-    ['G', pool.green, 'text-emerald-400'],
-    ['C', pool.colorless, 'text-zinc-400'],
+    ['W', pool.white, 'text-mana-white'],
+    ['U', pool.blue, 'text-mana-blue'],
+    ['B', pool.black, 'text-mana-black'],
+    ['R', pool.red, 'text-mana-red'],
+    ['G', pool.green, 'text-mana-green'],
+    ['C', pool.colorless, 'text-mana-colorless'],
   ];
   // Slice 58 â€” wrap symbols in AnimatePresence so each color pops in
   // (scale 0 â†’ 1) when first added and fades out when consumed. The

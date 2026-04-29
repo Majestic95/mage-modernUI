@@ -1,9 +1,63 @@
 @import "tailwindcss";
-/* Slice 69b (ADR 0010 v2 D7) — semantic-color design tokens. Scoped
- * wedge: only newly-added v2 multiplayer surfaces use tokens; the
- * pre-existing 1v1 literal Tailwind classes stay where they are.
+/* Slice 69b (ADR 0010 v2 D7) — semantic-color design tokens. Slice
+ * 70-A (ADR 0011 D4) expanded to the full design system surface.
  * Phase 7 light theme targets this same token surface. */
 @import "./styles/tokens.css";
+
+/*
+ * Slice 70-A (ADR 0011 D4) — Tailwind v4 @theme block.
+ *
+ * Mirrors the design tokens that drive Tailwind utility classes —
+ * color, spacing, radius, font-size. After this block ships,
+ * `bg-mana-blue`, `text-status-success`, `border-card-frame-targeted`,
+ * `rounded-lg`, `space-y-3`, `text-heading-sm` etc. are all valid
+ * utility classes that resolve to the matching --color-* / --space-* /
+ * --radius-* / --font-size-* CSS custom properties.
+ *
+ * Tokens that don't drive Tailwind utilities (z-index, shadow,
+ * font-weight beyond Tailwind's defaults, motion-only) stay
+ * CSS-var-only and are referenced via `var(--token-name)` directly.
+ *
+ * Convention: NEW tokens go through @theme. Tailwind's built-in zinc
+ * / slate / amber palettes are intentionally NOT redefined — existing
+ * literal classes (`bg-zinc-900`, `text-amber-300`, etc.) keep working
+ * unchanged. This is the wedge approach from ADR D7 — tokens layer
+ * on top of Tailwind's defaults, they don't replace them.
+ */
+@theme {
+  /* Mana — drives bg-mana-*, text-mana-*, border-mana-* utilities. */
+  --color-mana-white: #F8EFD4;
+  --color-mana-blue: #5BC0F0;
+  --color-mana-black: #A78BC4;
+  --color-mana-red: #F26A4B;
+  --color-mana-green: #5BB872;
+  --color-mana-colorless: #C9CDD4;
+  --color-mana-multicolor: #E8C56C;
+
+  /* Status — bg-status-success, text-status-danger etc. */
+  --color-status-success: #5BB872;
+  --color-status-danger: #E5483D;
+  --color-status-warning: #E8C56C;
+  --color-status-info: #5BC0F0;
+
+  /* Accent — End Step button + brand surfaces. */
+  --color-accent-primary: #8B5CF6;
+  --color-accent-primary-hover: #A78BFA;
+  --color-accent-primary-active: #7C3AED;
+
+  /* Surface / background. */
+  --color-bg-base: #0E1A20;
+  --color-bg-elevated: #152229;
+  --color-surface-card: #1A2630;
+  --color-surface-card-hover: #1F2D38;
+  --color-surface-card-active: #243340;
+
+  /* Text. */
+  --color-text-primary: #E8EDF0;
+  --color-text-secondary: #9BA8B0;
+  --color-text-muted: #5F6E78;
+  --color-text-on-accent: #E8EDF0;
+}
 
 /* Project-wide CSS custom properties go here. Theme palette per
  * ADR 0005 (dark default; light is Phase 7). Specific component

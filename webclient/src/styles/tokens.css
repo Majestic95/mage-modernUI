@@ -1,49 +1,287 @@
 /*
- * Slice 69b (ADR 0010 v2 D7) — semantic-color design tokens scoped to
- * the v2 multiplayer surfaces. Per ADR D7 this is a *wedge*, not a
- * big-bang refactor of index.css: only newly-added semantic surfaces
- * (status / team / mana identity) are required to flow through tokens.
- * Pre-existing literal Tailwind color classes stay where they are.
+ * Design system tokens — semantic surface for the xmage v2 webclient.
+ *
+ * Slice 69b (ADR 0010 v2 D7) shipped the initial wedge: 8 tokens
+ * scoped to the multiplayer surfaces.
+ *
+ * Slice 70-A (ADR 0011 D4 + D5 + D8) expanded this to the full design
+ * system surface called for in docs/design/design-system.md and
+ * docs/design/screens-game-table-commander-4p.md. Migration:
+ *
+ *   - Existing 8 tokens renamed to the --color-* namespace per the D4
+ *     migration table. VALUES UNCHANGED — pure rename. The slice-69b
+ *     visual (fuchsia active glow + amber priority glow) is preserved
+ *     verbatim under the new names.
+ *   - 78 new tokens added: surface, text, accent, status, mana (7 + 7
+ *     glow), team-state (active, priority, neutral, eliminated), card-
+ *     frame, typography, spacing, radii, shadow, z-index.
+ *   - Hex values approved by user sign-off via the design-swatches.html
+ *     preview (slice 70-A recon phase).
  *
  * Rule of thumb: if the color carries *meaning* (you-active, you-have-
- * priority, this-team-vs-that-team, mana-color), use a token. If the
- * color is purely structural (panel background, border without
- * semantic role), Tailwind utilities are fine.
+ * priority, this-team-vs-that-team, mana-color, status), use a token.
+ * If the color is purely structural (panel background, decorative
+ * border with no semantic role), Tailwind utilities are still fine.
  *
- * Phase 7 (light theme) will use this same token surface as its
- * override target; no consumer of these tokens should hardcode the
- * literal hex values.
+ * Phase 7 (light theme) uses this same token surface as its override
+ * target. No consumer should hardcode the literal hex values; CSS
+ * custom properties are the only override point.
+ *
+ * Tailwind v4 @theme integration: a subset of these tokens (color +
+ * spacing + radius — anything that drives a Tailwind utility class)
+ * is mirrored in `index.css`'s @theme block so e.g. `bg-mana-blue`
+ * and `text-status-success` work as utility classes. Z-index, shadow,
+ * and motion-only tokens stay CSS-var-only.
  */
 :root {
-  /* 2HG / multi-team formats. Each team gets a ring color paired with
-   * a shape badge per ADR 0005 D10 (no information by color alone).
-   * 4 slots reserved for 3HG / Star / grand-melee formats (v3+). */
-  --team-ring-a: #4a90e2; /* blue, paired with shield badge */
-  --team-ring-b: #d04a4a; /* red, paired with crest badge */
-  --team-ring-c: #4ad04a; /* future 3-team formats */
-  --team-ring-d: #d0c04a; /* future 4-team formats */
 
-  /* Active player + priority holder. Active = whose turn it is.
-   * Priority = who can take an action right now. They stack — common
-   * case in 1v1 is "active and has priority" simultaneously. Both
-   * ride alongside redundant text-pill labels and z-index ordering
-   * (D9 redundant-encoding rule), so blind / color-blind users get
-   * the same information. */
-  --active-glow: rgba(168, 85, 247, 0.6);   /* fuchsia-500 @ 60% */
-  --priority-glow: rgba(245, 158, 11, 0.7); /* amber-500 @ 70% */
+  /* ============================================================
+     SURFACE / BACKGROUND
+     ADR 0011 D8 + design-system §1.1
+     ============================================================ */
 
-  /* Targeting / focus. Used when a target dialog is pending and the
-   * surface is a legal target. Distinct hue from active/priority so
-   * the three signals (active / priority / targetable) don't blur
-   * into one indeterminate purple haze at FFA densities. */
-  --targetable-accent: rgba(168, 85, 247, 0.4);
-  --focus-ring: rgba(168, 85, 247, 0.9);
+  /** Deepest background, the canvas behind everything. Dark teal-black
+   *  matching the canonical reference screenshot. */
+  --color-bg-base: #0E1A20;
 
-  /* Status badges. Slice 69d (2HG client) consumes the team and goad
-   * variants; monarch + initiative reused from the existing 1v1 UI
-   * (which today uses literal Tailwind classes — migration is a slice-
-   * 73-77 polish task per D7 consequences). */
-  --badge-fill-goad: rgba(245, 158, 11, 0.85);
-  --badge-fill-monarch: rgba(234, 179, 8, 0.9);
-  --badge-fill-initiative: rgba(99, 102, 241, 0.9);
+  /** Panels and cards sitting above the base — game log panel, the
+   *  right-side tracker, modals before the overlay layer. */
+  --color-bg-elevated: #152229;
+
+  /** Semi-transparent overlay behind modals. Dims the battlefield so
+   *  the modal reads as the dominant surface. */
+  --color-bg-overlay: rgba(0, 0, 0, 0.7);
+
+  /** Interactive surfaces (buttons, tiles, list items) above elevated. */
+  --color-surface-card: #1A2630;
+
+  /** Hover state for interactive surfaces. */
+  --color-surface-card-hover: #1F2D38;
+
+  /** Pressed / selected state for interactive surfaces. */
+  --color-surface-card-active: #243340;
+
+
+  /* ============================================================
+     TEXT HIERARCHY
+     design-system §1.2
+     ============================================================ */
+
+  /** Body text, default — high contrast on dark BG. */
+  --color-text-primary: #E8EDF0;
+
+  /** Labels, captions, less-important content. */
+  --color-text-secondary: #9BA8B0;
+
+  /** Placeholders, disabled, decorative notes. */
+  --color-text-muted: #5F6E78;
+
+  /** Text rendered on accent-colored backgrounds (the End Step button
+   *  label, etc.). Currently same as text-primary; reserved for theme
+   *  switching where contrast against the accent may need to flip. */
+  --color-text-on-accent: #E8EDF0;
+
+
+  /* ============================================================
+     ACCENT — End Step button + brand
+     design-system §1.3
+     ============================================================ */
+
+  /** Tailwind violet-500 family. Distinct from the renamed
+   *  --color-team-active-glow (fuchsia-500) so the End Step button
+   *  doesn't visually conflate with active-player halo. */
+  --color-accent-primary: #8B5CF6;
+  --color-accent-primary-hover: #A78BFA;
+  --color-accent-primary-active: #7C3AED;
+
+
+  /* ============================================================
+     STATUS — semantic state
+     design-system §1.4. Reuses the mana palette where semantics align.
+     ============================================================ */
+
+  --color-status-success: #5BB872; /* mirrors --color-mana-green */
+  --color-status-danger: #E5483D;  /* mirrors --color-eliminated-slash */
+  --color-status-warning: #E8C56C; /* mirrors --color-mana-multicolor */
+  --color-status-info: #5BC0F0;    /* mirrors --color-mana-blue */
+
+
+  /* ============================================================
+     MTG MANA COLORS
+     design-system §1.5. Each base hex pairs with a -glow alpha-tuned
+     variant for halo / box-shadow use.
+     ============================================================ */
+
+  --color-mana-white: #F8EFD4;
+  --color-mana-white-glow: rgba(248, 239, 212, 0.55);
+  --color-mana-blue: #5BC0F0;
+  --color-mana-blue-glow: rgba(91, 192, 240, 0.5);
+  --color-mana-black: #A78BC4;
+  --color-mana-black-glow: rgba(167, 139, 196, 0.5);
+  --color-mana-red: #F26A4B;
+  --color-mana-red-glow: rgba(242, 106, 75, 0.55);
+  --color-mana-green: #5BB872;
+  --color-mana-green-glow: rgba(91, 184, 114, 0.5);
+  --color-mana-colorless: #C9CDD4;
+  --color-mana-colorless-glow: rgba(201, 205, 212, 0.45);
+  --color-mana-multicolor: #E8C56C;
+  --color-mana-multicolor-glow: rgba(232, 197, 108, 0.55);
+
+
+  /* ============================================================
+     PLAYER STATE — team rings + halo glows
+     design-system §1.6 + ADR 0011 D5 halo state matrix
+     ============================================================ */
+
+  /** Slice-69b values preserved verbatim under new names. Same fuchsia
+   *  + amber the existing PlayerArea uses; only the variable name
+   *  changes to fit the --color-* namespace. */
+  --color-team-active-glow: rgba(168, 85, 247, 0.6);   /* was --active-glow; fuchsia-500 @ 60% */
+  --color-team-priority-glow: rgba(245, 158, 11, 0.7); /* was --priority-glow; amber-500 @ 70% */
+
+  /** Non-Commander format halo fallback (Two Player Duel, basic FFA).
+   *  ADR 0011 D5: must NOT be grey — grey collides with the
+   *  disconnected/eliminated treatment. Soft slate-blue tuned for the
+   *  dark teal-black background. */
+  --color-team-neutral: #7A8FA8;
+
+  /** Reserved for future 2HG / 3HG / Star / grand-melee formats.
+   *  Slice 69b values preserved; renamed only. */
+  --color-team-a-ring: #4a90e2; /* was --team-ring-a; blue, paired with shield badge */
+  --color-team-b-ring: #d04a4a; /* was --team-ring-b; red, paired with crest badge */
+  --color-team-c-ring: #4ad04a; /* was --team-ring-c; future 3-team formats */
+  --color-team-d-ring: #d0c04a; /* was --team-ring-d; future 4-team formats */
+
+
+  /* ============================================================
+     ELIMINATED PLAYER — keep-with-slash overlay
+     ADR 0011 D2 (overturns ADR 0010 D11a layout-drop)
+     ============================================================ */
+
+  /** Paired tokens — red fill + white outline. The diagonal-slash
+   *  *shape* is the load-bearing signal for color-blind users; the red
+   *  is decorative. Slash stroke ≥4px with the outline beneath ensures
+   *  the shape persists under deuteranopia/protanopia/tritanopia. */
+  --color-eliminated-slash: #E5483D;
+  --color-eliminated-slash-outline: #FFFFFF;
+
+
+  /* ============================================================
+     CARD FRAME / STACK GLOW
+     design-system §1.7
+     ============================================================ */
+
+  /** Neutral border for card tiles in their default state. */
+  --color-card-frame-default: #2A3640;
+
+  /** Applied when this card is being targeted by a pending spell.
+   *  Slice-69b value preserved; was --targetable-accent. */
+  --color-card-frame-targeted: rgba(168, 85, 247, 0.4);
+
+  /** Subtle indicator on creatures with summoning sickness. */
+  --color-card-frame-summoning-sick: rgba(232, 197, 108, 0.25);
+
+  /** Fallback glow on stack items without color identity (e.g.,
+   *  triggered abilities sourced from a colorless permanent). */
+  --color-stack-glow-default: rgba(201, 205, 212, 0.4);
+
+
+  /* ============================================================
+     FOCUS / TARGETING
+     design-system §1.7 + §10
+     ============================================================ */
+
+  /** Focus ring for keyboard nav. Slice-69b value preserved; was
+   *  --focus-ring. */
+  --color-focus-ring: rgba(168, 85, 247, 0.9);
+
+  /** SVG targeting arrow color (cream/white per spec §7.7). */
+  --color-targeting-arrow: rgba(248, 239, 212, 0.85);
+
+
+  /* ============================================================
+     STATUS BADGES — preserved from slice 69b
+     Renamed to --color-* namespace.
+     ============================================================ */
+
+  --color-badge-goad: rgba(245, 158, 11, 0.85);       /* was --badge-fill-goad */
+  --color-badge-monarch: rgba(234, 179, 8, 0.9);      /* was --badge-fill-monarch */
+  --color-badge-initiative: rgba(99, 102, 241, 0.9);  /* was --badge-fill-initiative */
+
+
+  /* ============================================================
+     TYPOGRAPHY
+     design-system §2
+     ============================================================ */
+
+  /** Type scale. Banner headlines down to micro counter numbers. */
+  --font-size-display: 36px;     /* victory screen, banner */
+  --font-size-heading-lg: 24px;  /* section headings */
+  --font-size-heading-md: 18px;  /* panel titles ("GAME LOG", "DAILY QUESTS") */
+  --font-size-heading-sm: 14px;  /* card-tile names */
+  --font-size-body: 14px;        /* default body */
+  --font-size-caption: 12px;     /* secondary text, captions */
+  --font-size-micro: 10px;       /* counter numbers, badge text */
+
+  /** Weight tokens. */
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  /** Mono family for tabular numerics where character-width consistency
+   *  matters (life totals, counter counts in tooltips). Inter has
+   *  tabular-nums but mono fallback is the safe choice. */
+  --font-family-mono: "SF Mono", Consolas, "Liberation Mono", monospace;
+
+
+  /* ============================================================
+     SPACING — 8-based scale
+     design-system §3
+     ============================================================ */
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+
+  /* ============================================================
+     CORNER RADII
+     design-system §4
+     ============================================================ */
+
+  --radius-sm: 4px;       /* small badges, counters */
+  --radius-md: 8px;       /* buttons, input fields */
+  --radius-lg: 12px;      /* panels, modal corners, card tiles */
+  --radius-xl: 16px;      /* large feature tiles */
+  --radius-circle: 50%;   /* player portraits, mana orbs */
+
+
+  /* ============================================================
+     SHADOW / ELEVATION
+     design-system §5
+     ============================================================ */
+
+  --shadow-low: 0 1px 2px rgba(0, 0, 0, 0.2), 0 2px 4px rgba(0, 0, 0, 0.15);
+  --shadow-medium: 0 2px 6px rgba(0, 0, 0, 0.3), 0 6px 12px rgba(0, 0, 0, 0.2);
+  --shadow-high: 0 8px 16px rgba(0, 0, 0, 0.4), 0 16px 32px rgba(0, 0, 0, 0.3);
+
+
+  /* ============================================================
+     Z-INDEX LAYERS
+     design-system §8.3
+     ============================================================ */
+
+  --z-battlefield: 0;       /* base layer, permanents */
+  --z-stack: 10;            /* central focal zone, above battlefield */
+  --z-targeting: 20;        /* targeting arrows overlay */
+  --z-ui-chrome: 30;        /* side panel, action button, hand */
+  --z-modal-backdrop: 40;   /* modal dim overlay */
+  --z-modal-content: 50;    /* modal content */
+  --z-tooltip: 60;          /* card preview tooltips, always on top */
 }

@@ -89,8 +89,8 @@ describe('PlayerArea status glow (slice 69b D5)', () => {
       />,
     );
     const area = screen.getByTestId('player-area-opponent');
-    expect(area.style.boxShadow).toContain('var(--active-glow)');
-    expect(area.style.boxShadow).not.toContain('var(--priority-glow)');
+    expect(area.style.boxShadow).toContain('var(--color-team-active-glow)');
+    expect(area.style.boxShadow).not.toContain('var(--color-team-priority-glow)');
     expect(area.dataset['active']).toBe('true');
     expect(area.dataset['priority']).toBeUndefined();
   });
@@ -103,8 +103,8 @@ describe('PlayerArea status glow (slice 69b D5)', () => {
       />,
     );
     const area = screen.getByTestId('player-area-opponent');
-    expect(area.style.boxShadow).toContain('var(--priority-glow)');
-    expect(area.style.boxShadow).not.toContain('var(--active-glow)');
+    expect(area.style.boxShadow).toContain('var(--color-team-priority-glow)');
+    expect(area.style.boxShadow).not.toContain('var(--color-team-active-glow)');
     expect(area.dataset['priority']).toBe('true');
     expect(area.dataset['active']).toBeUndefined();
   });
@@ -118,8 +118,8 @@ describe('PlayerArea status glow (slice 69b D5)', () => {
     );
     const area = screen.getByTestId('player-area-opponent');
     // Both shadows present — composed via comma-separated box-shadow.
-    expect(area.style.boxShadow).toContain('var(--active-glow)');
-    expect(area.style.boxShadow).toContain('var(--priority-glow)');
+    expect(area.style.boxShadow).toContain('var(--color-team-active-glow)');
+    expect(area.style.boxShadow).toContain('var(--color-team-priority-glow)');
     expect(area.dataset['active']).toBe('true');
     expect(area.dataset['priority']).toBe('true');
   });

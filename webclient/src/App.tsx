@@ -8,6 +8,8 @@ import { Lobby } from './pages/Lobby';
 import { LobbyChat } from './pages/LobbyChat';
 import { Login } from './pages/Login';
 import { SideboardModal } from './pages/SideboardModal';
+import { SpectatorPlaceholder } from './pages/SpectatorPlaceholder';
+import { matchSpectatePath } from './pages/spectatorPath';
 
 type Tab = 'lobby' | 'decks' | 'cards';
 
@@ -105,6 +107,20 @@ export function App() {
       persistGameId(null);
     }
   }, [session]);
+
+  // Slice 70-A (ADR 0011 D1) — spectator placeholder route. Resolved
+  // BEFORE the auth gate so a user pasting a spectate URL sees the
+  // "shipping in v2.x" placeholder regardless of auth state. The
+  // server-side spectator WebSocket route is live (slice 71); only
+  // the client UI is deferred. Pasting `/spectate/<uuid>` without
+  // this matcher would 404 or fall back to the lobby — both
+  // indistinguishable from a bug. Custom path matcher (~5 LOC)
+  // avoids adding react-router-dom as a new dep; if slice 70-E later
+  // needs a real router, that's its own decision.
+  const spectateGameId = matchSpectatePath(window.location.pathname);
+  if (spectateGameId) {
+    return <SpectatorPlaceholder gameId={spectateGameId} />;
+  }
 
   if (!session) {
     return <Login />;
