@@ -128,6 +128,76 @@ class GameViewMapperTest {
     }
 
     @Test
+    void shouldIncludePlayer_nullFilter_keepsEveryone() {
+        // Slice 69c (ADR 0010 v2 D1) — the null sentinel = "no filter"
+        // (RoI.ALL or unknown recipient). Every PlayerId, including
+        // null, is kept. This is the v2 shippable-format default
+        // (FreeForAll defaults to RoI.ALL; only an explicit
+        // RangeOfInfluence.ONE/TWO selection at table-creation time
+        // produces a non-null filter set).
+        assertTrue(GameViewMapper.shouldIncludePlayer(
+                UUID.randomUUID(), null));
+        assertTrue(GameViewMapper.shouldIncludePlayer(null, null));
+    }
+
+    @Test
+    void shouldIncludePlayer_inRange_keepsPlayer() {
+        // Recipient + their in-range opponent both survive. Lock the
+        // happy path — this is what runs every frame in any
+        // non-RoI.ALL multiplayer game.
+        UUID alice = UUID.fromString("aaaaaaaa-1111-1111-1111-111111111111");
+        UUID bob = UUID.fromString("bbbbbbbb-2222-2222-2222-222222222222");
+        assertTrue(GameViewMapper.shouldIncludePlayer(
+                alice, java.util.Set.of(alice, bob)));
+        assertTrue(GameViewMapper.shouldIncludePlayer(
+                bob, java.util.Set.of(alice, bob)));
+    }
+
+    @Test
+    void shouldIncludePlayer_outOfRange_dropsPlayer() {
+        // The load-bearing security case. CR 801.7 requires hidden
+        // information (life totals, hand counts, battlefield
+        // permanents) of out-of-range opponents NOT to surface to
+        // the recipient. RangeOfInfluence.ONE 4p FFA: alice is the
+        // recipient; her in-range set is {alice, bob}; carol and
+        // dave are out of range and must be dropped from
+        // WebGameView.players.
+        UUID alice = UUID.fromString("aaaaaaaa-1111-1111-1111-111111111111");
+        UUID bob = UUID.fromString("bbbbbbbb-2222-2222-2222-222222222222");
+        UUID carol = UUID.fromString("cccccccc-3333-3333-3333-333333333333");
+        UUID dave = UUID.fromString("dddddddd-4444-4444-4444-444444444444");
+        java.util.Set<UUID> aliceRange = java.util.Set.of(alice, bob);
+        assertFalse(GameViewMapper.shouldIncludePlayer(carol, aliceRange));
+        assertFalse(GameViewMapper.shouldIncludePlayer(dave, aliceRange));
+    }
+
+    @Test
+    void shouldIncludePlayer_nullPlayerId_defensiveKeep() {
+        // Defensive — a malformed PlayerView with playerId=null
+        // shouldn't crash the frame. We keep it; downstream the
+        // mapped WebPlayerView.playerId is empty-string per
+        // toPlayerDto's null-handling. Better a degraded survivor
+        // than a thrown frame on the engine thread.
+        UUID alice = UUID.fromString("aaaaaaaa-1111-1111-1111-111111111111");
+        assertTrue(GameViewMapper.shouldIncludePlayer(
+                null, java.util.Set.of(alice)));
+    }
+
+    @Test
+    void shouldIncludePlayer_emptyRange_dropsEveryoneExceptDefensiveKeeps() {
+        // An empty in-range set is unusual in practice (recipient is
+        // always in their own range) but if it happens we filter
+        // accordingly — every non-null playerId is dropped, null
+        // playerId still defensively kept.
+        java.util.Set<UUID> empty = java.util.Set.of();
+        assertFalse(GameViewMapper.shouldIncludePlayer(
+                UUID.randomUUID(), empty));
+        assertTrue(GameViewMapper.shouldIncludePlayer(null, empty),
+                "null playerId is defensively kept regardless of "
+                        + "filter set contents");
+    }
+
+    @Test
     void streamHello_jsonShape_locksFourFields_schema120() throws Exception {
         // Schema 1.20 (slice 69a, ADR 0010 v2 D12) added protocolVersion.
         mage.webapi.dto.stream.WebStreamHello hello =

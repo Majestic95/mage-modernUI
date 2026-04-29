@@ -26,11 +26,13 @@ import mage.webapi.dto.stream.WebGameView;
 import mage.webapi.dto.stream.WebManaPoolView;
 import mage.webapi.dto.stream.WebPlayerView;
 import mage.webapi.dto.stream.WebStartGameInfo;
+import mage.webapi.upstream.MultiplayerFrameContext;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -76,12 +78,50 @@ public final class GameViewMapper {
      * back to its {@code id}, which is the pre-slice-52a behavior.
      */
     public static WebGameView toDto(GameView gv, Map<UUID, UUID> stackCardIdHint) {
+        return toDto(gv, stackCardIdHint, MultiplayerFrameContext.EMPTY, null);
+    }
+
+    /**
+     * Slice 69c — full overload accepting both the stack-cardId hint
+     * and the multiplayer frame context (ADR 0010 v2 D1, D3c). Used
+     * by {@code WebSocketCallbackHandler.mapGameView} on the
+     * production callback path; tests + {@code GameClientMessage}
+     * mappers fall through the simpler overloads above.
+     *
+     * @param mpCtx          per-frame goading + (future) team data
+     *                       derived from live {@code Game}. Pass
+     *                       {@link MultiplayerFrameContext#EMPTY}
+     *                       when no live-game reference is available.
+     * @param playersInRange D1 RoI filter — stringified player UUIDs
+     *                       visible to the recipient. {@code null}
+     *                       means no filter (RoI.ALL or unknown
+     *                       recipient — the full roster goes on the
+     *                       wire). Non-null means filter
+     *                       {@code gv.getPlayers()} to this set
+     *                       per-recipient before mapping.
+     */
+    public static WebGameView toDto(
+            GameView gv,
+            Map<UUID, UUID> stackCardIdHint,
+            MultiplayerFrameContext mpCtx,
+            Set<UUID> playersInRange) {
         if (gv == null) {
             throw new IllegalArgumentException("GameView must not be null");
         }
+        MultiplayerFrameContext effectiveMpCtx =
+                mpCtx == null ? MultiplayerFrameContext.EMPTY : mpCtx;
         List<WebPlayerView> players = new ArrayList<>(gv.getPlayers().size());
         for (PlayerView pv : gv.getPlayers()) {
-            players.add(toPlayerDto(pv));
+            // Slice 69c — D1 range-of-influence filter. Drop players
+            // whose UUID is not in the recipient's in-range set.
+            // Iteration order from upstream's LinkedHashMap is
+            // preserved for the survivors so turn-order stays stable
+            // on the wire (Battlefield's clockwise tab order in 69b
+            // depends on this).
+            if (!shouldIncludePlayer(pv.getPlayerId(), playersInRange)) {
+                continue;
+            }
+            players.add(toPlayerDto(pv, effectiveMpCtx));
         }
         PlayerView me = gv.getMyPlayer();
         String myPlayerId = (me == null || me.getPlayerId() == null)
@@ -118,10 +158,70 @@ public final class GameViewMapper {
         );
     }
 
+    /**
+     * Slice 69c (ADR 0010 v2 D1) — predicate for the range-of-influence
+     * filter applied to {@code WebGameView.players}. Package-private
+     * so unit tests can lock the contract directly without the
+     * impractical-to-mock {@code GameView} constructor chain.
+     *
+     * <p>Semantics:
+     * <ul>
+     *   <li>{@code playersInRange == null} → "no filter" (RoI.ALL or
+     *       unknown recipient — the full roster goes on the wire).
+     *       Returns {@code true} for every input.</li>
+     *   <li>{@code playerId == null} → defensive keep (a malformed
+     *       PlayerView shouldn't crash the frame; the survivor's
+     *       {@code playerId} field will be empty-string downstream).
+     *       Returns {@code true}.</li>
+     *   <li>Both non-null → {@code true} iff {@code playerId} is in
+     *       the in-range set, {@code false} otherwise (drop the
+     *       PlayerView entry from the wire).</li>
+     * </ul>
+     *
+     * <p>Filter location is the WebApi mapper, not the upstream
+     * {@code GameView} constructor — upstream's
+     * {@code GameView(state, game, recipientId, watcherId)} iterates
+     * the full {@code state.getPlayers()} roster regardless of RoI
+     * (verified at {@code Mage.Common/.../GameView.java:77}). The
+     * mapper-time drop is the only place to filter without patching
+     * upstream; semantics are equivalent for security purposes
+     * because the data we filter on (recipient's {@code Player.getRange()}
+     * + {@code GameState.getPlayersInRange()}) is exactly what the
+     * engine would have used at construction time.
+     */
+    static boolean shouldIncludePlayer(UUID playerId, Set<UUID> playersInRange) {
+        if (playersInRange == null) {
+            return true;
+        }
+        if (playerId == null) {
+            return true;
+        }
+        return playersInRange.contains(playerId);
+    }
+
     public static WebPlayerView toPlayerDto(PlayerView pv) {
+        return toPlayerDto(pv, MultiplayerFrameContext.EMPTY);
+    }
+
+    /**
+     * Slice 69c — overload threading the multiplayer frame context to
+     * the per-permanent mapper so each player's battlefield carries
+     * populated {@code goadingPlayerIds} when the context is
+     * non-empty (ADR 0010 v2 D3c). Pass
+     * {@link MultiplayerFrameContext#EMPTY} for the legacy / test
+     * path.
+     *
+     * <p>{@code teamId} stays {@code null} per ADR R1 (slice 69c
+     * empirical finding): xmage upstream ships no 2HG match plugin,
+     * so no game produces team-grouped state. The schema-1.20
+     * {@code teamId} wire field is forward-compat for a v3+ ADR if
+     * upstream ever adds a 2HG plugin.
+     */
+    public static WebPlayerView toPlayerDto(PlayerView pv, MultiplayerFrameContext mpCtx) {
         if (pv == null) {
             throw new IllegalArgumentException("PlayerView must not be null");
         }
+        MultiplayerFrameContext effective = mpCtx == null ? MultiplayerFrameContext.EMPTY : mpCtx;
         return new WebPlayerView(
                 pv.getPlayerId() == null ? "" : pv.getPlayerId().toString(),
                 nullToEmpty(pv.getName()),
@@ -133,7 +233,7 @@ public final class GameViewMapper {
                 CardViewMapper.toCardMap(pv.getGraveyard()),
                 CardViewMapper.toCardMap(pv.getExile()),
                 CardViewMapper.toCardMap(pv.getSideboard()),
-                CardViewMapper.toPermanentMap(pv.getBattlefield()),
+                CardViewMapper.toPermanentMap(pv.getBattlefield(), effective),
                 toManaPoolDto(pv.getManaPool()),
                 pv.getControlled(),
                 pv.isHuman(),
@@ -146,10 +246,9 @@ public final class GameViewMapper {
                         ? List.of()
                         : List.copyOf(pv.getDesignationNames()),
                 toCommandList(pv.getCommandObjectList()),
-                // Slice 69a — schema 1.20 wire shape ships null. Slice
-                // 69b derives from MatchType.getPlayersPerTeam() +
-                // seat-index once live-game lookup is plumbed through
-                // the mapper (ADR 0010 v2 D3a + R1).
+                // teamId — null per ADR R1 (slice 69c finding). No
+                // shipped match type produces team-grouped state in
+                // upstream xmage. Forward-compat wire shape only.
                 null
         );
     }

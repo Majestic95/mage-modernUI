@@ -164,6 +164,25 @@ public final class CardViewMapper {
     }
 
     public static WebPermanentView toPermanentDto(PermanentView pv) {
+        return toPermanentDto(pv, mage.webapi.upstream.MultiplayerFrameContext.EMPTY);
+    }
+
+    /**
+     * Slice 69c — overload accepting a {@link mage.webapi.upstream.MultiplayerFrameContext}
+     * so the mapper can populate {@code goadingPlayerIds} from live
+     * {@code Permanent.getGoadingPlayers()} (ADR 0010 v2 D3c).
+     * Upstream {@code PermanentView} doesn't carry goading info — the
+     * value fill needs the live {@code Permanent} via game lookup,
+     * which the context resolves once per frame and shares across
+     * recipients.
+     *
+     * <p>Pass {@link mage.webapi.upstream.MultiplayerFrameContext#EMPTY}
+     * for the legacy / test path — the result is identical to the
+     * single-arg overload (empty {@code goadingPlayerIds}).
+     */
+    public static WebPermanentView toPermanentDto(
+            PermanentView pv,
+            mage.webapi.upstream.MultiplayerFrameContext mpCtx) {
         if (pv == null) {
             throw new IllegalArgumentException("PermanentView must not be null");
         }
@@ -177,6 +196,9 @@ public final class CardViewMapper {
                 attachments.add(id == null ? "" : id.toString());
             }
         }
+        List<String> goadingPlayerIds = mpCtx == null
+                ? List.of()
+                : mpCtx.goadingFor(pv.getId());
         return new WebPermanentView(
                 card,
                 nullToEmpty(pv.getNameController()),
@@ -189,12 +211,7 @@ public final class CardViewMapper {
                 attachments,
                 pv.getAttachedTo() == null ? "" : pv.getAttachedTo().toString(),
                 pv.isAttachedToPermanent(),
-                // Slice 69a — schema 1.20 wire shape ships empty.
-                // Upstream PermanentView doesn't carry goading info;
-                // slice 69b populates from Permanent.getGoadingPlayers()
-                // once live-game lookup is plumbed through the mapper
-                // (ADR 0010 v2 D3c).
-                List.of()
+                goadingPlayerIds
         );
     }
 
@@ -264,6 +281,21 @@ public final class CardViewMapper {
      */
     public static Map<String, WebPermanentView> toPermanentMap(
             Map<UUID, PermanentView> permanents) {
+        return toPermanentMap(permanents,
+                mage.webapi.upstream.MultiplayerFrameContext.EMPTY);
+    }
+
+    /**
+     * Slice 69c — overload threading the multiplayer frame context
+     * through to {@link #toPermanentDto(PermanentView, mage.webapi.upstream.MultiplayerFrameContext)}
+     * so each permanent's {@code goadingPlayerIds} populates from the
+     * shared per-frame goading map (ADR 0010 v2 D3c). Pass
+     * {@link mage.webapi.upstream.MultiplayerFrameContext#EMPTY} for
+     * the legacy / test path.
+     */
+    public static Map<String, WebPermanentView> toPermanentMap(
+            Map<UUID, PermanentView> permanents,
+            mage.webapi.upstream.MultiplayerFrameContext mpCtx) {
         if (permanents == null || permanents.isEmpty()) {
             return Map.of();
         }
@@ -272,7 +304,7 @@ public final class CardViewMapper {
             UUID id = e.getKey();
             PermanentView v = e.getValue();
             if (id == null || v == null) continue;
-            out.put(id.toString(), toPermanentDto(v));
+            out.put(id.toString(), toPermanentDto(v, mpCtx));
         }
         return out;
     }

@@ -18,6 +18,7 @@ import mage.webapi.mapper.ChatMessageMapper;
 import mage.webapi.mapper.DeckViewMapper;
 import mage.webapi.mapper.GameViewMapper;
 import mage.webapi.upstream.GameLookup;
+import mage.webapi.upstream.MultiplayerFrameContext;
 import mage.webapi.upstream.StackCardIdHint;
 import org.jboss.remoting.callback.AsynchInvokerCallbackHandler;
 import org.jboss.remoting.callback.Callback;
@@ -186,6 +187,30 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
      * tiny cache, not a leak vector.
      */
     private final Map<UUID, AiSegmentDiagnostics> diagnosticsByGame =
+            new ConcurrentHashMap<>();
+
+    /**
+     * Slice 69c (ADR 0010 v2 D11b) — per-game record of player UUIDs
+     * we've already announced as left via {@code dialogClear}. Keyed
+     * by gameId; value is the leaver set for that game.
+     *
+     * <p><b>Why per-handler state, not engine-side?</b> Upstream xmage
+     * has no {@code PLAYER_LEFT} callback (verified slice-69c recon —
+     * {@code ClientCallbackMethod} enumerates ~30 methods, none of
+     * them player-left). The mapper detects the transition by
+     * diffing {@link mage.view.PlayerView#hasLeft()} between
+     * consecutive {@code gameUpdate} / {@code gameInit} /
+     * {@code gameInform} frames for the same gameId. The "diff
+     * counterparty" is per-handler because each handler has its own
+     * frame stream and reconnect history; cross-handler coordination
+     * is unnecessary (each handler will see the same upstream
+     * GameView and synthesize identical dialogClear frames for its
+     * own clients).
+     *
+     * <p>Reset on {@code gameInit} (game-2 of best-of-three would
+     * otherwise carry stale leavers from game-1).
+     */
+    private final Map<UUID, Set<UUID>> prevHasLeftByGame =
             new ConcurrentHashMap<>();
 
     /**
@@ -421,6 +446,13 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
         appendBuffer(frame);
         observeAiActions(cc, frame);
         broadcast(cc, frame);
+        // Slice 69c — synthesize dialogClear for any newly-hasLeft
+        // player. Runs AFTER the triggering frame is sent so clients
+        // receive (a) the gameUpdate carrying the new hasLeft=true
+        // state and (b) the dialogClear UX-teardown signal in that
+        // order. Per ADR 0010 v2 D11b: dialogClear is fire-and-forget
+        // UI teardown, not a state-machine transition.
+        observeHasLeft(cc, frame);
     }
 
     // ---------- Slice 49 — AI-action diagnostic ----------
@@ -450,6 +482,140 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
         }
         boolean reset = "gameInit".equals(frame.method());
         observeTurnTransition(gv.getTurn(), gv.getActivePlayerName(), reset, gameId);
+    }
+
+    /**
+     * Slice 69c (ADR 0010 v2 D11b) — synthesize {@code dialogClear}
+     * frames for any player whose {@code hasLeft} flipped 0→1 since
+     * the previous game-frame for the same gameId.
+     *
+     * <p>Detection runs after the triggering frame is sent so the
+     * order on the wire is (a) the {@code gameUpdate} carrying the
+     * new {@code hasLeft=true} state, (b) one {@code dialogClear} per
+     * newly-departed player. Clients receiving (b) tear down any
+     * open dialog targeting the leaver; clients receiving only (a)
+     * (e.g. on reconnect-replay where the dialogClear preceded the
+     * resume cursor) can still infer the teardown from the
+     * {@code hasLeft=true} state in the GameView.
+     *
+     * <p>Resets the per-game leaver-set on {@code gameInit} so game-2
+     * of a best-of-three doesn't carry stale leavers from game-1.
+     *
+     * <p>Package-private for unit-test access — tests drive the
+     * transition logic via synthetic frames without a live engine.
+     */
+    void observeHasLeft(ClientCallback cc, WebStreamFrame frame) {
+        GameView gv = extractGameView(cc, frame);
+        if (gv == null) {
+            return;
+        }
+        UUID gameId = cc.getObjectId();
+        if (gameId == null) {
+            return;
+        }
+        boolean reset = "gameInit".equals(frame.method());
+        if (gv.getPlayers() == null || gv.getPlayers().isEmpty()) {
+            if (reset) {
+                prevHasLeftByGame.remove(gameId);
+            }
+            return;
+        }
+        Set<UUID> currentlyLeft = new java.util.HashSet<>();
+        for (mage.view.PlayerView pv : gv.getPlayers()) {
+            if (pv != null && pv.hasLeft() && pv.getPlayerId() != null) {
+                currentlyLeft.add(pv.getPlayerId());
+            }
+        }
+        Set<UUID> newlyLeft = detectNewlyLeft(gameId, currentlyLeft, reset);
+        for (UUID leaverId : newlyLeft) {
+            emitDialogClear(cc, gameId, leaverId);
+        }
+    }
+
+    /**
+     * Slice 69c — pure data kernel of {@link #observeHasLeft},
+     * exposed for unit tests so the transition logic is reachable
+     * without constructing a full {@link GameView} (upstream's
+     * constructor demands a live {@code Game}/{@code GameState}).
+     *
+     * <p>Inputs:
+     * <ul>
+     *   <li>{@code gameId} — keys the per-handler leaver-set state.</li>
+     *   <li>{@code currentlyLeft} — UUIDs of players for whom
+     *       {@code hasLeft=true} in the most recent GameView for
+     *       this gameId.</li>
+     *   <li>{@code reset} — true on {@code gameInit} (clears prior
+     *       leaver set so game-2 of best-of-three doesn't carry
+     *       stale leavers from game-1).</li>
+     * </ul>
+     *
+     * <p>Returns the subset of {@code currentlyLeft} not previously
+     * recorded for this game — the new leavers the caller must
+     * synthesize {@code dialogClear} frames for. Idempotent: a
+     * second call with the same {@code currentlyLeft} returns empty.
+     *
+     * <p>Mutates {@link #prevHasLeftByGame} as a side effect to
+     * record observations across calls.
+     */
+    Set<UUID> detectNewlyLeft(UUID gameId, Set<UUID> currentlyLeft, boolean reset) {
+        if (gameId == null) {
+            return Set.of();
+        }
+        if (reset) {
+            prevHasLeftByGame.remove(gameId);
+        }
+        Set<UUID> previously = prevHasLeftByGame.computeIfAbsent(
+                gameId, k -> ConcurrentHashMap.newKeySet());
+        if (currentlyLeft == null || currentlyLeft.isEmpty()) {
+            return Set.of();
+        }
+        Set<UUID> newlyLeft = new java.util.HashSet<>();
+        for (UUID id : currentlyLeft) {
+            if (id != null && previously.add(id)) {
+                newlyLeft.add(id);
+            }
+        }
+        return newlyLeft;
+    }
+
+    /**
+     * Slice 69c — test helper. Returns an unmodifiable view of the
+     * leaver set this handler has recorded for {@code gameId}, or
+     * an empty set when the game has no recorded leavers (or has
+     * been reset). Package-private and intended only for unit tests
+     * — production code shouldn't need to introspect this state.
+     */
+    Set<UUID> leaversForTest(UUID gameId) {
+        Set<UUID> set = prevHasLeftByGame.get(gameId);
+        return set == null ? Set.of() : Set.copyOf(set);
+    }
+
+    /**
+     * Build and dispatch a synthetic {@code dialogClear} frame.
+     * Reuses the triggering callback's {@code messageId} so the
+     * synthesized frame sits adjacent to the gameUpdate in the
+     * resume buffer — reconnect with {@code ?since=N} replays both
+     * in order. Fires through the same {@link #appendBuffer} +
+     * {@link #broadcast} pipeline as native frames, so all client
+     * hooks (reconnect, fan-out, AI diagnostic) see it consistently.
+     */
+    private void emitDialogClear(ClientCallback cc, UUID gameId, UUID leaverId) {
+        WebStreamFrame frame = new WebStreamFrame(
+                SchemaVersion.CURRENT,
+                "dialogClear",
+                cc.getMessageId(),
+                gameId.toString(),
+                new mage.webapi.dto.stream.WebDialogClear(
+                        leaverId.toString(),
+                        mage.webapi.dto.stream.WebDialogClear.REASON_PLAYER_LEFT
+                )
+        );
+        appendBuffer(frame);
+        broadcast(cc, frame);
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("dialogClear synthesized: user={}, game={}, leaver={}",
+                    username, gameId, leaverId);
+        }
     }
 
     /**
@@ -679,33 +845,81 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
                     data == null ? "null" : data.getClass().getName());
             return null;
         }
-        Map<UUID, UUID> stackHint = resolveStackCardIdHint(cc.getObjectId());
+        // Slice 69c — resolve the live Game once per frame and share
+        // it across the stack-hint, multiplayer-context, and RoI-
+        // filter computations. Per slice-69c recon: this method runs
+        // inside the engine's synchronized GameController.updateGame()
+        // block, so reads are thread-safe and consistent with the
+        // GameView snapshot we received from cc.getData().
+        UUID gameId = cc.getObjectId();
+        Game liveGame = resolveLiveGame(gameId);
+        Map<UUID, UUID> stackHint = liveGame == null
+                ? Map.of()
+                : StackCardIdHint.extract(liveGame);
+        MultiplayerFrameContext mpCtx = liveGame == null
+                ? MultiplayerFrameContext.EMPTY
+                : MultiplayerFrameContext.extract(liveGame);
+        UUID recipientPlayerId = liveGame == null
+                ? null
+                : resolveRecipientPlayerId(gameId);
+        Set<UUID> playersInRange = liveGame == null
+                ? null
+                : MultiplayerFrameContext.playersInRange(liveGame, recipientPlayerId);
         return new WebStreamFrame(
                 SchemaVersion.CURRENT,
                 wireMethod,
                 cc.getMessageId(),
-                cc.getObjectId() == null ? null : cc.getObjectId().toString(),
-                GameViewMapper.toDto(upstream, stackHint)
+                gameId == null ? null : gameId.toString(),
+                GameViewMapper.toDto(upstream, stackHint, mpCtx, playersInRange)
         );
     }
 
     /**
-     * Slice 52a — best-effort lookup of the
-     * {@code SpellAbility-UUID → Card-UUID} hint map for stack
-     * entries. Returns {@link Map#of()} when the embedded reference
-     * is absent (test ctor), the gameId is null, the controller is
-     * not registered, or any reflection step fails — in all of those
-     * cases the wire format simply falls back to {@code cardId == id}
-     * for stack entries, which costs only the cross-zone animation
-     * polish.
+     * Slice 52a + 69c — resolve the live {@link Game} for a frame's
+     * gameId. Returns {@code null} when the embedded reference is
+     * absent (test ctor), the gameId is null, the controller isn't
+     * registered, or reflection fails — every downstream consumer
+     * (stack hint, multiplayer context, RoI filter) falls back to
+     * its empty / no-op behavior, so the wire format degrades
+     * gracefully to the pre-slice-69c shape.
      */
-    private Map<UUID, UUID> resolveStackCardIdHint(UUID gameId) {
+    private Game resolveLiveGame(UUID gameId) {
         if (embedded == null || gameId == null) {
-            return Map.of();
+            return null;
         }
-        return GameLookup.findGame(gameId, embedded.managerFactory())
-                .map(StackCardIdHint::extract)
-                .orElse(Map.of());
+        return GameLookup.findGame(gameId, embedded.managerFactory()).orElse(null);
+    }
+
+    /**
+     * Slice 69c — resolve THIS user's playerId in the supplied game.
+     * The handler is per-user (per-WebSession), so for any given
+     * gameId there is at most one playerId associated with this
+     * handler's {@link #username}. Used to compute the per-recipient
+     * D1 RoI filter (ADR 0010 v2 D1).
+     *
+     * <p>Returns {@code null} when:
+     * <ul>
+     *   <li>{@code embedded} is null (test ctor)</li>
+     *   <li>{@code gameId} is null</li>
+     *   <li>The user isn't registered (rare — reaped by upstream)</li>
+     *   <li>The user isn't seated in this game (e.g. spectator path,
+     *       slice 71 — they get no filter, full roster)</li>
+     * </ul>
+     */
+    private UUID resolveRecipientPlayerId(UUID gameId) {
+        if (embedded == null || gameId == null) {
+            return null;
+        }
+        UUID userId = embedded.managerFactory().userManager()
+                .getUserByName(username)
+                .map(mage.server.User::getId)
+                .orElse(null);
+        if (userId == null) {
+            return null;
+        }
+        return GameLookup.findUserPlayerMap(gameId, embedded.managerFactory())
+                .map(m -> m.get(userId))
+                .orElse(null);
     }
 
     private WebStreamFrame mapStartGame(ClientCallback cc) {

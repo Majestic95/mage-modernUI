@@ -80,6 +80,44 @@ class CardViewMapperTest {
     }
 
     @Test
+    void permanentView_jsonShape_locksGoadingPlayerIds_populated() throws Exception {
+        // Slice 69c (ADR 0010 v2 D3c) — when the multiplayer frame
+        // context carries goading data for a permanent, the wire
+        // field surfaces it. Lock the populated path so a future
+        // mapper refactor can't silently drop the populate.
+        java.util.UUID permId = java.util.UUID.fromString(
+                "aaaaaaaa-1111-1111-1111-111111111111");
+        java.util.UUID goader1 = java.util.UUID.fromString(
+                "bbbbbbbb-2222-2222-2222-222222222222");
+        java.util.UUID goader2 = java.util.UUID.fromString(
+                "cccccccc-3333-3333-3333-333333333333");
+        WebPermanentView dto = new WebPermanentView(
+                new WebCardView(
+                        permId.toString(), permId.toString(),
+                        "Marauding Raptor", "Marauding Raptor", "RIX", "151",
+                        "{1}{R}", 2,
+                        "Creature — Dinosaur", List.of(),
+                        List.of("CREATURE"), List.of("Dinosaur"),
+                        List.of("R"), "UNCOMMON",
+                        "3", "2", "",
+                        List.of("Goad target creature."),
+                        false, Map.of(),
+                        false, false, null, ""),
+                "alice", false, false, false, true, false, 0,
+                List.of(), "", false,
+                // Slice 69c: populated by mapper from
+                // Permanent.getGoadingPlayers() — represents
+                // alice + bob having both goaded this Raptor in 4p FFA.
+                List.of(goader1.toString(), goader2.toString()));
+        JsonNode node = JSON.valueToTree(dto);
+        assertEquals(12, node.size(),
+                "WebPermanentView must have exactly 12 fields; got: " + node);
+        assertTrue(node.get("goadingPlayerIds").isArray());
+        assertEquals(2, node.get("goadingPlayerIds").size(),
+                "two goaders should round-trip to a 2-element JSON array");
+    }
+
+    @Test
     void permanentView_jsonShape_locksTwelveFields() throws Exception {
         WebCardView card = new WebCardView(
                 "id", "id", "Forest", "Forest", "M21", "281", "", 0,

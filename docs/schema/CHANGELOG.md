@@ -81,13 +81,63 @@ pre-slice-69b webclients that don't send the param yet). Explicit value
 not in `SUPPORTED` → close `4400` with reason
 `PROTOCOL_VERSION_UNSUPPORTED:supported=[1, 2]`.
 
+### `dialogClear` envelope (slice 69c)
+
+```
+{
+  "schemaVersion": "1.20",
+  "method":        "dialogClear",
+  "messageId":     <triggering-frame-msgid>,
+  "objectId":      "<game-uuid>",
+  "data":          { "playerId": "<leaver-uuid>", "reason": "PLAYER_LEFT" }
+}
+```
+
+Synthetic teardown signal emitted when a player leaves the game
+(concession, timeout, disconnect). Server detects the
+`PlayerView.hasLeft()` 0→1 transition between consecutive
+`gameUpdate` / `gameInit` / `gameInform` frames for the same gameId
+and synthesizes the frame after the triggering update. Clients
+dismiss any open dialog targeting the leaver. Per ADR 0010 v2 D11b:
+fire-and-forget UX teardown, not a state-machine transition — if
+the engine then re-prompts a different player after the skip, that
+arrives as a fresh `gameAsk` / `gameTarget` / `gameSelect` envelope.
+
+`reason` is a short machine-parseable code; v2 emits `"PLAYER_LEFT"`
+for any leaver detection. Future v3 may add `"TIMEOUT"` /
+`"DISCONNECT"` / `"ELIMINATED"` if upstream surfaces them distinctly.
+
+The frame's `messageId` matches the triggering callback's so the
+synthesized frame sits adjacent to the `gameUpdate` in the resume
+buffer — reconnect with `?since=N` replays both in order.
+
 ### Backwards compatibility
 
 Additive minor bump. Older webclients (1.19 or earlier) keep working
 with a 1.20 server — they ignore the new fields and don't send
-`protocolVersion` (server defaults to 2). Older servers (1.19 or
-earlier) keep working with a 1.20 webclient because of the
-`z.default(...)` clauses on each new field.
+`protocolVersion` (server defaults to 2). They also harmlessly drop
+unknown `dialogClear` frames (per the slice-3 default-handler path,
+unknown methods log-and-skip rather than crash). Older servers (1.19
+or earlier) keep working with a 1.20 webclient because of the
+`z.default(...)` clauses on each new field, and they simply never
+emit `dialogClear` (no source for the transition detection).
+
+### Slice provenance
+
+- Slice 69a (2026-04-29): added the three additive *fields*
+  (`teamId`, `goadingPlayerIds`, `protocolVersion`) and the WS
+  handshake validation. Mapper stub-populated all multiplayer
+  fields with null / empty arrays — wire shape only.
+- Slice 69c (2026-04-29): plumbed live `Game` access through the
+  mapper. Populated `goadingPlayerIds` from
+  `Permanent.getGoadingPlayers()`. Added D1 range-of-influence
+  filter (drops out-of-range opponents from `gv.players` per
+  recipient). Added the `dialogClear` envelope above + the
+  `hasLeft` transition detector that emits it.
+- `teamId` stays null in v2 per ADR R1 — upstream xmage ships no
+  2HG match plugin, so no game produces team-grouped state. The
+  wire field is forward-compat for a v3+ ADR if upstream ever
+  adds 2HG.
 
 ---
 

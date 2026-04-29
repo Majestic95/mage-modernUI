@@ -193,6 +193,26 @@ export const webStreamErrorSchema = z.object({
 });
 export type WebStreamError = z.infer<typeof webStreamErrorSchema>;
 
+/**
+ * Slice 69c (ADR 0010 v2 D11b) — synthetic teardown signal emitted
+ * when a player leaves the game (concession, timeout, disconnect).
+ * Tells client UIs to dismiss any open dialog (vote loop, target
+ * prompt, cost decision, triggered-ability picker) targeting the
+ * leaver. Fire-and-forget UX teardown, not a state-machine
+ * transition — if the engine then re-prompts a different player
+ * after the skip, that arrives as a fresh {@code gameAsk} /
+ * {@code gameTarget} / {@code gameSelect} envelope. Clients do NOT
+ * chain off {@code dialogClear}.
+ *
+ * <p>{@code reason} is a short machine-parseable code; v2 emits
+ * {@code "PLAYER_LEFT"} for any leaver detection.
+ */
+export const webDialogClearSchema = z.object({
+  playerId: z.string(),
+  reason: z.string(),
+});
+export type WebDialogClear = z.infer<typeof webDialogClearSchema>;
+
 export const webChatMessageSchema = z.object({
   username: z.string(),
   message: z.string(),

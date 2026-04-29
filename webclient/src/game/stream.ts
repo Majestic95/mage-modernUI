@@ -16,6 +16,7 @@
 import {
   webAbilityPickerViewSchema,
   webChatMessageSchema,
+  webDialogClearSchema,
   webGameClientMessageSchema,
   webGameEndViewSchema,
   webGameViewSchema,
@@ -85,6 +86,11 @@ const DATA_VALIDATORS: Record<string, (raw: unknown) => unknown> = {
   gameChooseAbility: (raw) => webAbilityPickerViewSchema.parse(raw),
   // Slice 13: post-game-1 sideboarding prompt.
   sideboard: (raw) => webSideboardInfoSchema.parse(raw),
+  // Slice 69c (ADR 0010 v2 D11b): synthetic teardown signal when a
+  // player leaves. Consumer (slice 69d) dismisses any open dialog
+  // targeting the leaver. Validated here so a malformed frame is
+  // surfaced as a parse error rather than silently swallowed.
+  dialogClear: (raw) => webDialogClearSchema.parse(raw),
 };
 
 /**

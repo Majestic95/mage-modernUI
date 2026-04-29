@@ -27,6 +27,8 @@ Slice 69 is the multiplayer-enable slice (5+ files including the new server-side
 
 **Rationale.** v1 ADR's "do nothing — render only visible players" was wrong: `gv.players` is currently NOT range-filtered (`Mage.Common/src/main/java/mage/view/GameView.java:72-90` iterates `state.getPlayers().values()` regardless of range), so a `RangeOfInfluence.ONE` table would leak hidden information about out-of-range opponents to all players (CR 801.7 violation). Reviewer A flagged this as a BLOCKER for any RoI ≠ ALL format. Filtering at the wire, not the client, is the only correct fix.
 
+**Filter location (clarified slice 69c).** The drop happens at the **WebApi mapper** (`GameViewMapper.toDto`), not at upstream `GameView` construction time. Upstream's constructor is unfiltered by design — patching it would require an upstream change forbidden by personal-fork policy. Mapper-time and construction-time filters are **semantically equivalent for security purposes** because the data the mapper filters on (recipient's `Player.getRange()` + `GameState.getPlayersInRange()`) is exactly what the engine would have used at construction time. The data path is: WebApi handler resolves live `Game` from gameId, computes per-recipient `playersInRange` set via `MultiplayerFrameContext.playersInRange(game, recipientId)`, passes to `GameViewMapper.toDto(gv, hint, mpCtx, playersInRange)`, mapper drops out-of-range entries from `WebGameView.players`.
+
 **Consequences.**
 - Slice 69 adds a per-recipient filter pass in `CardViewMapper`/`GameViewMapper` that drops out-of-range players from the players array.
 - When target dialog opens with `eligibleIds.size === 0` (caller has no in-range targets), webclient renders an inline `"No legal in-range targets"` chip — silent empty state is a UX hole.
@@ -54,24 +56,25 @@ Spectators receive **PULSE frames** for `gameInformPersonal` events: `{playerId,
 - Worked example: Player A casts Brainstorm — spectator sees the Brainstorm spell on the stack (public), receives a `gameInformPulse{playerId: A, status: pending}` for the 3-card draw, then `{status: resolved}`. Spectator never sees what 3 cards were revealed or which 2 went back.
 - v3-deferred known leaks: `cardId` retroactive-inference for face-down cards (Reviewer A6); buddy-spectate explicit hand-share (`USER_REQUEST_DIALOG`, ADR 0008 §1.20).
 
-### D3. 2HG team UI — three sub-rules
+### D3. Team UI + Goad — split status, see R1 for 2HG deferral
+
+**Status note (slice 69c).** Sub-rule (a) is **deferred to v3+** — see R1. Upstream xmage ships no 2HG match plugin (`Mage.Server/config/config.xml` enumerates 17 game types, none are 2HG). The schema-1.20 `teamId` wire field stays as a forward-compat null; no client UI consumes it in v2. Sub-rules (b) and (c) ship in v2 — they're FFA-relevant.
 
 **Decision.**
-- **(a) Shared life total** rendered at team-frame level with **color + shape badge + numeric team label**. Never color-only. Team A = `--team-ring-a` color + shield icon + "Team 1" label; Team B = `--team-ring-b` color + crest icon + "Team 2" label. Per-PlayerArea `WebPlayerView.life` chip stays for redundancy (will equal team total by upstream's life-share semantics).
-- **(b) Monarch crown chip** lives on the **individual** PlayerArea, not the team frame. Per `Mage/src/main/java/mage/game/GameImpl.java:4125-4143`, monarch is per-player-UUID even in 2HG. Same for Initiative.
-- **(c) Goad badge** required on goaded permanents — small arrow icon + tooltip "Must attack a player who isn't <controller>". Single-color is fine (semantic = "attack obligation"), no a11y requirement beyond tooltip.
+- **(a) Shared life total** [DEFERRED to v3+ per R1] — rendered at team-frame level with **color + shape badge + numeric team label**. Never color-only. The wire shape (`WebPlayerView.teamId`) is reserved for a future v3 ADR when upstream adds a 2HG plugin.
+- **(b) Monarch crown chip** lives on the **individual** PlayerArea, not the team frame. Per `Mage/src/main/java/mage/game/GameImpl.java:4125-4143`, monarch is per-player-UUID. Already correct in 1v1; reused for FFA without change.
+- **(c) Goad badge** required on goaded permanents — small arrow icon + tooltip "Must attack a player who isn't <controller>". Single-color is fine (semantic = "attack obligation"), no a11y requirement beyond tooltip. Slice 69c populates `WebPermanentView.goadingPlayerIds` from live `Permanent.getGoadingPlayers()`; slice 69d adds the badge UI.
 
 **Rationale.**
-- (a) is a hard a11y requirement: ADR 0005 D10 commits to "no information conveyed by color alone" (deuteranopia/protanopia). Reviewer C flagged v1's "blue ring / red ring" as a self-violation of the parent ADR.
-- (b) corrects v1 ADR D3's wireframe — Reviewer A read `GameImpl.java` and confirmed monarch is per-player. Putting the crown on the team header chip would silently misrepresent state.
-- (c) closes Reviewer A's goad-badge gap. Without it, players in 4-player FFA receive "must attack" errors mid-combat with no UI explanation.
+- (a) was a hard a11y requirement *if* 2HG shipped — ADR 0005 D10 commits to "no information conveyed by color alone." That requirement is moot until upstream ships 2HG, but the constraint is preserved for the v3 ADR.
+- (b) corrects v1 ADR D3's wireframe — Reviewer A read `GameImpl.java` and confirmed monarch is per-player. Putting the crown on a (nonexistent in v2) team header chip would have silently misrepresented state.
+- (c) closes Reviewer A's goad-badge gap for FFA. Without it, players in 4-player FFA receive "must attack" errors mid-combat with no UI explanation.
 
 **Consequences.**
-- New schema field: `WebPlayerView.teamId: string | null` (UUID). 1v1 maps to all-null; non-2HG multiplayer maps to all-null (each player a "team of one" is not modeled — null is the no-team sentinel). **Mapper read path is unsettled.** Engine has `Team.getId()` (`Mage/src/main/java/mage/game/Team.java:25-27`) but NO `Game.getTeam(playerId)` accessor and NO `Team.getPlayers()` getter (private field). Mapper options: (1) compute teamId from `MatchType.getPlayersPerTeam()` + player seat-index (2HG: seats 0,1 → team A; seats 2,3 → team B) — no upstream change, lives entirely in WebApi; (2) add upstream `Team.getPlayers()` accessor + a teams-collection accessor on Game — small upstream patch on the personal fork. **Slice 69 picks (1) unless seat-order assumption breaks for sit-anywhere or future async-team formats.** R1 expanded to track this.
-- New schema field: `WebPermanentView.goadingPlayerIds: string[]` (UUIDs of players who have goaded this permanent). Empty array = not goaded.
-- Battlefield restructure: when any player has non-null `teamId`, group by team for layout (D5); render team-frame above/around the paired PlayerAreas with the shared-life chip. Otherwise fall through to FFA layout.
-- R1: verify upstream's life-share semantics surface via `Player.life` (read by mapper) vs require a separate `Team.getLifeTotal()` accessor. Snapshot-test 2HG fixture: lifegain on Player 1 → both teammates' `life` field updates equally.
-- Verified during ADR drafting: there is **no** `TwoHeadedGiantType` class upstream (glob `Mage*\**\TwoHeadedGiant*` returns no files). 2HG is implemented via match config + `Team` grouping (`Mage/src/main/java/mage/game/Team.java:14-32`).
+- Schema 1.20 wire field `WebPlayerView.teamId: string | null` ships as null for all v2-shippable formats (1v1, FFA). Forward-compat only — no v2 client consumer.
+- Schema 1.20 wire field `WebPermanentView.goadingPlayerIds: string[]` populated from `Permanent.getGoadingPlayers()` in slice 69c. Empty array = not goaded.
+- No Battlefield team-frame restructure in v2. FFA layout is the only multi-player layout.
+- See R1 for the upstream-gap reasoning and what would unblock 2HG support.
 
 ### D4. Spectator route — separate WebSocket endpoint with full contract
 
@@ -233,7 +236,7 @@ Server logs WARN on:
 **Decision.** When `WebPlayerView.hasLeft = true`:
 
 - **(a) Battlefield filter:** `webclient/src/game/Battlefield.tsx:212-225` opponent loop adds `&& !p.hasLeft` predicate. Eliminated player's PlayerArea collapses to a thin "ELIMINATED" overlay stub: name + status + remaining chat history. No active glow, no priority pill.
-- **(b) Dialog reconciliation:** any open dialog (vote loop, target prompt, cost decision) targeting the leaver dismisses via a new `dialogClear{playerId, reason: 'PLAYER_LEFT'}` wire frame. Vote loops in `VoteHandler.doVotes` skip the leaver server-side (engine already does, per Reviewer A1 evidence at `VoteHandler.java:33-39`); the new frame announces this to all clients so stuck modals close. If the engine then re-prompts a different player after skip (e.g., choose-new-target), that arrives as a fresh `gameAsk` envelope — the client does NOT chain off `dialogClear`. `dialogClear` is a fire-and-forget UI-teardown signal, not a transition trigger.
+- **(b) Dialog reconciliation:** any open dialog (vote loop, target prompt, cost decision) targeting the leaver dismisses via a new `dialogClear{playerId, reason: 'PLAYER_LEFT'}` wire frame. Vote loops in `VoteHandler.doVotes` skip the leaver server-side (engine already does, per Reviewer A1 evidence at `VoteHandler.java:33-39`); the new frame announces this to all clients so stuck modals close. If the engine then re-prompts a different player after skip (e.g., choose-new-target), that arrives as a fresh `gameAsk` envelope — the client does NOT chain off `dialogClear`. `dialogClear` is a fire-and-forget UI-teardown signal, not a transition trigger. **Reconnect ordering caveat (slice 69c):** the synthesized `dialogClear` frame reuses the triggering `gameUpdate`'s `messageId` so the two frames sit adjacent in the per-handler resume buffer. A reconnect with `?since=N` where N equals the leaver-transition `gameUpdate`'s messageId replays only frames with `messageId > N` — the dialogClear is skipped. This is acceptable because the gameUpdate at messageId=N+1 (or the carried-forward GameView in any later frame) already encodes `hasLeft=true` for the leaver, from which the client can infer the teardown. The contract is "**at most one** dialogClear emitted per leaver per game," not "exactly one delivered to every client over every reconnect path."
 - **(c) Reconnect-after-elimination:** user reconnects to a game where they were eliminated. Server routes them to the **spectator path** with seat = their old seat for camera. Auth check: original session UUID. Closes R5.
 - **(d) Throttle:** `dialogClear` frames are rate-limited per game (max 5/sec) to prevent client UI thrash on cascading concession (one player concedes triggers another's elimination via state-based actions).
 - **(e) Simultaneous-action prompts** (e.g., 2HG declare-attackers with shared turn): if one player disconnects mid-prompt and the other has already submitted, server holds for full reconnect-timeout (60s default), then auto-passes the disconnected player and emits `dialogClear`.
@@ -293,12 +296,21 @@ These were explicitly investigated by the 5-reviewer pass and CLOSED. Reopening 
 
 ## Risk register
 
-### R1. 2HG life-share + team-mapping verification gap
-Two unknowns to verify before slice 69 merges:
-- **Life-share.** Confirm whether upstream's life-share semantics surface via `Player.life` (each teammate's `life` field set to team total) or require a separate `Team.getLifeTotal()` accessor. Snapshot-test 2HG fixture: Healing Salve on teammate A → both teammates' `life` reads same total.
-- **Team mapping (D3 prerequisite).** Engine exposes `Team.getId()` but no `Game.getTeam(playerId)` and no `Team.getPlayers()`. Slice 69 ships path (1) — derive teamId from `MatchType.getPlayersPerTeam()` + seat-index in the WebApi mapper, NOT a new upstream accessor. Snapshot-test 2HG fixture: 4 seats → exactly 2 distinct teamIds, seats 0+1 share teamId-A, seats 2+3 share teamId-B.
+### R1. 2HG support is not shippable in v2 — upstream gap
 
-**Mitigation:** both verifications land as snapshot tests in slice 69. If life-share requires a pooled accessor, the mapper extends one method. If seat-index derivation breaks (e.g., a future format permits async team assignment), R1 escalates to "add `Team.getPlayers()` upstream patch" before that format ships.
+**Empirical finding (slice 69c recon, 2026-04-29):** xmage upstream does NOT ship a 2HG match plugin. `Mage.Server/config/config.xml` enumerates 17 game types — all 1v1 duels (TwoPlayerDuel, CommanderDuel, BrawlDuel, etc.) and FFA variants (FreeForAll, CommanderFreeForAll, etc.). **None are 2HG.** The `mage.game.Team` class exists in the engine (`Mage/src/main/java/mage/game/Team.java`) but is unused infrastructure — no shipped match type instantiates it, no game routes through it for life-share or team grouping.
+
+The original v1+v2 ADR drafts assumed 2HG was implementable via match config + the existing `Team` class (Reviewer A's note: "no TwoHeadedGiant class upstream" was correctly observed but incorrectly concluded — Reviewer A inferred 2HG was *latent* in the engine, not *absent*). Empirical check at slice 69c contradicted that inference: with no plugin, no game ever produces team-grouped state, so the mapper has no source data to populate `WebPlayerView.teamId` from.
+
+**Decision.** 2HG is **not a v2-shippable format**. Slice 69c-onwards drops 2HG client + server work:
+- Slice 69c: skips teamId population (the schema-1.20 wire field stays null for all v2 games — additive-and-default-safe per slice 69a, so no schema change needed).
+- Slice 69d: drops "2HG client UI" (team frames, shared life chip, team-ring badge). Keeps ELIMINATED stub, dialogClear consumer, multi-AI seat config.
+- Slice 69e: drops the 2HG e2e spec; FFA + elimination specs remain.
+- D3(a) team UI is **deferred to v3+** behind an explicit prerequisite: upstream xmage adds a 2HG `MatchType` plugin. Until then, the v2 schema-1.20 fields (`teamId`, `goadingPlayerIds`) ship for forward-compat — no value population, no UI consumer.
+
+**What stays from R1.** `goadingPlayerIds` (D3c) is unrelated to 2HG — Goad is an FFA-relevant mechanic and slice 69c does populate it from `Permanent.getGoadingPlayers()` for FFA games. The original R1 "team-mapping verification" obligation is moot (no source); the "life-share semantics" obligation is moot (no 2HG to test). R1 is now an **upstream-gap acknowledgment**, not a verification gap.
+
+**Mitigation if upstream ever adds 2HG.** A future v3 ADR will own the work: (a) verify life-share semantics via `Player.getLife()` snapshot test, (b) decide between seat-index-derived `teamId` vs a new `Team.getPlayers()` upstream patch, (c) build the team UI surfaces deferred from D3(a). The schema-1.20 wire shape is forward-compat — the field is already on the wire as null, so a future server can fill it without a schema bump.
 
 ### R2. Spectator allow-list mechanism missing server-side
 `LobbyService` has no per-game spectator registry today. Slice 71 adds `registerSpectator/unregister`. **Mitigation:** slice 71 owns the change; if delayed, slice 69 ships without spectate (acceptable — slice 69 exit gate is "FFA + 2HG playable").
@@ -314,6 +326,15 @@ Eliminated player reconnects. Without explicit policy, behavior is undefined (re
 
 ### R6. Spectator-on-own-game leak via `processWatchedHands`
 Same user opens player route + spectator route to same gameId — without seat-exclusion in `processWatchedHands`, peeks own hand from a perspective other clients can't reproduce. **Mitigation:** D4 same-gameId XOR check (close 4003) + D2 spectator-self exclusion in mapper. Test: assert seated user opening WATCH route gets 4003.
+
+### R8. RoI filter fail-open on transient (slice 69c)
+
+`MultiplayerFrameContext.playersInRange(game, recipientId)` falls back to `null` ("no filter") on any `RuntimeException` during the live-state read (engine mid-mutation, missing player, reflection failure). The fallback yields the FULL roster on the wire — a momentary CR 801.7 leak under non-`ALL` RoI. The choice: **fail open (leak transiently) vs fail closed (recipient sees only themselves, breaking gameplay liveness on a transient)**. Slice 69c chose fail-open per the comment at `MultiplayerFrameContext.java:165-170`: "the risk of a momentary leak in a partial state is dwarfed by the risk of taking down the WS pipe on a transient."
+
+**Mitigation paths if this becomes load-bearing:**
+- Slice 70 (server resource scaling) adds a counter `xmage_roi_filter_failures_total` so transient frequency is observable. If non-zero in production, the policy is revisited.
+- Slice 71 (observability) emits a WARN log on every fallback so the failure mode is loud.
+- A future v3 may flip to fail-closed (return `Set.of(recipientId)` so the recipient sees only themselves) once we have empirical data on transient frequency. Not done in v2 because non-`ALL` RoI is rarely selected for FFA games.
 
 ### R7. Token rollout discipline
 D7 introduces tokens scoped to v2 surfaces only — but every future polish slice now has access. Discipline risk: a contributor adds a literal color when a token would do. **Mitigation:** lint rule (custom ESLint plugin) flags hex literals in component files; allow-list known structural surfaces. Defer rule to slice 73-77 polish track; for slice 69 just code-review for token usage.
