@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { GameDialog } from './GameDialog';
+import { GameDialog } from '../game/dialogs/GameDialog';
 import { useGameStore } from '../game/store';
 import type { GameStream } from '../game/stream';
 import { webGameClientMessageSchema } from '../api/schemas';

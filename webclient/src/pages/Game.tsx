@@ -4,7 +4,7 @@ import { useAuthStore } from '../auth/store';
 import { GameStream } from '../game/stream';
 import { useGameStore } from '../game/store';
 import { ActionPanel } from './ActionPanel';
-import { GameDialog } from './GameDialog';
+import { GameDialog } from '../game/dialogs/GameDialog';
 import { GameEndOverlay } from '../game/GameEndOverlay';
 import { PhaseTimeline } from '../game/PhaseTimeline';
 import { GameLog } from '../game/GameLog';
