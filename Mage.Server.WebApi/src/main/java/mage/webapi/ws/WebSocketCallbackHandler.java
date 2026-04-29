@@ -10,6 +10,8 @@ import mage.view.GameEndView;
 import mage.view.GameView;
 import mage.view.TableClientMessage;
 import mage.webapi.SchemaVersion;
+import mage.game.Game;
+import mage.players.Player;
 import mage.webapi.dto.stream.WebStreamFrame;
 import mage.webapi.embed.EmbeddedServer;
 import mage.webapi.mapper.ChatMessageMapper;
@@ -27,6 +29,7 @@ import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -79,6 +82,19 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
     static final int LOW_FRAMES_THRESHOLD = 3;
 
     /**
+     * Slice 61 — Mad-AI no-plays fallback intervention threshold. While
+     * {@link #LOW_FRAMES_THRESHOLD} flags a single suspicious segment
+     * ("this segment is suspiciously low"), this constant fires only
+     * after we've seen this many consecutive low-frame segments for the
+     * same active player ("the AI is genuinely stuck — intervene"). At
+     * that point {@link #triggerStuckAiFallback} forces a pass-priority
+     * on the AI's behalf so the game advances rather than hanging on
+     * the upstream {@code ComputerPlayer7.java:119} empty-tree edge
+     * case.
+     */
+    static final int LOW_FRAMES_FALLBACK_THRESHOLD = 3;
+
+    /**
      * Per-WsContext attribute key — the chatId this socket is bound
      * to. Resolved at connect time via
      * {@code MageServerImpl.chatFindByGame} (game stream) or
@@ -114,6 +130,34 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
     private int lastSeenTurn = -1;
     private String lastSeenActivePlayer = null;
     private int framesThisSegment = 0;
+
+    /**
+     * Slice 61 — count of consecutive turn segments that closed with
+     * {@code framesThisSegment < LOW_FRAMES_THRESHOLD}. Resets to 0 on
+     * (a) any normal-segment close, (b) {@code reset=true} (gameInit —
+     * game-2 of best-of-three would otherwise carry stale state), and
+     * (c) immediately after {@link #triggerStuckAiFallback} fires so we
+     * don't re-fire on the same stall (the intervention takes effect
+     * over the next turn segment, not instantly). When this counter
+     * reaches {@link #LOW_FRAMES_FALLBACK_THRESHOLD} the fallback
+     * pass-priority intervention is invoked.
+     */
+    private int consecutiveLowSegments = 0;
+
+    /**
+     * Slice 61 — most-recently-observed gameId for the current game
+     * stream, captured by {@link #observeAiActions} from
+     * {@code ClientCallback.getObjectId()} immediately before delegating
+     * to {@link #observeTurnTransition}. The fallback intervention
+     * needs a stable gameId to hand to {@link GameLookup#findGame}, but
+     * {@code observeTurnTransition}'s signature is intentionally kept
+     * unchanged so the slice-49 unit tests in
+     * {@code AiActionDiagnosticTest} continue to pass without a
+     * synthetic gameId. Null until the first game-frame is observed
+     * (e.g. lobby-only sessions never set it); the intervention skips
+     * gracefully when null.
+     */
+    private UUID boundGameId = null;
 
     /**
      * Test-friendly ctor: no embedded-server reference. The
@@ -277,6 +321,15 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
         if (gv == null) {
             return;
         }
+        // Slice 61 — capture the live gameId on every observed game
+        // frame so triggerStuckAiFallback() has a stable handle to
+        // resolve the upstream Game via GameLookup. observeTurnTransition's
+        // signature is deliberately left unchanged to keep the
+        // slice-49 unit tests synthetic-gameId-free.
+        UUID gameId = cc.getObjectId();
+        if (gameId != null) {
+            boundGameId = gameId;
+        }
         boolean reset = "gameInit".equals(frame.method());
         observeTurnTransition(gv.getTurn(), gv.getActivePlayerName(), reset);
     }
@@ -296,6 +349,9 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
             lastSeenTurn = turn;
             lastSeenActivePlayer = activePlayer;
             framesThisSegment = 1;
+            // Slice 61 — gameInit (e.g. game-2 of best-of-three) must
+            // not carry stuck-AI state across game boundaries.
+            consecutiveLowSegments = 0;
             return;
         }
         boolean turnAdvanced = turn != lastSeenTurn;
@@ -310,11 +366,21 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
                             + "docs/decisions/mad-ai-no-plays-recon.md)",
                             username, lastSeenTurn, lastSeenActivePlayer,
                             framesThisSegment);
-                } else if (LOG.isDebugEnabled()) {
-                    LOG.debug("AI-action diagnostic: user={}, turn={}, "
-                            + "activePlayer={}, frames={}",
-                            username, lastSeenTurn, lastSeenActivePlayer,
-                            framesThisSegment);
+                    // Slice 61 — accumulate; intervene at threshold.
+                    consecutiveLowSegments++;
+                    if (consecutiveLowSegments >= LOW_FRAMES_FALLBACK_THRESHOLD) {
+                        triggerStuckAiFallback(lastSeenTurn, lastSeenActivePlayer);
+                        consecutiveLowSegments = 0;
+                    }
+                } else {
+                    if (LOG.isDebugEnabled()) {
+                        LOG.debug("AI-action diagnostic: user={}, turn={}, "
+                                + "activePlayer={}, frames={}",
+                                username, lastSeenTurn, lastSeenActivePlayer,
+                                framesThisSegment);
+                    }
+                    // Slice 61 — a normal segment breaks the LOW streak.
+                    consecutiveLowSegments = 0;
                 }
             }
             lastSeenTurn = turn;
@@ -338,6 +404,80 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
     /** Test access for slice-49 unit assertions. */
     String lastSeenActivePlayer() {
         return lastSeenActivePlayer;
+    }
+
+    /** Slice 61 — test access for the consecutive-LOW segment counter. */
+    int consecutiveLowSegmentsForTest() {
+        return consecutiveLowSegments;
+    }
+
+    /**
+     * Slice 61 — Mad-AI no-plays fallback. When slice 49's
+     * diagnostic detects {@link #LOW_FRAMES_FALLBACK_THRESHOLD}
+     * consecutive low-frame segments for the same active player,
+     * we infer the AI is stuck in the upstream
+     * ComputerPlayer7.java:119 empty-tree edge case (slice 47
+     * mitigated, didn't cure) and force a pass-priority on its
+     * behalf so the game advances.
+     *
+     * <p>The intervention calls {@code Player.pass(game)} directly
+     * on the upstream Player object (resolved via
+     * {@link GameLookup}). Computer players don't have userId
+     * entries in {@code userPlayerMap}, so the normal
+     * {@code MageServerImpl.sendPlayerAction} path can't route to
+     * them — direct Player API is the only option.
+     *
+     * <p>Defensive: skips if game can't be resolved, if the
+     * priority player can't be found, or if the priority player
+     * isn't a computer (we never force a human's pass). Any
+     * RuntimeException from the pass call is caught + logged so
+     * the engine thread doesn't crash.
+     */
+    private void triggerStuckAiFallback(int turn, String activePlayer) {
+        LOG.warn("AI-action diagnostic STUCK ({}× LOW): user={}, "
+                + "turn={}, activePlayer={} — forcing pass-priority "
+                + "intervention",
+                LOW_FRAMES_FALLBACK_THRESHOLD, username, turn, activePlayer);
+        if (boundGameId == null || embedded == null) {
+            LOG.debug("Stuck-AI fallback skipped: gameId or embedded unavailable");
+            return;
+        }
+        Optional<Game> gameOpt = GameLookup.findGame(boundGameId, embedded.managerFactory());
+        if (gameOpt.isEmpty()) {
+            LOG.warn("Stuck-AI fallback: could not resolve game {}", boundGameId);
+            return;
+        }
+        Game game = gameOpt.get();
+        UUID priorityPlayerId = game.getPriorityPlayerId();
+        if (priorityPlayerId == null) {
+            LOG.warn("Stuck-AI fallback: no priority player on game {}", boundGameId);
+            return;
+        }
+        Player player = game.getPlayer(priorityPlayerId);
+        if (player == null) {
+            LOG.warn("Stuck-AI fallback: priority player {} not found on game {}",
+                    priorityPlayerId, boundGameId);
+            return;
+        }
+        if (!player.isComputer()) {
+            // Should never happen — we only fire on AI segments — but defense
+            // in depth: never force a human's pass. Using !isComputer()
+            // rather than isHuman() per upstream convention
+            // (Player.java:68 explicitly recommends isComputer in
+            // gameplay-relevant logic for AI-test coverage).
+            LOG.warn("Stuck-AI fallback: priority player {} ({}) is not "
+                    + "a computer, skipping intervention",
+                    priorityPlayerId, player.getName());
+            return;
+        }
+        try {
+            player.pass(game);
+            LOG.info("Stuck-AI fallback: forced pass on player={} (id={})",
+                    player.getName(), priorityPlayerId);
+        } catch (RuntimeException ex) {
+            LOG.warn("Stuck-AI fallback: pass() failed for player={}: {}",
+                    player.getName(), ex.toString());
+        }
     }
 
     private static GameView extractGameView(ClientCallback cc, WebStreamFrame frame) {
