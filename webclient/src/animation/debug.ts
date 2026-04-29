@@ -64,16 +64,25 @@ type AnyTransition = SpringTransition | DurationTransition | Record<string, unkn
  */
 export function slow<T extends AnyTransition>(t: T): T {
   if (SLOWMO === 1) return t;
-  if ('type' in t && t.type === 'spring') {
-    const s = t as SpringTransition;
+  // Recurse into a baked-in `layout` field BEFORE applying the
+  // top-level transform, so presets like STACK_ENTER_EXIT that
+  // embed `layout: LAYOUT_GLIDE` get the cross-zone glide slowed
+  // too. (Without this the cross-zone layoutId animation runs at
+  // full speed even when slowmo is on — caught by slice 52d critic.)
+  let next: T = t;
+  if ('layout' in t && t.layout && typeof t.layout === 'object') {
+    next = { ...t, layout: slow(t.layout as AnyTransition) } as T;
+  }
+  if ('type' in next && next.type === 'spring') {
+    const s = next as SpringTransition;
     return {
-      ...t,
+      ...next,
       stiffness: (s.stiffness ?? 200) / SLOWMO,
       mass: (s.mass ?? 1) * SLOWMO,
     } as T;
   }
-  if ('duration' in t && typeof t.duration === 'number') {
-    return { ...t, duration: t.duration * SLOWMO } as T;
+  if ('duration' in next && typeof next.duration === 'number') {
+    return { ...next, duration: next.duration * SLOWMO } as T;
   }
-  return t;
+  return next;
 }

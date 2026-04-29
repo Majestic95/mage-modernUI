@@ -15,3 +15,27 @@ body {
   margin: 0;
   min-height: 100svh;
 }
+
+/*
+ * Slice 52d — accessibility: honor prefers-reduced-motion across
+ * EVERY CSS transition + animation in the app. Framer Motion
+ * animations are already gated by <MotionConfig reducedMotion="user">
+ * at the game-page root (see Game.tsx). This rule covers the CSS
+ * surface — hand fan hover-lift, battlefield tap rotation, stack
+ * zone collapse, life-total color flash, and any future Tailwind
+ * `transition-*` rule we add.
+ *
+ * Zero-duration is preferred over `none` because some libraries
+ * watch transitionend events; we want them to fire immediately,
+ * not never. 0.01ms is the standard safe value.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

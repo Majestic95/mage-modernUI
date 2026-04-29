@@ -26,6 +26,17 @@ import type {
 import { ActionPanel } from './ActionPanel';
 import { GameDialog } from './GameDialog';
 import { isSlowmoActive, slow, SLOWMO } from '../animation/debug';
+import {
+  BATTLEFIELD_ENTER_EXIT,
+  DELTA_FLOAT_UP,
+  HAND_HOVER_LIFT_MS,
+  LAYOUT_GLIDE,
+  LIFE_FLASH_POP,
+  LIFE_TOTAL_COLOR_MS,
+  STACK_ENTER_EXIT,
+  STACK_ZONE_COLLAPSE_MS,
+  TAP_ROTATE_MS,
+} from '../animation/transitions';
 
 interface Props {
   gameId: string;
@@ -1089,26 +1100,6 @@ function Battlefield({
  * click router. The tooltip surfaces the rules text so the player
  * can see what's about to resolve.
  */
-/**
- * Slice 52c — shared spring for the Framer Motion `layout` animation
- * (cross-zone glides on stack-tile → battlefield-tile resolution and
- * hand-tile → stack-tile cast). Tuned for a card-game feel: ~400-500ms
- * settle time, subtle overshoot, no oscillation. Different from the
- * enter/exit springs (slice 50) which are stiffer because they're
- * animating opacity + small y/scale, not a full positional glide.
- *
- * The {@code transition.layout} key on a motion.div applies ONLY to
- * layout-driven animations (own resize/reposition + layoutId glides
- * to a sibling), not to {@code initial}/{@code animate}/{@code exit};
- * those keep their own `transition` prop unchanged.
- */
-const LAYOUT_TRANSITION = {
-  type: 'spring' as const,
-  stiffness: 280,
-  damping: 26,
-  mass: 0.7,
-};
-
 function StackZone({ stack }: { stack: Record<string, WebCardView> }) {
   const entries = Object.values(stack).reverse();
   // Slice 50 — keep the section mounted while AnimatePresence flushes
@@ -1118,9 +1109,10 @@ function StackZone({ stack }: { stack: Record<string, WebCardView> }) {
   return (
     <section
       data-testid="stack-zone"
-      className={`flex-shrink-0 border-b border-zinc-800 bg-zinc-900/60 px-4 py-2 transition-opacity duration-200 ${
+      className={`flex-shrink-0 border-b border-zinc-800 bg-zinc-900/60 px-4 py-2 transition-opacity ${
         isEmpty ? 'opacity-0 pointer-events-none h-0 overflow-hidden py-0 border-b-0' : 'opacity-100'
       }`}
+      style={{ transitionDuration: `${STACK_ZONE_COLLAPSE_MS * SLOWMO}ms` }}
     >
       <div className="text-xs text-zinc-500 uppercase tracking-wide mb-1.5">
         Stack ({entries.length}) — top resolves first
@@ -1154,13 +1146,7 @@ function StackZone({ stack }: { stack: Record<string, WebCardView> }) {
                 initial={{ opacity: 0, y: -16, scale: 0.85 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 24, scale: 0.85 }}
-                transition={slow({
-                  type: 'spring',
-                  stiffness: 380,
-                  damping: 30,
-                  mass: 0.6,
-                  layout: slow(LAYOUT_TRANSITION),
-                })}
+                transition={slow(STACK_ENTER_EXIT)}
               >
                 <HoverCardDetail card={card}>
                   <div
@@ -1364,9 +1350,10 @@ function PlayerArea({
           // Framer can match the IDs across zones. The
           // {@code initial}/{@code exit} y+scale springs above keep
           // working alongside layoutId — layout-driven motion uses
-          // the {@code transition.layout} spring (LAYOUT_TRANSITION),
-          // and the regular {@code initial}/{@code exit} keys use the
-          // default spring on this transition.
+          // the {@code transition.layout} spring (LAYOUT_GLIDE, baked
+          // into BATTLEFIELD_ENTER_EXIT), and the regular
+          // {@code initial}/{@code exit} keys use the default spring
+          // on this transition.
           <AnimatePresence mode="popLayout" initial={false}>
             {battlefield.map((perm) => {
               const layoutId = perm.card.cardId
@@ -1381,13 +1368,7 @@ function PlayerArea({
                   initial={{ opacity: 0, y: 24, scale: 0.85 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: -16, scale: 0.85 }}
-                  transition={slow({
-                    type: 'spring',
-                    stiffness: 360,
-                    damping: 32,
-                    mass: 0.7,
-                    layout: slow(LAYOUT_TRANSITION),
-                  })}
+                  transition={slow(BATTLEFIELD_ENTER_EXIT)}
                 >
                   <BattlefieldTile
                     perm={perm}
@@ -1516,8 +1497,9 @@ function LifeTotal({ value }: { value: number }) {
         key={flash ?? 'idle'}
         initial={{ scale: flash ? 1.25 : 1 }}
         animate={{ scale: 1 }}
-        transition={slow({ type: 'spring', stiffness: 500, damping: 18 })}
-        className={`font-mono transition-colors duration-300 ${numberClass}`}
+        transition={slow(LIFE_FLASH_POP)}
+        className={`font-mono transition-colors ${numberClass}`}
+        style={{ transitionDuration: `${LIFE_TOTAL_COLOR_MS * SLOWMO}ms` }}
       >
         {value}
       </motion.span>
@@ -1532,7 +1514,7 @@ function LifeTotal({ value }: { value: number }) {
               initial={{ opacity: 0, y: 0, scale: 0.85 }}
               animate={{ opacity: 1, y: -18, scale: 1 }}
               exit={{ opacity: 0, y: -32 }}
-              transition={slow({ duration: 0.7, ease: 'easeOut' })}
+              transition={slow(DELTA_FLOAT_UP)}
               className={`absolute left-0 text-xs font-bold font-mono ${
                 d.amount > 0 ? 'text-emerald-300' : 'text-rose-400'
               }`}
@@ -1722,7 +1704,7 @@ function BattlefieldTileFace({
       }
       style={{
         transform: tapped ? 'rotate(90deg)' : undefined,
-        transitionDuration: `${150 * SLOWMO}ms`,
+        transitionDuration: `${TAP_ROTATE_MS * SLOWMO}ms`,
       }}
     >
       {url && !imageFailed ? (
@@ -1993,7 +1975,7 @@ function HandCardSlot({
       style={{
         transform,
         zIndex: lifted ? 100 : index,
-        transitionDuration: `${150 * SLOWMO}ms`,
+        transitionDuration: `${HAND_HOVER_LIFT_MS * SLOWMO}ms`,
       }}
     >
       <HoverCardDetail card={card}>
@@ -2022,7 +2004,7 @@ function HandCardSlot({
           <motion.div
             layoutId={layoutId}
             data-layout-id={layoutId}
-            transition={{ layout: slow(LAYOUT_TRANSITION) }}
+            transition={{ layout: slow(LAYOUT_GLIDE) }}
           >
             <HandCardFace card={card} />
           </motion.div>
