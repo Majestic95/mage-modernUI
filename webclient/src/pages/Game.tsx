@@ -16,6 +16,11 @@ import {
   type InteractionMode,
 } from '../game/interactionMode';
 import { isBoardClickable, routeObjectClick } from '../game/clickRouter';
+import {
+  bucketBattlefield,
+  rowOrder,
+  type BattlefieldRow,
+} from '../game/battlefieldRows';
 import type {
   WebCardView,
   WebCommandObjectView,
@@ -1235,6 +1240,12 @@ function PlayerArea({
   onBoardDrop: () => void;
 }) {
   const battlefield = Object.values(player.battlefield);
+  // Slice 53 — group permanents into MTGA-style rows (creatures /
+  // other / lands), mirrored for the opponent so lands sit closest
+  // to each player's hand. Empty rows render nothing so a turn-1
+  // board with one Forest shows just the lands row.
+  const rows = bucketBattlefield(battlefield);
+  const orderedRows = rowOrder(perspective);
   return (
     <div
       data-testid={`player-area-${perspective}`}
@@ -1300,7 +1311,7 @@ function PlayerArea({
           <ManaPool player={player} />
         </div>
       </header>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-col gap-1.5">
         {battlefield.length === 0 ? (
           <span className="text-xs text-zinc-600 italic">
             No permanents yet.
@@ -1321,36 +1332,93 @@ function PlayerArea({
           // into BATTLEFIELD_ENTER_EXIT), and the regular
           // {@code initial}/{@code exit} keys use the default spring
           // on this transition.
-          <AnimatePresence mode="popLayout" initial={false}>
-            {battlefield.map((perm) => {
-              const layoutId = perm.card.cardId
-                ? perm.card.cardId
-                : undefined;
-              return (
-                <motion.div
-                  key={perm.card.id}
-                  layout
-                  layoutId={layoutId}
-                  data-layout-id={layoutId}
-                  initial={{ opacity: 0, y: 24, scale: 0.85 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: -16, scale: 0.85 }}
-                  transition={slow(BATTLEFIELD_ENTER_EXIT)}
-                >
-                  <BattlefieldTile
-                    perm={perm}
-                    canAct={canAct}
-                    onClick={onObjectClick}
-                    isEligibleCombat={eligibleCombatIds.has(perm.card.id)}
-                    combatRole={combatRoles.get(perm.card.id) ?? null}
-                  />
-                </motion.div>
-              );
-            })}
-          </AnimatePresence>
+          //
+          // Slice 53 — split into three type-grouped rows. Each row
+          // owns its own AnimatePresence so a permanent leaving its
+          // row triggers its exit animation independently. The row
+          // container itself is plain DOM (no motion wrapper), so an
+          // empty row that disappears doesn't orphan any animation.
+          // LayoutGroup at the Game root still bridges layoutIds
+          // across rows (and zones) for cross-row glides like an
+          // animated land flipping into the creatures row.
+          orderedRows.map((row) => {
+            const items = rows[row];
+            if (items.length === 0) return null;
+            return (
+              <BattlefieldRowGroup
+                key={row}
+                row={row}
+                permanents={items}
+                canAct={canAct}
+                onObjectClick={onObjectClick}
+                eligibleCombatIds={eligibleCombatIds}
+                combatRoles={combatRoles}
+              />
+            );
+          })
         )}
       </div>
       <CommandZone entries={player.commandList} />
+    </div>
+  );
+}
+
+/**
+ * Slice 53 — one MTGA-style row of permanents. Owns its own
+ * {@link AnimatePresence} so enter / exit animations fire
+ * independently per row when permanents move between rows (e.g. an
+ * animated land flipping in / out of creature status) or land here
+ * from another zone. The wrapper {@code <div>} is plain DOM — no
+ * motion — so a row container appearing or disappearing is a
+ * structural change, not an animation, and won't orphan any tile
+ * springs mid-flight.
+ */
+function BattlefieldRowGroup({
+  row,
+  permanents,
+  canAct,
+  onObjectClick,
+  eligibleCombatIds,
+  combatRoles,
+}: {
+  row: BattlefieldRow;
+  permanents: WebPermanentView[];
+  canAct: boolean;
+  onObjectClick: (id: string) => void;
+  eligibleCombatIds: Set<string>;
+  combatRoles: Map<string, 'attacker' | 'blocker'>;
+}) {
+  return (
+    <div
+      data-testid="battlefield-row"
+      data-row={row}
+      className="flex flex-wrap gap-2 min-h-[16px]"
+    >
+      <AnimatePresence mode="popLayout" initial={false}>
+        {permanents.map((perm) => {
+          const layoutId = perm.card.cardId ? perm.card.cardId : undefined;
+          return (
+            <motion.div
+              key={perm.card.id}
+              layout
+              layoutId={layoutId}
+              data-layout-id={layoutId}
+              initial={{ opacity: 0, y: 24, scale: 0.85 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -16, scale: 0.85 }}
+              transition={slow(BATTLEFIELD_ENTER_EXIT)}
+            >
+              <BattlefieldTile
+                perm={perm}
+                canAct={canAct}
+                onClick={onObjectClick}
+                isEligibleCombat={eligibleCombatIds.has(perm.card.id)}
+                combatRole={combatRoles.get(perm.card.id) ?? null}
+              />
+            </motion.div>
+          );
+        })}
+      </AnimatePresence>
     </div>
   );
 }
