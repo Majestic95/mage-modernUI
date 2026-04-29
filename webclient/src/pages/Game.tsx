@@ -24,6 +24,7 @@ import type {
   WebPlayerView,
 } from '../api/schemas';
 import { ActionPanel } from './ActionPanel';
+import { CardFace } from '../game/CardFace';
 import { GameDialog } from './GameDialog';
 import { isSlowmoActive, slow, SLOWMO } from '../animation/debug';
 import {
@@ -35,7 +36,6 @@ import {
   LIFE_TOTAL_COLOR_MS,
   STACK_ENTER_EXIT,
   STACK_ZONE_COLLAPSE_MS,
-  TAP_ROTATE_MS,
 } from '../animation/transitions';
 
 interface Props {
@@ -1186,40 +1186,7 @@ function StackZone({ stack }: { stack: Record<string, WebCardView> }) {
  * leave a broken-image icon on the stack.
  */
 function StackTileFace({ card }: { card: WebCardView }) {
-  const [imageFailed, setImageFailed] = useState(false);
-  const url = scryfallImageUrl(card, 'normal');
-  return (
-    <div
-      data-testid="stack-tile-face"
-      className="relative w-[60px] h-[84px] rounded overflow-hidden border border-zinc-700 bg-zinc-900 shadow"
-    >
-      {url && !imageFailed ? (
-        <img
-          src={url}
-          alt=""
-          loading="lazy"
-          onError={() => setImageFailed(true)}
-          className="absolute inset-0 w-full h-full object-cover"
-        />
-      ) : (
-        <div className="absolute inset-0 bg-gradient-to-b from-zinc-800 to-zinc-900 flex items-center justify-center px-1">
-          <span className="text-[8px] text-zinc-500 italic text-center leading-tight">
-            {card.name}
-          </span>
-        </div>
-      )}
-      {card.manaCost && (
-        <div className="absolute top-0.5 right-0.5 bg-zinc-950/85 backdrop-blur-sm rounded px-0.5">
-          <ManaCost cost={card.manaCost} size="sm" />
-        </div>
-      )}
-      <div className="absolute inset-x-0 bottom-0 bg-zinc-950/85 backdrop-blur-sm px-1 py-0.5">
-        <p className="text-[9px] font-medium text-zinc-100 truncate leading-tight">
-          {card.name}
-        </p>
-      </div>
-    </div>
-  );
+  return <CardFace card={card} size="stack" />;
 }
 
 function PlayerArea({
@@ -1674,118 +1641,15 @@ function BattlefieldTileFace({
   combatRole: 'attacker' | 'blocker' | null;
   tapped: boolean;
 }) {
-  const [imageFailed, setImageFailed] = useState(false);
-  const card = perm.card;
-  const url = scryfallImageUrl(card, 'normal');
-  const isCreature = !!(card.power || card.toughness);
-  const isPlaneswalker = !!card.startingLoyalty;
-  const sick = perm.summoningSickness;
-  // Counters shape — an object like {"+1/+1": 3, "loyalty": 2}. We
-  // render at most a couple before truncating to keep the chip from
-  // overflowing the 80px-wide tile.
-  const counterEntries = Object.entries(card.counters);
-  const hasCounters = counterEntries.length > 0;
-  const counterText = counterEntries
-    .map(([type, n]) => `${type}: ${n}`)
-    .join(', ');
-  const combatRing = isEligibleCombat ? 'ring-2 ring-amber-400/60' : '';
-  const sickBorder = sick
-    ? 'border-zinc-500/70 border-dashed'
-    : 'border-zinc-700';
   return (
-    <div
-      data-testid="battlefield-tile-face"
-      className={
-        'relative w-[80px] h-[112px] rounded-lg overflow-hidden border ' +
-        sickBorder +
-        ' bg-zinc-900 shadow-md shadow-black/50 transition-transform ease-out ' +
-        combatRing +
-        (tapped ? ' opacity-60' : '')
-      }
-      style={{
-        transform: tapped ? 'rotate(90deg)' : undefined,
-        transitionDuration: `${TAP_ROTATE_MS * SLOWMO}ms`,
-      }}
-    >
-      {url && !imageFailed ? (
-        <img
-          src={url}
-          alt=""
-          loading="lazy"
-          onError={() => setImageFailed(true)}
-          className="absolute inset-0 w-full h-full object-cover"
-        />
-      ) : (
-        <div className="absolute inset-0 bg-gradient-to-b from-zinc-800 via-zinc-850 to-zinc-900 flex items-center justify-center px-1.5">
-          <span className="text-[9px] text-zinc-500 italic text-center leading-tight">
-            {card.name}
-          </span>
-        </div>
-      )}
-      {/* Mana cost overlay (top-right) */}
-      {card.manaCost && (
-        <div className="absolute top-0.5 right-0.5 bg-zinc-950/80 backdrop-blur-sm rounded px-1 py-0.5">
-          <ManaCost cost={card.manaCost} size="sm" />
-        </div>
-      )}
-      {/* Counter chip (top-left). Hidden when a combat badge is
-          present so they don't stack — combat is the more urgent
-          information. */}
-      {hasCounters && combatRole === null && (
-        <div
-          data-testid="permanent-counters"
-          className="absolute top-0.5 left-0.5 bg-amber-500/30 text-amber-100 text-[9px] font-mono px-1 rounded max-w-[60px] truncate"
-          title={counterText}
-        >
-          {counterText}
-        </div>
-      )}
-      {/* Combat ATK / BLK badges (top-left). Slice 26 colors
-          preserved. */}
-      {combatRole === 'attacker' && (
-        <span
-          data-testid="combat-badge-attacker"
-          className="absolute top-0.5 left-0.5 text-[9px] font-semibold bg-red-500/40 text-red-100 px-1 rounded"
-          title="Attacking"
-        >
-          ATK
-        </span>
-      )}
-      {combatRole === 'blocker' && (
-        <span
-          data-testid="combat-badge-blocker"
-          className="absolute top-0.5 left-0.5 text-[9px] font-semibold bg-sky-500/40 text-sky-100 px-1 rounded"
-          title="Blocking"
-        >
-          BLK
-        </span>
-      )}
-      {/* Damage chip (lower-left, above the name banner). Replaces
-          the old "−{damage}" inline text. */}
-      {perm.damage > 0 && (
-        <div
-          data-testid="permanent-damage"
-          className="absolute bottom-5 left-0.5 bg-red-500/30 text-red-200 text-[10px] font-mono px-1 rounded"
-          title={`${perm.damage} damage marked`}
-        >
-          {`-${perm.damage}`}
-        </div>
-      )}
-      {/* Name banner across the bottom */}
-      <div className="absolute inset-x-0 bottom-0 bg-zinc-950/85 backdrop-blur-sm px-1 py-0.5">
-        <p className="text-[9px] font-medium text-zinc-100 truncate">
-          {card.name}
-        </p>
-      </div>
-      {/* P/T or loyalty (bottom-right, above the name banner) */}
-      {(isCreature || isPlaneswalker) && (
-        <div className="absolute bottom-4 right-0.5 bg-zinc-950/85 backdrop-blur-sm rounded px-1 py-0.5 text-[10px] font-mono text-zinc-100">
-          {isPlaneswalker
-            ? card.startingLoyalty
-            : `${card.power}/${card.toughness}`}
-        </div>
-      )}
-    </div>
+    <CardFace
+      card={perm.card}
+      size="battlefield"
+      perm={perm}
+      isEligibleCombat={isEligibleCombat}
+      combatRole={combatRole}
+      tapped={tapped}
+    />
   );
 }
 
@@ -2026,52 +1890,7 @@ function HandCardSlot({
  * pattern as the slice-43 thumbnail.
  */
 function HandCardFace({ card }: { card: WebCardView }) {
-  const [imageFailed, setImageFailed] = useState(false);
-  const url = scryfallImageUrl(card, 'normal');
-  const isCreature = !!(card.power || card.toughness);
-  const isPlaneswalker = !!card.startingLoyalty;
-  return (
-    <div
-      data-testid="hand-card-face"
-      className="relative w-[100px] h-[140px] rounded-lg overflow-hidden border border-zinc-700 bg-zinc-900 shadow-lg shadow-black/50"
-    >
-      {url && !imageFailed ? (
-        <img
-          src={url}
-          alt=""
-          loading="lazy"
-          onError={() => setImageFailed(true)}
-          className="absolute inset-0 w-full h-full object-cover"
-        />
-      ) : (
-        <div className="absolute inset-0 bg-gradient-to-b from-zinc-800 via-zinc-850 to-zinc-900 flex items-center justify-center px-2">
-          <span className="text-[10px] text-zinc-500 italic text-center">
-            {card.name}
-          </span>
-        </div>
-      )}
-      {/* Mana cost overlay (top-right) */}
-      {card.manaCost && (
-        <div className="absolute top-1 right-1 bg-zinc-950/80 backdrop-blur-sm rounded px-1 py-0.5">
-          <ManaCost cost={card.manaCost} size="sm" />
-        </div>
-      )}
-      {/* Name banner across the bottom */}
-      <div className="absolute inset-x-0 bottom-0 bg-zinc-950/85 backdrop-blur-sm px-1.5 py-0.5">
-        <p className="text-[10px] font-medium text-zinc-100 truncate">
-          {card.name}
-        </p>
-      </div>
-      {/* P/T or loyalty (bottom-right, above the name banner) */}
-      {(isCreature || isPlaneswalker) && (
-        <div className="absolute bottom-5 right-1 bg-zinc-950/85 backdrop-blur-sm rounded px-1 py-0.5 text-[10px] font-mono text-zinc-200">
-          {isPlaneswalker
-            ? card.startingLoyalty
-            : `${card.power}/${card.toughness}`}
-        </div>
-      )}
-    </div>
-  );
+  return <CardFace card={card} size="hand" />;
 }
 
 /* ---------- card detail overlay (slice 30) ---------- */
@@ -2359,7 +2178,13 @@ function HoverCardDetail({
  * inner-text path lowercases everything before resolution so both
  * forms work.
  */
-function ManaCost({ cost, size }: { cost: string; size?: 'normal' | 'sm' }) {
+export function ManaCost({
+  cost,
+  size,
+}: {
+  cost: string;
+  size?: 'normal' | 'sm';
+}) {
   if (!cost) return null;
   const tokens = cost.match(/\{[^}]+\}/g);
   if (!tokens || tokens.length === 0) return null;
