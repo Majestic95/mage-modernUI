@@ -106,7 +106,7 @@ public final class WebApiServer {
         });
 
         registerExceptionHandlers(app);
-        app.before(new BearerAuthMiddleware(authService));
+        app.before(new BearerAuthMiddleware(authService, embedded));
         registerRoutes(app);
         // WebSocket routes do not run through BearerAuthMiddleware —
         // browsers cannot set custom headers on the upgrade. Auth is

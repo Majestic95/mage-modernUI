@@ -248,12 +248,47 @@ public final class GameStreamHandler implements Consumer<WsConfig> {
             case "chatSend" -> handleChatSend(ctx, parsed);
             case "playerAction" -> handlePlayerAction(ctx, parsed);
             case "playerResponse" -> handlePlayerResponse(ctx, parsed);
-            case "keepalive" -> { /* slice 38: no-op — receiving the
-                frame is enough to reset Jetty's idle timer. The client
-                sends one every 30s while the WS is open so AFK players
-                don't get killed by the 5-minute idle close. */ }
+            case "keepalive" -> handleKeepalive(ctx);
             default -> sendError(ctx, "NOT_IMPLEMENTED",
                     "Inbound type '" + type + "' is not yet implemented.");
+        }
+    }
+
+    /**
+     * Slice 38 wired the inbound {@code keepalive} frame as a no-op so
+     * receiving any byte resets Jetty's idle timer and AFK players do
+     * not see the 5-minute idle close.
+     *
+     * <p>Slice 46 extends that: also call upstream's
+     * {@code MageServerImpl.ping(sessionId, null)} so the inbound
+     * keepalive bumps {@code User.lastActivity} and the user is no
+     * longer reaped by {@code UserManagerImpl.checkExpired} after 3
+     * minutes of HTTP-poll-only quiet. Without this, slice 38 only
+     * kept the socket alive — the upstream user (and their WAITING
+     * tables) still got destroyed.
+     *
+     * <p>Pass {@code null} as the {@code pingInfo} so
+     * {@code User.updateLastActivity} skips the field assignment — no
+     * chat banner is appropriate for a server-internal heartbeat.
+     *
+     * <p>This is a fire-and-forget call: failures must not break the
+     * keepalive contract. There is also a harmless microsecond-scale
+     * race in {@code User.onLostConnection} (between
+     * {@code setUserState(Offline)} at line 209 and
+     * {@code removeUser()} at line 210) where a concurrent ping could
+     * flip a doomed user back to {@code Connected}; the user is then
+     * removed anyway and the empty sessionId means no callback fires.
+     * This ping is not a recovery path.
+     */
+    private void handleKeepalive(WsMessageContext ctx) {
+        SessionEntry session = sessionFromCtx(ctx);
+        if (session == null) {
+            return;
+        }
+        try {
+            embedded.server().ping(session.upstreamSessionId(), null);
+        } catch (RuntimeException ex) {
+            LOG.debug("upstream ping on keepalive failed: {}", ex.toString());
         }
     }
 

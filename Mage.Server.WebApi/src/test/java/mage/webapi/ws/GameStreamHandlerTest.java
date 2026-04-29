@@ -624,6 +624,52 @@ class GameStreamHandlerTest {
     }
 
     @Test
+    void keepalive_bumpsUpstreamUserLastActivity() throws Exception {
+        // Slice 46: inbound {"type":"keepalive"} frame must call
+        // MageServerImpl.ping(...) so upstream's User.lastActivity is
+        // bumped — protecting the user from the 3-minute reaper in
+        // UserManagerImpl.checkExpired. Slice 38's bare no-op only
+        // reset Jetty's idle timer, which was insufficient.
+        HttpResponse<String> login = postJson("/api/session", "{}");
+        assertEquals(200, login.statusCode());
+        String token = JSON.readTree(login.body()).get("token").asText();
+        String username = JSON.readTree(login.body()).get("username").asText();
+
+        User user = embedded.managerFactory().userManager()
+                .getUserByName(username)
+                .orElseThrow(() -> new AssertionError("user missing: " + username));
+
+        TestListener listener = new TestListener();
+        WebSocket ws = openWs(UUID.randomUUID(), token, listener);
+        try {
+            listener.awaitFrame(FRAME_WAIT); // streamHello
+
+            // Backdate lastActivity so we can detect the bump
+            // unambiguously without a timing-flaky sleep.
+            java.lang.reflect.Field f = User.class.getDeclaredField("lastActivity");
+            f.setAccessible(true);
+            java.util.Date stale = new java.util.Date(System.currentTimeMillis() - 60_000L);
+            f.set(user, stale);
+            assertEquals(stale, user.getLastActivity(),
+                    "test setup: backdated lastActivity must stick");
+
+            ws.sendText("{\"type\":\"keepalive\"}", true).join();
+
+            // Wait briefly for the inbound dispatch to call ping.
+            long deadline = System.currentTimeMillis() + 2000;
+            while (System.currentTimeMillis() < deadline
+                    && user.getLastActivity().equals(stale)) {
+                Thread.sleep(20);
+            }
+            assertTrue(user.getLastActivity().after(stale),
+                    "keepalive must call upstream ping which bumps lastActivity. "
+                            + "Got: " + user.getLastActivity() + " (stale=" + stale + ")");
+        } finally {
+            ws.sendClose(WebSocket.NORMAL_CLOSURE, "test done").join();
+        }
+    }
+
+    @Test
     void chatSend_oversizedMessage_repliesWithBadRequest() throws Exception {
         // Cap is 4096 chars; send 5000.
         StringBuilder huge = new StringBuilder(5000);

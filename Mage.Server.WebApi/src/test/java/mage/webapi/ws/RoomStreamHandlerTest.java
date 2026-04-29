@@ -2,6 +2,7 @@ package mage.webapi.ws;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import mage.server.User;
 import mage.view.ChatMessage;
 import mage.webapi.SchemaVersion;
 import mage.webapi.embed.EmbeddedServer;
@@ -245,6 +246,47 @@ class RoomStreamHandlerTest {
             assertEquals(4003, listener.closeCode);
         } finally {
             ws.abort();
+        }
+    }
+
+    @Test
+    void keepalive_bumpsUpstreamUserLastActivity() throws Exception {
+        // Slice 46: inbound {"type":"keepalive"} on the room WS must
+        // call upstream MageServerImpl.ping(...) so the user idling on
+        // the lobby tab is not reaped by the 3-minute
+        // UserManagerImpl.checkExpired sweep — which would also evict
+        // their WAITING tables.
+        Fixture f = login();
+        String roomId = mainRoomId(f.token);
+
+        User user = embedded.managerFactory().userManager()
+                .getUserByName(f.username)
+                .orElseThrow(() -> new AssertionError("user missing: " + f.username));
+
+        TestListener listener = new TestListener();
+        WebSocket ws = openRoomWs(roomId, f.token, listener);
+        try {
+            listener.awaitFrame(FRAME_WAIT); // streamHello
+
+            java.lang.reflect.Field field = User.class.getDeclaredField("lastActivity");
+            field.setAccessible(true);
+            java.util.Date stale = new java.util.Date(System.currentTimeMillis() - 60_000L);
+            field.set(user, stale);
+            assertEquals(stale, user.getLastActivity(),
+                    "test setup: backdated lastActivity must stick");
+
+            ws.sendText("{\"type\":\"keepalive\"}", true).join();
+
+            long deadline = System.currentTimeMillis() + 2000;
+            while (System.currentTimeMillis() < deadline
+                    && user.getLastActivity().equals(stale)) {
+                Thread.sleep(20);
+            }
+            assertTrue(user.getLastActivity().after(stale),
+                    "keepalive must call upstream ping which bumps lastActivity. "
+                            + "Got: " + user.getLastActivity() + " (stale=" + stale + ")");
+        } finally {
+            ws.sendClose(WebSocket.NORMAL_CLOSURE, "test done").join();
         }
     }
 

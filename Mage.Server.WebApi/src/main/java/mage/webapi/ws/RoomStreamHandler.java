@@ -177,13 +177,55 @@ public final class RoomStreamHandler implements Consumer<WsConfig> {
         String type = typeNode.asText();
         switch (type) {
             case "chatSend" -> handleChatSend(ctx, parsed);
-            case "keepalive" -> { /* slice 38: see GameStreamHandler. */ }
+            case "keepalive" -> handleKeepalive(ctx);
             // Room context has no game state; player actions are
             // game-specific. Reject them explicitly so a misrouted
             // client gets a clear signal.
             default -> sendError(ctx, "NOT_IMPLEMENTED",
                     "Inbound type '" + type + "' is not supported on the room stream.");
         }
+    }
+
+    /**
+     * Slice 38 wired the inbound {@code keepalive} frame as a no-op so
+     * receiving any byte resets Jetty's idle timer.
+     *
+     * <p>Slice 46 extends that: also call upstream's
+     * {@code MageServerImpl.ping(sessionId, null)} so the inbound
+     * keepalive bumps {@code User.lastActivity} and a player parked on
+     * the lobby tab is not reaped by upstream's
+     * {@code UserManagerImpl.checkExpired} after 3 minutes — which
+     * would also destroy any WAITING table they own via
+     * {@code DisconnectReason.SessionExpired.isRemoveUserTables}.
+     *
+     * <p>Pass {@code null} as {@code pingInfo} so
+     * {@code User.updateLastActivity} does not touch the field —
+     * nothing chat-banner-worthy about a server-internal heartbeat.
+     *
+     * <p>Fire-and-forget: failures must not block the keepalive
+     * contract. The microsecond-scale race in
+     * {@code User.onLostConnection} (between
+     * {@code setUserState(Offline)} and {@code removeUser()}) where a
+     * concurrent ping could flip a doomed user back to
+     * {@code Connected} is harmless — the user has empty sessionId by
+     * then so no callback fires, and {@code removeUser} runs to
+     * completion either way. This ping is not a recovery path.
+     */
+    private void handleKeepalive(WsMessageContext ctx) {
+        SessionEntry session = sessionFromCtx(ctx);
+        if (session == null) {
+            return;
+        }
+        try {
+            embedded.server().ping(session.upstreamSessionId(), null);
+        } catch (RuntimeException ex) {
+            LOG.debug("upstream ping on keepalive failed: {}", ex.toString());
+        }
+    }
+
+    private static SessionEntry sessionFromCtx(WsMessageContext ctx) {
+        Object attr = ctx.attribute(ATTR_SESSION);
+        return attr instanceof SessionEntry s ? s : null;
     }
 
     private void onClose(WsCloseContext ctx) {
