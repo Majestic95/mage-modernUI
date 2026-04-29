@@ -74,7 +74,17 @@ export function CreateTableModal({ roomId, serverState, onClose, onCreated }: Pr
   const [error, setError] = useState<string | null>(null);
 
   const selectedGame = serverState.gameTypes.find((g) => g.name === gameType);
-  const aiAllowed = selectedGame?.maxPlayers === 2;
+  // Slice 69d (ADR 0010 v2 — re-scoped without 2HG) — allow AI
+  // opponents for any game type with at least 2 seats. Pre-69d this
+  // was capped at maxPlayers=2 (1 human + 1 AI for 1v1) which made
+  // 4-player FFA against AI literally unbuildable from the lobby.
+  // Now: 4p FFA fills 1 human + 3 AI; 3p FFA fills 1 human + 2 AI.
+  // Custom human/AI mixes (e.g. 2 humans + 2 AI) require manual
+  // seat-management — out of v2 scope per ADR R1's deferral note.
+  const aiAllowed = (selectedGame?.maxPlayers ?? 0) >= 2;
+  const aiSeatsToAdd = aiAllowed && addAi
+    ? (selectedGame?.maxPlayers ?? 2) - 1
+    : 0;
   const showAttackOption = selectedGame?.useAttackOption ?? false;
   const showRange = selectedGame?.useRange ?? false;
 
@@ -95,7 +105,14 @@ export function CreateTableModal({ roomId, serverState, onClose, onCreated }: Pr
     setSubmitting(true);
     setError(null);
 
-    const seats = aiAllowed && addAi ? ['HUMAN', aiType] : undefined;
+    // Slice 69d — build seats for N-player AI fill. 1v1 stays
+    // ['HUMAN', aiType] (2 seats); 4p FFA becomes ['HUMAN', aiType,
+    // aiType, aiType]. The server's table-create handler reads this
+    // array literally, so length = number of seats and each element
+    // is the seat type. Matches upstream MatchOptions.seats wire shape.
+    const seats = aiAllowed && addAi
+      ? ['HUMAN', ...Array(aiSeatsToAdd).fill(aiType)]
+      : undefined;
     const body: Record<string, unknown> = {
       gameType,
       deckType,
@@ -134,31 +151,51 @@ export function CreateTableModal({ roomId, serverState, onClose, onCreated }: Pr
       return;
     }
 
-    // If the user asked for an AI opponent, fill the declared COMPUTER
-    // seat now. Any failure here is a partial-success state: the table
-    // exists, but the AI didn't join. Surface a warning and let the
-    // user retry / leave / kill the table from the lobby.
+    // If the user asked for AI opponents, fill the declared COMPUTER
+    // seats now. Slice 69d (re-scoped) — N-player support: each
+    // seat is filled via a separate POST /ai. The server's
+    // LobbyService.addAi adds one AI to the next available
+    // COMPUTER seat per call, so we loop aiSeatsToAdd times.
+    //
+    // Failure mode: if the Kth call fails (e.g. table closed by
+    // another user mid-loop, server crash), the table has K-1 AIs
+    // and may not have enough seats filled to start. We surface the
+    // failure with a count so the user knows how partial it is and
+    // can retry / leave / kill from the lobby.
     if (aiAllowed && addAi) {
-      try {
-        await request(
-          `/api/rooms/${roomId}/tables/${created.tableId}/ai`,
-          null,
-          {
-            token: session.token,
-            method: 'POST',
-            body: { playerType: aiType },
-          },
-        );
-      } catch (err) {
-        setError(
-          err instanceof ApiError
-            ? `Table created but AI failed to join: ${err.message}`
-            : 'Table created but AI failed to join.',
-        );
-        setSubmitting(false);
-        // Refresh the lobby anyway so the user sees the partial table.
-        onCreated();
-        return;
+      // Must be sequential, NOT Promise.all — upstream's
+      // LobbyService.addAi calls roomJoinTable which mutates room
+      // state. Each call's "next available COMPUTER seat" lookup is
+      // a read-then-write, and TableController.joinTable is
+      // synchronized per-table but not across the read-then-write
+      // boundary. Three concurrent Promise.all calls could race onto
+      // the same seat slot, with two failing 422 even though the
+      // table has capacity for all three.
+      for (let i = 0; i < aiSeatsToAdd; i++) {
+        try {
+          await request(
+            `/api/rooms/${roomId}/tables/${created.tableId}/ai`,
+            null,
+            {
+              token: session.token,
+              method: 'POST',
+              body: { playerType: aiType },
+            },
+          );
+        } catch (err) {
+          const filled = i; // 0-indexed: how many AI seats DID fill
+          const detail = err instanceof ApiError
+            ? `: ${err.message}`
+            : '';
+          setError(
+            `Table created with ${filled} of ${aiSeatsToAdd} AI seats `
+            + `filled — seat ${i + 1} failed to join${detail}.`,
+          );
+          setSubmitting(false);
+          // Refresh the lobby anyway so the user sees the partial table.
+          onCreated();
+          return;
+        }
       }
     }
 
@@ -267,9 +304,15 @@ export function CreateTableModal({ roomId, serverState, onClose, onCreated }: Pr
               )}
             </>
           )}
+          {aiAllowed && addAi && aiSeatsToAdd > 1 && (
+            <p className="text-xs text-zinc-500">
+              {aiSeatsToAdd} AI opponents will fill the remaining seats
+              (1 human + {aiSeatsToAdd} AI = {aiSeatsToAdd + 1}-player game).
+            </p>
+          )}
           {!aiAllowed && (
             <p className="text-xs text-zinc-500">
-              Available only on 2-seat games (multi-AI is later phase).
+              No AI opponent available for this game type.
             </p>
           )}
         </fieldset>

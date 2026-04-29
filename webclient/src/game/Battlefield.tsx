@@ -11,7 +11,11 @@ import { ManaCost } from './ManaCost';
 import { MyHand } from './MyHand';
 import { StackZone } from './StackZone';
 import { PlayerArea } from './PlayerArea';
-import { opponentRowClassname, selectOpponents } from './battlefieldLayout';
+import {
+  formatEliminationAnnouncement,
+  opponentRowClassname,
+  selectOpponents,
+} from './battlefieldLayout';
 
 export function Battlefield({
   gv,
@@ -215,6 +219,28 @@ export function Battlefield({
         Priority: {gv.priorityPlayerName || '—'},{' '}
         Active: {gv.activePlayerName || '—'},{' '}
         {gv.phase || ''} {gv.step || ''}
+      </div>
+      {/* Slice 69d (ADR 0010 v2 D11a + D13) — surface eliminated
+          players in their OWN live region with its own atomic
+          boundary. Pre-fix this lived inside the priority announcer
+          above, but with aria-atomic=true ANY priority pass
+          re-announces the eliminated list — a 4p FFA with one
+          eliminated player would re-read "Eliminated: alice" on
+          every turn for the rest of the game. Splitting into two
+          regions means each one only fires on changes to its OWN
+          content: priority transitions don't re-trigger
+          elimination announcements, and vice versa. The visual
+          surface (D11a / slice 69b's !hasLeft filter) drops
+          eliminated PlayerAreas from layout entirely; blind users
+          would otherwise have no cue that the game changed shape. */}
+      <div
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        data-testid="elimination-announcer"
+        className="sr-only"
+      >
+        {formatEliminationAnnouncement(gv.players)}
       </div>
       {drag && draggedCard && (
         <div

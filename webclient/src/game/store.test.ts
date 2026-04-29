@@ -286,6 +286,165 @@ describe('useGameStore', () => {
     expect(useGameStore.getState().lastWrapped?.message).toBe('GG');
   });
 
+  /* ---------- slice 69d: dialogClear consumer (ADR 0010 v2 D11b) ---------- */
+
+  function dialogPayloadWithTargets(targets: string[], message = 'Choose target') {
+    return webGameClientMessageSchema.parse({
+      gameView: null,
+      message,
+      targets,
+      cardsView1: {},
+      min: 0,
+      max: 1,
+      flag: false,
+      choice: null,
+    });
+  }
+
+  it('dialogClear dismisses an open dialog whose targets include the leaver', () => {
+    // Canonical ADR D11(b) flow. 4p FFA: alice has cast Council's
+    // Judgment naming bob/carol/dave as targets. Carol concedes
+    // mid-vote. Engine skips her server-side; the synthetic
+    // dialogClear announces this so alice's modal goes away
+    // (otherwise stuck on "waiting for carol's vote").
+    const bob = 'aaaaaaaa-1111-1111-1111-111111111111';
+    const carol = 'bbbbbbbb-2222-2222-2222-222222222222';
+    const dave = 'cccccccc-3333-3333-3333-333333333333';
+    const dialog = dialogPayloadWithTargets([bob, carol, dave]);
+    useGameStore.getState().applyFrame(frame('gameTarget', dialog, 50), dialog);
+    expect(useGameStore.getState().pendingDialog).not.toBeNull();
+
+    const clear = { playerId: carol, reason: 'PLAYER_LEFT' };
+    useGameStore.getState().applyFrame(frame('dialogClear', clear, 51), clear);
+    expect(useGameStore.getState().pendingDialog).toBeNull();
+  });
+
+  it('dialogClear preserves dialogs whose targets do NOT include the leaver', () => {
+    // 4p FFA: alice's open dialog is asking her to choose between
+    // bob's and dave's permanents. Carol concedes — her UUID isn't
+    // in the targets list, so alice's dialog is unaffected. The
+    // engine's vote loop / target-pick loop is independent of
+    // who else is in the game.
+    const bob = 'aaaaaaaa-1111-1111-1111-111111111111';
+    const carol = 'bbbbbbbb-2222-2222-2222-222222222222';
+    const dave = 'cccccccc-3333-3333-3333-333333333333';
+    const dialog = dialogPayloadWithTargets([bob, dave]);
+    useGameStore.getState().applyFrame(frame('gameTarget', dialog, 60), dialog);
+    expect(useGameStore.getState().pendingDialog).not.toBeNull();
+
+    const clear = { playerId: carol, reason: 'PLAYER_LEFT' };
+    useGameStore.getState().applyFrame(frame('dialogClear', clear, 61), clear);
+    expect(useGameStore.getState().pendingDialog).not.toBeNull();
+  });
+
+  it('dialogClear with no open dialog is a no-op', () => {
+    // Defensive — server may emit dialogClear after a leaver concedes
+    // even if no dialog is open on this client (because dialogClear
+    // is broadcast to every client, not just those with stuck modals).
+    expect(useGameStore.getState().pendingDialog).toBeNull();
+    const clear = {
+      playerId: 'aaaaaaaa-1111-1111-1111-111111111111',
+      reason: 'PLAYER_LEFT',
+    };
+    useGameStore.getState().applyFrame(frame('dialogClear', clear, 70), clear);
+    expect(useGameStore.getState().pendingDialog).toBeNull();
+  });
+
+  it('dialogClear does NOT touch a gameChooseAbility dialog', () => {
+    // gameChooseAbility uses WebAbilityPickerView (no targets array).
+    // It can't reference players as targets by construction, so the
+    // dialogClear signal is irrelevant. Per ADR D11(b): clients only
+    // dismiss when the leaver is in targets.
+    const payload = {
+      gameView: null,
+      message: 'Pick an ability',
+      choices: { 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa': 'Activate A' },
+    };
+    useGameStore.getState().applyFrame(
+      frame('gameChooseAbility', payload, 80),
+      payload,
+    );
+    expect(useGameStore.getState().pendingDialog).not.toBeNull();
+
+    const clear = {
+      playerId: 'aaaaaaaa-1111-1111-1111-111111111111',
+      reason: 'PLAYER_LEFT',
+    };
+    useGameStore.getState().applyFrame(frame('dialogClear', clear, 81), clear);
+    expect(useGameStore.getState().pendingDialog).not.toBeNull();
+  });
+
+  it('dialogClear after endGameInfo is a no-op (defensive)', () => {
+    // endGameInfo nulls pendingDialog (store.ts:397). A late-arriving
+    // dialogClear (e.g., last-loser-concedes synthesized after the
+    // engine's gameOver path resolved) finds no dialog and exits
+    // cleanly. Lock the early-return so a future refactor can't
+    // regress into a null-deref or unwanted state mutation.
+    const wrap = webGameClientMessageSchema.parse({
+      gameView: null,
+      message: 'GG',
+      targets: [],
+      cardsView1: {},
+      min: 0,
+      max: 0,
+      flag: false,
+      choice: null,
+    });
+    useGameStore.getState().applyFrame(frame('gameOver', wrap, 1), wrap);
+    useGameStore.getState().applyFrame(
+      frame('endGameInfo', { gameInfo: 'done', matchInfo: '', additionalInfo: '', hasWon: true, wins: 1, winsNeeded: 1, players: [] }, 2),
+      { gameInfo: 'done', matchInfo: '', additionalInfo: '', hasWon: true, wins: 1, winsNeeded: 1, players: [] },
+    );
+    expect(useGameStore.getState().pendingDialog).toBeNull();
+
+    // Late dialogClear arrives — must not throw, must leave gameEnd
+    // intact (the gameOver banner / endGame summary stay on screen).
+    useGameStore.getState().applyFrame(
+      frame('dialogClear', {
+        playerId: 'aaaaaaaa-1111-1111-1111-111111111111',
+        reason: 'PLAYER_LEFT',
+      }, 3),
+      {
+        playerId: 'aaaaaaaa-1111-1111-1111-111111111111',
+        reason: 'PLAYER_LEFT',
+      },
+    );
+    expect(useGameStore.getState().pendingDialog).toBeNull();
+    expect(useGameStore.getState().gameEnd).not.toBeNull();
+  });
+
+  it('multiple dialogClear frames in succession all act independently', () => {
+    // Cascading concession scenario — alice and carol both leave in
+    // the same turn (concede + game-loss trigger). Each dialogClear
+    // is evaluated against the current dialog state at the time it
+    // arrives.
+    const alice = 'aaaaaaaa-1111-1111-1111-111111111111';
+    const bob = 'bbbbbbbb-2222-2222-2222-222222222222';
+    const carol = 'cccccccc-3333-3333-3333-333333333333';
+
+    const dialog1 = dialogPayloadWithTargets([alice, bob, carol]);
+    useGameStore.getState().applyFrame(frame('gameTarget', dialog1, 90), dialog1);
+
+    // Alice leaves → dismiss (alice is in targets).
+    useGameStore.getState().applyFrame(
+      frame('dialogClear', { playerId: alice, reason: 'PLAYER_LEFT' }, 91),
+      { playerId: alice, reason: 'PLAYER_LEFT' },
+    );
+    expect(useGameStore.getState().pendingDialog).toBeNull();
+
+    // Engine re-prompts with bob+carol only.
+    const dialog2 = dialogPayloadWithTargets([bob, carol]);
+    useGameStore.getState().applyFrame(frame('gameTarget', dialog2, 92), dialog2);
+    expect(useGameStore.getState().pendingDialog).not.toBeNull();
+
+    // Carol leaves → dismiss again.
+    useGameStore.getState().applyFrame(
+      frame('dialogClear', { playerId: carol, reason: 'PLAYER_LEFT' }, 93),
+      { playerId: carol, reason: 'PLAYER_LEFT' },
+    );
+    expect(useGameStore.getState().pendingDialog).toBeNull();
+  });
+
   /* ---------- slice 18: gameLog ---------- */
 
   it('gameInform appends to gameLog with turn/phase metadata', () => {

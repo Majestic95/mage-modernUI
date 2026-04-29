@@ -203,7 +203,7 @@ describe('CreateTableModal', () => {
     await user.click(screen.getByRole('button', { name: /^create$/i }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      /AI failed to join/i,
+      /seat 1 failed to join/i,
     );
     // Lobby refresh fires so user sees the partial table.
     expect(onCreated).toHaveBeenCalled();
@@ -234,7 +234,11 @@ describe('CreateTableModal', () => {
     expect(body && 'seats' in body).toBe(false);
   });
 
-  it('disables the AI checkbox for >2-seat games', async () => {
+  it('enables the AI checkbox for >2-seat games (slice 69d multi-AI)', async () => {
+    // Slice 69d (re-scoped) — multi-AI seat fill. Pre-69d, AI was
+    // available only on 2-seat games which made FFA-against-AI
+    // literally unbuildable from the lobby. Now: 4p FFA fills 1
+    // human + 3 AI; the checkbox is enabled.
     const user = userEvent.setup();
     render(
       <CreateTableModal
@@ -245,13 +249,117 @@ describe('CreateTableModal', () => {
       />,
     );
 
-    // Switch to Free For All (3-4 players)
     await user.selectOptions(
       screen.getByRole('combobox', { name: /game type/i }),
       'Free For All',
     );
 
-    expect(screen.getByLabelText(/add ai opponent/i)).toBeDisabled();
+    expect(screen.getByLabelText(/add ai opponent/i)).not.toBeDisabled();
+    // FFA in the fixture has maxPlayers=4 → 1 human + 3 AI.
+    expect(
+      screen.getByText(/3 AI opponents will fill the remaining seats/i),
+    ).toBeInTheDocument();
+  });
+
+  it('FFA submission posts seats=[HUMAN, AI×3] then 3 AI fills', async () => {
+    // Canonical 4p-FFA-vs-AI flow. Verifies (a) the seats array on
+    // the create-table body is exactly 4 entries (1 human + 3 AI),
+    // (b) the AI POST is called 3 times (one per AI seat). 1v1
+    // unchanged (single AI POST).
+    const user = userEvent.setup();
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(tableResponse()) // POST /tables
+      .mockResolvedValueOnce(new Response(null, { status: 204 })) // POST /ai #1
+      .mockResolvedValueOnce(new Response(null, { status: 204 })) // POST /ai #2
+      .mockResolvedValueOnce(new Response(null, { status: 204 })); // POST /ai #3
+    vi.stubGlobal('fetch', fetchMock);
+
+    const onClose = vi.fn();
+    const onCreated = vi.fn();
+    render(
+      <CreateTableModal
+        roomId={ROOM_ID}
+        serverState={SERVER_STATE}
+        onClose={onClose}
+        onCreated={onCreated}
+      />,
+    );
+
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: /game type/i }),
+      'Free For All',
+    );
+    await user.click(screen.getByRole('button', { name: /^create$/i }));
+
+    // 1 create-table + 3 add-ai = 4 calls
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+
+    const createCall = fetchMock.mock.calls[0];
+    const createBody = createCall?.[1]
+      ? JSON.parse(createCall[1].body as string) as Record<string, unknown>
+      : null;
+    expect(createBody?.['gameType']).toBe('Free For All');
+    expect(createBody?.['seats']).toEqual([
+      'HUMAN', 'COMPUTER_MAD', 'COMPUTER_MAD', 'COMPUTER_MAD',
+    ]);
+
+    // All three AI POST calls hit the right URL with the right body.
+    for (let i = 1; i <= 3; i++) {
+      const call = fetchMock.mock.calls[i];
+      expect(String(call?.[0] ?? '')).toMatch(/\/tables\/[^/]+\/ai$/);
+      const body = call?.[1]
+        ? JSON.parse(call[1].body as string) as Record<string, unknown>
+        : null;
+      expect(body).toEqual({ playerType: 'COMPUTER_MAD' });
+    }
+
+    expect(onCreated).toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('FFA partial-fill failure surfaces the seat-number that broke', async () => {
+    // Failure mode: 2nd AI POST fails after 1st succeeds. User sees
+    // a precise count ("1 of 3 filled — seat 2 failed") so they
+    // know how partial the table is.
+    const user = userEvent.setup();
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(tableResponse())
+      .mockResolvedValueOnce(new Response(null, { status: 204 })) // AI 1 ok
+      .mockResolvedValueOnce(
+        jsonResponse(422, {
+          schemaVersion: '1.15',
+          code: 'UPSTREAM_REJECTED',
+          message: 'Server full',
+        }),
+      ); // AI 2 fails — loop bails before AI 3
+    vi.stubGlobal('fetch', fetchMock);
+
+    const onClose = vi.fn();
+    const onCreated = vi.fn();
+    render(
+      <CreateTableModal
+        roomId={ROOM_ID}
+        serverState={SERVER_STATE}
+        onClose={onClose}
+        onCreated={onCreated}
+      />,
+    );
+
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: /game type/i }),
+      'Free For All',
+    );
+    await user.click(screen.getByRole('button', { name: /^create$/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      /1 of 3 AI seats filled.*seat 2 failed to join/i,
+    );
+    expect(onCreated).toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    // Loop bailed at seat 2 — only 3 calls (table + AI 1 + AI 2).
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   /* ---------- slice 10: advanced options ---------- */

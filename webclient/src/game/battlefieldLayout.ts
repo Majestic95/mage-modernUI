@@ -19,6 +19,33 @@ export function selectOpponents(
 }
 
 /**
+ * Slice 69d (ADR 0010 v2 D11a + D13) — elimination announcement text
+ * for the Battlefield's secondary ARIA-live region. Returns the
+ * empty string when no player has left (so the live region's
+ * aria-atomic boundary doesn't fire). Returns "Eliminated: <names>"
+ * when one or more players have `hasLeft=true`. Names use the
+ * player's display name; missing names fall back to "unknown" rather
+ * than crashing the announcement.
+ *
+ * <p>The visual surface (slice 69b's `selectOpponents` filter) drops
+ * eliminated PlayerAreas from the layout entirely. Blind users would
+ * otherwise have no cue that the game changed shape — this announcer
+ * fills that gap.
+ */
+export function formatEliminationAnnouncement(
+  players: WebPlayerView[],
+): string {
+  const leavers = players.filter((p) => p.hasLeft);
+  if (leavers.length === 0) {
+    return '';
+  }
+  return (
+    'Eliminated: ' +
+    leavers.map((p) => p.name || 'unknown').join(', ')
+  );
+}
+
+/**
  * Slice 69b (ADR 0010 v2 D5) — opponent-row layout classname for N
  * players. Pure helper, kept in its own module so Battlefield.tsx can
  * stay component-only (react-refresh requires that to fast-reload

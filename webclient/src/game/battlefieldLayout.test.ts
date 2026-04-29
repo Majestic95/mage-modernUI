@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { opponentRowClassname, selectOpponents } from './battlefieldLayout';
+import {
+  formatEliminationAnnouncement,
+  opponentRowClassname,
+  selectOpponents,
+} from './battlefieldLayout';
 import { webPlayerViewSchema, type WebPlayerView } from '../api/schemas';
 
 function basePlayer(overrides: Partial<WebPlayerView>): WebPlayerView {
@@ -146,5 +150,97 @@ describe('Battlefield selectOpponents (slice 69b D11a)', () => {
   it('returns empty when local player is alone (spectator-style edge case)', () => {
     const result = selectOpponents([basePlayer({ playerId: ME })], ME);
     expect(result).toEqual([]);
+  });
+});
+
+describe('Battlefield formatEliminationAnnouncement (slice 69d D11a + D13)', () => {
+  // Lock the announcer text shape so a future refactor can't drift
+  // the format (e.g., "Eliminated:" → "Players out:" or
+  // ", " → " and ") and silently garble screen-reader output.
+
+  it('returns empty string when no player has left', () => {
+    // Empty result avoids triggering the live region's atomic
+    // boundary — the region remains silent until something to
+    // announce arrives.
+    const players = [
+      basePlayer({ playerId: '11111111-1111-1111-1111-111111111111' }),
+      basePlayer({ playerId: '22222222-2222-2222-2222-222222222222' }),
+    ];
+    expect(formatEliminationAnnouncement(players)).toBe('');
+  });
+
+  it('announces a single eliminated player by name', () => {
+    const players = [
+      basePlayer({
+        playerId: '11111111-1111-1111-1111-111111111111',
+        name: 'alice',
+      }),
+      basePlayer({
+        playerId: '22222222-2222-2222-2222-222222222222',
+        name: 'bob',
+        hasLeft: true,
+      }),
+    ];
+    expect(formatEliminationAnnouncement(players)).toBe('Eliminated: bob');
+  });
+
+  it('announces multiple eliminated players comma-separated', () => {
+    // 4p FFA late-game: alice + carol both out; bob and dave still
+    // playing. Order follows the players array (turn order from
+    // upstream); the announcer doesn't re-sort.
+    const players = [
+      basePlayer({
+        playerId: '11111111-1111-1111-1111-111111111111',
+        name: 'alice',
+        hasLeft: true,
+      }),
+      basePlayer({
+        playerId: '22222222-2222-2222-2222-222222222222',
+        name: 'bob',
+      }),
+      basePlayer({
+        playerId: '33333333-3333-3333-3333-333333333333',
+        name: 'carol',
+        hasLeft: true,
+      }),
+      basePlayer({
+        playerId: '44444444-4444-4444-4444-444444444444',
+        name: 'dave',
+      }),
+    ];
+    expect(formatEliminationAnnouncement(players)).toBe(
+      'Eliminated: alice, carol',
+    );
+  });
+
+  it('falls back to "unknown" for missing names rather than crashing', () => {
+    // Defensive — a malformed PlayerView with name="" shouldn't
+    // produce "Eliminated: " (trailing colon, no content). Better
+    // a degraded "Eliminated: unknown" announcement than a silent
+    // a11y regression.
+    const players = [
+      basePlayer({
+        playerId: '11111111-1111-1111-1111-111111111111',
+        name: '',
+        hasLeft: true,
+      }),
+    ];
+    expect(formatEliminationAnnouncement(players)).toBe(
+      'Eliminated: unknown',
+    );
+  });
+
+  it('ignores players with hasLeft=false even when name suggests prior elimination', () => {
+    // Sanity check: the filter is on hasLeft, not on any name
+    // heuristic. A player named "DEFEATED" who's still in-game is
+    // not announced.
+    const players = [
+      basePlayer({
+        playerId: '11111111-1111-1111-1111-111111111111',
+        name: 'DEFEATED',
+        hasLeft: false,
+      }),
+    ];
+    expect(formatEliminationAnnouncement(players)).toBe('');
   });
 });

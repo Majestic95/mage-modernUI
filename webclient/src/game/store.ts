@@ -11,6 +11,7 @@ import { create } from 'zustand';
 import type {
   WebAbilityPickerView,
   WebChatMessage,
+  WebDialogClear,
   WebGameClientMessage,
   WebGameEndView,
   WebGameView,
@@ -396,6 +397,36 @@ export const useGameStore = create<GameState>()((set, get) => ({
           pendingDialog: null,
         });
         return true;
+
+      case 'dialogClear': {
+        // Slice 69d (ADR 0010 v2 D11b) — synthetic teardown signal
+        // emitted when a player leaves. Per the ADR contract: dismiss
+        // the open dialog ONLY if the leaver is referenced in the
+        // dialog's targets list. Engine already skips leavers
+        // server-side (VoteHandler.doVotes etc.); this signal closes
+        // the visual loop on the client so a stuck modal goes away.
+        //
+        // Targeting check: WebGameClientMessage.targets carries the
+        // legal-target UUIDs the engine asked the player to pick
+        // from. If the leaver's UUID is in there, the dialog can no
+        // longer be answered (legal target gone) — clear it. The
+        // engine will re-prompt with a fresh gameAsk / gameTarget /
+        // gameSelect if it still needs a different target. Per
+        // ADR D11(b): clients do NOT chain off dialogClear.
+        //
+        // gameChooseAbility dialogs use WebAbilityPickerView (no
+        // targets array) — they can't reference the leaver as a
+        // target by construction, so we leave them alone.
+        const clear = validatedData as WebDialogClear;
+        const current = get().pendingDialog;
+        if (current && current.method !== 'gameChooseAbility') {
+          const targets = current.data.targets ?? [];
+          if (targets.includes(clear.playerId)) {
+            set({ pendingDialog: null });
+          }
+        }
+        return true;
+      }
 
       case 'chatMessage': {
         const msg = validatedData as WebChatMessage;
