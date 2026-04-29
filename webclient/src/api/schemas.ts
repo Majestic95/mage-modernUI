@@ -176,6 +176,14 @@ export const webStreamHelloSchema = z.object({
   gameId: z.string(),
   username: z.string(),
   mode: z.string(),
+  // Schema 1.20 (ADR 0010 v2 D12) — negotiated handshake protocol
+  // version. Server echoes the client's ?protocolVersion= query param
+  // back through this field, so the client can confirm what the server
+  // negotiated. Default to 1 marks the "field absent on the wire" case
+  // (a 1.19 server) as v1 — explicit and parseable rather than letting
+  // a stripped field pretend to be v2. Real v2 servers populate the
+  // field with the negotiated integer; the default never fires there.
+  protocolVersion: z.number().default(1),
 });
 export type WebStreamHello = z.infer<typeof webStreamHelloSchema>;
 
@@ -357,6 +365,11 @@ export const webPermanentViewSchema = z.object({
   attachments: z.array(z.string()),
   attachedTo: z.string(),
   attachedToPermanent: z.boolean(),
+  // Schema 1.20 (ADR 0010 v2 D3c) — UUIDs of players who have goaded
+  // this permanent (CR 701.42). Empty array = not goaded. Default to
+  // [] so older fixtures (and any 1.19 server still running) parse
+  // cleanly. Populated from Permanent.getGoadingPlayers() in slice 69b.
+  goadingPlayerIds: z.array(z.string()).default([]),
 });
 export type WebPermanentView = z.infer<typeof webPermanentViewSchema>;
 
@@ -411,6 +424,11 @@ export const webPlayerViewSchema = z.object({
   // cleanly — server is guaranteed to populate the field on schema
   // 1.13+, but the wire is forward-compatible either way.
   commandList: z.array(webCommandObjectViewSchema).default([]),
+  // Schema 1.20 (ADR 0010 v2 D3a) — team UUID for 2HG / multi-team
+  // formats; null for FFA and 1v1. Default to null so older fixtures
+  // (and any 1.19 server still running) parse cleanly. Populated from
+  // MatchType.getPlayersPerTeam() + seat-index in slice 69b.
+  teamId: z.string().nullable().default(null),
 });
 export type WebPlayerView = z.infer<typeof webPlayerViewSchema>;
 

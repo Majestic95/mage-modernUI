@@ -145,7 +145,12 @@ public final class GameViewMapper {
                 pv.getDesignationNames() == null
                         ? List.of()
                         : List.copyOf(pv.getDesignationNames()),
-                toCommandList(pv.getCommandObjectList())
+                toCommandList(pv.getCommandObjectList()),
+                // Slice 69a — schema 1.20 wire shape ships null. Slice
+                // 69b derives from MatchType.getPlayersPerTeam() +
+                // seat-index once live-game lookup is plumbed through
+                // the mapper (ADR 0010 v2 D3a + R1).
+                null
         );
     }
 

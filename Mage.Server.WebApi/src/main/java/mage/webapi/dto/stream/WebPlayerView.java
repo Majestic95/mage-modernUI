@@ -51,6 +51,12 @@ import java.util.Map;
  *     (commander, emblems, dungeons, planes). Empty list when none —
  *     never null. Each entry's {@code kind} field discriminates render
  *     mode on the client. Added in schema 1.13.
+ * @param teamId          team UUID for 2HG / multi-team formats; null
+ *     for FFA and 1v1 (every player a "team of one" is not modeled).
+ *     Added in schema 1.20 (ADR 0010 v2 D3a). Slice 69a ships the
+ *     wire shape; population from {@code MatchType.getPlayersPerTeam()}
+ *     + seat-index lands in slice 69b alongside the live-game-access
+ *     plumbing.
  */
 public record WebPlayerView(
         String playerId,
@@ -73,6 +79,7 @@ public record WebPlayerView(
         boolean monarch,
         boolean initiative,
         List<String> designationNames,
-        List<WebCommandObjectView> commandList
+        List<WebCommandObjectView> commandList,
+        String teamId
 ) {
 }

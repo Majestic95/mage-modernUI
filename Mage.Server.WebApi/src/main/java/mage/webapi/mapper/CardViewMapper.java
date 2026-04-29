@@ -188,7 +188,13 @@ public final class CardViewMapper {
                 pv.getDamage(),
                 attachments,
                 pv.getAttachedTo() == null ? "" : pv.getAttachedTo().toString(),
-                pv.isAttachedToPermanent()
+                pv.isAttachedToPermanent(),
+                // Slice 69a — schema 1.20 wire shape ships empty.
+                // Upstream PermanentView doesn't carry goading info;
+                // slice 69b populates from Permanent.getGoadingPlayers()
+                // once live-game lookup is plumbed through the mapper
+                // (ADR 0010 v2 D3c).
+                List.of()
         );
     }
 

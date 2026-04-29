@@ -43,6 +43,13 @@ import java.util.List;
  *     player (player-targeting auras like Curse-of-Bloodletting), or
  *     when {@code attachedTo} is empty. Mirrors upstream
  *     {@code mage.view.PermanentView.attachedToPermanent}.
+ * @param goadingPlayerIds player UUIDs who have goaded this permanent
+ *     (CR 701.42). Empty list when not goaded. Added in schema 1.20
+ *     (ADR 0010 v2 D3c). Slice 69a ships the wire shape; population
+ *     from {@code Permanent.getGoadingPlayers()} lands in slice 69b
+ *     alongside the live-game-access plumbing — upstream
+ *     {@code PermanentView} doesn't carry goading info, so the value
+ *     fill needs the live {@code Permanent} via game lookup.
  */
 public record WebPermanentView(
         WebCardView card,
@@ -55,6 +62,7 @@ public record WebPermanentView(
         int damage,
         List<String> attachments,
         String attachedTo,
-        boolean attachedToPermanent
+        boolean attachedToPermanent,
+        List<String> goadingPlayerIds
 ) {
 }

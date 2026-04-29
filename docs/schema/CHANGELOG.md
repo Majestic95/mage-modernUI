@@ -19,6 +19,78 @@ minor mismatches.
 
 ---
 
+## 1.20 — 2026-04-29 — Multiplayer wire shape (slice 69a, ADR 0010 v2)
+
+Adds three additive fields to land the v2 multiplayer wire contract.
+All three are default-safe: older fixtures parse cleanly via
+`z.default(...)` and any 1.19 server keeps working with a 1.20 client.
+
+Slice 69a ships the **wire shape only**; value population for the two
+mapper fields lands in slice 69b alongside the live-game-access
+plumbing the mapper needs to read `MatchType` / `Permanent`.
+
+### `WebPlayerView` — added `teamId` field
+
+```diff
+   "designationNames": [],
+   "commandList":      [],
++  "teamId":           null
+ }
+```
+
+Team UUID for 2HG / multi-team formats. Null for FFA and 1v1 (each
+player a "team of one" is not modeled — null is the no-team sentinel).
+Slice 69b populates from `MatchType.getPlayersPerTeam()` + seat-index;
+slice 69a always emits null.
+
+### `WebPermanentView` — added `goadingPlayerIds` field
+
+```diff
+   "attachedTo":          "",
+   "attachedToPermanent": false,
++  "goadingPlayerIds":    []
+ }
+```
+
+UUIDs of players who have goaded this permanent (CR 701.42). Empty
+array when not goaded. Slice 69b populates from
+`Permanent.getGoadingPlayers()`; slice 69a always emits `[]`. Upstream
+`PermanentView` doesn't carry goading info, so the value fill needs the
+live `Permanent` via game lookup.
+
+### `WebStreamHello` — added `protocolVersion` field
+
+```diff
+   "gameId":          "<game-uuid>",
+   "username":        "alice",
+-  "mode":            "live"
++  "mode":            "live",
++  "protocolVersion": 2
+ }
+```
+
+Negotiated handshake contract version. Distinct namespace from
+`schemaVersion`: `schemaVersion` is the JSON wire format,
+`protocolVersion` is the handshake contract (frame ordering, route
+semantics, close-code meanings). New constant
+`mage.webapi.ProtocolVersion`: `CURRENT = 2`, `SUPPORTED = {1, 2}`.
+
+Server-side handshake: parses `?protocolVersion=` query param at WS
+upgrade. Absent → default to `CURRENT` (lenient backwards-compat for
+pre-slice-69b webclients that don't send the param yet). Explicit value
+not in `SUPPORTED` → close `4400` with reason
+`PROTOCOL_VERSION_UNSUPPORTED:supported=[1, 2]`.
+
+### Backwards compatibility
+
+Additive minor bump. Older webclients (1.19 or earlier) keep working
+with a 1.20 server — they ignore the new fields and don't send
+`protocolVersion` (server defaults to 2). Older servers (1.19 or
+earlier) keep working with a 1.20 webclient because of the
+`z.default(...)` clauses on each new field.
+
+---
+
 ## 1.19 — 2026-04-28 — Underlying-card UUID on `WebCardView` (slice 52a)
 
 Adds a `cardId` field to `WebCardView` carrying the underlying

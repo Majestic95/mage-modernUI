@@ -9,6 +9,7 @@ import io.javalin.websocket.WsContext;
 import io.javalin.websocket.WsMessageContext;
 import mage.MageException;
 import mage.server.Session;
+import mage.webapi.ProtocolVersion;
 import mage.webapi.SchemaVersion;
 import mage.webapi.auth.AuthService;
 import mage.webapi.auth.SessionEntry;
@@ -153,7 +154,8 @@ public final class RoomStreamHandler implements Consumer<WsConfig> {
         LOG.info("WS room connect: user={}, room={}, chat={}",
                 session.username(), roomId, chatId);
         sendFrame(ctx, "streamHello", roomId.toString(),
-                new WebStreamHello(roomId.toString(), session.username(), "live"));
+                new WebStreamHello(roomId.toString(), session.username(), "live",
+                        ProtocolVersion.CURRENT));
     }
 
     private UUID resolveUserId(String upstreamSessionId) {

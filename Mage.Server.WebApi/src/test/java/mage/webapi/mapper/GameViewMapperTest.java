@@ -98,6 +98,53 @@ class GameViewMapperTest {
     }
 
     @Test
+    void playerView_jsonShape_locksTwentyTwoFields_schema120() throws Exception {
+        // Schema 1.20 (slice 69a, ADR 0010 v2 D3a) added teamId.
+        // Lock the wire shape so any future field add/remove fails here
+        // first instead of leaking into the webclient.
+        mage.webapi.dto.stream.WebPlayerView dto =
+                new mage.webapi.dto.stream.WebPlayerView(
+                        "11111111-1111-1111-1111-111111111111", "alice",
+                        20, 0, 1, 60, 7,
+                        Map.of(), Map.of(), Map.of(), Map.of(),
+                        new WebManaPoolView(0, 0, 0, 0, 0, 0),
+                        true, true, true, true, false, false, false,
+                        List.of(), List.of(), null);
+        JsonNode node = JSON.valueToTree(dto);
+        assertEquals(22, node.size(),
+                "WebPlayerView must have exactly 22 fields; got: " + node);
+        for (String field : List.of(
+                "playerId", "name", "life", "wins", "winsNeeded",
+                "libraryCount", "handCount", "graveyard", "exile",
+                "sideboard", "battlefield", "manaPool", "controlled",
+                "isHuman", "isActive", "hasPriority", "hasLeft",
+                "monarch", "initiative", "designationNames",
+                "commandList", "teamId")) {
+            assertTrue(node.has(field), "missing field: " + field);
+        }
+        assertTrue(node.get("teamId").isNull(),
+                "Slice 69a ships teamId=null; slice 69b populates from "
+                        + "MatchType.getPlayersPerTeam() + seat-index.");
+    }
+
+    @Test
+    void streamHello_jsonShape_locksFourFields_schema120() throws Exception {
+        // Schema 1.20 (slice 69a, ADR 0010 v2 D12) added protocolVersion.
+        mage.webapi.dto.stream.WebStreamHello hello =
+                new mage.webapi.dto.stream.WebStreamHello(
+                        "g1", "alice", "live",
+                        mage.webapi.ProtocolVersion.CURRENT);
+        JsonNode node = JSON.valueToTree(hello);
+        assertEquals(4, node.size(),
+                "WebStreamHello must have exactly 4 fields; got: " + node);
+        for (String field : List.of("gameId", "username", "mode", "protocolVersion")) {
+            assertTrue(node.has(field), "missing field: " + field);
+        }
+        assertEquals(2, node.get("protocolVersion").asInt(),
+                "ProtocolVersion.CURRENT == 2 in v2 (ADR 0010 v2 D12)");
+    }
+
+    @Test
     void toDto_nullInputs_throw() {
         assertThrows(IllegalArgumentException.class,
                 () -> GameViewMapper.toDto(null));

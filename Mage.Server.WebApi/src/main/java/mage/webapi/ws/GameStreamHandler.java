@@ -12,6 +12,7 @@ import java.time.Duration;
 import mage.MageException;
 import mage.constants.ManaType;
 import mage.constants.PlayerAction;
+import mage.webapi.ProtocolVersion;
 import mage.webapi.SchemaVersion;
 import mage.webapi.auth.AuthService;
 import mage.webapi.auth.SessionEntry;
@@ -53,6 +54,11 @@ import java.util.function.Consumer;
  *       per-user socket cap (see
  *       {@link WebSocketCallbackHandler#MAX_SOCKETS_PER_USER}) was hit
  *       (slice 63 DoS defence)</li>
+ *   <li>{@code 4400} — handshake protocol version unsupported (slice
+ *       69a / ADR 0010 v2 D12). Reason
+ *       {@code "PROTOCOL_VERSION_UNSUPPORTED"}; close payload includes
+ *       the supported-versions set so clients can downgrade or
+ *       prompt the user to refresh.</li>
  * </ul>
  */
 public final class GameStreamHandler implements Consumer<WsConfig> {
@@ -118,6 +124,19 @@ public final class GameStreamHandler implements Consumer<WsConfig> {
         String token = ctx.queryParam("token");
         if (token == null || token.isBlank()) {
             closeWith(ctx, 4001, "MISSING_TOKEN");
+            return;
+        }
+
+        // Slice 69a — ADR 0010 v2 D12: validate handshake protocol
+        // version. Absent param defaults to CURRENT for backwards
+        // compatibility with pre-slice-69b webclients (they don't
+        // send the param yet). Explicit value not in SUPPORTED → close
+        // 4400 with the supported-versions set so the client can
+        // surface a "refresh / upgrade" prompt.
+        Integer protocolVersion = parseProtocolVersion(ctx.queryParam("protocolVersion"));
+        if (protocolVersion == null) {
+            closeWith(ctx, 4400, "PROTOCOL_VERSION_UNSUPPORTED:supported="
+                    + formatSupportedVersions());
             return;
         }
 
@@ -192,9 +211,11 @@ public final class GameStreamHandler implements Consumer<WsConfig> {
             return;
         }
 
-        LOG.info("WS connect: user={}, game={}", session.username(), gameId);
+        LOG.info("WS connect: user={}, game={}, protocolVersion={}",
+                session.username(), gameId, protocolVersion);
         sendFrame(ctx, "streamHello", gameId.toString(),
-                new WebStreamHello(gameId.toString(), session.username(), "live"));
+                new WebStreamHello(gameId.toString(), session.username(), "live",
+                        protocolVersion));
 
         // Slice 22 fix: tell upstream's GameController that the user
         // wants to join the game. Without this call, upstream waits
@@ -697,6 +718,47 @@ public final class GameStreamHandler implements Consumer<WsConfig> {
     private static SessionEntry sessionFromCtx(WsMessageContext ctx) {
         Object attr = ctx.attribute(ATTR_SESSION);
         return attr instanceof SessionEntry s ? s : null;
+    }
+
+    /**
+     * Slice 69a — ADR 0010 v2 D12. Parse the {@code ?protocolVersion=}
+     * query param and validate against
+     * {@link ProtocolVersion#SUPPORTED}. Returns:
+     * <ul>
+     *   <li>{@link ProtocolVersion#CURRENT} when the param is absent
+     *       (lenient backwards-compat for pre-slice-69b webclients
+     *       that don't send the param yet).</li>
+     *   <li>The parsed integer when present and in the supported set.</li>
+     *   <li>{@code null} when the param is present but unparseable or
+     *       outside the supported set — caller closes 4400.</li>
+     * </ul>
+     */
+    static Integer parseProtocolVersion(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return ProtocolVersion.CURRENT;
+        }
+        int parsed;
+        try {
+            parsed = Integer.parseInt(raw.trim());
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+        return ProtocolVersion.SUPPORTED.contains(parsed) ? parsed : null;
+    }
+
+    /**
+     * Stable sorted rendering of {@link ProtocolVersion#SUPPORTED} for
+     * the 4400 close-reason payload. {@code Set.of(...).toString()}
+     * has no guaranteed iteration order — clients parsing the close
+     * reason would break across JVM restarts. Sorted ascending = a
+     * stable, parseable contract: {@code [1,2]} today, {@code [2,3]}
+     * after v3 ships, etc.
+     */
+    private static String formatSupportedVersions() {
+        return ProtocolVersion.SUPPORTED.stream()
+                .sorted()
+                .map(String::valueOf)
+                .collect(java.util.stream.Collectors.joining(",", "[", "]"));
     }
 
     private static String capitalize(String s) {

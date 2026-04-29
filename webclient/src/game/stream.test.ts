@@ -84,6 +84,10 @@ describe('GameStream', () => {
 
     expect(FakeWebSocket.lastUrl).toContain('/api/games/' + FAKE_GAME_ID + '/stream');
     expect(FakeWebSocket.lastUrl).toContain('token=tok-1');
+    // Slice 69a — ADR 0010 v2 D12: webclient pins to protocolVersion=2
+    // on every WS upgrade so a v1-only server rejects cleanly with
+    // close 4400 instead of silently speaking the wrong contract.
+    expect(FakeWebSocket.lastUrl).toContain('protocolVersion=2');
     expect(FakeWebSocket.lastUrl.startsWith('ws://')).toBe(true);
     expect(useGameStore.getState().connection).toBe('connecting');
   });

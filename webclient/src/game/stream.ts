@@ -30,6 +30,18 @@ import { useGameStore } from './store';
 
 const DEFAULT_BASE_URL = 'http://localhost:18080';
 
+/**
+ * Handshake protocol version this client speaks. Slice 69a (ADR 0010
+ * v2 D12) introduced server-side {@code ?protocolVersion=} validation.
+ * v2 is the multiplayer surface: N-player layout, eliminated-player
+ * semantics, schema 1.20 wire fields. A server still on v1 only will
+ * reject this client with close 4400 + reason
+ * {@code PROTOCOL_VERSION_UNSUPPORTED} — explicit failure beats a
+ * silent semantics drift. Bumped together with
+ * {@code mage.webapi.ProtocolVersion#CURRENT}.
+ */
+const PROTOCOL_VERSION = 2;
+
 const httpBase = (
   (import.meta.env['VITE_XMAGE_WEBAPI_URL'] as string | undefined) ??
   DEFAULT_BASE_URL
@@ -198,9 +210,17 @@ export class GameStream {
         ? useGameStore.getState().lastMessageId
         : 0;
     const sinceQuery = since > 0 ? `&since=${since}` : '';
+    // Slice 69a — ADR 0010 v2 D12: the webclient pins itself to v2 of
+    // the handshake protocol. Server validates against
+    // ProtocolVersion.SUPPORTED and closes 4400 on mismatch (so a
+    // server still on v1 only would reject this client cleanly rather
+    // than letting a silent semantics drift through). The query-param
+    // shape is forward-compat for v3+: clients that need to declare a
+    // higher version simply bump the literal here.
+    const protocolQuery = `&protocolVersion=${PROTOCOL_VERSION}`;
     const url =
       `${wsBase}/api/${path}/${encodeURIComponent(this.gameId)}/stream` +
-      `?token=${encodeURIComponent(this.token)}${sinceQuery}`;
+      `?token=${encodeURIComponent(this.token)}${sinceQuery}${protocolQuery}`;
 
     useGameStore.getState().setConnection('connecting');
     let socket: WebSocket;

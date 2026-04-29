@@ -80,7 +80,7 @@ class CardViewMapperTest {
     }
 
     @Test
-    void permanentView_jsonShape_locksElevenFields() throws Exception {
+    void permanentView_jsonShape_locksTwelveFields() throws Exception {
         WebCardView card = new WebCardView(
                 "id", "id", "Forest", "Forest", "M21", "281", "", 0,
                 "Basic Land — Forest", List.of("BASIC"), List.of("LAND"),
@@ -90,21 +90,26 @@ class CardViewMapperTest {
                 false, false, null, "");
         WebPermanentView dto = new WebPermanentView(
                 card, "alice", false, false, false, true, false, 0,
-                List.of(), "", false);
+                List.of(), "", false, List.of());
         JsonNode node = JSON.valueToTree(dto);
 
-        assertEquals(11, node.size(),
-                "WebPermanentView must have exactly 11 fields; got: " + node);
+        // Schema 1.20 (slice 69a): added goadingPlayerIds → 12 fields.
+        assertEquals(12, node.size(),
+                "WebPermanentView must have exactly 12 fields; got: " + node);
         for (String field : List.of(
                 "card", "controllerName", "tapped", "flipped",
                 "transformed", "phasedIn", "summoningSickness",
                 "damage", "attachments", "attachedTo",
-                "attachedToPermanent")) {
+                "attachedToPermanent", "goadingPlayerIds")) {
             assertTrue(node.has(field), "missing field: " + field);
         }
         // Composition: the nested card carries the full WebCardView shape.
         assertEquals(24, node.get("card").size(),
                 "permanent.card must be a full WebCardView");
+        // Schema 1.20 wire shape: empty array until slice 69b plumbs
+        // live Permanent access through the mapper (ADR 0010 v2 D3c).
+        assertTrue(node.get("goadingPlayerIds").isArray());
+        assertEquals(0, node.get("goadingPlayerIds").size());
     }
 
     @Test

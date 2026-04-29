@@ -200,6 +200,147 @@ class GameStreamHandlerTest {
         }
     }
 
+    // ---------- slice 69a: protocol-version handshake (ADR 0010 v2 D12) ----------
+
+    @Test
+    void parseProtocolVersion_absent_defaultsToCurrent() {
+        // Lenient backwards-compat: pre-slice-69b webclients don't send
+        // the param. Server defaults to CURRENT so existing clients keep
+        // working. Spec: ADR 0010 v2 D12 + GameStreamHandler.parseProtocolVersion.
+        assertEquals(mage.webapi.ProtocolVersion.CURRENT,
+                GameStreamHandler.parseProtocolVersion(null));
+        assertEquals(mage.webapi.ProtocolVersion.CURRENT,
+                GameStreamHandler.parseProtocolVersion(""));
+        assertEquals(mage.webapi.ProtocolVersion.CURRENT,
+                GameStreamHandler.parseProtocolVersion("   "));
+    }
+
+    @Test
+    void parseProtocolVersion_supported_passesThrough() {
+        assertEquals(Integer.valueOf(1),
+                GameStreamHandler.parseProtocolVersion("1"));
+        assertEquals(Integer.valueOf(2),
+                GameStreamHandler.parseProtocolVersion("2"));
+        // Whitespace tolerance — the handshake survives a stray space
+        // from a hand-built query string.
+        assertEquals(Integer.valueOf(2),
+                GameStreamHandler.parseProtocolVersion(" 2 "));
+    }
+
+    @Test
+    void parseProtocolVersion_unsupportedValue_returnsNull() {
+        // Caller closes 4400 on null. Semantically distinct from
+        // "absent" → CURRENT default.
+        org.junit.jupiter.api.Assertions.assertNull(
+                GameStreamHandler.parseProtocolVersion("0"));
+        org.junit.jupiter.api.Assertions.assertNull(
+                GameStreamHandler.parseProtocolVersion("999"));
+        org.junit.jupiter.api.Assertions.assertNull(
+                GameStreamHandler.parseProtocolVersion("-1"));
+    }
+
+    @Test
+    void parseProtocolVersion_unparseable_returnsNull() {
+        org.junit.jupiter.api.Assertions.assertNull(
+                GameStreamHandler.parseProtocolVersion("abc"));
+        org.junit.jupiter.api.Assertions.assertNull(
+                GameStreamHandler.parseProtocolVersion("2.5"));
+        org.junit.jupiter.api.Assertions.assertNull(
+                GameStreamHandler.parseProtocolVersion("2; DROP TABLE games"));
+    }
+
+    @Test
+    void onConnect_protocolVersionAbsent_defaultsCurrentInHello() throws Exception {
+        // Existing webclients (no ?protocolVersion= param) keep working.
+        // streamHello echoes the negotiated version so the client knows
+        // the contract the server speaks.
+        RealGameFixture fx = realGameFixture();
+        TestListener listener = new TestListener();
+        WebSocket ws = openWs(fx.gameId(), fx.token(), listener);
+        try {
+            String frame = listener.awaitFrame(FRAME_WAIT);
+            JsonNode env = JSON.readTree(frame);
+            assertEquals("streamHello", env.get("method").asText());
+            assertEquals(mage.webapi.ProtocolVersion.CURRENT,
+                    env.get("data").get("protocolVersion").asInt(),
+                    "absent param defaults to ProtocolVersion.CURRENT");
+        } finally {
+            ws.sendClose(WebSocket.NORMAL_CLOSURE, "test done").join();
+        }
+    }
+
+    @Test
+    void onConnect_protocolVersionExplicit_echoedInHello() throws Exception {
+        RealGameFixture fx = realGameFixture();
+        TestListener listener = new TestListener();
+        URI uri = URI.create("ws://localhost:" + server.port()
+                + "/api/games/" + fx.gameId() + "/stream"
+                + "?token=" + fx.token() + "&protocolVersion=2");
+        WebSocket ws = HTTP.newWebSocketBuilder()
+                .buildAsync(uri, listener)
+                .get(5, TimeUnit.SECONDS);
+        try {
+            String frame = listener.awaitFrame(FRAME_WAIT);
+            JsonNode env = JSON.readTree(frame);
+            assertEquals(2, env.get("data").get("protocolVersion").asInt());
+        } finally {
+            ws.sendClose(WebSocket.NORMAL_CLOSURE, "test done").join();
+        }
+    }
+
+    @Test
+    void onConnect_protocolVersionUnsupported_closes4400() throws Exception {
+        // Unknown explicit value → close 4400 with PROTOCOL_VERSION_UNSUPPORTED
+        // and the supported set in the reason payload so a future client
+        // can downgrade or surface a "refresh" prompt.
+        RealGameFixture fx = realGameFixture();
+        TestListener listener = new TestListener();
+        URI uri = URI.create("ws://localhost:" + server.port()
+                + "/api/games/" + fx.gameId() + "/stream"
+                + "?token=" + fx.token() + "&protocolVersion=999");
+        WebSocket ws = HTTP.newWebSocketBuilder()
+                .buildAsync(uri, listener)
+                .get(5, TimeUnit.SECONDS);
+        try {
+            assertTrue(listener.awaitClose(FRAME_WAIT),
+                    "server must close on unsupported protocolVersion");
+            assertEquals(4400, listener.closeCode);
+            assertTrue(listener.closeReason.startsWith("PROTOCOL_VERSION_UNSUPPORTED"),
+                    "reason starts with PROTOCOL_VERSION_UNSUPPORTED: "
+                            + listener.closeReason);
+            // Stable sorted format so clients can parse the supported
+            // set deterministically across JVM restarts. Set.of()'s
+            // iteration order is undefined; we explicitly sort.
+            assertTrue(listener.closeReason.contains("supported=[1,2]"),
+                    "reason includes sorted supported set: "
+                            + listener.closeReason);
+            assertFalse(listener.gotFrame,
+                    "no frames before the version-rejection close");
+        } finally {
+            ws.abort();
+        }
+    }
+
+    @Test
+    void onConnect_protocolVersionUnparseable_closes4400() throws Exception {
+        // Garbage param (e.g. injected query string) → 4400, never a 5xx.
+        RealGameFixture fx = realGameFixture();
+        TestListener listener = new TestListener();
+        URI uri = URI.create("ws://localhost:" + server.port()
+                + "/api/games/" + fx.gameId() + "/stream"
+                + "?token=" + fx.token() + "&protocolVersion=abc");
+        WebSocket ws = HTTP.newWebSocketBuilder()
+                .buildAsync(uri, listener)
+                .get(5, TimeUnit.SECONDS);
+        try {
+            assertTrue(listener.awaitClose(FRAME_WAIT));
+            assertEquals(4400, listener.closeCode);
+            assertTrue(listener.closeReason.startsWith("PROTOCOL_VERSION_UNSUPPORTED"));
+        } finally {
+            ws.abort();
+        }
+    }
+
     // ---------- slice 2: chat outbound + inbound ----------
 
     @Test
