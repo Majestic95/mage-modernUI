@@ -87,14 +87,14 @@ jobs:
         run: pnpm typecheck
         working-directory: webclient
 
-      - name: Lint (informational only — see slice 56b for cleanup)
+      - name: Lint
         run: pnpm lint
         working-directory: webclient
-        # Lint surfaces 5 pre-existing errors (react-refresh exports +
-        # set-state-in-effect issues). Slice 56 prioritized landing CI
-        # over the lint cleanup; tracked as 56b. Typecheck + tests
-        # are the gating checks.
-        continue-on-error: true
+        # Slice 67 — flipped from informational to gating after slice
+        # 66a cleared the 4 pre-existing errors (react-refresh exports
+        # + set-state-in-effect + impure-render). pnpm lint is now a
+        # CI gate alongside typecheck + tests. The 1 remaining warning
+        # (unused-eslint-disable in public/sw.js) is acceptable noise.
 
       - name: Tests
         run: pnpm test
