@@ -36,7 +36,25 @@ public final class CardViewMapper {
     }
 
     public static WebCardView toCardDto(CardView cv) {
-        return toCardDto(cv, true);
+        return toCardDto(cv, null, true);
+    }
+
+    /**
+     * Public overload that lets the caller supply an explicit
+     * underlying-card UUID for the resulting {@code cardId} field.
+     * Used by the stack-mapping path where {@code cv.getId()} is a
+     * fresh {@code SpellAbility} UUID and the stable {@code Card}
+     * UUID lives on the upstream {@code Spell.getCard()} reference
+     * that the mapper no longer has access to (see
+     * {@link mage.webapi.upstream.StackCardIdHint}).
+     *
+     * <p>Pass {@code null} for {@code underlyingCardId} to fall back
+     * to {@code cv.getId()} (the hand / battlefield / graveyard /
+     * exile / sideboard / library path — those zones already key by
+     * the card UUID).
+     */
+    public static WebCardView toCardDto(CardView cv, UUID underlyingCardId) {
+        return toCardDto(cv, underlyingCardId, true);
     }
 
     /**
@@ -46,8 +64,15 @@ public final class CardViewMapper {
      * wire format never carries a third-tier face. Mirrors upstream
      * {@code CardView.secondCardFace} which itself never recurses past
      * the first back face.
+     *
+     * <p>The {@code underlyingCardId} parameter is forwarded to
+     * {@link #resolveCardId} for the top-level mapping; the recursive
+     * back-face call always passes null so the second face's
+     * {@code cardId} resolves to its own {@code id} (back faces are
+     * separate Card instances upstream and don't share a UUID with
+     * the front face).
      */
-    private static WebCardView toCardDto(CardView cv, boolean allowSecondFace) {
+    private static WebCardView toCardDto(CardView cv, UUID underlyingCardId, boolean allowSecondFace) {
         if (cv == null) {
             throw new IllegalArgumentException("CardView must not be null");
         }
@@ -60,7 +85,9 @@ public final class CardViewMapper {
                 transformed = cv.isTransformed();
                 CardView upstreamSecond = cv.getSecondCardFace();
                 if (upstreamSecond != null) {
-                    secondFace = toCardDto(upstreamSecond, false);
+                    // Recursive call passes null underlyingCardId — the
+                    // back face resolves its own cardId from cv.getId().
+                    secondFace = toCardDto(upstreamSecond, null, false);
                 }
             } catch (RuntimeException ex) {
                 // Defensive: some upstream code paths NPE when reading
@@ -73,6 +100,7 @@ public final class CardViewMapper {
         }
         return new WebCardView(
                 cv.getId() == null ? "" : cv.getId().toString(),
+                resolveCardId(cv, underlyingCardId),
                 nullToEmpty(cv.getName()),
                 nullToEmpty(cv.getDisplayName()),
                 nullToEmpty(cv.getExpansionSetCode()),
@@ -96,6 +124,22 @@ public final class CardViewMapper {
                 secondFace,
                 extractSourceLabel(cv)
         );
+    }
+
+    /**
+     * Single source of truth for the {@code cardId} resolution rule:
+     * if the caller supplied an explicit underlying-card UUID, use it;
+     * otherwise fall back to {@code cv.getId()}. Returns the empty
+     * string if both are null (matches the {@code id} fallback for
+     * symmetry — upstream never produces a null id in practice but
+     * the mapper is defensive).
+     */
+    private static String resolveCardId(CardView cv, UUID explicit) {
+        if (explicit != null) {
+            return explicit.toString();
+        }
+        UUID fallback = cv == null ? null : cv.getId();
+        return fallback == null ? "" : fallback.toString();
     }
 
     /**
@@ -123,7 +167,10 @@ public final class CardViewMapper {
         if (pv == null) {
             throw new IllegalArgumentException("PermanentView must not be null");
         }
-        WebCardView card = toCardDto(pv);
+        // Permanents pass null for the explicit underlying-card UUID:
+        // pv.getId() is already the Card UUID for battlefield zones,
+        // so resolveCardId() falls through to cv.getId() correctly.
+        WebCardView card = toCardDto(pv, null);
         List<String> attachments = new ArrayList<>();
         if (pv.getAttachments() != null) {
             for (UUID id : pv.getAttachments()) {
@@ -162,6 +209,45 @@ public final class CardViewMapper {
             CardView v = e.getValue();
             if (id == null || v == null) continue;
             out.put(id.toString(), toCardDto(v));
+        }
+        return out;
+    }
+
+    /**
+     * Stack-specific variant of {@link #toCardMap}. The wire-format
+     * map key is still the upstream {@code SpellAbility} UUID (so the
+     * webclient can correlate the entry with priority/target prompts
+     * keyed by the same UUID), but the {@code cardId} field on each
+     * {@link WebCardView} is overridden from
+     * {@code spellAbilityToCardId} (built by
+     * {@link mage.webapi.upstream.StackCardIdHint}). Entries without
+     * a hint (e.g. {@code StackAbility} for triggered abilities) fall
+     * back to {@code cv.getId()}, which is the right answer for
+     * non-physical-card stack objects.
+     *
+     * @param stack             upstream {@code Map<UUID, CardView>}
+     *     for the stack (key = stack object id, typically the
+     *     {@code SpellAbility} UUID for spells)
+     * @param spellAbilityToCardId hint map from
+     *     {@code Spell.getId()} to {@code Spell.getCard().getId()};
+     *     null is tolerated and treated as empty
+     */
+    public static Map<String, WebCardView> toStackMap(
+            Map<UUID, CardView> stack,
+            Map<UUID, UUID> spellAbilityToCardId) {
+        if (stack == null || stack.isEmpty()) {
+            return Map.of();
+        }
+        Map<UUID, UUID> hints = spellAbilityToCardId == null
+                ? Map.of()
+                : spellAbilityToCardId;
+        Map<String, WebCardView> out = new LinkedHashMap<>(stack.size());
+        for (Map.Entry<UUID, CardView> e : stack.entrySet()) {
+            UUID id = e.getKey();
+            CardView v = e.getValue();
+            if (id == null || v == null) continue;
+            UUID underlying = hints.get(id);
+            out.put(id.toString(), toCardDto(v, underlying));
         }
         return out;
     }

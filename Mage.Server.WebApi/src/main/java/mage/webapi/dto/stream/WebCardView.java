@@ -20,6 +20,20 @@ import java.util.Map;
  *
  * @param id              card UUID; stable for the lifetime of the
  *     game-object (re-issued on transform / blink)
+ * @param cardId          stable underlying-{@code Card} UUID. For
+ *     hand / battlefield / graveyard / exile / sideboard / library
+ *     this matches {@link #id} — upstream's {@code CardView.getId()}
+ *     for those zones already <em>is</em> the {@code Card.getId()}.
+ *     For the <strong>stack</strong>, however, upstream constructs
+ *     the view from a {@code Spell} where {@code Spell.getId()} is a
+ *     fresh {@code SpellAbility} UUID minted at cast time; this field
+ *     recovers the underlying {@code Spell.getCard().getId()} so the
+ *     webclient can use {@code cardId} as a Framer Motion
+ *     {@code layoutId} for cross-zone animation
+ *     (hand → stack → battlefield/graveyard) without the identity
+ *     break that {@code id} alone would cause. Slice 52a / schema
+ *     1.19 — added as a new required field for cross-zone Framer
+ *     Motion {@code layoutId} animation in the webclient.
  * @param name            internal name (always populated)
  * @param displayName     user-facing name; differs for face-down,
  *     transformed, and morph
@@ -70,6 +84,7 @@ import java.util.Map;
  */
 public record WebCardView(
         String id,
+        String cardId,
         String name,
         String displayName,
         String expansionSetCode,

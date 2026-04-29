@@ -779,10 +779,22 @@ class GameStreamHandlerTest {
             // (slice 5 will tighten this once gameInform / gameOver
             // wrappers carry richer ordering guarantees).
             if (myHand.size() > 0) {
-                JsonNode anyCard = myHand.elements().next();
+                java.util.Map.Entry<String, JsonNode> handEntry = myHand.fields().next();
+                String handKey = handEntry.getKey();
+                JsonNode anyCard = handEntry.getValue();
                 assertEquals("Forest", anyCard.get("name").asText(),
                         "60-Forest deck → hand should be all Forests");
                 assertEquals("LAND", anyCard.get("types").get(0).asText());
+                // Slice 52a / schema 1.19: cardId is the underlying
+                // Card.getId(). For non-stack zones (hand here), upstream's
+                // CardView.getId() already IS the Card.getId(), so cardId
+                // must equal id and the map key. Locks the wire-format
+                // invariant; stack-zone cardId divergence is exercised by
+                // CardViewMapperCardIdTest.
+                assertEquals(anyCard.get("id").asText(), anyCard.get("cardId").asText(),
+                        "hand-zone cardId must equal id (non-stack zones)");
+                assertEquals(handKey, anyCard.get("cardId").asText(),
+                        "hand map key must equal cardId for non-stack zones");
             }
 
             // Slice 5 additions on the GameView envelope.

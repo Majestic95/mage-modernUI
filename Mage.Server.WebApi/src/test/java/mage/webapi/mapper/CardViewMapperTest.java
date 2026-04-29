@@ -29,8 +29,9 @@ class CardViewMapperTest {
     private static final ObjectMapper JSON = new ObjectMapper();
 
     @Test
-    void cardView_jsonShape_locksTwentyThreeFields() throws Exception {
+    void cardView_jsonShape_locksTwentyFourFields() throws Exception {
         WebCardView dto = new WebCardView(
+                "550e8400-e29b-41d4-a716-446655440000",
                 "550e8400-e29b-41d4-a716-446655440000",
                 "Lightning Bolt",
                 "Lightning Bolt",
@@ -57,15 +58,17 @@ class CardViewMapperTest {
         );
         JsonNode node = JSON.valueToTree(dto);
 
-        assertEquals(23, node.size(),
-                "WebCardView must have exactly 23 fields "
-                        + "(slice 28 / ADR 0009 added sourceLabel); got: " + node);
+        assertEquals(24, node.size(),
+                "WebCardView must have exactly 24 fields "
+                        + "(slice 52a added cardId for cross-zone animation); got: " + node);
         // Snapshot the field set explicitly so adding a field forces
         // a CHANGELOG bump. transformable/transformed/secondCardFace
         // landed in 1.12 — DFC + MDFC support per audit §3.
         // sourceLabel landed in 1.18 — trigger-order source attribution.
+        // cardId landed in 1.19 (slice 52a) — stack/spell underlying
+        // card UUID for Framer Motion layoutId cross-zone animation.
         for (String field : List.of(
-                "id", "name", "displayName", "expansionSetCode",
+                "id", "cardId", "name", "displayName", "expansionSetCode",
                 "cardNumber", "manaCost", "manaValue", "typeLine",
                 "supertypes", "types", "subtypes", "colors", "rarity",
                 "power", "toughness", "startingLoyalty", "rules",
@@ -79,7 +82,7 @@ class CardViewMapperTest {
     @Test
     void permanentView_jsonShape_locksElevenFields() throws Exception {
         WebCardView card = new WebCardView(
-                "id", "Forest", "Forest", "M21", "281", "", 0,
+                "id", "id", "Forest", "Forest", "M21", "281", "", 0,
                 "Basic Land — Forest", List.of("BASIC"), List.of("LAND"),
                 List.of("Forest"), List.of(), "COMMON",
                 "", "", "", List.of("({T}: Add {G}.)"),
@@ -100,7 +103,7 @@ class CardViewMapperTest {
             assertTrue(node.has(field), "missing field: " + field);
         }
         // Composition: the nested card carries the full WebCardView shape.
-        assertEquals(23, node.get("card").size(),
+        assertEquals(24, node.get("card").size(),
                 "permanent.card must be a full WebCardView");
     }
 

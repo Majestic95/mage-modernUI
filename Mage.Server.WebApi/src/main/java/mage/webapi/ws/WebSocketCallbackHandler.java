@@ -11,9 +11,12 @@ import mage.view.GameView;
 import mage.view.TableClientMessage;
 import mage.webapi.SchemaVersion;
 import mage.webapi.dto.stream.WebStreamFrame;
+import mage.webapi.embed.EmbeddedServer;
 import mage.webapi.mapper.ChatMessageMapper;
 import mage.webapi.mapper.DeckViewMapper;
 import mage.webapi.mapper.GameViewMapper;
+import mage.webapi.upstream.GameLookup;
+import mage.webapi.upstream.StackCardIdHint;
 import org.jboss.remoting.callback.AsynchInvokerCallbackHandler;
 import org.jboss.remoting.callback.Callback;
 import org.slf4j.Logger;
@@ -23,6 +26,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -91,6 +95,14 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
     public static final String ATTR_BOUND_CHAT_ID = "webapi.boundChatId";
 
     private final String username;
+    /**
+     * Optional handle to the embedded server for stack-cardId hint
+     * lookup (slice 52a). Null in unit tests that don't boot the
+     * server — the {@link #mapGameView} path then degrades gracefully
+     * to an empty stack hint, which falls back to the pre-slice-52a
+     * cardId-equals-id behavior on the wire.
+     */
+    private final EmbeddedServer embedded;
     private final Set<WsContext> sockets = ConcurrentHashMap.newKeySet();
     private final Deque<WebStreamFrame> buffer = new ArrayDeque<>(BUFFER_CAPACITY);
 
@@ -103,8 +115,27 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
     private String lastSeenActivePlayer = null;
     private int framesThisSegment = 0;
 
+    /**
+     * Test-friendly ctor: no embedded-server reference. The
+     * stack-cardId hint path will always produce an empty hint, so
+     * stack entries' {@code cardId} falls back to {@code id}. Tests
+     * that exercise mapping in isolation use this overload.
+     */
     public WebSocketCallbackHandler(String username) {
+        this(username, null);
+    }
+
+    /**
+     * Production ctor: receives the {@link EmbeddedServer} so the
+     * slice-52a stack-cardId hint can resolve the underlying
+     * {@code Card} UUID for {@code Spell} entries on the stack. The
+     * embedded reference is held weakly here in spirit (we never
+     * mutate it, only call {@code managerFactory()} to walk
+     * controllers); a null is accepted defensively.
+     */
+    public WebSocketCallbackHandler(String username, EmbeddedServer embedded) {
         this.username = username;
+        this.embedded = embedded;
     }
 
     /** Add a freshly-opened socket. Called from Javalin's {@code onConnect}. */
@@ -379,13 +410,33 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
                     data == null ? "null" : data.getClass().getName());
             return null;
         }
+        Map<UUID, UUID> stackHint = resolveStackCardIdHint(cc.getObjectId());
         return new WebStreamFrame(
                 SchemaVersion.CURRENT,
                 wireMethod,
                 cc.getMessageId(),
                 cc.getObjectId() == null ? null : cc.getObjectId().toString(),
-                GameViewMapper.toDto(upstream)
+                GameViewMapper.toDto(upstream, stackHint)
         );
+    }
+
+    /**
+     * Slice 52a — best-effort lookup of the
+     * {@code SpellAbility-UUID → Card-UUID} hint map for stack
+     * entries. Returns {@link Map#of()} when the embedded reference
+     * is absent (test ctor), the gameId is null, the controller is
+     * not registered, or any reflection step fails — in all of those
+     * cases the wire format simply falls back to {@code cardId == id}
+     * for stack entries, which costs only the cross-zone animation
+     * polish.
+     */
+    private Map<UUID, UUID> resolveStackCardIdHint(UUID gameId) {
+        if (embedded == null || gameId == null) {
+            return Map.of();
+        }
+        return GameLookup.findGame(gameId, embedded.managerFactory())
+                .map(StackCardIdHint::extract)
+                .orElse(Map.of());
     }
 
     private WebStreamFrame mapStartGame(ClientCallback cc) {

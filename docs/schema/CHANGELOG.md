@@ -19,6 +19,54 @@ minor mismatches.
 
 ---
 
+## 1.19 — 2026-04-28 — Underlying-card UUID on `WebCardView` (slice 52a)
+
+Adds a `cardId` field to `WebCardView` carrying the underlying
+Magic-card UUID. For hand / battlefield / graveyard / exile /
+sideboard / library, `cardId` equals `id` — upstream's
+`CardView.getId()` for those zones already *is* the
+`Card.getId()`. For the **stack**, however, upstream constructs
+the view from a `Spell` whose `getId()` is a fresh `SpellAbility`
+UUID minted at cast time; `cardId` recovers the underlying
+`Spell.getCard().getId()` so a single physical card retains a
+stable identifier as it crosses zones (hand → stack →
+battlefield/graveyard).
+
+Slice 52a — server-side plumbing only.
+
+### `WebCardView` — added `cardId` field
+
+```diff
+   "id":               "<view-uuid>",
++  "cardId":           "<underlying-card-uuid>",
+   "name":             "Lightning Bolt",
+```
+
+### Motivation
+
+Enables cross-zone Framer Motion `layoutId` animation in the
+webclient: the same physical card animates from hand to stack to
+graveyard with shared layout because `cardId` is stable across
+those transitions, even though `id` is re-issued for the stack
+view.
+
+### Backwards compatibility
+
+Additive minor bump. Consumers that ignore the field continue to
+work; older fixtures parse cleanly via `z.default('')` on the
+webclient side once the Zod schema picks the field up.
+
+### Server impact
+
+- `CardViewMapper` populates `cardId` from
+  `Spell.getCard().getId()` when the upstream view is a
+  spell-on-stack, and from `CardView.getId()` everywhere else.
+- New `StackCardIdHint` / `GameLookup` indirection lets the
+  mapper resolve the underlying card without a hard dependency on
+  the upstream `Game` object.
+
+---
+
 ## 1.18 — 2026-04-27 — Source-label attribution on AbilityView (ADR 0009 slice 28)
 
 Adds `sourceLabel` to `WebCardView`. Empty for ordinary cards;

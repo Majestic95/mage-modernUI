@@ -216,7 +216,12 @@ public final class AuthService implements AutoCloseable {
     // ---------- internals ----------
 
     private void registerUpstreamSession(String upstreamSessionId, String username) {
-        WebSocketCallbackHandler handler = new WebSocketCallbackHandler(username);
+        // Slice 52a — pass the EmbeddedServer through so the handler
+        // can resolve stack-cardId hints via GameLookup. The
+        // alternative (a static accessor) would couple every test to
+        // a live embedded singleton; ctor injection keeps the unit
+        // tests that synthesize a handler directly working.
+        WebSocketCallbackHandler handler = new WebSocketCallbackHandler(username, embedded);
         handlersBySessionId.put(upstreamSessionId, handler);
         sessionManager().createSession(upstreamSessionId, handler);
     }

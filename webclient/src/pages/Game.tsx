@@ -153,7 +153,7 @@ export function Game({ gameId, onLeave }: Props) {
  * route by version. Pure metadata — the export is purely
  * client-side, no server round-trip.
  */
-const GAME_LOG_EXPORT_SCHEMA_VERSION = '1.18';
+const GAME_LOG_EXPORT_SCHEMA_VERSION = '1.19';
 
 /**
  * Trigger a browser download of {@code payload} serialized to JSON.

@@ -62,6 +62,20 @@ public final class GameViewMapper {
     }
 
     public static WebGameView toDto(GameView gv) {
+        return toDto(gv, Map.of());
+    }
+
+    /**
+     * Slice 52a overload accepting a stack-cardId hint
+     * (built by {@link mage.webapi.upstream.StackCardIdHint}). The
+     * hint maps each stack-entry's {@code SpellAbility} UUID to the
+     * underlying physical {@code Card} UUID so the webclient can use
+     * {@code WebCardView.cardId} as a Framer Motion {@code layoutId}
+     * for cross-zone animation. {@link Map#of()} (no hint) is
+     * acceptable — every stack entry's {@code cardId} then falls
+     * back to its {@code id}, which is the pre-slice-52a behavior.
+     */
+    public static WebGameView toDto(GameView gv, Map<UUID, UUID> stackCardIdHint) {
         if (gv == null) {
             throw new IllegalArgumentException("GameView must not be null");
         }
@@ -83,6 +97,8 @@ public final class GameViewMapper {
             }
         }
 
+        Map<UUID, UUID> hint = stackCardIdHint == null ? Map.of() : stackCardIdHint;
+
         return new WebGameView(
                 gv.getTurn(),
                 gv.getPhase() == null ? "" : gv.getPhase().name(),
@@ -96,7 +112,7 @@ public final class GameViewMapper {
                 gv.getGameCycle(),
                 myPlayerId,
                 CardViewMapper.toCardMap(gv.getMyHand()),
-                CardViewMapper.toCardMap(gv.getStack()),
+                CardViewMapper.toStackMap(gv.getStack(), hint),
                 combat,
                 players
         );

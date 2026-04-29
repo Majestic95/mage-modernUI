@@ -1699,7 +1699,7 @@ describe('Game page', () => {
     expect(blob.type).toBe('application/json');
     const text = await blob.text();
     const payload = JSON.parse(text);
-    expect(payload.schemaVersion).toBe('1.18');
+    expect(payload.schemaVersion).toBe('1.19');
     expect(payload.gameId).toBe(FAKE_GAME_ID);
     expect(typeof payload.exportedAt).toBe('string');
     expect(Date.parse(payload.exportedAt)).not.toBeNaN();
