@@ -47,6 +47,16 @@ class WebApiServerTest {
         EmbeddedServer embedded = EmbeddedServer.boot(CONFIG_PATH);
         server = new WebApiServer(embedded).start(0);
 
+        // Slice 70 — reset MetricsRegistry counters before this test
+        // class's HTTP probes start firing them. Counter state is
+        // process-wide static; without this, a prior test class that
+        // touched the increment paths would leak non-zero state into
+        // any assertion here. Defense-in-depth — the slice 70 admin
+        // metrics tests don't actually assert counter values today,
+        // but the cross-class hygiene contract (see resetForTest
+        // Javadoc) applies preemptively.
+        mage.webapi.metrics.MetricsRegistry.resetForTest();
+
         // Acquire an anonymous Bearer for all subsequent protected routes.
         HttpResponse<String> r = postJson("/api/session", "{}");
         assertEquals(200, r.statusCode(), "anon login must succeed: " + r.body());
@@ -642,6 +652,53 @@ class WebApiServerTest {
         } finally {
             second.stop();
         }
+    }
+
+    // ---------- slice 70: admin /metrics endpoint (ADR 0010 v2 D10) ----------
+
+    @Test
+    void adminMetrics_noToken_returns401FromMiddleware() throws Exception {
+        // Bearer middleware fires before the handler. Missing token =
+        // 401 MISSING_TOKEN, regardless of route. Locks that the
+        // /api/admin/metrics route is NOT in the public allow-list
+        // (which would skip auth entirely).
+        HttpResponse<String> r = get("/api/admin/metrics");
+        assertEquals(401, r.statusCode());
+        JsonNode body = JSON.readTree(r.body());
+        assertEquals("MISSING_TOKEN", body.get("code").asText());
+    }
+
+    @Test
+    void adminMetrics_anonToken_returns403AdminRequired() throws Exception {
+        // The default test bearer is anonymous (isAdmin=false). The
+        // MetricsHandler's session.isAdmin() check rejects with 403
+        // ADMIN_REQUIRED — distinct from 401 (auth failed) because
+        // the user IS authenticated, they just lack admin scope.
+        HttpResponse<String> r = getAuthed("/api/admin/metrics");
+        assertEquals(403, r.statusCode());
+        JsonNode body = JSON.readTree(r.body());
+        assertEquals("ADMIN_REQUIRED", body.get("code").asText());
+        assertTrue(body.get("message").asText().contains("Admin token required"),
+                "error message should hint at the admin login flow: "
+                        + body);
+    }
+
+    @Test
+    void adminMetrics_anonToken_doesNotLeakMetricsBody() throws Exception {
+        // Defense-in-depth: a 403 response must NOT carry the
+        // Prometheus body (would defeat the admin gate). The error
+        // envelope is JSON, never plain text. Lock the content type.
+        HttpResponse<String> r = getAuthed("/api/admin/metrics");
+        assertEquals(403, r.statusCode());
+        // Body should be the JSON error envelope, not Prometheus text.
+        // Anything that looks like "# HELP" or "# TYPE" leaking through
+        // would mean the handler ran before the auth check.
+        assertFalse(r.body().contains("# HELP"),
+                "403 must NOT include Prometheus output: " + r.body());
+        assertFalse(r.body().contains("# TYPE"),
+                "403 must NOT include Prometheus output: " + r.body());
+        assertFalse(r.body().contains("xmage_active_games"),
+                "403 must NOT include the active-games gauge: " + r.body());
     }
 
     // ---------- helpers ----------

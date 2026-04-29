@@ -27,6 +27,7 @@ import mage.webapi.mapper.DeckMapper;
 import mage.webapi.mapper.MatchOptionsBuilder;
 import mage.webapi.mapper.ServerStateMapper;
 import mage.webapi.mapper.VersionMapper;
+import mage.webapi.metrics.MetricsHandler;
 import mage.webapi.ws.GameStreamHandler;
 import mage.webapi.ws.RoomStreamHandler;
 import org.slf4j.Logger;
@@ -173,6 +174,13 @@ public final class WebApiServer {
             authService.logout((String) ctx.attribute("token"));
             ctx.status(204);
         });
+
+        // Protected — admin-gated metrics endpoint (slice 70 / ADR D10).
+        // Returns Prometheus text-format counters + the active-games
+        // gauge. The handler enforces session.isAdmin() internally and
+        // returns 403 ADMIN_REQUIRED for non-admin tokens. Auth itself
+        // (401 paths) is handled by the upstream BearerAuthMiddleware.
+        app.get("/api/admin/metrics", new MetricsHandler(embedded));
 
         // Protected — server state + cards
         app.get("/api/server/state", ctx ->

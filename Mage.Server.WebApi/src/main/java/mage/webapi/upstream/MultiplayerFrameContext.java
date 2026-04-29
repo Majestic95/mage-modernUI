@@ -191,6 +191,12 @@ public final class MultiplayerFrameContext {
             // fall back to "no filter" rather than crash. The risk of
             // a momentary leak in a partial state is dwarfed by the
             // risk of taking down the WS pipe on a transient.
+            // Slice 70 (ADR 0010 v2 R8) — count fail-open events on
+            // the admin /metrics endpoint so the policy is observable.
+            // Non-zero values flag transient frequency for ops; if it
+            // becomes load-bearing, v3 may flip to fail-closed.
+            mage.webapi.metrics.MetricsRegistry.increment(
+                    mage.webapi.metrics.MetricsRegistry.ROI_FILTER_FAILURES_TOTAL);
             LOG.debug("MultiplayerFrameContext.playersInRange failed; "
                     + "returning null (no filter): {}", ex.toString());
             return null;

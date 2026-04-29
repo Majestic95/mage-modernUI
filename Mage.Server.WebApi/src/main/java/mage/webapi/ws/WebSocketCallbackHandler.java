@@ -612,6 +612,13 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
         );
         appendBuffer(frame);
         broadcast(cc, frame);
+        // Slice 70 (ADR 0010 v2 D10) — count synthesized dialogClear
+        // frames for the admin /metrics endpoint. Per ADR D11b's
+        // contract ("at most one dialogClear emitted per leaver per
+        // game"), this counter equals the number of distinct
+        // (game, leaver) pairs observed since process start.
+        mage.webapi.metrics.MetricsRegistry.increment(
+                mage.webapi.metrics.MetricsRegistry.DIALOG_CLEARS_EMITTED_TOTAL);
         if (LOG.isDebugEnabled()) {
             LOG.debug("dialogClear synthesized: user={}, game={}, leaver={}",
                     username, gameId, leaverId);
@@ -1026,6 +1033,14 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
         synchronized (buffer) {
             if (buffer.size() >= BUFFER_CAPACITY) {
                 buffer.removeFirst();
+                // Slice 70 (ADR 0010 v2 D10) — count buffer overflow
+                // drops for the admin /metrics endpoint. The slice-3
+                // ring-buffer evicts oldest-first when full; this
+                // counter surfaces non-zero when reconnect-via-?since=
+                // would miss frames the user disconnected past.
+                mage.webapi.metrics.MetricsRegistry.increment(
+                        mage.webapi.metrics.MetricsRegistry
+                                .BUFFER_OVERFLOW_DROPS_TOTAL);
             }
             buffer.addLast(frame);
         }
@@ -1049,6 +1064,13 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
             }
             try {
                 ctx.send(frame);
+                // Slice 70 — count successful frame egress per send
+                // (NOT per call). Failed sends (catch below) don't
+                // count — they're observable via the WARN log and
+                // are out of scope for v2 metrics.
+                mage.webapi.metrics.MetricsRegistry.increment(
+                        mage.webapi.metrics.MetricsRegistry
+                                .FRAMES_EGRESSED_TOTAL);
             } catch (RuntimeException ex) {
                 LOG.warn("WS send failed for user={}, method={}: {}",
                         username, frame.method(), ex.getMessage());
