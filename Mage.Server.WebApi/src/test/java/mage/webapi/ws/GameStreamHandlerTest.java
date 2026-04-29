@@ -341,6 +341,94 @@ class GameStreamHandlerTest {
         }
     }
 
+    // ---------- slice 69e: multiplayer e2e (ADR 0010 v2 D1, D3c, D11) ----------
+
+    @Test
+    void multiplayer_4pFfa_gameInitCarriesFourPlayers() throws Exception {
+        // Smoke test for the 4p FFA exit gate. Boots a real engine,
+        // creates a 4-seat FFA, opens the game stream, and asserts
+        // that gameInit / gameUpdate frames carry exactly 4 players.
+        // Pre-69a-d this would fail at three points: lobby couldn't
+        // build the table (slice 69d aiAllowed gate), the wire shape
+        // would be 1.19 (no teamId / goadingPlayerIds), the mapper
+        // would fan out unfiltered rosters (slice 69c). All three
+        // are now in place — this test proves the chain works.
+        MultiplayerFixture fx = multiplayerFixture(4);
+        TestListener listener = new TestListener();
+        WebSocket ws = openWs(fx.gameId(), fx.token(), listener);
+        try {
+            listener.awaitFrame(FRAME_WAIT); // streamHello
+            // The first game-state frame after upstream's join-ack
+            // pumps gameInit. Find it past any chatMessage / synthetic
+            // frames the engine fires during boot.
+            String initFrame = awaitMethod(listener, "gameInit",
+                    Duration.ofSeconds(20));
+            JsonNode env = JSON.readTree(initFrame);
+            assertEquals(SchemaVersion.CURRENT, env.get("schemaVersion").asText());
+            JsonNode gv = env.get("data");
+            JsonNode players = gv.get("players");
+            assertNotNull(players);
+            assertTrue(players.isArray());
+            assertEquals(4, players.size(),
+                    "4p FFA: gameInit must carry exactly 4 PlayerView entries");
+            // myPlayerId is the requesting human (NOT one of the AIs).
+            String myPlayerId = gv.get("myPlayerId").asText();
+            assertNotNull(myPlayerId);
+            assertFalse(myPlayerId.isEmpty(),
+                    "myPlayerId must be populated for the seated player");
+        } finally {
+            ws.sendClose(WebSocket.NORMAL_CLOSURE, "test done").join();
+        }
+    }
+
+    @Test
+    void multiplayer_4pFfa_schema120Fields_areOnTheWire() throws Exception {
+        // Slice 69a/69c lock — schema 1.20 multiplayer fields surface
+        // on the gameInit/gameUpdate wire shape. Specifically:
+        //   - WebPlayerView.teamId: null in v2 (per ADR R1 — no 2HG
+        //     plugin upstream, no source data)
+        //   - WebPermanentView.goadingPlayerIds: [] when not goaded
+        //     (the basic Forest deck never goads anything)
+        //
+        // We can't easily play creatures in a unit test (engine
+        // requires keepers / a real opponent's priority pass), so
+        // we lock the field SHAPE — present on PlayerView, populated
+        // as null. This catches any wire-format regression that
+        // drops the field accidentally.
+        MultiplayerFixture fx = multiplayerFixture(4);
+        TestListener listener = new TestListener();
+        WebSocket ws = openWs(fx.gameId(), fx.token(), listener);
+        try {
+            listener.awaitFrame(FRAME_WAIT); // streamHello
+            String initFrame = awaitMethod(listener, "gameInit",
+                    Duration.ofSeconds(20));
+            JsonNode env = JSON.readTree(initFrame);
+            JsonNode firstPlayer = env.get("data").get("players").get(0);
+
+            // teamId field MUST be present (additive schema-1.20
+            // field, ships as null per ADR R1).
+            assertTrue(firstPlayer.has("teamId"),
+                    "WebPlayerView must carry teamId field "
+                            + "(schema 1.20, ADR D3a). Got: " + firstPlayer);
+            assertTrue(firstPlayer.get("teamId").isNull(),
+                    "teamId is null in v2 — no 2HG plugin upstream "
+                            + "produces team-grouped state. ADR R1.");
+
+            // Battlefield is empty at gameInit, so we can't observe
+            // a permanent's goadingPlayerIds. The field is locked at
+            // the unit level by CardViewMapperTest's permanent_jsonShape
+            // tests; here we just verify the players array was
+            // emitted unfiltered (RoI.ALL default for FFA).
+            JsonNode players = env.get("data").get("players");
+            assertEquals(4, players.size(),
+                    "FFA defaults to RangeOfInfluence.ALL → roster ships "
+                            + "unfiltered (slice 69c D1). All 4 PlayerViews "
+                            + "must be on the wire.");
+        } finally {
+            ws.sendClose(WebSocket.NORMAL_CLOSURE, "test done").join();
+        }
+    }
+
     // ---------- slice 2: chat outbound + inbound ----------
 
     @Test
@@ -1474,6 +1562,111 @@ class GameStreamHandlerTest {
         // RoomStreamHandler.onConnect does for room chats).
         embedded.managerFactory().chatManager().joinChat(chatId, user.getId());
         return new RealGameFixture(token, user.getId(), gameId, chatId);
+    }
+
+    /**
+     * Slice 69e (ADR 0010 v2 — multiplayer e2e fixture). Real multi-
+     * player game fixture for N-player FFA tests. Parallels
+     * {@link #realGameFixture()} but builds a Free For All game with
+     * 1 HUMAN + (seatCount - 1) COMPUTER_MAD seats.
+     *
+     * <p>Carries the same shape as {@link RealGameFixture} —
+     * (token, userId, gameId, chatId) — so multiplayer tests can
+     * reuse the existing {@link #openWs} / {@link #awaitMethod}
+     * helpers without duplication.
+     *
+     * <p>Per-call (not cached) per the same rationale as
+     * {@code realGameFixture()}: cross-test state pollution from
+     * engine traffic flooding handler buffers breaks chat-broadcast
+     * and frame-ordering tests when a fixture is reused. Per-call
+     * adds ~3s for a 4p game (1 create + 3 /ai + 1 /join + 1 /start)
+     * but keeps each test's upstream state pristine.
+     */
+    private record MultiplayerFixture(
+            String token, UUID userId, UUID gameId, UUID chatId, int seatCount) {
+    }
+
+    private synchronized MultiplayerFixture multiplayerFixture(int seatCount)
+            throws Exception {
+        if (seatCount < 3 || seatCount > 4) {
+            throw new IllegalArgumentException(
+                    "MultiplayerFixture supports 3-4 player FFA only "
+                            + "per ADR 0010 v2 scope; got: " + seatCount);
+        }
+        HttpResponse<String> login = postJson("/api/session", "{}");
+        assertEquals(200, login.statusCode(), login.body());
+        JsonNode body = JSON.readTree(login.body());
+        String token = body.get("token").asText();
+        String username = body.get("username").asText();
+
+        String roomId = JSON.readTree(getAuthed(token, "/api/server/main-room").body())
+                .get("roomId").asText();
+
+        // Build the seats array: 1 HUMAN + (seatCount - 1) AI seats.
+        StringBuilder seats = new StringBuilder("[\"HUMAN\"");
+        for (int i = 1; i < seatCount; i++) {
+            seats.append(",\"COMPUTER_MAD\"");
+        }
+        seats.append("]");
+        String tableBody = "{\"gameType\":\"Free For All\","
+                + "\"deckType\":\"Constructed - Vintage\","
+                + "\"winsNeeded\":1,\"seats\":" + seats + "}";
+        HttpResponse<String> tableR = postWithToken(token,
+                "/api/rooms/" + roomId + "/tables", tableBody);
+        assertEquals(200, tableR.statusCode(),
+                "MultiplayerFixture table create failed: " + tableR.body());
+        String tableId = JSON.readTree(tableR.body()).get("tableId").asText();
+
+        // Fill the (seatCount - 1) AI slots sequentially. Mirrors the
+        // CreateTableModal flow per slice 69d's loop comment — addAi
+        // is read-then-write in upstream LobbyService; concurrent
+        // calls could race onto the same seat.
+        for (int i = 1; i < seatCount; i++) {
+            postWithToken(token,
+                    "/api/rooms/" + roomId + "/tables/" + tableId + "/ai",
+                    "{\"playerType\":\"COMPUTER_MAD\"}");
+        }
+
+        // HUMAN seat needs an explicit deck.
+        String deckJson = buildForestDeckJson(token, 60);
+        String joinBody = "{\"name\":\"e2e-tester\",\"skill\":1,\"deck\":"
+                + deckJson + "}";
+        HttpResponse<String> join = postWithToken(token,
+                "/api/rooms/" + roomId + "/tables/" + tableId + "/join", joinBody);
+        assertEquals(204, join.statusCode(),
+                "MultiplayerFixture join failed: " + join.body());
+
+        // Lobby socket to capture the startGame frame.
+        UUID lobbyRoomId = UUID.fromString(roomId);
+        TestListener lobby = new TestListener();
+        URI lobbyUri = URI.create("ws://localhost:" + server.port()
+                + "/api/rooms/" + lobbyRoomId + "/stream?token=" + token);
+        WebSocket lobbyWs = HTTP.newWebSocketBuilder()
+                .buildAsync(lobbyUri, lobby)
+                .get(5, TimeUnit.SECONDS);
+        UUID gameId;
+        try {
+            lobby.awaitFrame(FRAME_WAIT); // streamHello
+            HttpResponse<String> start = postWithToken(token,
+                    "/api/rooms/" + roomId + "/tables/" + tableId + "/start", "");
+            assertEquals(204, start.statusCode(),
+                    "MultiplayerFixture start failed: " + start.body());
+            // Game engine boot is slower with 4 seats than 2; widen the
+            // wait window beyond the standard FRAME_WAIT.
+            JsonNode startFrame = JSON.readTree(
+                    awaitMethod(lobby, "startGame", Duration.ofSeconds(20)));
+            gameId = UUID.fromString(startFrame.get("data").get("gameId").asText());
+        } finally {
+            lobbyWs.sendClose(WebSocket.NORMAL_CLOSURE, "fixture done").join();
+        }
+
+        User user = embedded.managerFactory().userManager()
+                .getUserByName(username)
+                .orElseThrow(() -> new AssertionError(
+                        "user not in upstream UserManager after fixture login"));
+        UUID chatId = embedded.server().chatFindByGame(gameId);
+        embedded.managerFactory().chatManager().joinChat(chatId, user.getId());
+        return new MultiplayerFixture(token, user.getId(), gameId, chatId, seatCount);
     }
 
     /**
