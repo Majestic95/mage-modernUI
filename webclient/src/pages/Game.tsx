@@ -7,7 +7,7 @@ import {
   type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, LayoutGroup, motion, MotionConfig } from 'framer-motion';
 import { useAuthStore } from '../auth/store';
 import { GameStream } from '../game/stream';
 import { useGameStore } from '../game/store';
@@ -113,34 +113,73 @@ export function Game({ gameId, onLeave }: Props) {
     // min-h-screen, the page grew past viewport once the log
     // exceeded the screen and the user had to scroll the entire
     // window to read the log / reach the action panel.
-    <div className="h-screen flex flex-col bg-zinc-950 text-zinc-100 overflow-hidden">
-      <Header
-        gameId={gameId}
-        connection={connection}
-        closeReason={closeReason}
-        gameView={gameView}
-        onLeave={onLeave}
-      />
-      {protocolError && (
-        <div role="alert" className="bg-red-900/40 border-b border-red-800 px-6 py-2 text-sm text-red-200">
-          {protocolError}
-        </div>
-      )}
-      {gameView && <PhaseTimeline gameView={gameView} />}
-      <main className="flex-1 flex min-h-0">
-        <div className="flex-1 flex flex-col min-w-0">
-          {gameView ? (
-            <Battlefield gv={gameView} stream={stream} />
-          ) : (
-            <Waiting connection={connection} />
+    //
+    // Slice 52c — MotionConfig + LayoutGroup wrap the whole game
+    // window so the three card-face components (StackTileFace,
+    // BattlefieldTile, HandCardSlot) participate in one shared
+    // Framer-Motion layoutId graph. Without LayoutGroup, layoutId
+    // matching only happens within a single AnimatePresence; our
+    // zones live in separate AnimatePresences (stack vs.
+    // battlefield), so cross-zone glides need the LayoutGroup to
+    // bridge them. MotionConfig.reducedMotion="user" honors the
+    // OS-level prefers-reduced-motion setting — users with it on
+    // see instant transitions instead of glides.
+    //
+    // Sideboard/draft zones don't yet exist as separate components
+    // in this fork; if they're ever added in their own panel and
+    // don't need cross-zone glides into the in-game stack, scope
+    // their LayoutGroup separately to avoid the 60+-card hand-fan
+    // performance hit.
+    //
+    // SCOPE CONTRACT (read before adding new animated UI):
+    //   • Anything that should glide via layoutId must render as a
+    //     descendant of THIS LayoutGroup. The hand fan, stack zone,
+    //     and battlefield are all reached via Battlefield → so they
+    //     qualify.
+    //   • Anything modal/overlay that should NOT participate in
+    //     layoutId matching (sideboard panels, deck builder, future
+    //     spell-history panel, etc.) must render outside this tree
+    //     — preferably via a portal at App.tsx level. SideboardModal
+    //     already lives in App.tsx for that reason. HoverCardDetail
+    //     uses createPortal to escape this scope; that's intentional.
+    //   • Performance budget: keep tracked motion elements inside the
+    //     LayoutGroup ≤ ~50 during a turn. A typical game is ≤7 hand
+    //     + ≤20 battlefield + ≤3 stack ≈ 30 elements, well within
+    //     budget. If a future feature would exceed that (e.g. a
+    //     graveyard popover that shows 60 cards with layoutId), put
+    //     it in its own LayoutGroup or no LayoutGroup at all.
+    <MotionConfig reducedMotion="user">
+      <LayoutGroup>
+        <div className="h-screen flex flex-col bg-zinc-950 text-zinc-100 overflow-hidden">
+          <Header
+            gameId={gameId}
+            connection={connection}
+            closeReason={closeReason}
+            gameView={gameView}
+            onLeave={onLeave}
+          />
+          {protocolError && (
+            <div role="alert" className="bg-red-900/40 border-b border-red-800 px-6 py-2 text-sm text-red-200">
+              {protocolError}
+            </div>
           )}
+          {gameView && <PhaseTimeline gameView={gameView} />}
+          <main className="flex-1 flex min-h-0">
+            <div className="flex-1 flex flex-col min-w-0">
+              {gameView ? (
+                <Battlefield gv={gameView} stream={stream} />
+              ) : (
+                <Waiting connection={connection} />
+              )}
+            </div>
+            {gameView && <GameLog />}
+          </main>
+          {gameView && <ActionPanel stream={stream} />}
+          <GameDialog stream={stream} />
+          <GameEndOverlay gameId={gameId} onLeave={onLeave} />
         </div>
-        {gameView && <GameLog />}
-      </main>
-      {gameView && <ActionPanel stream={stream} />}
-      <GameDialog stream={stream} />
-      <GameEndOverlay gameId={gameId} onLeave={onLeave} />
-    </div>
+      </LayoutGroup>
+    </MotionConfig>
   );
 }
 
@@ -1040,6 +1079,26 @@ function Battlefield({
  * click router. The tooltip surfaces the rules text so the player
  * can see what's about to resolve.
  */
+/**
+ * Slice 52c — shared spring for the Framer Motion `layout` animation
+ * (cross-zone glides on stack-tile → battlefield-tile resolution and
+ * hand-tile → stack-tile cast). Tuned for a card-game feel: ~400-500ms
+ * settle time, subtle overshoot, no oscillation. Different from the
+ * enter/exit springs (slice 50) which are stiffer because they're
+ * animating opacity + small y/scale, not a full positional glide.
+ *
+ * The {@code transition.layout} key on a motion.div applies ONLY to
+ * layout-driven animations (own resize/reposition + layoutId glides
+ * to a sibling), not to {@code initial}/{@code animate}/{@code exit};
+ * those keep their own `transition` prop unchanged.
+ */
+const LAYOUT_TRANSITION = {
+  type: 'spring' as const,
+  stiffness: 280,
+  damping: 26,
+  mass: 0.7,
+};
+
 function StackZone({ stack }: { stack: Record<string, WebCardView> }) {
   const entries = Object.values(stack).reverse();
   // Slice 50 — keep the section mounted while AnimatePresence flushes
@@ -1062,10 +1121,26 @@ function StackZone({ stack }: { stack: Record<string, WebCardView> }) {
             const tooltip = [card.typeLine, ...(card.rules ?? [])]
               .filter(Boolean)
               .join('\n');
+            // Slice 52c — layoutId={card.cardId} ties this stack tile
+            // to the resolved permanent's battlefield tile (same
+            // cardId after the spell resolves, since cardId is the
+            // underlying-Card UUID — Spell.id ≠ Permanent.id but
+            // Spell.getCard().getId() === Permanent.id). LayoutGroup
+            // at the Game-page root crosses the AnimatePresence
+            // boundary so Framer matches the two siblings.
+            //
+            // Empty-string cardId is a defensive default for older
+            // fixtures (slice 52b) — passing '' as layoutId would
+            // collide every "missing" card into one shared id.
+            // {@code undefined} disables layout-id matching for
+            // that tile.
+            const layoutId = card.cardId ? card.cardId : undefined;
             return (
               <motion.div
                 key={card.id}
                 layout
+                layoutId={layoutId}
+                data-layout-id={layoutId}
                 initial={{ opacity: 0, y: -16, scale: 0.85 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 24, scale: 0.85 }}
@@ -1074,6 +1149,7 @@ function StackZone({ stack }: { stack: Record<string, WebCardView> }) {
                   stiffness: 380,
                   damping: 30,
                   mass: 0.6,
+                  layout: LAYOUT_TRANSITION,
                 }}
               >
                 <HoverCardDetail card={card}>
@@ -1269,33 +1345,50 @@ function PlayerArea({
         ) : (
           // Slice 50 — ETB animation. Slides up from below + scales
           // so the eye reads "spell resolves into permanent" as one
-          // motion. Cross-zone DOM-tracked layoutId is queued for
-          // slice 51 (needs cardId schema bump — Spell.id ≠
-          // Permanent.id upstream).
+          // motion.
+          //
+          // Slice 52c — pairs with the StackZone {@code layoutId} so
+          // a resolving creature spell glides from its stack tile to
+          // its battlefield tile (same {@code cardId}). LayoutGroup
+          // at the Game root bridges the two AnimatePresences so
+          // Framer can match the IDs across zones. The
+          // {@code initial}/{@code exit} y+scale springs above keep
+          // working alongside layoutId — layout-driven motion uses
+          // the {@code transition.layout} spring (LAYOUT_TRANSITION),
+          // and the regular {@code initial}/{@code exit} keys use the
+          // default spring on this transition.
           <AnimatePresence mode="popLayout" initial={false}>
-            {battlefield.map((perm) => (
-              <motion.div
-                key={perm.card.id}
-                layout
-                initial={{ opacity: 0, y: 24, scale: 0.85 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: -16, scale: 0.85 }}
-                transition={{
-                  type: 'spring',
-                  stiffness: 360,
-                  damping: 32,
-                  mass: 0.7,
-                }}
-              >
-                <BattlefieldTile
-                  perm={perm}
-                  canAct={canAct}
-                  onClick={onObjectClick}
-                  isEligibleCombat={eligibleCombatIds.has(perm.card.id)}
-                  combatRole={combatRoles.get(perm.card.id) ?? null}
-                />
-              </motion.div>
-            ))}
+            {battlefield.map((perm) => {
+              const layoutId = perm.card.cardId
+                ? perm.card.cardId
+                : undefined;
+              return (
+                <motion.div
+                  key={perm.card.id}
+                  layout
+                  layoutId={layoutId}
+                  data-layout-id={layoutId}
+                  initial={{ opacity: 0, y: 24, scale: 0.85 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -16, scale: 0.85 }}
+                  transition={{
+                    type: 'spring',
+                    stiffness: 360,
+                    damping: 32,
+                    mass: 0.7,
+                    layout: LAYOUT_TRANSITION,
+                  }}
+                >
+                  <BattlefieldTile
+                    perm={perm}
+                    canAct={canAct}
+                    onClick={onObjectClick}
+                    isEligibleCombat={eligibleCombatIds.has(perm.card.id)}
+                    combatRole={combatRoles.get(perm.card.id) ?? null}
+                  />
+                </motion.div>
+              );
+            })}
           </AnimatePresence>
         )}
       </div>
@@ -1870,6 +1963,19 @@ function HandCardSlot({
   const transform = lifted
     ? `translate(-50%, 0) translateX(${x}px) translateY(-56px) rotate(0deg) scale(1.15)`
     : `translate(-50%, 0) translateX(${x}px) translateY(${y}px) rotate(${rot}deg)`;
+  // Slice 52c — layoutId pinned to an INNER motion.div so the
+  // fan-arc CSS transform on the OUTER div doesn't conflict with
+  // Framer's layout-tracking. Framer reads the motion element's
+  // bounding-client-rect to compute glide trajectories — putting
+  // layoutId on the outer (fan-positioned) div would make Framer
+  // think every hand card is already at the rotated/translated
+  // position, and the cross-zone glide would start from the wrong
+  // spot. The inner motion.div sits inside the button at the
+  // visible 100×140 face position, so its bbox matches what the
+  // user actually sees.
+  //
+  // Empty cardId → omit layoutId (defensive default; see slice 52b).
+  const layoutId = card.cardId ? card.cardId : undefined;
   return (
     <div
       className="absolute left-1/2 top-2 transition-transform duration-150 ease-out origin-bottom"
@@ -1901,7 +2007,13 @@ function HandCardSlot({
             (isDragging ? ' opacity-30' : '')
           }
         >
-          <HandCardFace card={card} />
+          <motion.div
+            layoutId={layoutId}
+            data-layout-id={layoutId}
+            transition={{ layout: LAYOUT_TRANSITION }}
+          >
+            <HandCardFace card={card} />
+          </motion.div>
         </button>
       </HoverCardDetail>
     </div>

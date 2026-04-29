@@ -1777,4 +1777,133 @@ describe('Game page', () => {
     expect(gain).toBeDefined();
     expect(gain).toHaveClass('text-emerald-300');
   });
+
+  /* ---------- slice 52c: cross-zone Framer Motion layoutId ---------- */
+  //
+  // The wrapping motion.div for each zone-tile component carries a
+  // `layoutId={card.cardId}` so Framer can match the same physical
+  // Magic card across stack / battlefield / hand and glide it. We
+  // assert via a `data-layout-id` data attribute (mirror of the
+  // layoutId prop, robust against framer-motion internals churn).
+
+  it('battlefield permanents render a layoutId data attribute matching their cardId', () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    const gv = buildGameView();
+    // TAPPED_FOREST_PERMANENT's card was built off FOREST (no
+    // explicit cardId), so the schema default '' is in place. To
+    // exercise the happy path, swap in a fresh card with a real
+    // cardId field.
+    const me = gv.players.find((p) => p.controlled)!;
+    const stableId = '88888888-8888-8888-8888-888888888888';
+    const animatedCard = webCardViewSchema.parse({
+      ...FOREST,
+      id: stableId,
+      cardId: stableId,
+      name: 'Animated Forest',
+    });
+    me.battlefield = {
+      [stableId]: webPermanentViewSchema.parse({
+        card: animatedCard,
+        controllerName: 'alice',
+        tapped: false,
+        flipped: false,
+        transformed: false,
+        phasedIn: true,
+        summoningSickness: false,
+        damage: 0,
+        attachments: [],
+        attachedTo: '',
+        attachedToPermanent: false,
+      }),
+    };
+    act(() => {
+      useGameStore.setState({ connection: 'open', gameView: gv });
+    });
+    // The motion.div wraps the BattlefieldTile button; query the
+    // DOM ancestor that carries data-layout-id. Each permanent's
+    // button is testid="permanent" — its closest data-layout-id
+    // ancestor is the motion.div.
+    const button = screen.getByTestId('permanent');
+    const motionWrapper = button.closest('[data-layout-id]');
+    expect(motionWrapper).not.toBeNull();
+    expect(motionWrapper).toHaveAttribute('data-layout-id', stableId);
+  });
+
+  it('stack entries render a layoutId data attribute matching their cardId', () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    const gv = buildGameView();
+    const stableId = '99999999-9999-9999-9999-999999999999';
+    // Spell.id ≠ Card.id upstream — the wire's `id` for a stack
+    // entry is the Spell UUID; `cardId` is the underlying Card's
+    // UUID and matches the resolved permanent's id. Here we use
+    // distinct values to mirror the real protocol, and assert the
+    // motion-wrapper carries cardId (not id).
+    const spell = webCardViewSchema.parse({
+      ...FOREST,
+      id: 'aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa',
+      cardId: stableId,
+      name: 'Lightning Bolt',
+      manaCost: '{R}',
+      typeLine: 'Instant',
+      types: ['INSTANT'],
+      subtypes: [],
+    });
+    gv.stack = { [spell.id]: spell };
+    act(() => {
+      useGameStore.setState({ connection: 'open', gameView: gv });
+    });
+    const entry = screen.getByTestId('stack-entry');
+    const motionWrapper = entry.closest('[data-layout-id]');
+    expect(motionWrapper).not.toBeNull();
+    expect(motionWrapper).toHaveAttribute('data-layout-id', stableId);
+  });
+
+  it('omits the layoutId data attribute when cardId is empty', () => {
+    // Slice 52b defaults missing cardId to ''. Animation layer
+    // treats '' as "do not animate" — passing '' as layoutId would
+    // collide every "missing" card into one shared id. The
+    // motion.div for an empty cardId should have no
+    // data-layout-id attribute (it's set to undefined when empty).
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    // The default fixture's TAPPED_FOREST_PERMANENT was built
+    // before slice 52a, so its `cardId` parses to '' via the
+    // schema default. That's exactly the empty-string path we
+    // want to exercise.
+    act(() => {
+      useGameStore.setState({
+        connection: 'open',
+        gameView: buildGameView(),
+      });
+    });
+    const button = screen.getByTestId('permanent');
+    // The motion.div sits as an ancestor of the permanent button.
+    // With layoutId === undefined, React emits no data-layout-id
+    // attribute, so closest('[data-layout-id]') must return null
+    // (no animated wrapper participates in the layoutId graph).
+    const wrapper = button.closest('[data-layout-id]');
+    expect(wrapper).toBeNull();
+  });
+
+  it('hand cards render a layoutId data attribute matching their cardId', () => {
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    const gv = buildGameView();
+    const stableId = 'cccccccc-1111-1111-1111-cccccccccccc';
+    const handCard = webCardViewSchema.parse({
+      ...FOREST,
+      id: stableId,
+      cardId: stableId,
+      name: 'Hand Forest',
+    });
+    gv.myHand = { [stableId]: handCard };
+    act(() => {
+      useGameStore.setState({ connection: 'open', gameView: gv });
+    });
+    const handButton = screen.getByTestId('hand-card');
+    // The HandCardSlot puts the motion.div INSIDE the button
+    // (around HandCardFace), so the data-layout-id sits beneath
+    // the button. Use querySelector rather than closest().
+    const inner = handButton.querySelector('[data-layout-id]');
+    expect(inner).not.toBeNull();
+    expect(inner).toHaveAttribute('data-layout-id', stableId);
+  });
 });
