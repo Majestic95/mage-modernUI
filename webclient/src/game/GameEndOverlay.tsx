@@ -1,3 +1,6 @@
+import { useRef } from 'react';
+import type { WebGameEndView } from '../api/schemas';
+import { useModalA11y } from '../util/useModalA11y';
 import { useGameStore } from './store';
 
 /* ---------- game-log download (slice 19 / Phase 5) ---------- */
@@ -100,93 +103,13 @@ export function GameEndOverlay({
   const gameLogCount = useGameStore((s) => s.gameLog.length);
 
   if (gameEnd) {
-    const noLog = gameLogCount === 0;
-    const handleSaveGameLog = () => {
-      // Snapshot at click-time so a late inform doesn't slip in
-      // partway through serialization.
-      const state = useGameStore.getState();
-      const log = state.gameLog;
-      if (log.length === 0) {
-        return;
-      }
-      const exportedAt = new Date();
-      const payload = {
-        schemaVersion: GAME_LOG_EXPORT_SCHEMA_VERSION,
-        exportedAt: exportedAt.toISOString(),
-        gameId,
-        match: {
-          won: gameEnd.won,
-          wins: gameEnd.wins,
-          winsNeeded: gameEnd.winsNeeded,
-          matchInfo: gameEnd.matchInfo,
-          gameInfo: gameEnd.gameInfo,
-          additionalInfo: gameEnd.additionalInfo,
-        },
-        entries: log,
-      };
-      downloadJson(buildGameLogFilename(gameId, exportedAt), payload);
-    };
     return (
-      <div
-        role="dialog"
-        aria-modal="true"
-        data-testid="game-end-modal"
-        className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-6"
-      >
-        <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-8 max-w-md w-full space-y-4 shadow-2xl text-center">
-          <h2
-            className={
-              'text-2xl font-semibold ' +
-              (gameEnd.won ? 'text-emerald-300' : 'text-red-300')
-            }
-          >
-            {gameEnd.won ? 'Match won' : 'Match lost'}
-          </h2>
-          {gameEnd.matchInfo && (
-            <p className="text-sm text-zinc-300">{gameEnd.matchInfo}</p>
-          )}
-          {gameEnd.gameInfo && (
-            <p className="text-sm text-zinc-400">{gameEnd.gameInfo}</p>
-          )}
-          <p className="text-zinc-200">
-            <span className="text-zinc-500 mr-2">Score:</span>
-            <span className="font-mono">
-              {gameEnd.wins}/{gameEnd.winsNeeded}
-            </span>
-          </p>
-          {gameEnd.additionalInfo && (
-            <p className="text-xs text-zinc-500">{gameEnd.additionalInfo}</p>
-          )}
-          <div className="flex justify-center gap-3 pt-2">
-            <button
-              type="button"
-              data-testid="save-game-log"
-              onClick={handleSaveGameLog}
-              disabled={noLog}
-              title={
-                noLog
-                  ? 'No game-log entries to export'
-                  : 'Download a JSON transcript of this match'
-              }
-              className={
-                'px-5 py-2 rounded font-medium ' +
-                (noLog
-                  ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
-                  : 'bg-zinc-700 hover:bg-zinc-600 text-zinc-100')
-              }
-            >
-              Save game log
-            </button>
-            <button
-              type="button"
-              onClick={onLeave}
-              className="px-5 py-2 rounded bg-fuchsia-600 hover:bg-fuchsia-500 text-white font-medium"
-            >
-              Back to lobby
-            </button>
-          </div>
-        </div>
-      </div>
+      <GameEndDialog
+        gameId={gameId}
+        gameEnd={gameEnd}
+        gameLogCount={gameLogCount}
+        onLeave={onLeave}
+      />
     );
   }
 
@@ -212,4 +135,120 @@ export function GameEndOverlay({
   }
 
   return null;
+}
+
+/**
+ * Match-end dialog. Extracted as its own component so {@link
+ * useModalA11y} can scope the focus trap + initial focus to a
+ * stable ref tied to the dialog's own mount/unmount, rather than
+ * the parent's gameEnd-toggle. ESC intentionally does not close
+ * this modal — Back-to-lobby is destructive (leaves the room) and
+ * there's no other safe dismiss action; the user must click the
+ * button explicitly.
+ */
+function GameEndDialog({
+  gameId,
+  gameEnd,
+  gameLogCount,
+  onLeave,
+}: {
+  gameId: string;
+  gameEnd: WebGameEndView;
+  gameLogCount: number;
+  onLeave: () => void;
+}) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useModalA11y(dialogRef, {});
+
+  const noLog = gameLogCount === 0;
+  const handleSaveGameLog = () => {
+    // Snapshot at click-time so a late inform doesn't slip in
+    // partway through serialization.
+    const state = useGameStore.getState();
+    const log = state.gameLog;
+    if (log.length === 0) {
+      return;
+    }
+    const exportedAt = new Date();
+    const payload = {
+      schemaVersion: GAME_LOG_EXPORT_SCHEMA_VERSION,
+      exportedAt: exportedAt.toISOString(),
+      gameId,
+      match: {
+        won: gameEnd.won,
+        wins: gameEnd.wins,
+        winsNeeded: gameEnd.winsNeeded,
+        matchInfo: gameEnd.matchInfo,
+        gameInfo: gameEnd.gameInfo,
+        additionalInfo: gameEnd.additionalInfo,
+      },
+      entries: log,
+    };
+    downloadJson(buildGameLogFilename(gameId, exportedAt), payload);
+  };
+  return (
+    <div
+      ref={dialogRef}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="game-end-heading"
+      data-testid="game-end-modal"
+      className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-6"
+    >
+      <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-8 max-w-md w-full space-y-4 shadow-2xl text-center">
+        <h2
+          id="game-end-heading"
+          className={
+            'text-2xl font-semibold ' +
+            (gameEnd.won ? 'text-emerald-300' : 'text-red-300')
+          }
+        >
+          {gameEnd.won ? 'Match won' : 'Match lost'}
+        </h2>
+        {gameEnd.matchInfo && (
+          <p className="text-sm text-zinc-300">{gameEnd.matchInfo}</p>
+        )}
+        {gameEnd.gameInfo && (
+          <p className="text-sm text-zinc-400">{gameEnd.gameInfo}</p>
+        )}
+        <p className="text-zinc-200">
+          <span className="text-zinc-500 mr-2">Score:</span>
+          <span className="font-mono">
+            {gameEnd.wins}/{gameEnd.winsNeeded}
+          </span>
+        </p>
+        {gameEnd.additionalInfo && (
+          <p className="text-xs text-zinc-500">{gameEnd.additionalInfo}</p>
+        )}
+        <div className="flex justify-center gap-3 pt-2">
+          <button
+            type="button"
+            data-testid="save-game-log"
+            onClick={handleSaveGameLog}
+            disabled={noLog}
+            title={
+              noLog
+                ? 'No game-log entries to export'
+                : 'Download a JSON transcript of this match'
+            }
+            className={
+              'px-5 py-2 rounded font-medium ' +
+              (noLog
+                ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
+                : 'bg-zinc-700 hover:bg-zinc-600 text-zinc-100')
+            }
+          >
+            Save game log
+          </button>
+          <button
+            type="button"
+            onClick={onLeave}
+            className="px-5 py-2 rounded bg-fuchsia-600 hover:bg-fuchsia-500 text-white font-medium"
+          >
+            Back to lobby
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }

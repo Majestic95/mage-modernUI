@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useRef, useState } from 'react';
 import { ApiError, request } from '../api/client';
 import { useAuthStore } from '../auth/store';
 import { useDecksStore, toRequestBody, type SavedDeck } from '../decks/store';
+import { useModalA11y } from '../util/useModalA11y';
 
 interface Props {
   roomId: string;
@@ -30,13 +31,13 @@ export function JoinTableModal({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !submitting) onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose, submitting]);
+  // Modal a11y: ESC, focus trap, initial focus, focus restoration.
+  // The submitting guard is preserved by withholding onClose while
+  // a join is in flight (so ESC is a no-op until the request lands).
+  const modalRootRef = useRef<HTMLDivElement>(null);
+  useModalA11y(modalRootRef, {
+    onClose: submitting ? undefined : onClose,
+  });
 
   const onSubmit = async () => {
     if (!session) {
@@ -75,6 +76,10 @@ export function JoinTableModal({
 
   return (
     <div
+      ref={modalRootRef}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="join-table-heading"
       className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
       onClick={(e) => {
         if (e.target === e.currentTarget && !submitting) onClose();
@@ -82,7 +87,7 @@ export function JoinTableModal({
     >
       <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-6 max-w-md w-full space-y-4">
         <header className="flex items-baseline justify-between">
-          <h2 className="text-xl font-semibold">Join table</h2>
+          <h2 id="join-table-heading" className="text-xl font-semibold">Join table</h2>
           <button
             type="button"
             onClick={onClose}

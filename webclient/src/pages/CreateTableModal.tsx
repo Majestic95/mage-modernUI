@@ -1,7 +1,8 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { ApiError, request } from '../api/client';
 import { webTableSchema, type WebServerState } from '../api/schemas';
 import { useAuthStore } from '../auth/store';
+import { useModalA11y } from '../util/useModalA11y';
 
 interface Props {
   roomId: string;
@@ -77,16 +78,13 @@ export function CreateTableModal({ roomId, serverState, onClose, onCreated }: Pr
   const showAttackOption = selectedGame?.useAttackOption ?? false;
   const showRange = selectedGame?.useRange ?? false;
 
-  // ESC key dismisses the modal.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !submitting) {
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose, submitting]);
+  // ESC key dismisses the modal (and focus trap + restore is wired
+  // by the same hook). The submitting guard is preserved by passing
+  // a noop when in-flight; the hook still owns ESC otherwise.
+  const modalRootRef = useRef<HTMLDivElement>(null);
+  useModalA11y(modalRootRef, {
+    onClose: submitting ? undefined : onClose,
+  });
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -170,6 +168,10 @@ export function CreateTableModal({ roomId, serverState, onClose, onCreated }: Pr
 
   return (
     <div
+      ref={modalRootRef}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="create-table-heading"
       className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
       onClick={(e) => {
         if (e.target === e.currentTarget && !submitting) onClose();
@@ -180,7 +182,7 @@ export function CreateTableModal({ roomId, serverState, onClose, onCreated }: Pr
         className="bg-zinc-900 border border-zinc-800 rounded-lg p-6 max-w-md w-full space-y-4 max-h-[90vh] overflow-y-auto"
       >
         <header className="flex items-baseline justify-between">
-          <h2 className="text-xl font-semibold">Create table</h2>
+          <h2 id="create-table-heading" className="text-xl font-semibold">Create table</h2>
           <button
             type="button"
             onClick={onClose}

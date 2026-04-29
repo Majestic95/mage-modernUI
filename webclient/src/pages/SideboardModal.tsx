@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { ApiError, request } from '../api/client';
 import { useAuthStore } from '../auth/store';
 import { useGameStore } from '../game/store';
+import { useModalA11y } from '../util/useModalA11y';
 import type { WebSideboardInfo, WebSimpleCardView } from '../api/schemas';
 
 /**
@@ -71,6 +72,12 @@ function SideboardModalImpl({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Modal a11y: focus trap + initial focus + focus restoration. ESC
+  // intentionally does NOT close — sideboarding is submission-only;
+  // the engine auto-submits at timeout. So we omit {@code onClose}.
+  const modalRootRef = useRef<HTMLDivElement>(null);
+  useModalA11y(modalRootRef, {});
+
   // Live countdown. The server sends {@code time} (seconds remaining
   // until {@code autoSideboard} fires); we derive an absolute
   // {@code deadlineMs} on each fresh frame and tick a {@code remaining}
@@ -135,6 +142,10 @@ function SideboardModalImpl({
 
   return (
     <div
+      ref={modalRootRef}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="sideboard-heading"
       data-testid="sideboard-modal"
       className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4"
     >
@@ -143,7 +154,7 @@ function SideboardModalImpl({
         className="bg-zinc-900 border border-zinc-800 rounded-lg p-6 max-w-3xl w-full max-h-[90vh] flex flex-col"
       >
         <header className="flex items-baseline justify-between mb-3">
-          <h2 className="text-xl font-semibold">Sideboard</h2>
+          <h2 id="sideboard-heading" className="text-xl font-semibold">Sideboard</h2>
           <span className="text-xs text-zinc-500">
             {pending.time > 0 ? (
               <span

@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { slow } from '../animation/debug';
 import type { WebCardView } from '../api/schemas';
+import { useModalA11y } from '../util/useModalA11y';
 import { CardThumbnail } from './CardThumbnail';
 import { HoverCardDetail } from './HoverCardDetail';
 import { ManaCost } from './ManaCost';
@@ -124,19 +125,11 @@ function ZoneBrowser({
   cards: Record<string, WebCardView>;
   onClose: () => void;
 }) {
-  useEffect(() => {
-    const onKey = (ev: KeyboardEvent) => {
-      if (ev.key === 'Escape') {
-        ev.stopImmediatePropagation();
-        ev.preventDefault();
-        onClose();
-      }
-    };
-    document.addEventListener('keydown', onKey, { capture: true });
-    return () => {
-      document.removeEventListener('keydown', onKey, { capture: true });
-    };
-  }, [onClose]);
+  // Modal a11y. The hook owns ESC + focus trap; we still rely on
+  // its capture-phase keydown listener so ActionPanel's bubble-phase
+  // hotkey listener never sees the Escape that closes us.
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useModalA11y(dialogRef, { onClose });
 
   const entries = Object.values(cards);
   return (
@@ -150,7 +143,9 @@ function ZoneBrowser({
         onClick={onClose}
       />
       <div
+        ref={dialogRef}
         role="dialog"
+        aria-modal="true"
         aria-label={title}
         className="relative bg-zinc-900 border border-zinc-700 rounded-lg shadow-2xl w-[min(90vw,640px)] max-h-[80vh] flex flex-col"
       >
