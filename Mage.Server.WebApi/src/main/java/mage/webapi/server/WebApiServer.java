@@ -44,7 +44,13 @@ import java.util.UUID;
 public final class WebApiServer {
 
     private static final Logger LOG = LoggerFactory.getLogger(WebApiServer.class);
-    private static final ObjectMapper JSON = new ObjectMapper();
+    // Slice 64 — explicit polymorphic-deserialization hardening.
+    // Default-typing is OFF in modern Jackson (and we don't use
+    // @JsonTypeInfo anywhere — DTOs are all closed records). Explicit
+    // pinning here means a future Jackson upgrade with default-typing-on
+    // cannot surprise us into accepting unsafe polymorphic JSON. No-op
+    // today, defense-in-depth tomorrow.
+    private static final ObjectMapper JSON = new ObjectMapper().deactivateDefaultTyping();
 
     static final int PRINTINGS_LIMIT_DEFAULT = 50;
     static final int PRINTINGS_LIMIT_MAX = 200;
@@ -96,6 +102,12 @@ public final class WebApiServer {
         List<String> frozenOrigins = corsOrigins;
         app = Javalin.create(cfg -> {
             cfg.showJavalinBanner = false;
+            // Slice 64 — 1 MB hard cap on request bodies. Largest
+            // legitimate request is a deck-submit (WebDeckCardLists,
+            // ~10 KB for max 120 cards). 1 MB gives 100x headroom while
+            // preventing memory-amplification DoS where a tiny gzip
+            // stream expands to gigabytes during JSON parse.
+            cfg.http.maxRequestSize = 1_048_576L;
             if (!frozenOrigins.isEmpty()) {
                 cfg.plugins.enableCors(cors -> cors.add(it -> {
                     for (String host : frozenOrigins) {

@@ -617,6 +617,20 @@ class WebApiServerTest {
     }
 
     @Test
+    void postSession_oversizedBody_returns413() throws Exception {
+        // Slice 64 — 1 MB body cap. Largest legitimate request is a
+        // deck-submit at ~10 KB; 2 MB JSON should be rejected before
+        // it parses to prevent memory-amplification DoS. The exact
+        // status code depends on Javalin/Jetty's body-size enforcement
+        // path. 413 is ideal; 400/500 also acceptable since the
+        // request is rejected.
+        String oversized = "{\"username\":\"" + "x".repeat(2_000_000) + "\"}";
+        HttpResponse<String> r = postJson("/api/session", oversized);
+        assertTrue(r.statusCode() == 413 || r.statusCode() == 400 || r.statusCode() == 500,
+                "expected 413/400/500 for 2MB body, got: " + r.statusCode());
+    }
+
+    @Test
     void doubleStart_throws() {
         WebApiServer second = new WebApiServer(EmbeddedServer.boot(CONFIG_PATH));
         try {

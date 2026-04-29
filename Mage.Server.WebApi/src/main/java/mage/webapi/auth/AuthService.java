@@ -54,6 +54,16 @@ public final class AuthService implements AutoCloseable {
     private static final String GUEST_PREFIX = "guest-";
     private static final int GUEST_SUFFIX_BYTES = 4; // 8 hex chars
 
+    /**
+     * Slice 64 — allowed user-supplied usernames: alphanumeric,
+     * underscore, hyphen, 1-32 chars. Rejects spaces, control chars,
+     * unicode confusables, and HTML-injection bait. Generated guest
+     * names ({@link #GUEST_PREFIX}) are server-issued and bypass this
+     * check.
+     */
+    private static final java.util.regex.Pattern USERNAME_PATTERN =
+            java.util.regex.Pattern.compile("[a-zA-Z0-9_-]{1,32}");
+
     private final EmbeddedServer embedded;
     private final WebSessionStore store;
     private final ScheduledExecutorService sweeper;
@@ -86,11 +96,21 @@ public final class AuthService implements AutoCloseable {
      * Anonymous or authenticated login. Empty/blank password ⇒
      * {@code isAnonymous=true}. Empty/blank username ⇒ generated
      * {@code guest-XXXXXXXX}.
+     *
+     * <p>Slice 64 — user-supplied usernames are validated against
+     * {@link #USERNAME_PATTERN} and rejected if they begin with the
+     * reserved {@link #GUEST_PREFIX}. The anonymous path (null/blank
+     * username) bypasses validation since the generated guest name is
+     * server-issued, not user-supplied.
      */
     public WebSession login(String username, String password) {
-        String resolvedUsername = (username == null || username.isBlank())
-                ? GUEST_PREFIX + randomHex(GUEST_SUFFIX_BYTES)
-                : username.trim();
+        String resolvedUsername;
+        if (username == null || username.isBlank()) {
+            resolvedUsername = GUEST_PREFIX + randomHex(GUEST_SUFFIX_BYTES);
+        } else {
+            resolvedUsername = username.trim();
+            validateUsername(resolvedUsername);
+        }
         boolean isAnonymous = (password == null || password.isBlank());
         String upstreamSessionId = UUID.randomUUID().toString();
 
@@ -214,6 +234,34 @@ public final class AuthService implements AutoCloseable {
     }
 
     // ---------- internals ----------
+
+    /**
+     * Slice 64 — username validation. Rejects:
+     * <ul>
+     *   <li>usernames not matching {@link #USERNAME_PATTERN} (alphanumeric +
+     *     underscore + hyphen, 1-32 chars)</li>
+     *   <li>usernames starting with {@link #GUEST_PREFIX} (reserved for
+     *     anonymous-session generation)</li>
+     * </ul>
+     *
+     * <p>Anonymous sessions (no username supplied) bypass this check —
+     * the generated guest-XXXXXXXX name is server-issued, not user-supplied.
+     * The case-insensitive prefix check catches {@code Guest-foo} and
+     * {@code GUEST-FOO} so an attacker cannot impersonate a guest by
+     * varying letter case.
+     */
+    private void validateUsername(String username) {
+        if (!USERNAME_PATTERN.matcher(username).matches()) {
+            throw new WebApiException(400, "INVALID_USERNAME",
+                    "Username must match [a-zA-Z0-9_-]{1,32} (alphanumeric, "
+                    + "underscore, hyphen, 1-32 chars).");
+        }
+        if (username.toLowerCase().startsWith(GUEST_PREFIX)) {
+            throw new WebApiException(400, "RESERVED_PREFIX",
+                    "Username prefix '" + GUEST_PREFIX + "' is reserved for "
+                    + "anonymous sessions.");
+        }
+    }
 
     private void registerUpstreamSession(String upstreamSessionId, String username) {
         // Slice 52a — pass the EmbeddedServer through so the handler
