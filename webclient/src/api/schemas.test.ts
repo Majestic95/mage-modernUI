@@ -3,6 +3,10 @@ import {
   parseSchemaVersion,
   webCardListingSchema,
   webCardViewSchema,
+  webDeckCardInfoSchema,
+  webDeckCardListsSchema,
+  webDeckValidationErrorSchema,
+  webDeckValidationResultSchema,
   webErrorSchema,
   webGameClientMessageSchema,
   webGameViewSchema,
@@ -43,6 +47,145 @@ describe('webErrorSchema', () => {
   });
   it('rejects missing fields', () => {
     expect(() => webErrorSchema.parse({ code: 'X' })).toThrow();
+  });
+  it('defaults validationErrors to null when absent (1.20 server)', () => {
+    // Slice 72-B — older 1.20 servers never emit the new field;
+    // schema must default it to null so client code can branch
+    // uniformly on `validationErrors !== null`.
+    const parsed = webErrorSchema.parse({
+      schemaVersion: '1.20',
+      code: 'MISSING_TOKEN',
+      message: 'Auth required.',
+    });
+    expect(parsed.validationErrors).toBeNull();
+  });
+  it('forwards validationErrors when present (DECK_INVALID path)', () => {
+    const parsed = webErrorSchema.parse({
+      schemaVersion: '1.21',
+      code: 'DECK_INVALID',
+      message: 'Deck failed validation.',
+      validationErrors: [
+        {
+          errorType: 'BANNED',
+          group: 'Mana Crypt',
+          message: 'Banned',
+          cardName: 'Mana Crypt',
+          partlyLegal: false,
+          synthetic: false,
+        },
+      ],
+    });
+    expect(parsed.validationErrors).toHaveLength(1);
+    expect(parsed.validationErrors?.[0]?.cardName).toBe('Mana Crypt');
+  });
+});
+
+describe('webDeckValidationErrorSchema', () => {
+  it('parses a per-card BANNED entry', () => {
+    const parsed = webDeckValidationErrorSchema.parse({
+      errorType: 'BANNED',
+      group: 'Sol Ring',
+      message: 'Banned',
+      cardName: 'Sol Ring',
+      partlyLegal: false,
+      synthetic: false,
+    });
+    expect(parsed.cardName).toBe('Sol Ring');
+    expect(parsed.partlyLegal).toBe(false);
+  });
+  it('parses a global DECK_SIZE entry with null cardName', () => {
+    const parsed = webDeckValidationErrorSchema.parse({
+      errorType: 'DECK_SIZE',
+      group: 'Deck',
+      message: 'Must contain at least 100 cards: has only 60 cards',
+      cardName: null,
+      partlyLegal: true,
+      synthetic: false,
+    });
+    expect(parsed.cardName).toBeNull();
+    expect(parsed.partlyLegal).toBe(true);
+  });
+  it('defaults partlyLegal + synthetic to false when omitted', () => {
+    // Forward-compat with hypothetical 1.21 servers that strip the
+    // optional booleans; the schema treats missing as false.
+    const parsed = webDeckValidationErrorSchema.parse({
+      errorType: 'OTHER',
+      group: 'Lightning Bolt',
+      message: 'Color identity violation',
+      cardName: 'Lightning Bolt',
+    });
+    expect(parsed.partlyLegal).toBe(false);
+    expect(parsed.synthetic).toBe(false);
+  });
+});
+
+describe('webDeckValidationResultSchema', () => {
+  it('parses a valid-deck verdict', () => {
+    const parsed = webDeckValidationResultSchema.parse({
+      schemaVersion: '1.21',
+      valid: true,
+      partlyLegal: true,
+      errors: [],
+    });
+    expect(parsed.valid).toBe(true);
+    expect(parsed.partlyLegal).toBe(true);
+    expect(parsed.errors).toEqual([]);
+  });
+  it('parses an amber DECK_SIZE-only verdict', () => {
+    const parsed = webDeckValidationResultSchema.parse({
+      schemaVersion: '1.21',
+      valid: false,
+      partlyLegal: true,
+      errors: [
+        {
+          errorType: 'DECK_SIZE',
+          group: 'Deck',
+          message: 'has only 60 cards',
+          cardName: null,
+          partlyLegal: true,
+          synthetic: false,
+        },
+      ],
+    });
+    expect(parsed.valid).toBe(false);
+    expect(parsed.partlyLegal).toBe(true);
+  });
+});
+
+describe('webDeckCardInfoSchema', () => {
+  it('parses a complete entry', () => {
+    const parsed = webDeckCardInfoSchema.parse({
+      cardName: 'Forest',
+      setCode: 'M21',
+      cardNumber: '281',
+      amount: 24,
+    });
+    expect(parsed.amount).toBe(24);
+  });
+  it('rejects amount < 1', () => {
+    expect(() =>
+      webDeckCardInfoSchema.parse({
+        cardName: 'Forest',
+        setCode: 'M21',
+        cardNumber: '281',
+        amount: 0,
+      }),
+    ).toThrow();
+  });
+});
+
+describe('webDeckCardListsSchema', () => {
+  it('parses a complete request body', () => {
+    const parsed = webDeckCardListsSchema.parse({
+      name: 'Bears',
+      author: 'austin',
+      cards: [
+        { cardName: 'Forest', setCode: 'M21', cardNumber: '281', amount: 24 },
+      ],
+      sideboard: [],
+    });
+    expect(parsed.cards).toHaveLength(1);
+    expect(parsed.sideboard).toEqual([]);
   });
 });
 

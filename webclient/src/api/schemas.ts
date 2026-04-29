@@ -16,12 +16,62 @@ export const EXPECTED_SCHEMA_MAJOR = 1;
 
 /* ---------- core ---------- */
 
+/**
+ * Slice 72-A — one entry in the deck validator's error report. Mirrors
+ * upstream's {@code DeckValidatorError} fields plus the
+ * {@code partlyLegal} + {@code synthetic} denormalizations.
+ *
+ * <p>{@code partlyLegal=true} means this specific error is satisfied
+ * once the deck reaches its required size (DECK_SIZE only today).
+ * {@code synthetic=true} marks the engine's overflow sentinel
+ * ({@code OTHER, "...", "and more N error[s]"}); clients should
+ * render synthetic entries as a non-clickable footer rather than a
+ * real error.
+ *
+ * <p>The {@code default(false)} on the two booleans keeps older 1.20
+ * fixtures (pre-72-A) parsing cleanly — older servers never emit
+ * the fields. Today's 1.21+ servers always populate them.
+ */
+export const webDeckValidationErrorSchema = z.object({
+  errorType: z.string(),
+  group: z.string(),
+  message: z.string(),
+  cardName: z.string().nullable(),
+  partlyLegal: z.boolean().default(false),
+  synthetic: z.boolean().default(false),
+});
+export type WebDeckValidationError = z.infer<typeof webDeckValidationErrorSchema>;
+
 export const webErrorSchema = z.object({
   schemaVersion: z.string(),
   code: z.string(),
   message: z.string(),
+  // Slice 72-A — present (non-null) only when code === "DECK_INVALID";
+  // server omits the field via @JsonInclude(NON_NULL) on every other
+  // 4xx/5xx path. Older 1.20 servers never emit it; default null
+  // keeps those parses clean.
+  validationErrors: z.array(webDeckValidationErrorSchema).nullable().default(null),
 });
 export type WebError = z.infer<typeof webErrorSchema>;
+
+/**
+ * Slice 72-A — response payload for
+ * {@code POST /api/decks/validate?deckType=...}. Always 200 OK; the
+ * {@code valid} / {@code partlyLegal} / {@code errors} fields carry
+ * the verdict.
+ *
+ * <p>{@code partlyLegal} is the deck-LEVEL rollup — true iff
+ * {@code valid} is true OR every error is itself partly-legal. Drives
+ * the deck builder's amber "legal once finished" badge vs red "needs
+ * card changes". Clients should branch on this single boolean.
+ */
+export const webDeckValidationResultSchema = z.object({
+  schemaVersion: z.string(),
+  valid: z.boolean(),
+  partlyLegal: z.boolean(),
+  errors: z.array(webDeckValidationErrorSchema),
+});
+export type WebDeckValidationResult = z.infer<typeof webDeckValidationResultSchema>;
 
 export const webVersionSchema = z.object({
   schemaVersion: z.string(),
@@ -114,6 +164,44 @@ export const webCardListingSchema = z.object({
   truncated: z.boolean(),
 });
 export type WebCardListing = z.infer<typeof webCardListingSchema>;
+
+/* ---------- decks (request shapes) ---------- */
+
+/**
+ * One mainboard / sideboard entry in a deck submission. Matches the
+ * server-side {@code WebDeckCardInfo} record consumed by
+ * {@code DeckMapper.toUpstream}: name + set + collector number +
+ * count. The set + collector number resolve a specific printing —
+ * required because the server's CardRepository keys on those.
+ *
+ * <p>Pre-defined here (not auto-generated) because the type is
+ * imported widely (decks/store.ts, decks/resolve.ts, JoinTableModal)
+ * and was previously implicit. Slice 72-B made the gap explicit by
+ * needing the same shape as the request body for
+ * {@code POST /api/decks/validate}.
+ */
+export const webDeckCardInfoSchema = z.object({
+  cardName: z.string(),
+  setCode: z.string(),
+  cardNumber: z.string(),
+  amount: z.number().int().min(1),
+});
+export type WebDeckCardInfo = z.infer<typeof webDeckCardInfoSchema>;
+
+/**
+ * Full deck submission — name + author + mainboard + sideboard.
+ * Posted as the body of {@code /join}, {@code /tables/{id}/deck}
+ * (sideboard submit), and {@code /api/decks/validate} (slice 72-B).
+ * The server-side {@code WebDeckCardLists} record is the matching
+ * shape.
+ */
+export const webDeckCardListsSchema = z.object({
+  name: z.string(),
+  author: z.string(),
+  cards: z.array(webDeckCardInfoSchema),
+  sideboard: z.array(webDeckCardInfoSchema),
+});
+export type WebDeckCardLists = z.infer<typeof webDeckCardListsSchema>;
 
 /* ---------- rooms + tables ---------- */
 

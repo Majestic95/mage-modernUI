@@ -46,6 +46,35 @@ function cardListing(name: string): Response {
   });
 }
 
+const SERVER_STATE_BODY = {
+  schemaVersion: '1.21',
+  gameTypes: [],
+  tournamentTypes: [],
+  playerTypes: [],
+  deckTypes: ['Constructed - Vintage', 'Variant Magic - Commander'],
+  draftCubes: [],
+  testMode: false,
+};
+
+/**
+ * Slice 72-B — Decks page now fires {@code /api/server/state} on mount
+ * (for the format-picker dropdown), in addition to per-card lookups.
+ * Use a router that returns a FRESH Response per call so different
+ * URLs get different bodies and mockResolvedValue's "same object
+ * reference" body-already-read trap doesn't fire.
+ */
+function makeRouter(routes: Record<string, () => Response>) {
+  return vi.fn<typeof fetch>().mockImplementation((input) => {
+    const url = typeof input === 'string' ? input : input.toString();
+    for (const [pattern, builder] of Object.entries(routes)) {
+      if (url.includes(pattern)) {
+        return Promise.resolve(builder());
+      }
+    }
+    return Promise.resolve(jsonResponse(404, { code: 'NOT_FOUND' }));
+  });
+}
+
 describe('Decks page', () => {
   beforeEach(() => {
     useAuthStore.setState({
@@ -73,7 +102,10 @@ describe('Decks page', () => {
     const user = userEvent.setup();
     vi.stubGlobal(
       'fetch',
-      vi.fn<typeof fetch>().mockResolvedValue(cardListing('Forest')),
+      makeRouter({
+        '/api/server/state': () => jsonResponse(200, SERVER_STATE_BODY),
+        '/api/cards': () => cardListing('Forest'),
+      }),
     );
 
     render(<Decks />);
@@ -109,13 +141,15 @@ describe('Decks page', () => {
     const user = userEvent.setup();
     vi.stubGlobal(
       'fetch',
-      vi.fn<typeof fetch>().mockResolvedValue(
-        jsonResponse(200, {
-          schemaVersion: '1.15',
-          cards: [],
-          truncated: false,
-        }),
-      ),
+      makeRouter({
+        '/api/server/state': () => jsonResponse(200, SERVER_STATE_BODY),
+        '/api/cards': () =>
+          jsonResponse(200, {
+            schemaVersion: '1.15',
+            cards: [],
+            truncated: false,
+          }),
+      }),
     );
 
     render(<Decks />);
@@ -131,11 +165,79 @@ describe('Decks page', () => {
     useDecksStore.getState().add('Burn', [
       { cardName: 'Lightning Bolt', setCode: 'LEA', cardNumber: '161', amount: 4 },
     ]);
+    vi.stubGlobal(
+      'fetch',
+      makeRouter({
+        '/api/server/state': () => jsonResponse(200, SERVER_STATE_BODY),
+      }),
+    );
 
     render(<Decks />);
     expect(screen.getByText('Burn')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /delete burn/i }));
 
     expect(useDecksStore.getState().decks).toHaveLength(0);
+  });
+
+  // Slice 72-B
+  it('renders a format picker per saved deck once server-state loads', async () => {
+    useDecksStore.getState().add('Burn', [
+      { cardName: 'Lightning Bolt', setCode: 'LEA', cardNumber: '161', amount: 4 },
+    ]);
+    vi.stubGlobal(
+      'fetch',
+      makeRouter({
+        '/api/server/state': () => jsonResponse(200, SERVER_STATE_BODY),
+      }),
+    );
+
+    render(<Decks />);
+    // The picker shows a placeholder option until the user picks a
+    // format; legality affordance only fires once a non-empty
+    // deckType is selected.
+    const picker = await screen.findByRole('combobox', { name: /Format for Burn/ });
+    expect(picker).toBeInTheDocument();
+    // Both server-side deckTypes are options under their respective
+    // optgroups (Constructed / Variant Magic).
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: /Vintage/ })).toBeInTheDocument();
+      expect(screen.getByRole('option', { name: /Commander/ })).toBeInTheDocument();
+    });
+  });
+
+  it('fires pre-flight validate when the user picks a format', async () => {
+    useDecksStore.getState().add('Burn', [
+      { cardName: 'Lightning Bolt', setCode: 'LEA', cardNumber: '161', amount: 4 },
+    ]);
+    let validateCalled = false;
+    vi.stubGlobal(
+      'fetch',
+      makeRouter({
+        '/api/server/state': () => jsonResponse(200, SERVER_STATE_BODY),
+        '/api/decks/validate': () => {
+          validateCalled = true;
+          return jsonResponse(200, {
+            schemaVersion: '1.21',
+            valid: true,
+            partlyLegal: true,
+            errors: [],
+          });
+        },
+      }),
+    );
+
+    const user = userEvent.setup();
+    render(<Decks />);
+    const picker = await screen.findByRole('combobox', { name: /Format for Burn/ });
+    await user.selectOptions(picker, 'Constructed - Vintage');
+
+    // The validate fetch is debounced 250 ms — wait for it.
+    await waitFor(
+      () => {
+        expect(validateCalled).toBe(true);
+      },
+      { timeout: 1500 },
+    );
+    expect(await screen.findByText(/Legal/)).toBeInTheDocument();
   });
 });

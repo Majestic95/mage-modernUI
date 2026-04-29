@@ -2,6 +2,8 @@ import { useRef, useState } from 'react';
 import { ApiError, request } from '../api/client';
 import { useAuthStore } from '../auth/store';
 import { useDecksStore, toRequestBody, type SavedDeck } from '../decks/store';
+import { ValidationErrorList } from '../decks/ValidationErrorList';
+import type { WebDeckValidationError } from '../api/schemas';
 import { useModalA11y } from '../util/useModalA11y';
 
 interface Props {
@@ -16,11 +18,14 @@ interface Props {
  * Pick a saved deck and join a table. {@code POST /api/rooms/{roomId}
  * /tables/{tableId}/join}; on success, refresh the lobby and close.
  *
- * <p>Slice 4.4 — server-side deck validation drives the error path.
- * Slice 6 of the WebApi collapses every join failure to 422
- * UPSTREAM_REJECTED, so we surface the {@code WebError.message} as-is.
- * Slice 5b will split this into specific codes (illegal deck, wrong
- * password, table full, …) and render a more helpful message.
+ * <p>Slice 72-A — the server now distinguishes deck-validation
+ * failures from other join failures: {@code DECK_INVALID} (422)
+ * carries a structured {@link WebDeckValidationError}[] payload via
+ * {@link ApiError#validationErrors}, while password / seat-full /
+ * already-seated paths still surface as {@code UPSTREAM_REJECTED}
+ * with just {@code message}. We branch on the code: render the
+ * shared {@code <ValidationErrorList />} for DECK_INVALID, fall
+ * back to the original message-only path otherwise.
  */
 export function JoinTableModal({
   roomId, tableId, tableName, onClose, onJoined,
@@ -30,6 +35,9 @@ export function JoinTableModal({
   const [selectedId, setSelectedId] = useState<string>(decks[0]?.id ?? '');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [validationErrors, setValidationErrors] = useState<
+    readonly WebDeckValidationError[] | null
+  >(null);
 
   // Modal a11y: ESC, focus trap, initial focus, focus restoration.
   // The submitting guard is preserved by withholding onClose while
@@ -51,6 +59,7 @@ export function JoinTableModal({
     }
     setSubmitting(true);
     setError(null);
+    setValidationErrors(null);
     try {
       await request(
         `/api/rooms/${roomId}/tables/${tableId}/join`,
@@ -69,7 +78,18 @@ export function JoinTableModal({
       onJoined();
       onClose();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Join failed.');
+      if (err instanceof ApiError) {
+        setError(err.message);
+        // Slice 72-A — DECK_INVALID carries the structured per-card
+        // breakdown; any other code keeps validationErrors null and
+        // we fall back to the message-only render.
+        setValidationErrors(
+          err.code === 'DECK_INVALID' ? err.validationErrors : null,
+        );
+      } else {
+        setError('Join failed.');
+        setValidationErrors(null);
+      }
       setSubmitting(false);
     }
   };
@@ -113,7 +133,26 @@ export function JoinTableModal({
         )}
 
         {error && (
-          <p role="alert" className="text-sm text-red-400">{error}</p>
+          <div role="alert" className="space-y-2">
+            {/* Slice 72-B critic UX-I2 — when the structured breakdown is
+              * present, the per-card list IS the message; just frame it
+              * with a heading so the user knows the stack is one failure,
+              * not two. The message-only render path stays for non-
+              * DECK_INVALID errors (wrong password, table full, etc.). */}
+            {validationErrors && validationErrors.length > 0 ? (
+              <>
+                <p className="text-sm font-medium text-status-danger">
+                  Deck not legal:
+                </p>
+                <ValidationErrorList
+                  errors={validationErrors}
+                  ariaLabel="Join failed — deck validation errors"
+                />
+              </>
+            ) : (
+              <p className="text-sm text-status-danger">{error}</p>
+            )}
+          </div>
         )}
 
         <div className="flex justify-end gap-2 pt-2">

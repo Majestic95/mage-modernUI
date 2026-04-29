@@ -19,6 +19,7 @@ import {
   EXPECTED_SCHEMA_MAJOR,
   parseSchemaVersion,
   webErrorSchema,
+  type WebDeckValidationError,
 } from './schemas';
 
 const DEFAULT_BASE_URL = 'http://localhost:18080';
@@ -28,15 +29,33 @@ const baseUrl = (
   DEFAULT_BASE_URL
 ).replace(/\/+$/, '');
 
+/**
+ * Thrown for every non-2xx response and every transport / parse
+ * failure. {@code code} is a machine-parseable string (e.g.
+ * {@code "MISSING_TOKEN"}, {@code "DECK_INVALID"}) safe for
+ * {@code switch}-on; {@code message} is the human-friendly text.
+ *
+ * <p>Slice 72-B — when the server sends {@code WebError.validationErrors}
+ * (the {@code DECK_INVALID} path), the array is forwarded onto
+ * {@link #validationErrors}. Null on every other code, including
+ * pre-1.21 servers that never populated the field.
+ */
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
+  readonly validationErrors: readonly WebDeckValidationError[] | null;
 
-  constructor(status: number, code: string, message: string) {
+  constructor(
+    status: number,
+    code: string,
+    message: string,
+    validationErrors: readonly WebDeckValidationError[] | null = null,
+  ) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
+    this.validationErrors = validationErrors;
   }
 }
 
@@ -122,7 +141,16 @@ export async function request<S extends z.ZodTypeAny>(
   if (!response.ok) {
     const parsed = webErrorSchema.safeParse(json);
     if (parsed.success) {
-      throw new ApiError(response.status, parsed.data.code, parsed.data.message);
+      // Slice 72-B — forward validationErrors when present (DECK_INVALID
+      // path). Null on every other code; the caller can safely
+      // switch-on err.code and only read validationErrors in the
+      // DECK_INVALID branch.
+      throw new ApiError(
+        response.status,
+        parsed.data.code,
+        parsed.data.message,
+        parsed.data.validationErrors,
+      );
     }
     throw new ApiError(response.status, 'BAD_RESPONSE',
       `Server returned ${response.status} with non-WebError body.`);
