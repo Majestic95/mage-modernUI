@@ -39,8 +39,11 @@ import {
   LAYOUT_GLIDE,
   LIFE_FLASH_POP,
   LIFE_TOTAL_COLOR_MS,
+  MANA_POOL_FADE,
+  MANA_POOL_POP,
   STACK_ENTER_EXIT,
   STACK_ZONE_COLLAPSE_MS,
+  UNTAP_STAGGER_DELAY_MS,
 } from '../animation/transitions';
 
 interface Props {
@@ -1414,7 +1417,7 @@ function BattlefieldRowGroup({
       className="flex flex-wrap gap-2 min-h-[16px]"
     >
       <AnimatePresence mode="popLayout" initial={false}>
-        {permanents.map((perm) => {
+        {permanents.map((perm, index) => {
           const layoutId = perm.card.cardId ? perm.card.cardId : undefined;
           return (
             <motion.div
@@ -1433,6 +1436,7 @@ function BattlefieldRowGroup({
                 onClick={onObjectClick}
                 isEligibleCombat={eligibleCombatIds.has(perm.card.id)}
                 combatRole={combatRoles.get(perm.card.id) ?? null}
+                rotateDelay={(index * UNTAP_STAGGER_DELAY_MS) / 1000}
               />
             </motion.div>
           );
@@ -1585,9 +1589,6 @@ function LifeTotal({ value }: { value: number }) {
 
 function ManaPool({ player }: { player: WebPlayerView }) {
   const pool = player.manaPool;
-  const total =
-    pool.red + pool.green + pool.blue + pool.white + pool.black + pool.colorless;
-  if (total === 0) return null;
   const cells: Array<[string, number, string]> = [
     ['W', pool.white, 'text-amber-100'],
     ['U', pool.blue, 'text-sky-300'],
@@ -1596,16 +1597,29 @@ function ManaPool({ player }: { player: WebPlayerView }) {
     ['G', pool.green, 'text-emerald-400'],
     ['C', pool.colorless, 'text-zinc-400'],
   ];
+  // Slice 58 — wrap symbols in AnimatePresence so each color pops in
+  // (scale 0 → 1) when first added and fades out when consumed. The
+  // wrapper renders unconditionally even when total === 0 so
+  // AnimatePresence has a stable parent to flush exits from.
   return (
     <span className="flex gap-1 font-mono text-xs">
-      {cells
-        .filter(([, n]) => n > 0)
-        .map(([sym, n, cls]) => (
-          <span key={sym} className={cls}>
-            {n}
-            {sym}
-          </span>
-        ))}
+      <AnimatePresence mode="popLayout" initial={false}>
+        {cells
+          .filter(([, n]) => n > 0)
+          .map(([sym, n, cls]) => (
+            <motion.span
+              key={sym}
+              className={cls}
+              initial={{ scale: 0, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0, opacity: 0, transition: slow(MANA_POOL_FADE) }}
+              transition={slow(MANA_POOL_POP)}
+            >
+              {n}
+              {sym}
+            </motion.span>
+          ))}
+      </AnimatePresence>
     </span>
   );
 }
@@ -1639,6 +1653,7 @@ function BattlefieldTile({
   onClick,
   isEligibleCombat,
   combatRole,
+  rotateDelay,
 }: {
   perm: WebPermanentView;
   canAct: boolean;
@@ -1655,6 +1670,11 @@ function BattlefieldTile({
    * combat group ({@code gv.combat[]}). Drives the ATK / BLK badge.
    */
   combatRole: 'attacker' | 'blocker' | null;
+  /**
+   * Slice 58 — index-based stagger delay (in seconds) applied to the
+   * tap/untap rotation spring. Produces a wave on start-of-turn untap.
+   */
+  rotateDelay?: number;
 }) {
   const tapped = perm.tapped;
   return (
@@ -1688,6 +1708,7 @@ function BattlefieldTile({
             isEligibleCombat={isEligibleCombat}
             combatRole={combatRole}
             tapped={tapped}
+            rotateDelay={rotateDelay}
           />
         </button>
       </HoverCardDetail>
@@ -1722,11 +1743,13 @@ function BattlefieldTileFace({
   isEligibleCombat,
   combatRole,
   tapped,
+  rotateDelay,
 }: {
   perm: WebPermanentView;
   isEligibleCombat: boolean;
   combatRole: 'attacker' | 'blocker' | null;
   tapped: boolean;
+  rotateDelay?: number;
 }) {
   return (
     <CardFace
@@ -1736,6 +1759,7 @@ function BattlefieldTileFace({
       isEligibleCombat={isEligibleCombat}
       combatRole={combatRole}
       tapped={tapped}
+      rotateDelay={rotateDelay}
     />
   );
 }

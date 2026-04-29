@@ -57,8 +57,42 @@ export const DELTA_FLOAT_UP: Transition = {
   ease: 'easeOut',
 };
 
+// Permanent tap/untap rotation. Stiff + low damping for satisfying
+// overshoot — the rotation visibly springs past 90° and settles back.
+// Faster than BATTLEFIELD_ENTER_EXIT because it's frequent (every
+// land tap, every turn).
+export const MANA_TAP_ROTATE: Transition = {
+  type: 'spring',
+  stiffness: 420,
+  damping: 20,
+  mass: 0.5,
+};
+
+// Mana symbol entering the pool (you tap a land). Punchy pop-in;
+// matches the LIFE_FLASH_POP energy because both communicate
+// "you just gained a resource."
+export const MANA_POOL_POP: Transition = {
+  type: 'spring',
+  stiffness: 500,
+  damping: 18,
+  mass: 0.4,
+};
+
+// Mana symbol leaving the pool (paid into a spell). Quick easeOut —
+// mana is consumed, not celebrated.
+export const MANA_POOL_FADE: Transition = {
+  duration: 0.35,
+  ease: 'easeOut',
+};
+
+// Stagger delay between successive untap rotations (in milliseconds).
+// 50ms × N creatures gives a wave effect at start-of-turn untap.
+export const UNTAP_STAGGER_DELAY_MS = 50;
+
 // CSS transition-duration values in milliseconds.
 export const STACK_ZONE_COLLAPSE_MS = 200;
 export const LIFE_TOTAL_COLOR_MS = 300;
 export const HAND_HOVER_LIFT_MS = 150;
-export const TAP_ROTATE_MS = 150;
+// TAP_ROTATE_MS removed in slice 58 — Framer Motion's MANA_TAP_ROTATE
+// spring (above) replaces the linear CSS transition for permanent
+// tap/untap. No CSS consumers remain.

@@ -1,8 +1,9 @@
 import { useState, type JSX } from 'react';
+import { motion } from 'framer-motion';
 import type { WebCardView, WebPermanentView } from '../api/schemas';
 import { ManaCost, scryfallImageUrl, type ScryfallVersion } from '../pages/Game';
-import { SLOWMO } from '../animation/debug';
-import { TAP_ROTATE_MS } from '../animation/transitions';
+import { slow } from '../animation/debug';
+import { MANA_TAP_ROTATE } from '../animation/transitions';
 
 /**
  * Slice 52e — shared card-face renderer used by hand, stack, and
@@ -39,6 +40,12 @@ interface CardFaceProps {
   combatRole?: 'attacker' | 'blocker' | null;
   /** Battlefield-only — rotates the tile 90° + dims to 60% opacity. */
   tapped?: boolean;
+  /**
+   * Battlefield-only — index-based stagger delay (in seconds) applied
+   * to the tap/untap spring. Used by {@code BattlefieldRowGroup} to
+   * produce a wave effect on start-of-turn untap. Defaults to 0.
+   */
+  rotateDelay?: number;
 }
 
 interface SizeSpec {
@@ -130,7 +137,8 @@ const SIZE_SPECS: Record<CardFaceSize, SizeSpec> = {
 };
 
 export function CardFace(props: CardFaceProps): JSX.Element {
-  const { card, size, perm, isEligibleCombat, combatRole, tapped } = props;
+  const { card, size, perm, isEligibleCombat, combatRole, tapped, rotateDelay } =
+    props;
   const spec = SIZE_SPECS[size];
   const [imageFailed, setImageFailed] = useState(false);
   const url = scryfallImageUrl(card, spec.imageVersion);
@@ -158,14 +166,14 @@ export function CardFace(props: CardFaceProps): JSX.Element {
   const combatRing =
     isBattlefield && isEligibleCombat ? 'ring-2 ring-amber-400/60' : '';
   const tapClass = isBattlefield && tapped ? 'opacity-60' : '';
-  const transitionClass = isBattlefield
-    ? 'transition-transform ease-out'
-    : '';
-  const tapStyle: React.CSSProperties | undefined = isBattlefield
-    ? {
-        transform: tapped ? 'rotate(90deg)' : undefined,
-        transitionDuration: `${TAP_ROTATE_MS * SLOWMO}ms`,
-      }
+  // Slice 58 — Framer Motion now drives the rotation with a spring
+  // (overshoot + settle) instead of a linear CSS transition. The
+  // initial value matches the current tapped state so a permanent
+  // that ETBs already tapped renders rotated without animating.
+  const rotateInitial = isBattlefield ? (tapped ? 90 : 0) : 0;
+  const rotateAnimate = isBattlefield ? (tapped ? 90 : 0) : 0;
+  const rotateTransition = isBattlefield
+    ? slow({ ...MANA_TAP_ROTATE, delay: rotateDelay ?? 0 })
     : undefined;
 
   // Fallback gradient — hand + battlefield use the three-stop variant
@@ -178,7 +186,7 @@ export function CardFace(props: CardFaceProps): JSX.Element {
       : 'bg-gradient-to-b from-zinc-800 via-zinc-850 to-zinc-900';
 
   return (
-    <div
+    <motion.div
       data-testid={spec.testid}
       data-card-face-size={size}
       className={
@@ -192,11 +200,12 @@ export function CardFace(props: CardFaceProps): JSX.Element {
         sickBorder +
         ' bg-zinc-900 ' +
         spec.shadow +
-        (transitionClass ? ' ' + transitionClass : '') +
         (combatRing ? ' ' + combatRing : '') +
         (tapClass ? ' ' + tapClass : '')
       }
-      style={tapStyle}
+      initial={{ rotate: rotateInitial }}
+      animate={{ rotate: rotateAnimate }}
+      transition={rotateTransition}
     >
       {url && !imageFailed ? (
         <img
@@ -314,6 +323,6 @@ export function CardFace(props: CardFaceProps): JSX.Element {
             : `${card.power}/${card.toughness}`}
         </div>
       )}
-    </div>
+    </motion.div>
   );
 }
