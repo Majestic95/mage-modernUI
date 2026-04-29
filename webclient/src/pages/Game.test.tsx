@@ -779,7 +779,11 @@ describe('Game page', () => {
 
   /* ---------- slice 27: stack rendering ---------- */
 
-  it('does not render the stack zone when stack is empty', () => {
+  it('hides the stack zone (no entries) when stack is empty', () => {
+    // Slice 50: section stays mounted but visually collapsed so
+    // AnimatePresence has somewhere to flush exit animations from.
+    // Empty-state contract is now "no stack-entry children" rather
+    // than "section unmounted."
     render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
     act(() => {
       useGameStore.setState({
@@ -787,7 +791,10 @@ describe('Game page', () => {
         gameView: buildGameView(),
       });
     });
-    expect(screen.queryByTestId('stack-zone')).not.toBeInTheDocument();
+    expect(screen.queryAllByTestId('stack-entry')).toHaveLength(0);
+    const stackZone = screen.queryByTestId('stack-zone');
+    expect(stackZone).toBeInTheDocument();
+    expect(stackZone).toHaveClass('opacity-0');
   });
 
   it('renders one stack entry per card on the stack', () => {

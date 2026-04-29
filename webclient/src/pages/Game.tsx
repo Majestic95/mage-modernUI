@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useAuthStore } from '../auth/store';
 import { GameStream } from '../game/stream';
 import { useGameStore } from '../game/store';
@@ -1041,42 +1042,61 @@ function Battlefield({
  */
 function StackZone({ stack }: { stack: Record<string, WebCardView> }) {
   const entries = Object.values(stack).reverse();
-  if (entries.length === 0) {
-    return null;
-  }
+  // Slice 50 — keep the section mounted while AnimatePresence flushes
+  // the last exit animation, otherwise the stack tile pops out
+  // immediately when the spell resolves and the section unmounts.
+  const isEmpty = entries.length === 0;
   return (
     <section
       data-testid="stack-zone"
-      className="flex-shrink-0 border-b border-zinc-800 bg-zinc-900/60 px-4 py-2"
+      className={`flex-shrink-0 border-b border-zinc-800 bg-zinc-900/60 px-4 py-2 transition-opacity duration-200 ${
+        isEmpty ? 'opacity-0 pointer-events-none h-0 overflow-hidden py-0 border-b-0' : 'opacity-100'
+      }`}
     >
       <div className="text-xs text-zinc-500 uppercase tracking-wide mb-1.5">
         Stack ({entries.length}) — top resolves first
       </div>
       <div className="flex flex-wrap items-end gap-2">
-        {entries.map((card, idx) => {
-          const tooltip = [card.typeLine, ...(card.rules ?? [])]
-            .filter(Boolean)
-            .join('\n');
-          return (
-            <HoverCardDetail key={card.id} card={card}>
-              <div
-                data-testid="stack-entry"
-                className="relative"
-                title={tooltip || card.name}
+        <AnimatePresence mode="popLayout" initial={false}>
+          {entries.map((card, idx) => {
+            const tooltip = [card.typeLine, ...(card.rules ?? [])]
+              .filter(Boolean)
+              .join('\n');
+            return (
+              <motion.div
+                key={card.id}
+                layout
+                initial={{ opacity: 0, y: -16, scale: 0.85 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 24, scale: 0.85 }}
+                transition={{
+                  type: 'spring',
+                  stiffness: 380,
+                  damping: 30,
+                  mass: 0.6,
+                }}
               >
-                <StackTileFace card={card} />
-                {idx === 0 && (
-                  <span
-                    data-testid="stack-top-marker"
-                    className="absolute -top-1.5 -right-1.5 text-[9px] font-semibold bg-fuchsia-500 text-zinc-100 px-1 rounded shadow"
+                <HoverCardDetail card={card}>
+                  <div
+                    data-testid="stack-entry"
+                    className="relative"
+                    title={tooltip || card.name}
                   >
-                    TOP
-                  </span>
-                )}
-              </div>
-            </HoverCardDetail>
-          );
-        })}
+                    <StackTileFace card={card} />
+                    {idx === 0 && (
+                      <span
+                        data-testid="stack-top-marker"
+                        className="absolute -top-1.5 -right-1.5 text-[9px] font-semibold bg-fuchsia-500 text-zinc-100 px-1 rounded shadow"
+                      >
+                        TOP
+                      </span>
+                    )}
+                  </div>
+                </HoverCardDetail>
+              </motion.div>
+            );
+          })}
+        </AnimatePresence>
       </div>
     </section>
   );
@@ -1249,16 +1269,36 @@ function PlayerArea({
             No permanents yet.
           </span>
         ) : (
-          battlefield.map((perm) => (
-            <BattlefieldTile
-              key={perm.card.id}
-              perm={perm}
-              canAct={canAct}
-              onClick={onObjectClick}
-              isEligibleCombat={eligibleCombatIds.has(perm.card.id)}
-              combatRole={combatRoles.get(perm.card.id) ?? null}
-            />
-          ))
+          // Slice 50 — ETB animation. Slides up from below + scales
+          // so the eye reads "spell resolves into permanent" as one
+          // motion. Cross-zone DOM-tracked layoutId is queued for
+          // slice 51 (needs cardId schema bump — Spell.id ≠
+          // Permanent.id upstream).
+          <AnimatePresence mode="popLayout" initial={false}>
+            {battlefield.map((perm) => (
+              <motion.div
+                key={perm.card.id}
+                layout
+                initial={{ opacity: 0, y: 24, scale: 0.85 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -16, scale: 0.85 }}
+                transition={{
+                  type: 'spring',
+                  stiffness: 360,
+                  damping: 32,
+                  mass: 0.7,
+                }}
+              >
+                <BattlefieldTile
+                  perm={perm}
+                  canAct={canAct}
+                  onClick={onObjectClick}
+                  isEligibleCombat={eligibleCombatIds.has(perm.card.id)}
+                  combatRole={combatRoles.get(perm.card.id) ?? null}
+                />
+              </motion.div>
+            ))}
+          </AnimatePresence>
         )}
       </div>
       <CommandZone entries={player.commandList} />
