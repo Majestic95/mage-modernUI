@@ -31,6 +31,14 @@ public final class LobbyService {
 
     private static final Logger LOG = LoggerFactory.getLogger(LobbyService.class);
 
+    /**
+     * Skill level passed to upstream when adding an AI seat. See the comment
+     * block in {@link #addAi} for why 4 (slice 47 mitigation, not cure).
+     * Package-private + visible-for-test so {@code LobbyServiceTest} can
+     * pin the wired value without a mock framework.
+     */
+    static final int AI_SKILL = 4;
+
     private final EmbeddedServer embedded;
 
     public LobbyService(EmbeddedServer embedded) {
@@ -102,12 +110,30 @@ public final class LobbyService {
         // for AI seats (no isComputer bypass). We supply a 60-card basic-
         // lands fallback deck so the join validates. Slice 6b will add a
         // request-side `deck` field and let clients customize.
+        //
+        // skill = 4 (slice 47 mitigation, see docs/decisions/mad-ai-no-plays-recon.md):
+        //   - skill = 1 (the prior default) sets maxThinkTimeSecs = 3, which
+        //     in practice produces zero plays — the simulation tree builder
+        //     in ComputerPlayer7.calculateActions hits the empty-tree edge
+        //     case (the upstream TODO at ComputerPlayer7.java:119) before
+        //     populating root.children, and act() silently passes priority.
+        //   - skill = 6 was the recon's first guess but is wasted budget:
+        //     ComputerPlayer6.java:92-100 clamps maxDepth to 4 for any
+        //     skill < 4, AND the simulation already passes through the same
+        //     depth ceiling once skill = 4 — so any skill > 4 only buys
+        //     extra wall time, not extra search.
+        //   - skill = 4 is the cliff: maxDepth is unchanged from skill = 1
+        //     (still 4) but maxThinkTimeSecs jumps from 3 to 12 — a 4× think
+        //     budget at the same tree size. That's the headroom that lets
+        //     the tree builder produce children before the empty-tree edge
+        //     case fires. Mitigation, not cure — the upstream TODO is the
+        //     real bug, and this slice deliberately doesn't touch it.
         DeckCardLists fallbackDeck = buildFallbackBasicLandsDeck();
         boolean ok;
         try {
             ok = embedded.server().roomJoinTable(
                     upstreamSessionId, roomId, tableId,
-                    aiType.toString(), aiType, /* skill */ 1, fallbackDeck, /* password */ ""
+                    aiType.toString(), aiType, AI_SKILL, fallbackDeck, /* password */ ""
             );
         } catch (MageException ex) {
             throw upstream("adding AI", ex);
