@@ -30,6 +30,7 @@ import mage.webapi.mapper.VersionMapper;
 import mage.webapi.metrics.MetricsHandler;
 import mage.webapi.ws.GameStreamHandler;
 import mage.webapi.ws.RoomStreamHandler;
+import mage.webapi.ws.SpectatorStreamHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -129,6 +130,14 @@ public final class WebApiServer {
         // browsers cannot set custom headers on the upgrade. Auth is
         // enforced inside each handler's onConnect via ?token=.
         app.ws("/api/games/{gameId}/stream", new GameStreamHandler(authService, embedded));
+        // Slice 71 (ADR 0010 v2 D4) — spectator route. Sibling
+        // endpoint to /stream; same per-WebSocketCallbackHandler
+        // dispatch but with read-only inbound, same-gameId XOR
+        // (ALREADY_SEATED_NO_SELF_SPECTATE), and the broadcast filter
+        // routes spectator-perspective frames here while
+        // player-perspective frames go to /stream sockets.
+        app.ws("/api/games/{gameId}/spectate",
+                new SpectatorStreamHandler(authService, embedded));
         app.ws("/api/rooms/{roomId}/stream", new RoomStreamHandler(authService, embedded));
 
         app.start(port);

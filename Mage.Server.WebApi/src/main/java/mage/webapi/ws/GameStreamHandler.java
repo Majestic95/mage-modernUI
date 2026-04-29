@@ -206,6 +206,15 @@ public final class GameStreamHandler implements Consumer<WsConfig> {
         ctx.attribute(ATTR_GAME_ID, gameId);
         ctx.attribute(ATTR_USERNAME, session.username());
         ctx.attribute(ATTR_SESSION, session);
+        // Slice 71 (ADR 0010 v2 D4) — bind the player route kind so
+        // the WebSocketCallbackHandler.broadcast filter routes
+        // player-perspective frames to this socket and skips
+        // spectator-perspective frames (delivered to the spectator
+        // socket route). Pre-71 the handler had no route-kind
+        // distinction; today's player flow is unchanged because
+        // shouldDeliverByRoute defaults a bound route to "player".
+        ctx.attribute(WebSocketCallbackHandler.ATTR_ROUTE_KIND,
+                WebSocketCallbackHandler.ROUTE_PLAYER);
         bindGameChatId(ctx, gameId);
         if (!handler.get().register(ctx)) {
             return;
@@ -754,7 +763,7 @@ public final class GameStreamHandler implements Consumer<WsConfig> {
      * stable, parseable contract: {@code [1,2]} today, {@code [2,3]}
      * after v3 ships, etc.
      */
-    private static String formatSupportedVersions() {
+    static String formatSupportedVersions() {
         return ProtocolVersion.SUPPORTED.stream()
                 .sorted()
                 .map(String::valueOf)

@@ -158,6 +158,32 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
      */
     public static final String ATTR_BOUND_CHAT_ID = "webapi.boundChatId";
 
+    /**
+     * Slice 71 (ADR 0010 v2 D4) — per-WsContext attribute identifying
+     * which game-stream route the socket connected on:
+     * {@code "player"} for {@code /api/games/{gameId}/stream},
+     * {@code "spectator"} for {@code /api/games/{gameId}/spectate}.
+     * Used by {@link #broadcast} to route player-perspective frames
+     * (where {@code WebGameView.myPlayerId} is non-empty) only to
+     * player sockets, and spectator-perspective frames (myPlayerId
+     * empty — upstream's {@code GameSessionWatcher} constructs the
+     * GameView with {@code createdForPlayerId=null}) only to
+     * spectator sockets.
+     *
+     * <p>Frames without a GameView in their data (chatMessage,
+     * streamHello, dialogClear, streamError) are route-agnostic and
+     * deliver to every socket regardless of route binding — chat is
+     * scoped by chatId via {@link #ATTR_BOUND_CHAT_ID}; the others
+     * are non-game-stream metadata.
+     */
+    public static final String ATTR_ROUTE_KIND = "webapi.routeKind";
+
+    /** Route kind value: socket connected on the player route. */
+    public static final String ROUTE_PLAYER = "player";
+
+    /** Route kind value: socket connected on the spectator route (slice 71). */
+    public static final String ROUTE_SPECTATOR = "spectator";
+
     private final String username;
     /**
      * Optional handle to the embedded server for stack-cardId hint
@@ -1197,8 +1223,17 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
         List<WsContext> snapshot = new ArrayList<>(sockets);
         boolean isChat = "chatMessage".equals(frame.method());
         UUID frameChatId = cc.getObjectId();
+        // Slice 71 — pre-compute the frame's intended route kind so
+        // the per-socket filter loop runs in O(1) per socket. Null
+        // result = route-agnostic (chat / streamHello / dialogClear /
+        // streamError) — those deliver to every socket subject to
+        // chat scoping. Non-null = bind to that route only.
+        String frameRouteKind = isChat ? null : routeKindFor(frame);
         for (WsContext ctx : snapshot) {
             if (isChat && !shouldDeliverChat(ctx, frameChatId)) {
+                continue;
+            }
+            if (frameRouteKind != null && !shouldDeliverByRoute(ctx, frameRouteKind)) {
                 continue;
             }
             try {
@@ -1215,6 +1250,108 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
                         username, frame.method(), ex.getMessage());
             }
         }
+    }
+
+    /**
+     * Slice 71 (ADR 0010 v2 D4) — derive the route kind a frame is
+     * intended for. Inspects the frame's data shape:
+     *
+     * <ul>
+     *   <li>{@code WebGameView} (gameInit / gameUpdate) — myPlayerId
+     *       empty → spectator perspective; non-empty → player.</li>
+     *   <li>{@code WebGameClientMessage} (gameInform / gameAsk /
+     *       gameTarget / gameSelect / etc.) — checks the wrapper's
+     *       nested gameView the same way; null nested view falls
+     *       through to player (default for legacy paths).</li>
+     *   <li>Anything else (chatMessage, streamHello, dialogClear,
+     *       streamError, sideboard, startGame) → null = route-
+     *       agnostic, no filter applied.</li>
+     * </ul>
+     *
+     * <p>Why this works: upstream's
+     * {@code GameSessionWatcher.getGameView()} constructs a
+     * {@code GameView} with {@code createdForPlayerId=null} for
+     * spectators, which our mapper surfaces as
+     * {@code myPlayerId=""}. Player perspective always carries the
+     * recipient's UUID. Detection is fully data-driven — no separate
+     * server-side bookkeeping per fan-out.
+     */
+    static String routeKindFor(WebStreamFrame frame) {
+        Object data = frame.data();
+        if (data instanceof mage.webapi.dto.stream.WebGameView gv) {
+            return isSpectatorPerspective(gv) ? ROUTE_SPECTATOR : ROUTE_PLAYER;
+        }
+        if (data instanceof mage.webapi.dto.stream.WebGameClientMessage gcm) {
+            mage.webapi.dto.stream.WebGameView nested = gcm.gameView();
+            if (nested == null) {
+                // Slice 71 critic N1 — synthesized envelope without
+                // an embedded GameView (e.g. gameError via
+                // GameViewMapper.toErrorMessage). Upstream fires
+                // GAME_ERROR via perform(playerId, ...) which routes
+                // through the seated player's GameSession, never to
+                // GameSessionWatcher — so these envelopes are
+                // structurally player-targeted. Default to
+                // ROUTE_PLAYER so the message doesn't leak to
+                // spectator sockets that have no business surfacing
+                // a player-directed error.
+                return ROUTE_PLAYER;
+            }
+            return isSpectatorPerspective(nested) ? ROUTE_SPECTATOR : ROUTE_PLAYER;
+        }
+        if (data instanceof mage.webapi.dto.stream.WebDialogClear) {
+            // Slice 71 critic N2 — dialogClear is the slice-69c D11b
+            // teardown signal for player dialogs. Spectators never
+            // had the dialog open in the first place — routing the
+            // frame to spectator sockets is gratuitous noise on the
+            // wire. ROUTE_PLAYER scopes it to the audience that
+            // actually needs the teardown.
+            return ROUTE_PLAYER;
+        }
+        return null;
+    }
+
+    static boolean isSpectatorPerspective(mage.webapi.dto.stream.WebGameView gv) {
+        // Mapper guarantees myPlayerId is "" (never null) for the
+        // null-recipient path. Treat both empty and null defensively.
+        String me = gv.myPlayerId();
+        return me == null || me.isEmpty();
+    }
+
+    /**
+     * Slice 71 — route-kind delivery filter. Deliver if the socket's
+     * bound {@link #ATTR_ROUTE_KIND} matches the frame's intended
+     * kind. Sockets without a bound route kind (e.g. lobby/room
+     * sockets that share this handler for chat) are treated as
+     * player-equivalent so the pre-71 fan-out behavior is preserved
+     * for the player surface.
+     */
+    private static boolean shouldDeliverByRoute(WsContext ctx, String frameRouteKind) {
+        Object bound = ctx.attribute(ATTR_ROUTE_KIND);
+        return matchesRoute(bound, frameRouteKind);
+    }
+
+    /**
+     * Slice 71 — pure helper exposed for unit tests so the route
+     * matching logic doesn't require constructing a Javalin
+     * {@link WsContext} (which needs a real Jetty connection).
+     * Static + package-private. Mirrors the {@code isDroppable}
+     * pattern from {@link #evictForOverflow} (slice 68b) and
+     * {@code shouldIncludePlayer} from {@code GameViewMapper}
+     * (slice 69c).
+     *
+     * @param boundRouteKind the value of the socket's
+     *                       {@link #ATTR_ROUTE_KIND} attribute, or
+     *                       null when unset (treated as ROUTE_PLAYER
+     *                       for backwards compat with sockets that
+     *                       predate slice 71)
+     * @param frameRouteKind the result of {@link #routeKindFor},
+     *                       or null when the frame is route-agnostic
+     *                       (chat, streamHello — caller short-
+     *                       circuits before reaching here)
+     */
+    static boolean matchesRoute(Object boundRouteKind, String frameRouteKind) {
+        String socketRouteKind = boundRouteKind instanceof String s ? s : ROUTE_PLAYER;
+        return socketRouteKind.equals(frameRouteKind);
     }
 
     /**

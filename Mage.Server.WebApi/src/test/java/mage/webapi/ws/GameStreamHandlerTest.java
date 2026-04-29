@@ -429,6 +429,161 @@ class GameStreamHandlerTest {
         }
     }
 
+    // ---------- slice 71: spectator route (ADR 0010 v2 D4) ----------
+
+    @Test
+    void spectate_noToken_closesWith4001() throws Exception {
+        // Same auth contract as the player route: missing token →
+        // 4001 MISSING_TOKEN before any state mutation. Locks that
+        // /api/games/{gameId}/spectate is NOT accessible unauthed.
+        TestListener listener = new TestListener();
+        URI uri = URI.create("ws://localhost:" + server.port()
+                + "/api/games/" + UUID.randomUUID() + "/spectate");
+        WebSocket ws = HTTP.newWebSocketBuilder()
+                .buildAsync(uri, listener)
+                .get(5, TimeUnit.SECONDS);
+        try {
+            assertTrue(listener.awaitClose(FRAME_WAIT));
+            assertEquals(4001, listener.closeCode);
+            assertEquals("MISSING_TOKEN", listener.closeReason);
+        } finally {
+            ws.abort();
+        }
+    }
+
+    @Test
+    void spectate_seatedUserOnSameGame_closesWith4003AlreadySeated() throws Exception {
+        // Slice 71 R6 — the security-critical XOR. A user currently
+        // seated as a player on gameId X cannot also open a spectator
+        // socket on gameId X. The fixture creates a game where this
+        // user is the HUMAN seat; opening /spectate on the same
+        // gameId must fail-fast with ALREADY_SEATED_NO_SELF_SPECTATE.
+        // Cross-game (player on X, spectator on Y) is allowed and
+        // exercised below.
+        RealGameFixture fx = realGameFixture();
+        TestListener listener = new TestListener();
+        URI uri = URI.create("ws://localhost:" + server.port()
+                + "/api/games/" + fx.gameId() + "/spectate"
+                + "?token=" + fx.token());
+        WebSocket ws = HTTP.newWebSocketBuilder()
+                .buildAsync(uri, listener)
+                .get(5, TimeUnit.SECONDS);
+        try {
+            assertTrue(listener.awaitClose(FRAME_WAIT),
+                    "self-spectate must close fast (XOR check)");
+            assertEquals(4003, listener.closeCode);
+            assertEquals("ALREADY_SEATED_NO_SELF_SPECTATE", listener.closeReason);
+            assertFalse(listener.gotFrame,
+                    "no frames should arrive before the XOR rejection");
+        } finally {
+            ws.abort();
+        }
+    }
+
+    @Test
+    void spectate_outsiderUser_authsAndReceivesStreamHello() throws Exception {
+        // Cross-game spectator: a fresh anon user (not seated at the
+        // fixture's game) opens /spectate. XOR check passes (their
+        // userId is not in userPlayerMap), upstream gameWatchStart
+        // fires, streamHello arrives. Smoke test that the spectator
+        // route boots end-to-end against a real engine.
+        RealGameFixture fx = realGameFixture();
+        // Fresh anon login — distinct user, NOT seated at fx.gameId.
+        HttpResponse<String> login = postJson("/api/session", "{}");
+        assertEquals(200, login.statusCode());
+        String outsiderToken = JSON.readTree(login.body()).get("token").asText();
+
+        TestListener listener = new TestListener();
+        URI uri = URI.create("ws://localhost:" + server.port()
+                + "/api/games/" + fx.gameId() + "/spectate"
+                + "?token=" + outsiderToken);
+        WebSocket ws = HTTP.newWebSocketBuilder()
+                .buildAsync(uri, listener)
+                .get(5, TimeUnit.SECONDS);
+        try {
+            String frame = listener.awaitFrame(FRAME_WAIT);
+            JsonNode env = JSON.readTree(frame);
+            assertEquals(SchemaVersion.CURRENT, env.get("schemaVersion").asText());
+            assertEquals("streamHello", env.get("method").asText());
+            // Spectator hello carries the negotiated protocolVersion
+            // (slice 69a D12), same shape as player hello.
+            assertEquals(2, env.get("data").get("protocolVersion").asInt());
+            // Username on the hello is the outsider's username.
+            assertTrue(env.get("data").get("username").asText().startsWith("guest-"));
+        } finally {
+            ws.sendClose(WebSocket.NORMAL_CLOSURE, "test done").join();
+        }
+    }
+
+    @Test
+    void spectate_inboundFrame_repliesSpectatorRoButKeepsSocketOpen() throws Exception {
+        // Slice 71 read-only enforcement. Spectators sending ANY
+        // inbound frame get a streamError SPECTATOR_RO; the socket
+        // stays open per ADR D4 ("frame-then-close on first offense
+        // was bad UX — misbehaving client reconnect-storms"). Lock
+        // both halves: error envelope + socket survives.
+        RealGameFixture fx = realGameFixture();
+        HttpResponse<String> login = postJson("/api/session", "{}");
+        String outsiderToken = JSON.readTree(login.body()).get("token").asText();
+        TestListener listener = new TestListener();
+        URI uri = URI.create("ws://localhost:" + server.port()
+                + "/api/games/" + fx.gameId() + "/spectate"
+                + "?token=" + outsiderToken);
+        WebSocket ws = HTTP.newWebSocketBuilder()
+                .buildAsync(uri, listener)
+                .get(5, TimeUnit.SECONDS);
+        try {
+            listener.awaitFrame(FRAME_WAIT); // streamHello
+
+            // Send any inbound frame — spectators can't issue
+            // playerAction or chatSend in v2.
+            ws.sendText("{\"type\":\"chatSend\",\"text\":\"hi\"}", true).join();
+
+            String reply = awaitMethod(listener, "streamError",
+                    Duration.ofSeconds(5));
+            JsonNode env = JSON.readTree(reply);
+            assertEquals("streamError", env.get("method").asText());
+            assertEquals("SPECTATOR_RO", env.get("data").get("code").asText());
+            assertTrue(env.get("data").get("message").asText()
+                    .toLowerCase().contains("read-only"),
+                    "error message should call out read-only: "
+                            + env.get("data").get("message").asText());
+
+            // Socket stays open — no close has fired.
+            assertEquals(-1, listener.closeCode,
+                    "spectator socket must stay open after inbound rejection");
+        } finally {
+            ws.sendClose(WebSocket.NORMAL_CLOSURE, "test done").join();
+        }
+    }
+
+    @Test
+    void spectate_protocolVersionUnsupported_closesWith4400() throws Exception {
+        // Mirror the slice 69a D12 handshake on the spectator route.
+        // Same close code (4400), same supported-versions payload,
+        // so a v1-only client gets the same "refresh / upgrade"
+        // signal whether it tries /stream or /spectate.
+        RealGameFixture fx = realGameFixture();
+        HttpResponse<String> login = postJson("/api/session", "{}");
+        String outsiderToken = JSON.readTree(login.body()).get("token").asText();
+        TestListener listener = new TestListener();
+        URI uri = URI.create("ws://localhost:" + server.port()
+                + "/api/games/" + fx.gameId() + "/spectate"
+                + "?token=" + outsiderToken + "&protocolVersion=999");
+        WebSocket ws = HTTP.newWebSocketBuilder()
+                .buildAsync(uri, listener)
+                .get(5, TimeUnit.SECONDS);
+        try {
+            assertTrue(listener.awaitClose(FRAME_WAIT));
+            assertEquals(4400, listener.closeCode);
+            assertTrue(listener.closeReason
+                    .startsWith("PROTOCOL_VERSION_UNSUPPORTED"));
+            assertTrue(listener.closeReason.contains("supported=[1,2]"));
+        } finally {
+            ws.abort();
+        }
+    }
+
     // ---------- slice 2: chat outbound + inbound ----------
 
     @Test
