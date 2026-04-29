@@ -433,6 +433,7 @@ export function CreateTableModal({ roomId, serverState, onClose, onCreated }: Pr
           <button
             type="submit"
             disabled={submitting || !gameType || !deckType}
+            data-testid="create-table-submit"
             className="px-4 py-2 rounded bg-fuchsia-600 hover:bg-fuchsia-500 disabled:bg-zinc-700 text-white font-medium"
           >
             {submitting ? 'Creating…' : 'Create'}

@@ -10,5 +10,9 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./src/setupTests.ts'],
     css: true,
+    // Slice 62 — keep Playwright e2e specs out of the vitest run.
+    // Playwright uses its own test() runtime (incompatible with
+    // vitest); they live in ./e2e and are executed via `pnpm e2e`.
+    exclude: ['**/node_modules/**', '**/dist/**', 'e2e/**'],
   },
 });

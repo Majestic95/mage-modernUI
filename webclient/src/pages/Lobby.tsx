@@ -186,6 +186,7 @@ export function Lobby() {
             type="button"
             onClick={() => setCreateOpen(true)}
             disabled={!serverState}
+            data-testid="create-table-button"
             className="bg-fuchsia-600 hover:bg-fuchsia-500 disabled:bg-zinc-700 text-white text-sm font-medium rounded px-3 py-1.5"
           >
             + Create table
@@ -281,6 +282,7 @@ export function Lobby() {
                     <button
                       type="button"
                       onClick={() => void onStart(t)}
+                      data-testid="start-table-button"
                       className="bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium rounded px-3 py-1.5"
                     >
                       Start

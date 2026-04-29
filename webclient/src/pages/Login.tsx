@@ -76,6 +76,7 @@ export function Login() {
         <button
           type="submit"
           disabled={loading}
+          data-testid="login-submit"
           className="w-full bg-fuchsia-600 hover:bg-fuchsia-500 disabled:bg-zinc-700 disabled:cursor-not-allowed text-white font-medium rounded px-4 py-2 transition-colors"
         >
           {loading ? 'Signing in…' : 'Sign in'}
