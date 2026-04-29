@@ -57,6 +57,16 @@ import java.util.concurrent.ConcurrentHashMap;
  * go straight to {@link WsContext#send} which Javalin queues
  * internally. Per-socket bounded backpressure (ADR 0007 D10) lands
  * once profiling shows it's needed.
+ *
+ * <p>Per-game state: a {@code WebSocketCallbackHandler} is 1:1 per
+ * {@code WebSession} (per username), not per game — a user in two
+ * games simultaneously shares one handler. Slice 49/61 diagnostic
+ * counters are therefore keyed by gameId in
+ * {@link #diagnosticsByGame}. Map growth is bounded by the (small)
+ * number of distinct games observed per session; entries are not
+ * auto-cleaned on game end since the cost of a stale entry is a
+ * handful of ints, and an end-game frame may still be followed by
+ * additional game-stream frames for that gameId.
  */
 public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHandler {
 
@@ -122,42 +132,72 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
     private final Set<WsContext> sockets = ConcurrentHashMap.newKeySet();
     private final Deque<WebStreamFrame> buffer = new ArrayDeque<>(BUFFER_CAPACITY);
 
-    // Slice 49 — best-effort AI-action diagnostic state. Mutated only
-    // from the engine-callback thread inside dispatch(); a user in two
-    // simultaneous games gets interleaved counts (acceptable for a
-    // canary log — when WARN fires you cross-reference surrounding
-    // log lines to identify the affected game).
-    private int lastSeenTurn = -1;
-    private String lastSeenActivePlayer = null;
-    private int framesThisSegment = 0;
+    /**
+     * Per-game slice-49/61 diagnostic state. Key: gameId from
+     * {@code ClientCallback.getObjectId()}.
+     *
+     * <p>Auditor #2 (slice-61 review) flagged that scalar per-handler
+     * diagnostic state cross-contaminates when one user is in multiple
+     * games simultaneously: a turn advance on game A could close out
+     * the segment counter that was actually tracking game B, causing
+     * the slice-61 fallback to fire on the wrong game. Keying by
+     * gameId fixes this.
+     *
+     * <p>Map growth is bounded by # of distinct games per WebSession,
+     * which is small (typically 1, occasionally a few for spectators
+     * watching multiple matches). Entries are not auto-cleaned on
+     * game end — see class-level note. Treat this as effectively a
+     * tiny cache, not a leak vector.
+     */
+    private final Map<UUID, AiSegmentDiagnostics> diagnosticsByGame =
+            new ConcurrentHashMap<>();
 
     /**
-     * Slice 61 — count of consecutive turn segments that closed with
-     * {@code framesThisSegment < LOW_FRAMES_THRESHOLD}. Resets to 0 on
-     * (a) any normal-segment close, (b) {@code reset=true} (gameInit —
-     * game-2 of best-of-three would otherwise carry stale state), and
-     * (c) immediately after {@link #triggerStuckAiFallback} fires so we
-     * don't re-fire on the same stall (the intervention takes effect
-     * over the next turn segment, not instantly). When this counter
-     * reaches {@link #LOW_FRAMES_FALLBACK_THRESHOLD} the fallback
-     * pass-priority intervention is invoked.
+     * Per-game slice-49/61 diagnostic state. One instance per gameId in
+     * {@link #diagnosticsByGame}. Mutations are guarded by
+     * {@code synchronized (this)} on the instance because two
+     * concurrent games on different engine threads can both deliver
+     * callbacks to the same {@link WebSocketCallbackHandler} (1:1 per
+     * WebSession, not per game) — even though each individual game's
+     * dispatch is single-threaded, two games racing on different
+     * keys is fine but two games happening to land on the same key
+     * (impossible by construction since key=gameId, but cheap to
+     * synchronize anyway as a defense-in-depth at diagnostic
+     * frequency) is not worth a data race for.
      */
-    private int consecutiveLowSegments = 0;
+    static final class AiSegmentDiagnostics {
+        /**
+         * Slice 49 — most-recently-observed turn number for this game.
+         * {@code -1} sentinel = uninitialized / pre-first-frame.
+         */
+        int lastSeenTurn = -1;
 
-    /**
-     * Slice 61 — most-recently-observed gameId for the current game
-     * stream, captured by {@link #observeAiActions} from
-     * {@code ClientCallback.getObjectId()} immediately before delegating
-     * to {@link #observeTurnTransition}. The fallback intervention
-     * needs a stable gameId to hand to {@link GameLookup#findGame}, but
-     * {@code observeTurnTransition}'s signature is intentionally kept
-     * unchanged so the slice-49 unit tests in
-     * {@code AiActionDiagnosticTest} continue to pass without a
-     * synthetic gameId. Null until the first game-frame is observed
-     * (e.g. lobby-only sessions never set it); the intervention skips
-     * gracefully when null.
-     */
-    private UUID boundGameId = null;
+        /**
+         * Slice 49 — most-recently-observed active-player name. Null
+         * sentinel = uninitialized.
+         */
+        String lastSeenActivePlayer = null;
+
+        /**
+         * Slice 49 — frame count accumulated against the current
+         * (turn, activePlayer) segment.
+         */
+        int framesThisSegment = 0;
+
+        /**
+         * Slice 61 — count of consecutive turn segments that closed
+         * with {@code framesThisSegment < LOW_FRAMES_THRESHOLD}.
+         * Resets to 0 on (a) any normal-segment close, (b)
+         * {@code reset=true} (gameInit — game-2 of best-of-three
+         * would otherwise carry stale state), and (c) immediately
+         * after {@link #triggerStuckAiFallback} fires so we don't
+         * re-fire on the same stall (the intervention takes effect
+         * over the next turn segment, not instantly). When this
+         * counter reaches {@link #LOW_FRAMES_FALLBACK_THRESHOLD} the
+         * fallback pass-priority intervention is invoked.
+         */
+        int consecutiveLowSegments = 0;
+    }
 
     /**
      * Test-friendly ctor: no embedded-server reference. The
@@ -321,94 +361,103 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
         if (gv == null) {
             return;
         }
-        // Slice 61 — capture the live gameId on every observed game
-        // frame so triggerStuckAiFallback() has a stable handle to
-        // resolve the upstream Game via GameLookup. observeTurnTransition's
-        // signature is deliberately left unchanged to keep the
-        // slice-49 unit tests synthetic-gameId-free.
+        // Auditor-2 fix: gameId now keys the per-game diagnostic
+        // state. Defensive early-return on null protects the (in
+        // practice unreachable for game-view frames) case where the
+        // upstream callback omits the objectId — without a key we
+        // cannot safely scope the diagnostic state, so we drop the
+        // observation rather than risk cross-contaminating another
+        // game's counters.
         UUID gameId = cc.getObjectId();
-        if (gameId != null) {
-            boundGameId = gameId;
+        if (gameId == null) {
+            return;
         }
         boolean reset = "gameInit".equals(frame.method());
-        observeTurnTransition(gv.getTurn(), gv.getActivePlayerName(), reset);
+        observeTurnTransition(gv.getTurn(), gv.getActivePlayerName(), reset, gameId);
     }
 
     /**
      * Frame-count tracker, refactored out for unit-test access. Each
      * call counts one frame against the current (turn, activePlayer)
-     * segment; when either changes, the prior segment's count is
-     * logged (WARN if below {@link #LOW_FRAMES_THRESHOLD}).
+     * segment for {@code gameId}; when either changes, the prior
+     * segment's count is logged (WARN if below
+     * {@link #LOW_FRAMES_THRESHOLD}).
      *
      * <p>{@code reset=true} is for {@code gameInit} — game-2 of a
      * best-of-three resets turn numbering, so we re-anchor without
      * logging the (meaningless) prior segment.
+     *
+     * <p>Package-private for {@code AiActionDiagnosticTest}. The
+     * {@code gameId} parameter may be a synthetic UUID in tests —
+     * production callers route through {@link #observeAiActions},
+     * which sources gameId from {@code ClientCallback.getObjectId()}
+     * and early-returns on null. Mutations on the per-game state
+     * object are synchronized on that instance because two games
+     * running on different engine threads can both deliver callbacks
+     * to the same handler (1:1 per WebSession, not per game); even
+     * though distinct games key to distinct entries in
+     * {@link #diagnosticsByGame}, defense-in-depth synchronization
+     * costs effectively nothing at diagnostic call frequency.
      */
-    void observeTurnTransition(int turn, String activePlayer, boolean reset) {
-        if (reset) {
-            lastSeenTurn = turn;
-            lastSeenActivePlayer = activePlayer;
-            framesThisSegment = 1;
-            // Slice 61 — gameInit (e.g. game-2 of best-of-three) must
-            // not carry stuck-AI state across game boundaries.
-            consecutiveLowSegments = 0;
-            return;
-        }
-        boolean turnAdvanced = turn != lastSeenTurn;
-        boolean playerChanged = activePlayer != null
-                && !activePlayer.equals(lastSeenActivePlayer);
-        if (turnAdvanced || playerChanged) {
-            if (lastSeenTurn != -1) {
-                if (framesThisSegment < LOW_FRAMES_THRESHOLD) {
-                    LOG.warn("AI-action diagnostic LOW: user={}, turn={}, "
-                            + "activePlayer={}, frames={} "
-                            + "(possible no-plays stall — see "
-                            + "docs/decisions/mad-ai-no-plays-recon.md)",
-                            username, lastSeenTurn, lastSeenActivePlayer,
-                            framesThisSegment);
-                    // Slice 61 — accumulate; intervene at threshold.
-                    consecutiveLowSegments++;
-                    if (consecutiveLowSegments >= LOW_FRAMES_FALLBACK_THRESHOLD) {
-                        triggerStuckAiFallback(lastSeenTurn, lastSeenActivePlayer);
-                        consecutiveLowSegments = 0;
-                    }
-                } else {
-                    if (LOG.isDebugEnabled()) {
-                        LOG.debug("AI-action diagnostic: user={}, turn={}, "
-                                + "activePlayer={}, frames={}",
-                                username, lastSeenTurn, lastSeenActivePlayer,
-                                framesThisSegment);
-                    }
-                    // Slice 61 — a normal segment breaks the LOW streak.
-                    consecutiveLowSegments = 0;
-                }
+    void observeTurnTransition(int turn, String activePlayer, boolean reset, UUID gameId) {
+        AiSegmentDiagnostics d = diagnosticsByGame.computeIfAbsent(
+                gameId, k -> new AiSegmentDiagnostics());
+        synchronized (d) {
+            if (reset) {
+                d.lastSeenTurn = turn;
+                d.lastSeenActivePlayer = activePlayer;
+                d.framesThisSegment = 1;
+                // Slice 61 — gameInit (e.g. game-2 of best-of-three) must
+                // not carry stuck-AI state across game boundaries.
+                d.consecutiveLowSegments = 0;
+                return;
             }
-            lastSeenTurn = turn;
-            lastSeenActivePlayer = activePlayer;
-            framesThisSegment = 1;
-        } else {
-            framesThisSegment++;
+            boolean turnAdvanced = turn != d.lastSeenTurn;
+            boolean playerChanged = activePlayer != null
+                    && !activePlayer.equals(d.lastSeenActivePlayer);
+            if (turnAdvanced || playerChanged) {
+                if (d.lastSeenTurn != -1) {
+                    if (d.framesThisSegment < LOW_FRAMES_THRESHOLD) {
+                        LOG.warn("AI-action diagnostic LOW: user={}, turn={}, "
+                                + "activePlayer={}, frames={} "
+                                + "(possible no-plays stall — see "
+                                + "docs/decisions/mad-ai-no-plays-recon.md)",
+                                username, d.lastSeenTurn, d.lastSeenActivePlayer,
+                                d.framesThisSegment);
+                        // Slice 61 — accumulate; intervene at threshold.
+                        d.consecutiveLowSegments++;
+                        if (d.consecutiveLowSegments >= LOW_FRAMES_FALLBACK_THRESHOLD) {
+                            triggerStuckAiFallback(d.lastSeenTurn, d.lastSeenActivePlayer, gameId);
+                            d.consecutiveLowSegments = 0;
+                        }
+                    } else {
+                        if (LOG.isDebugEnabled()) {
+                            LOG.debug("AI-action diagnostic: user={}, turn={}, "
+                                    + "activePlayer={}, frames={}",
+                                    username, d.lastSeenTurn, d.lastSeenActivePlayer,
+                                    d.framesThisSegment);
+                        }
+                        // Slice 61 — a normal segment breaks the LOW streak.
+                        d.consecutiveLowSegments = 0;
+                    }
+                }
+                d.lastSeenTurn = turn;
+                d.lastSeenActivePlayer = activePlayer;
+                d.framesThisSegment = 1;
+            } else {
+                d.framesThisSegment++;
+            }
         }
     }
 
-    /** Test access for slice-49 unit assertions. */
-    int framesThisSegment() {
-        return framesThisSegment;
-    }
-
-    /** Test access for slice-49 unit assertions. */
-    int lastSeenTurn() {
-        return lastSeenTurn;
-    }
-
-    /** Test access for slice-49 unit assertions. */
-    String lastSeenActivePlayer() {
-        return lastSeenActivePlayer;
-    }
-
-    /** Slice 61 — test access for the consecutive-LOW segment counter. */
-    int consecutiveLowSegmentsForTest() {
-        return consecutiveLowSegments;
+    /**
+     * Test access — exposes the per-game diagnostic state object for
+     * direct field inspection. Returns {@code null} if no frames
+     * have been observed for the given gameId yet (the lazy-create
+     * path runs on first {@link #observeTurnTransition} call).
+     */
+    AiSegmentDiagnostics diagnosticsForTest(UUID gameId) {
+        return diagnosticsByGame.get(gameId);
     }
 
     /**
@@ -433,30 +482,34 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
      * RuntimeException from the pass call is caught + logged so
      * the engine thread doesn't crash.
      */
-    private void triggerStuckAiFallback(int turn, String activePlayer) {
+    private void triggerStuckAiFallback(int turn, String activePlayer, UUID gameId) {
         LOG.warn("AI-action diagnostic STUCK ({}× LOW): user={}, "
                 + "turn={}, activePlayer={} — forcing pass-priority "
                 + "intervention",
                 LOW_FRAMES_FALLBACK_THRESHOLD, username, turn, activePlayer);
-        if (boundGameId == null || embedded == null) {
-            LOG.debug("Stuck-AI fallback skipped: gameId or embedded unavailable");
+        // gameId is non-null by construction: observeAiActions early-returns
+        // on null gameId, so observeTurnTransition (and hence this method)
+        // is unreachable without one. embedded may still be null in unit
+        // tests that exercise the diagnostic path without booting a server.
+        if (embedded == null) {
+            LOG.debug("Stuck-AI fallback skipped: embedded server unavailable");
             return;
         }
-        Optional<Game> gameOpt = GameLookup.findGame(boundGameId, embedded.managerFactory());
+        Optional<Game> gameOpt = GameLookup.findGame(gameId, embedded.managerFactory());
         if (gameOpt.isEmpty()) {
-            LOG.warn("Stuck-AI fallback: could not resolve game {}", boundGameId);
+            LOG.warn("Stuck-AI fallback: could not resolve game {}", gameId);
             return;
         }
         Game game = gameOpt.get();
         UUID priorityPlayerId = game.getPriorityPlayerId();
         if (priorityPlayerId == null) {
-            LOG.warn("Stuck-AI fallback: no priority player on game {}", boundGameId);
+            LOG.warn("Stuck-AI fallback: no priority player on game {}", gameId);
             return;
         }
         Player player = game.getPlayer(priorityPlayerId);
         if (player == null) {
             LOG.warn("Stuck-AI fallback: priority player {} not found on game {}",
-                    priorityPlayerId, boundGameId);
+                    priorityPlayerId, gameId);
             return;
         }
         if (!player.isComputer()) {
