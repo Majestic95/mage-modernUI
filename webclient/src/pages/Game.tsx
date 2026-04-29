@@ -2313,10 +2313,11 @@ function ZoneCounter({
   cards: Record<string, WebCardView>;
 }) {
   const [open, setOpen] = useState(false);
-  const count = Object.keys(cards).length;
+  const cardList = Object.values(cards);
+  const count = cardList.length;
   const empty = count === 0;
   return (
-    <span>
+    <span className="relative inline-block">
       <span className="text-zinc-500">{label}</span>{' '}
       {empty ? (
         <span data-testid={`zone-count-${zone}`} className="font-mono">
@@ -2333,6 +2334,48 @@ function ZoneCounter({
           {count}
         </button>
       )}
+      {/*
+        Slice 55 — resolve animation: zero-size hidden motion.div per
+        graveyard / exile card so the cross-zone layoutId graph has a
+        destination to glide INTO when an instant or sorcery resolves.
+        Without these, a Lightning Bolt resolving from the stack would
+        animate its exit (opacity-fade + slide) but the player would
+        never see it "land" anywhere — the chip count would just bump
+        in silence. With these, Framer matches the exiting stack tile
+        against the cardId-paired hidden div at the chip's position
+        and glides between them. Fades to zero on arrival; the chip
+        count is the persistent record.
+
+        Per-card (not per-zone) so any card moving INTO the zone
+        triggers the glide, regardless of order. Zero-size +
+        opacity-0 + pointer-events-none means they cost ~nothing in
+        layout/paint. Performance budget on this whole LayoutGroup is
+        ≤50 elements (see Game.tsx:163); a long game's combined
+        graveyards rarely exceed 30 cards.
+      */}
+      <span
+        aria-hidden="true"
+        className="absolute inset-0 pointer-events-none overflow-hidden"
+      >
+        <AnimatePresence initial={false}>
+          {cardList.map((card) =>
+            card.cardId ? (
+              <motion.span
+                key={card.id}
+                layoutId={card.cardId}
+                data-layout-id={card.cardId}
+                data-testid={`zone-target-${zone}`}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 0 }}
+                exit={{ opacity: 0 }}
+                transition={slow({ duration: 0.2 })}
+                className="absolute inset-0 block"
+                style={{ width: 0, height: 0 }}
+              />
+            ) : null,
+          )}
+        </AnimatePresence>
+      </span>
       {open && (
         <ZoneBrowser
           title={`${playerName}'s ${zone}`}
