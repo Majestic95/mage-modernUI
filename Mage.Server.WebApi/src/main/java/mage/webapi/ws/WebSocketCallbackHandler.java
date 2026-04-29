@@ -59,6 +59,22 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
     static final int BUFFER_CAPACITY = 64;
 
     /**
+     * Slice 49 — AI-action diagnostic threshold. A turn segment with
+     * fewer than this many GameView frames raises a WARN. Slice 47
+     * mitigated the Mad AI no-plays cliff (skill 1 → 4, more think
+     * time) but did not cure the upstream empty-tree edge case at
+     * {@code ComputerPlayer7.java:119}; this counter is the canary
+     * that fires if the stall recurs.
+     *
+     * <p>Calibration: a no-action turn still produces ~10–12 phase
+     * updates (untap / upkeep / draw / main1 / begin-combat /
+     * declare-attackers / declare-blockers / combat-damage /
+     * end-combat / main2 / end / cleanup) — anything below 3 is
+     * pathological, not "the AI declined to act."
+     */
+    static final int LOW_FRAMES_THRESHOLD = 3;
+
+    /**
      * Per-WsContext attribute key — the chatId this socket is bound
      * to. Resolved at connect time via
      * {@code MageServerImpl.chatFindByGame} (game stream) or
@@ -77,6 +93,15 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
     private final String username;
     private final Set<WsContext> sockets = ConcurrentHashMap.newKeySet();
     private final Deque<WebStreamFrame> buffer = new ArrayDeque<>(BUFFER_CAPACITY);
+
+    // Slice 49 — best-effort AI-action diagnostic state. Mutated only
+    // from the engine-callback thread inside dispatch(); a user in two
+    // simultaneous games gets interleaved counts (acceptable for a
+    // canary log — when WARN fires you cross-reference surrounding
+    // log lines to identify the affected game).
+    private int lastSeenTurn = -1;
+    private String lastSeenActivePlayer = null;
+    private int framesThisSegment = 0;
 
     public WebSocketCallbackHandler(String username) {
         this.username = username;
@@ -203,7 +228,97 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
             return;
         }
         appendBuffer(frame);
+        observeAiActions(cc, frame);
         broadcast(cc, frame);
+    }
+
+    // ---------- Slice 49 — AI-action diagnostic ----------
+
+    /**
+     * Pull the {@link GameView} (if any) out of a just-dispatched frame
+     * and feed its turn / active-player fields into
+     * {@link #observeTurnTransition}. Best-effort: non-game frames
+     * (chat, sideboard, end-game, dialogs that don't carry a
+     * GameClientMessage) return early.
+     */
+    private void observeAiActions(ClientCallback cc, WebStreamFrame frame) {
+        GameView gv = extractGameView(cc, frame);
+        if (gv == null) {
+            return;
+        }
+        boolean reset = "gameInit".equals(frame.method());
+        observeTurnTransition(gv.getTurn(), gv.getActivePlayerName(), reset);
+    }
+
+    /**
+     * Frame-count tracker, refactored out for unit-test access. Each
+     * call counts one frame against the current (turn, activePlayer)
+     * segment; when either changes, the prior segment's count is
+     * logged (WARN if below {@link #LOW_FRAMES_THRESHOLD}).
+     *
+     * <p>{@code reset=true} is for {@code gameInit} — game-2 of a
+     * best-of-three resets turn numbering, so we re-anchor without
+     * logging the (meaningless) prior segment.
+     */
+    void observeTurnTransition(int turn, String activePlayer, boolean reset) {
+        if (reset) {
+            lastSeenTurn = turn;
+            lastSeenActivePlayer = activePlayer;
+            framesThisSegment = 1;
+            return;
+        }
+        boolean turnAdvanced = turn != lastSeenTurn;
+        boolean playerChanged = activePlayer != null
+                && !activePlayer.equals(lastSeenActivePlayer);
+        if (turnAdvanced || playerChanged) {
+            if (lastSeenTurn != -1) {
+                if (framesThisSegment < LOW_FRAMES_THRESHOLD) {
+                    LOG.warn("AI-action diagnostic LOW: user={}, turn={}, "
+                            + "activePlayer={}, frames={} "
+                            + "(possible no-plays stall — see "
+                            + "docs/decisions/mad-ai-no-plays-recon.md)",
+                            username, lastSeenTurn, lastSeenActivePlayer,
+                            framesThisSegment);
+                } else if (LOG.isDebugEnabled()) {
+                    LOG.debug("AI-action diagnostic: user={}, turn={}, "
+                            + "activePlayer={}, frames={}",
+                            username, lastSeenTurn, lastSeenActivePlayer,
+                            framesThisSegment);
+                }
+            }
+            lastSeenTurn = turn;
+            lastSeenActivePlayer = activePlayer;
+            framesThisSegment = 1;
+        } else {
+            framesThisSegment++;
+        }
+    }
+
+    /** Test access for slice-49 unit assertions. */
+    int framesThisSegment() {
+        return framesThisSegment;
+    }
+
+    /** Test access for slice-49 unit assertions. */
+    int lastSeenTurn() {
+        return lastSeenTurn;
+    }
+
+    /** Test access for slice-49 unit assertions. */
+    String lastSeenActivePlayer() {
+        return lastSeenActivePlayer;
+    }
+
+    private static GameView extractGameView(ClientCallback cc, WebStreamFrame frame) {
+        String method = frame.method();
+        Object data = cc.getData();
+        if ("gameInit".equals(method) || "gameUpdate".equals(method)) {
+            return data instanceof GameView gv ? gv : null;
+        }
+        if ("gameInform".equals(method)) {
+            return data instanceof GameClientMessage gcm ? gcm.getGameView() : null;
+        }
+        return null;
     }
 
     /**
