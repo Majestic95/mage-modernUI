@@ -78,15 +78,42 @@ export function CreateTableModal({ roomId, serverState, onClose, onCreated }: Pr
   // opponents for any game type with at least 2 seats. Pre-69d this
   // was capped at maxPlayers=2 (1 human + 1 AI for 1v1) which made
   // 4-player FFA against AI literally unbuildable from the lobby.
-  // Now: 4p FFA fills 1 human + 3 AI; 3p FFA fills 1 human + 2 AI.
   // Custom human/AI mixes (e.g. 2 humans + 2 AI) require manual
   // seat-management — out of v2 scope per ADR R1's deferral note.
   const aiAllowed = (selectedGame?.maxPlayers ?? 0) >= 2;
-  const aiSeatsToAdd = aiAllowed && addAi
-    ? (selectedGame?.maxPlayers ?? 2) - 1
-    : 0;
   const showAttackOption = selectedGame?.useAttackOption ?? false;
   const showRange = selectedGame?.useRange ?? false;
+
+  // Slice 69d playtest follow-up — game types like FreeForAll report
+  // minPlayers=3, maxPlayers=10. Defaulting to maxPlayers (the pre-
+  // playtest behavior) yields 9-AI mega-games that don't match the
+  // ADR v2 scope ("3-4 player FFA") and would be unplayable due to
+  // AI thinking time alone. Default cap at 4 (or maxPlayers if
+  // smaller — 1v1 games stay at 2). User can bump up to maxPlayers
+  // via the seat-count input below; bounded by [minPlayers, maxPlayers].
+  const minSeats = Math.max(2, selectedGame?.minPlayers ?? 2);
+  const maxSeats = Math.max(minSeats, selectedGame?.maxPlayers ?? 2);
+  const defaultSeats = Math.max(minSeats, Math.min(4, maxSeats));
+  // Per-game-type seat count. Switching gameType falls through to
+  // the new format's default (4-cap by min(4, maxPlayers)) instead
+  // of carrying a stale value from the previously-selected format.
+  // User edits within a given format persist; switching back later
+  // restores the user's prior choice for that format.
+  const [seatCountByGame, setSeatCountByGame] = useState<Record<string, number>>(
+    {},
+  );
+  const seatCount = seatCountByGame[gameType] ?? defaultSeats;
+  const setSeatCount = (n: number) =>
+    setSeatCountByGame((prev) => ({ ...prev, [gameType]: n }));
+  // Display value: clamp to current bounds so a stale per-game
+  // value (e.g., a manual 6 from a previous server-state shape)
+  // surfaces as a valid number.
+  const clampedSeats = Math.min(Math.max(seatCount, minSeats), maxSeats);
+  // Show the seat-count input only for multiplayer games where the
+  // server actually allows variable seat counts. 1v1 (minPlayers ===
+  // maxPlayers === 2) is fixed-shape — no UI surface needed.
+  const showSeatCount = aiAllowed && minSeats < maxSeats;
+  const aiSeatsToAdd = aiAllowed && addAi ? clampedSeats - 1 : 0;
 
   // ESC key dismisses the modal (and focus trap + restore is wired
   // by the same hook). The submitting guard is preserved by passing
@@ -269,6 +296,23 @@ export function CreateTableModal({ roomId, serverState, onClose, onCreated }: Pr
             className={inputClasses}
           />
         </Field>
+
+        {showSeatCount && (
+          <Field
+            label={`Number of players (${minSeats}–${maxSeats})`}
+          >
+            <input
+              type="number"
+              min={minSeats}
+              max={maxSeats}
+              value={clampedSeats}
+              onChange={(e) =>
+                setSeatCount(Number(e.target.value) || minSeats)
+              }
+              className={inputClasses}
+            />
+          </Field>
+        )}
 
         <fieldset className="space-y-1">
           <label className="flex items-center gap-2 text-sm">

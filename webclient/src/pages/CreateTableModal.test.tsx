@@ -318,6 +318,69 @@ describe('CreateTableModal', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it('caps AI fill at 4 players when game type allows up to 10 (slice 69d playtest follow-up)', async () => {
+    // Real upstream FreeForAll reports minPlayers=3, maxPlayers=10.
+    // Pre-fix the lobby would fill 9 AI on default — unplayable due
+    // to AI thinking time, mismatched ADR v2 scope ("3-4 player FFA").
+    // Now the default seat count caps at 4; user can manually bump
+    // up to maxPlayers via the seat-count input.
+    const tenPlayerFfaState = {
+      ...SERVER_STATE,
+      gameTypes: [
+        SERVER_STATE.gameTypes[0]!, // Two Player Duel (default)
+        {
+          ...SERVER_STATE.gameTypes[1]!,
+          name: 'Free For All',
+          minPlayers: 3,
+          maxPlayers: 10,
+        },
+      ],
+    };
+    const user = userEvent.setup();
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(tableResponse())
+      // Three AI POSTs (default cap is 4, so 1 human + 3 AI)
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <CreateTableModal
+        roomId={ROOM_ID}
+        serverState={tenPlayerFfaState}
+        onClose={() => {}}
+        onCreated={() => {}}
+      />,
+    );
+
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: /game type/i }),
+      'Free For All',
+    );
+    // Helper text shows the capped count, NOT the maxPlayers value.
+    expect(
+      screen.getByText(/1 human \+ 3 AI = 4-player game/i),
+    ).toBeInTheDocument();
+    // The seat-count input is visible (variable-seat format) and
+    // bounded so the user can opt up to a 10p game if they really
+    // want to. Bounds visible in the label.
+    expect(screen.getByLabelText(/number of players/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/number of players \(3.*10\)/i),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /^create$/i }));
+
+    // 1 create + 3 AI fills = 4 calls total.
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    const createBody = JSON.parse(
+      fetchMock.mock.calls[0]?.[1]?.body as string,
+    ) as Record<string, unknown>;
+    expect((createBody['seats'] as string[]).length).toBe(4);
+  });
+
   it('FFA partial-fill failure surfaces the seat-number that broke', async () => {
     // Failure mode: 2nd AI POST fails after 1st succeeds. User sees
     // a precise count ("1 of 3 filled — seat 2 failed") so they
