@@ -1052,7 +1052,7 @@ function StackZone({ stack }: { stack: Record<string, WebCardView> }) {
       <div className="text-xs text-zinc-500 uppercase tracking-wide mb-1.5">
         Stack ({entries.length}) — top resolves first
       </div>
-      <div className="flex flex-wrap gap-1.5">
+      <div className="flex flex-wrap items-end gap-2">
         {entries.map((card, idx) => {
           const tooltip = [card.typeLine, ...(card.rules ?? [])]
             .filter(Boolean)
@@ -1061,19 +1061,14 @@ function StackZone({ stack }: { stack: Record<string, WebCardView> }) {
             <HoverCardDetail key={card.id} card={card}>
               <div
                 data-testid="stack-entry"
-                className={
-                  'inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs ' +
-                  'border border-zinc-700 bg-zinc-900'
-                }
+                className="relative"
                 title={tooltip || card.name}
               >
-                <CardThumbnail card={card} size={28} />
-                <span className="font-medium text-zinc-100">{card.name}</span>
-                {card.manaCost && <ManaCost cost={card.manaCost} size="sm" />}
+                <StackTileFace card={card} />
                 {idx === 0 && (
                   <span
                     data-testid="stack-top-marker"
-                    className="text-[10px] font-semibold bg-fuchsia-500/30 text-fuchsia-200 px-1 rounded"
+                    className="absolute -top-1.5 -right-1.5 text-[9px] font-semibold bg-fuchsia-500 text-zinc-100 px-1 rounded shadow"
                   >
                     TOP
                   </span>
@@ -1084,6 +1079,54 @@ function StackZone({ stack }: { stack: Record<string, WebCardView> }) {
         })}
       </div>
     </section>
+  );
+}
+
+/**
+ * Small card-shaped tile for stack entries (slice 48). Same 5:7
+ * shape as HandCardFace / BattlefieldTileFace, scaled down to
+ * 60×84 — the stack rarely holds more than 1-3 entries in 1v1, but
+ * the tile needs to stay narrow so the stack-zone header doesn't
+ * eat too much battlefield real estate.
+ *
+ * <p>Defensive image-fail fallback identical to HandCardFace —
+ * a name-only gradient silhouette so a missing print doesn't
+ * leave a broken-image icon on the stack.
+ */
+function StackTileFace({ card }: { card: WebCardView }) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const url = scryfallImageUrl(card, 'normal');
+  return (
+    <div
+      data-testid="stack-tile-face"
+      className="relative w-[60px] h-[84px] rounded overflow-hidden border border-zinc-700 bg-zinc-900 shadow"
+    >
+      {url && !imageFailed ? (
+        <img
+          src={url}
+          alt=""
+          loading="lazy"
+          onError={() => setImageFailed(true)}
+          className="absolute inset-0 w-full h-full object-cover"
+        />
+      ) : (
+        <div className="absolute inset-0 bg-gradient-to-b from-zinc-800 to-zinc-900 flex items-center justify-center px-1">
+          <span className="text-[8px] text-zinc-500 italic text-center leading-tight">
+            {card.name}
+          </span>
+        </div>
+      )}
+      {card.manaCost && (
+        <div className="absolute top-0.5 right-0.5 bg-zinc-950/85 backdrop-blur-sm rounded px-0.5">
+          <ManaCost cost={card.manaCost} size="sm" />
+        </div>
+      )}
+      <div className="absolute inset-x-0 bottom-0 bg-zinc-950/85 backdrop-blur-sm px-1 py-0.5">
+        <p className="text-[9px] font-medium text-zinc-100 truncate leading-tight">
+          {card.name}
+        </p>
+      </div>
+    </div>
   );
 }
 
