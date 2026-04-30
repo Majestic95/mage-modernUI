@@ -90,10 +90,10 @@ There are also **token gaps**: `--card-size-{micro,small,medium,large,focal}` ar
 
 ### 2.3 Battlefield rows around the pod
 
-- **Target (spec §2):** Two rows per pod — lands closer to the player's edge, creatures forward (Arena-style). Small column to the right of the creature row for non-creature non-land permanents (artifacts/enchantments). For 4-pod arrangement: each opponent pod has rows that "curve around the upper edge" or stack vertically along left/right edges.
+- **Target (spec §2):** Two rows per pod — lands closer to the player's edge, creatures forward (Arena-style). Small column to the right of the creature row for non-creature non-land permanents (artifacts/enchantments). For 4-pod arrangement: each opponent pod has flat horizontal rows positioned above (top), beside (left/right), or above the hand (bottom).
 - **Current:** `PlayerArea.tsx:128-174` + `BattlefieldRowGroup.tsx`. Uses `bucketBattlefield` to split into creatures / other / lands rows. `rowOrder(perspective)` mirrors the order for opponents. All rows render BELOW the PlayerFrame strip in a flex column. CommandZone is a strip below the rows.
-- **Verdict:** **PARTIAL** — bucketing is correct, anatomy positioning is wrong.
-- **Work:** When the portrait-stacked PlayerFrame lands (item 2.1), the rows need to flow around the portrait per the target. For TOP opponent: rows curve above/below the portrait (the target screenshot shows 6 cards in a horizontal row above + smaller token row below). For LEFT/RIGHT opponents: rows stack vertically along the edge column. For BOTTOM (self): rows above the hand fan, full-width. This is layout work, not new components.
+- **Verdict:** **PARTIAL** — bucketing is correct, anatomy positioning needs the position-aware flex direction shipped in slice 70-K.
+- **Work:** Positioning landed in slice 70-K (top/bottom → flex-col with rows above frame; left → flex-row with frame at left; right → flex-row-reverse with frame at right). **Curved arrangements are explicitly out of scope per user direction 2026-04-30.** Traditional flat horizontal rows for all positions; the picture's curved appearance is decorative only and not a fidelity target.
 
 ### 2.4 Card sizes by pod
 

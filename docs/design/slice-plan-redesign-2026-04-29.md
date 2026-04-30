@@ -17,7 +17,7 @@
    - During slice: foreground `npm run dev` + Playwright OR manual screenshot at 1920×1080.
    - End of slice: deploy a Vercel preview, user signs off before next slice begins.
 5. **Mana-payment UI rebuild deferred** to 70-Q (after the visual identity lands).
-6. **Battlefield rows stay flat** for v1 (curving deferred to polish if user requests).
+6. **Battlefield rows are traditional MTG-style flat horizontal rows.** Curved arrangements (top opponent's cards arcing above the portrait, left/right pods curving along the edge) are **explicitly out of scope** per user direction 2026-04-30 — not deferred-to-polish, just dropped from the plan entirely. The picture's curved appearance is decorative only and not a fidelity target.
 7. **PhaseTimeline kept as-is** in v1 (rich timeline is more informative than spec's simpler version).
 8. **Concede moves to settings menu** (not always-visible).
 9. **Lobby name in header is hardcoded** based on game type for v1 (real lobby-name plumbing is a separate task).

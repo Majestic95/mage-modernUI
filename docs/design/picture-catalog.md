@@ -131,8 +131,8 @@ Four pods total. Each has the same anatomy with size/orientation variations per 
 - **Battlefield rows:** **ABOVE** the portrait (a horizontal row of ~6 cards directly above the portrait, with optional smaller token row above that). The picture shows cards facing the local player (oriented as if the top opponent's cards are "approaching" the center).
 - **Card size:** `--card-size-small` (~80×112 portrait per slice 70-I tokens).
 - **Player name + commander name:** below the portrait.
-- **Battlefield orientation:** rows flow left-to-right, no curving for v1 (defer to polish).
-- **In picture:** Korvold has 6 face-down or back-side cards above his portrait + a row of horizontal "Treasure-token-style" smaller cards above that. Implementation note: face-down cards still render at `BattlefieldTile` size — the rendering of "back side" is a separate concern (slice TBD if needed).
+- **Battlefield orientation:** rows flow left-to-right in flat horizontal rows, **traditional MTG-style — no curving**. (User direction 2026-04-30: curved arrangements are explicitly out of scope; the picture's curved appearance is decorative only and is not a fidelity target.)
+- **In picture:** Korvold has 6 face-down or back-side cards above his portrait + a row of horizontal "Treasure-token-style" smaller cards above that. Implementation: flat horizontal rows (creatures / other / lands per `bucketBattlefield`) above the portrait. Face-down cards still render at `BattlefieldTile` size — the rendering of "back side" is a separate concern (slice TBD if needed).
 
 #### 2.B — Left opponent (Atraxa position)
 
