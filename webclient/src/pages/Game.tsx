@@ -4,6 +4,8 @@ import { useAuthStore } from '../auth/store';
 import { GameStream } from '../game/stream';
 import { useGameStore } from '../game/store';
 import { GameEndOverlay } from '../game/GameEndOverlay';
+import { CardAnimationLayer } from '../animation/CardAnimationLayer';
+import { DeltaPump } from '../animation/DeltaPump';
 import { GameHeader } from '../game/GameHeader';
 import { GameTable } from '../game/GameTable';
 import { Waiting } from '../game/Waiting';
@@ -165,6 +167,17 @@ export function Game({ gameId, onLeave }: Props) {
             )}
           </div>
           <GameEndOverlay gameId={gameId} onLeave={onLeave} />
+          {/* Slice 70-Z.2 — card-animation seam. DeltaPump diffs
+              successive gameView snapshots and fans typed events
+              through the module-singleton eventBus; CardAnimationLayer
+              is the (currently empty) overlay portal that future
+              slices (70-Z.3 cinematic, 70-Z.4 impact) mount visuals
+              into. Both must sit inside the LayoutGroup so any
+              motion.div they later spawn participates in the cross-
+              zone cardId-layoutId graph. Both render nothing
+              visually in slice 70-Z.2 — this is wiring only. */}
+          <CardAnimationLayer />
+          <DeltaPump />
         </div>
       </LayoutGroup>
     </MotionConfig>

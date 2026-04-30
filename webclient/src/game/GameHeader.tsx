@@ -5,7 +5,7 @@ import { REDESIGN } from '../featureFlags';
 import { useGameStore } from './store';
 import { SettingsModal } from './SettingsModal';
 import type { GameStream } from './stream';
-import { synthesizeLobbyName } from './lobbyName';
+import { PhaseTimeline } from './PhaseTimeline';
 
 /**
  * Slice 70-O (picture-catalog §1) — game-table header bar.
@@ -138,13 +138,6 @@ function RedesignedHeader({
   const sidePanelCollapsed = useGameStore((s) => s.sidePanelCollapsed);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  // Slice 70-O critic UI/UX-I6 fix — empty string during the brief
-  // Waiting window so the user doesn't see a flash of bare "GAME"
-  // purple text before gameView arrives. synthesizeLobbyName
-  // already returns "GAME" on null gameView; we suppress that
-  // pre-game value at the consuming site to keep the helper pure.
-  const lobbyName = gameView ? synthesizeLobbyName(gameView) : '';
-
   // Fullscreen click — toggles browser fullscreen on the document
   // root. Falls back gracefully if the API is unavailable (older
   // browsers, sandboxed iframes) — the click is a no-op rather
@@ -163,24 +156,29 @@ function RedesignedHeader({
       <header
         data-testid="game-table-header"
         data-redesign="true"
-        // Slice 70-O critic UI/UX-I1 / Tech-I1 fix — py-3 (12px)
-        // matches catalog §1.1's "--space-3 for vertical padding"
-        // (was py-2 = 8px, producing a ~28px strip vs the catalog's
-        // ~36px target). Icon buttons w-6 h-6 + 16px SVGs land the
-        // overall strip near the catalog floor.
-        className="flex items-center justify-between px-6 py-3 bg-bg-base"
+        // Slice 70-Z polish round 23 (user direction 2026-04-30) —
+        // the lobby-name banner ("COMMANDER — 4 PLAYER FREE-FOR-ALL"
+        // in --color-accent-primary purple over bg-bg-base #0E1A20)
+        // got dropped per user feedback ("remove the murky blue
+        // banner"). PhaseTimeline relocated FROM the side panel to
+        // the header strip and expanded to fill the freed space —
+        // turn + phase are higher-frequency reads than the lobby
+        // name and earn the prime real estate. Header background
+        // now matches PhaseTimeline's bg-zinc-950 so the strip is
+        // visually one continuous bar rather than a header band
+        // hosting a sub-band. px-0 lets PhaseTimeline's own px-4
+        // own the horizontal rhythm; py-0 likewise (PhaseTimeline
+        // brings its own py-2). The icon strip keeps its px-6 via
+        // its own padding.
+        className="flex items-stretch bg-zinc-950"
       >
-        <span
-          data-testid="header-lobby-name"
-          className="text-[14px] font-medium uppercase tracking-widest"
-          style={{ color: 'var(--color-accent-primary)' }}
-        >
-          {lobbyName}
-        </span>
+        <div className="flex-1 min-w-0">
+          {gameView && <PhaseTimeline gameView={gameView} />}
+        </div>
 
         <div
           data-testid="header-icon-strip"
-          className="flex items-center gap-5"
+          className="flex items-center gap-5 px-6"
         >
           {/* Chat icon — slice 70-R lights up the slide-out. Until
               then the icon is visibly disabled so the click doesn't

@@ -203,8 +203,21 @@ export function PlayerArea({
   // dropped because the commander identity is shown via portrait.
   if (REDESIGN) {
     const isVertical = position === 'top' || position === 'bottom';
+    // Slice 70-Z polish round 20 (user direction 2026-04-30) — the
+    // TOP opponent pod renders DOM order [PlayerFrame,
+    // battlefieldAreaRedesign]. PlayerFrameInfoCluster (the
+    // Lib/Hand/Grave/Exile chip strip) is `absolute top-full` of the
+    // PlayerFrame and dangles ~24px below the frame's content box.
+    // gap-3 (12px) wasn't enough to clear the cluster, so the top
+    // pod's lands row visibly overlapped with the chip strip text.
+    // Bumped to gap-10 (40px) so the cluster fits cleanly between
+    // PlayerFrame and the lands row. Bottom pod is unaffected — it
+    // uses slotPart='rows'/'frame' splitting in Battlefield.tsx, so
+    // this flexClass only fires for the no-slotPart fallback.
     const flexClass = isVertical
-      ? 'flex flex-col gap-3'
+      ? position === 'top'
+        ? 'flex flex-col gap-10'
+        : 'flex flex-col gap-3'
       : position === 'right'
         ? 'flex flex-row-reverse gap-3'
         : 'flex flex-row gap-3';
@@ -299,14 +312,29 @@ export function PlayerArea({
     // for horizontal strip) so the inner BattlefieldRowGroup's own
     // h-full / shrink-uniform logic resolves against a definite
     // dimension instead of collapsing to its content height/width.
+    //
+    // Slice 70-Z polish round 20 — artifact-box across-axis size now
+    // derives from the perspective's slot dimension (single tile
+    // width = card-width × 7/5) instead of the hardcoded 100px
+    // constant (which was tied to the pre-bump --card-size-small
+    // 72×7/5 ≈ 100). Closes critic NTH-2 from slice 70-Z.1 review.
+    const artifactBoxAcrossAxis =
+      perspective === 'opponent'
+        ? 'calc(var(--card-size-small) * 7 / 5)'
+        : 'calc(var(--card-size-medium) * 7 / 5)';
     const artifactsBoxRedesign =
       rows.artifacts.length > 0 ? (
         <div
           data-testid="artifact-zone"
           className={
             isVertical
-              ? 'flex-shrink-0 w-[100px] h-full min-h-0'
-              : 'flex-shrink-0 h-[100px] w-full min-w-0'
+              ? 'flex-shrink-0 h-full min-h-0'
+              : 'flex-shrink-0 w-full min-w-0'
+          }
+          style={
+            isVertical
+              ? { width: artifactBoxAcrossAxis }
+              : { height: artifactBoxAcrossAxis }
           }
         >
           <BattlefieldRowGroup

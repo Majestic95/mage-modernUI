@@ -283,3 +283,66 @@ export const CARD_TARGETED_PULSE_PERIOD_MS = 1000;
  */
 export const PARTICLE_DRIFT_CLASS = 'animate-particle-drift';
 export const PARTICLE_DRIFT_PERIOD_MS = 60_000;
+
+/* ============================================================
+   Slice 70-Z.2 / 70-Z.3 / 70-Z.4 — card animation system timing.
+   The seam ships in 70-Z.2 (no visual change); the constants here
+   are consumed by the cinematic overlay (70-Z.3) and the impact
+   keyframes (70-Z.4). Centralized so a future retune doesn't fan
+   out across components.
+   ============================================================ */
+
+/**
+ * Cinematic-cast pose duration. The casting-pose overlay holds the
+ * cast card at viewport center at 1.5× scale for this many ms before
+ * unmounting and letting Framer interpolate to the stack focal.
+ * Reduced-motion: skipped entirely (overlay never mounts).
+ */
+export const CINEMATIC_HOLD_MS = 250;
+
+/**
+ * Commander-return glide duration. When a commander leaves the
+ * battlefield to the command zone (rather than graveyard / exile),
+ * a hidden 1px motion.div carries its layoutId to the player's
+ * portrait for this duration so Framer interpolates the card flying
+ * toward the canonical commander surface. Slow enough to "appreciate"
+ * per user direction.
+ */
+export const COMMANDER_RETURN_MS = 600;
+
+/**
+ * Per-tile dust crumple duration. Creature → graveyard. Card body
+ * fades + scales-down + filter-darkens; particle field drifts for
+ * the same window.
+ */
+export const DUST_DURATION_MS = 600;
+
+/**
+ * Per-tile bright dissolve duration. Permanent → exile. Brightness
+ * peak at 40% then to 0; radial particle expansion vs. dust's
+ * downward drift.
+ */
+export const EXILE_DURATION_MS = 500;
+
+/**
+ * Board-wipe screen-pulse duration. Single radial-gradient ripple
+ * scaling 0% → 110% with fade. Per-permanent disintegrates fire on
+ * the same wave (staggered by BOARD_WIPE_STAGGER_MS).
+ */
+export const BOARD_WIPE_PULSE_MS = 700;
+
+/**
+ * Stagger between successive disintegrates inside one board-wipe so
+ * the wave reads. Each tile's animation-delay is index *
+ * BOARD_WIPE_STAGGER_MS.
+ */
+export const BOARD_WIPE_STAGGER_MS = 80;
+
+/**
+ * Performance budget for simultaneous disintegrate animations. When
+ * a board wipe destroys more than this, the surplus permanents
+ * snap to graveyard via the standard LAYOUT_GLIDE exit (still emit
+ * a single ripple). 4 × 10-particle dust ≈ 40 motion.divs at peak;
+ * comfortable under jank threshold for 4-pod commander tables.
+ */
+export const MAX_CONCURRENT_DISINTEGRATES = 4;

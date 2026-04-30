@@ -102,14 +102,20 @@ export function MyHand({
         {showPool && (
           <div
             data-testid="hand-mana-pool"
-            // Slice 70-Z polish round 20 (user direction 2026-04-30) —
-            // mana pool moved UP via negative top so it clears the
-            // local PlayerFrame corner mount's PRIORITY pill that
-            // sits in the same screen quadrant. Was top-1 (4px); now
-            // -top-5 (-20px) gives ~24px vertical clearance above
-            // the pill at typical viewport sizes. Right anchor (and
-            // the floating-pool semantics) unchanged.
-            className="absolute right-2 -top-5 z-10"
+            // Slice 70-Z polish rounds 20 + 22 (user direction
+            // 2026-04-30) — mana pool moved UP via negative top so
+            // it clears the local PlayerFrame corner mount that
+            // sits in the same screen quadrant. Round 20: top-1
+            // → -top-5 (cleared the PRIORITY pill). Round 22: the
+            // -top-5 lift wasn't enough to escape the portrait
+            // itself — orbs visibly overlapped the portrait's top
+            // edge. -top-20 (-80px) lifts the orbs roughly the
+            // portrait-diameter above MyHand-top, putting them
+            // clearly above the corner mount's full footprint
+            // (portrait + PRIORITY pill + life badge). Right
+            // anchor unchanged (catalog §2.3 "TOP-RIGHT of the
+            // hand region").
+            className="absolute right-2 -top-20 z-10"
           >
             <ManaPool player={player!} size="medium" glow />
           </div>

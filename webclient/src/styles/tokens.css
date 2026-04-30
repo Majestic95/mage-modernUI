@@ -314,8 +314,11 @@
      ============================================================ */
 
   --card-size-micro: 20px;     /* future: zone-icon stack indicator */
-  --card-size-small: 72px;     /* opponent battlefield (70-K) */
-  --card-size-medium: 80px;    /* local battlefield (current default) */
+  --card-size-small: 72px;     /* opponent battlefield — round 20 reverted
+                                  by user 2026-04-30; doubled-then-halved
+                                  back to the original 70-K value. */
+  --card-size-medium: 80px;    /* local battlefield — round 20 reverted by
+                                  user 2026-04-30; back to the original. */
   --card-size-large: 180px;    /* hand cards — slice 70-Z polish round 14
                                   (user feedback 2026-04-30) bumped 80%
                                   from the original 100px so the hand fan
@@ -327,7 +330,7 @@
                                   bottom edge instead, so the cards need
                                   enough visual presence to read as the
                                   player's primary action surface. */
-  --card-size-focal: 170px;    /* central focal stack topmost (70-N) */
+  --card-size-focal: 128px;    /* central focal stack topmost — round 18 bumped 170→255, round 21 (user direction 2026-04-30) halved 255→128. Fan tile halfwidth math + halo bloom inset + spotlight perimeter padding all scale automatically off this token. */
 
 
   /* ============================================================

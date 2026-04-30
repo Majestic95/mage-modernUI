@@ -178,22 +178,26 @@ body {
 }
 
 /*
- * Slice 70-Z polish (user directive 2026-04-30 round 9 + 18) —
- * spinning white-gold spotlight ring around the top-of-stack
+ * Slice 70-Z polish (user directive 2026-04-30 rounds 9 + 18 + 19 + 21)
+ * — spinning white-gold spotlight ring around the top-of-stack
  * focal card. Replaces `animate-stack-glow-pulse` (breathing
  * opacity) as the active-card visual-attention mechanism. The
  * ring is a conic-gradient with a bright sweep on a transparent
  * base; the same `--halo-angle` `@property` registration drives
- * rotation. Round 18 doubled the speed (5000ms → 2500ms/rev) so
- * the sweep reads as urgent "spotlight scanning" rather than
- * ambient drift.
+ * rotation.
+ *
+ * Round 21 (focal halved 255→128, ~75% of original 170): perimeter
+ * is now ~75% of the original 170px size, so keeping the round-19
+ * 3750ms timing would make the sweep feel slow. Bumped 3750 →
+ * 1875ms (half of round 19) so the linear sweep speed against the
+ * card edge tracks the smaller perimeter.
  *
  * The keyframe shares the same `halo-rotate` definition above —
  * both animations interpolate `--halo-angle` 0→360deg, only the
  * duration differs.
  */
 .animate-stack-spotlight-rotate {
-  animation: halo-rotate 2500ms linear infinite;
+  animation: halo-rotate 1875ms linear infinite;
 }
 
 /*

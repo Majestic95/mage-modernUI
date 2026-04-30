@@ -58,10 +58,19 @@ export function BattlefieldRowGroup({
   eligibleCombatIds: Set<string>;
   combatRoles: Map<string, 'attacker' | 'blocker'>;
 }) {
-  // Slot max-size: 112 for self (medium card), 100 for opponent
-  // (small card). The slot is always square (aspect-square on the
-  // motion.div below), so the same max applies to width AND height.
-  const tileMaxSize = perspective === 'opponent' ? '100px' : '112px';
+  // Slice 70-Z polish round 20 (user direction 2026-04-30) — slot
+  // max-size is now derived from the --card-size-* tokens instead
+  // of the previous hardcoded 100/112px constants (which were the
+  // 72×7/5 / 80×7/5 derivations of the OLD token values). With the
+  // tokens doubled this round, 100/112 would have stayed pinned to
+  // the small-card era. Using calc keeps the slot square AND in
+  // lockstep with future card-size retunes:
+  //   slot side = card-width × 7/5 (5:7 portrait fits height = 7/5×width)
+  // perspective=opponent → --card-size-small; self → --card-size-medium.
+  const tileMaxSize =
+    perspective === 'opponent'
+      ? 'calc(var(--card-size-small) * 7 / 5)'
+      : 'calc(var(--card-size-medium) * 7 / 5)';
   const isVertical = orientation === 'vertical';
 
   // Slice 70-K.1 + 70-Z.1 (picture-catalog §2.1 "Card sizing under

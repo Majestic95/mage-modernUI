@@ -7,7 +7,7 @@
  * {@code flagState.redesign} per test to exercise both branches.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, act } from '@testing-library/react';
+import { render, screen, within, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {
   webGameViewSchema,
@@ -190,11 +190,19 @@ describe('GameHeader — REDESIGN branch (picture-catalog §1)', () => {
     );
   }
 
-  it('renders the synthesized lobby name on the left', () => {
+  it('renders the PhaseTimeline in the header strip (slice 70-Z polish round 23)', () => {
+    // Lobby name banner removed per user feedback 2026-04-30; the
+    // freed left-side real estate now hosts the phase timeline,
+    // which was relocated FROM the side-panel top section.
     renderHeader(makeGameView(4, true));
-    expect(screen.getByTestId('header-lobby-name')).toHaveTextContent(
-      'COMMANDER — 4 PLAYER FREE-FOR-ALL',
-    );
+    const header = screen.getByTestId('game-table-header');
+    const phaseTimeline = within(header).getByTestId('phase-timeline');
+    expect(phaseTimeline).toBeInTheDocument();
+  });
+
+  it('does not render the dropped lobby-name banner', () => {
+    renderHeader(makeGameView(4, true));
+    expect(screen.queryByTestId('header-lobby-name')).toBeNull();
   });
 
   it('renders the 4-icon strip on the right (chat / layout / fullscreen / settings)', () => {
@@ -255,11 +263,13 @@ describe('GameHeader — REDESIGN branch (picture-catalog §1)', () => {
     expect(chat).toBeDisabled();
   });
 
-  it('renders the lobby name as empty during Waiting (gameView=null)', () => {
+  it('omits the PhaseTimeline during Waiting (gameView=null)', () => {
     renderHeader(null);
-    // No flash of bare "GAME" purple text — lobby name is empty
-    // until the first gameView arrives.
-    expect(screen.getByTestId('header-lobby-name').textContent).toBe('');
+    // Lobby name banner removed; PhaseTimeline only mounts once
+    // gameView arrives, so the Waiting header is the icon strip
+    // alone (no flash of placeholder content).
+    expect(screen.queryByTestId('phase-timeline')).toBeNull();
+    expect(screen.getByTestId('header-icon-strip')).toBeInTheDocument();
   });
 });
 

@@ -397,7 +397,11 @@ export function GameTable({ gameId, gameView, stream }: Props) {
           'border-l border-zinc-800 bg-bg-elevated min-h-0'
         }
       >
-        <PhaseTimeline gameView={gameView} />
+        {/* Slice 70-Z polish round 23 — PhaseTimeline relocated to
+            the GameHeader strip in REDESIGN mode; legacy keeps it
+            in the side panel's top section so the legacy layout
+            doesn't lose the turn/phase indicator. */}
+        {!REDESIGN && <PhaseTimeline gameView={gameView} />}
         {/*
           Slice 70-E critic UX-3 — wrapper must be flex so GameLog's
           inner flex-1 + min-h-0 chain correctly constrains the

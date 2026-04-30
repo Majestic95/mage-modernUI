@@ -617,23 +617,34 @@ function PlayerFrameRedesigned({
           size={portraitSize}
           haloVariant="circular"
         />
-        {/* Life numeral overlaid on the portrait. Picture-catalog
-            §2.0: large bold numerals, white with subtle text-shadow
-            for legibility against varied art. Positioned at lower-
-            portion of the circle. Larger font for the local player
-            (large portrait gets a larger numeral). */}
-        <span
+        {/* Slice 70-Z polish round 22 (user direction 2026-04-30) —
+            Hearthstone-style floating life badge: a circular black
+            disc sits at the bottom-center of the portrait, half-
+            overlapping the portrait's lower edge. Replaces the
+            slice-70-D in-portrait white numeral (which was getting
+            lost against varied commander art). The badge is a
+            self-contained read regardless of art tonality.
+            - bg-zinc-900: solid dark disc.
+            - ring-2 ring-zinc-700: subtle outline so the disc
+              reads as separate from the portrait halo.
+            - shadow-lg: floating affordance.
+            - left-1/2 -translate-x-1/2: horizontal center.
+            - -bottom-{N}: center of the badge sits at the
+              portrait's bottom edge (badge half-height = bottom
+              offset). h-10 = 40px → -bottom-5 (=-20px); h-8 = 32px
+              → -bottom-4 (=-16px). */}
+        <div
           data-testid={`life-numeral-${perspective}`}
           aria-hidden="true"
           className={
-            'absolute left-1/2 -translate-x-1/2 font-bold text-white drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)] tabular-nums leading-none ' +
+            'absolute left-1/2 -translate-x-1/2 z-10 flex items-center justify-center rounded-full bg-zinc-900 ring-2 ring-zinc-700 shadow-lg font-bold text-white tabular-nums leading-none ' +
             (perspective === 'self'
-              ? 'bottom-1 text-2xl'
-              : 'bottom-1 text-xl')
+              ? 'h-10 w-10 -bottom-5 text-base'
+              : 'h-8 w-8 -bottom-4 text-sm')
           }
         >
           {player.life}
-        </span>
+        </div>
         {/* Priority tag floats above the portrait so it doesn't
             obscure the commander art or compete with the life
             numeral. Same component as legacy; only the position
@@ -682,9 +693,23 @@ function PlayerFrameRedesigned({
       {/* Name + commander stack. Picture-catalog §2.0:
           Player name in --font-weight-semibold, --font-size-heading-sm
           (14px). Commander name in --font-size-caption (12px),
-          --color-text-secondary. Center-aligned for top/bottom pods. */}
+          --color-text-secondary. Center-aligned for top/bottom pods.
+
+          Slice 70-Z polish round 22 (user direction 2026-04-30) —
+          extra top margin so the floating life badge (which
+          dangles 20px below the portrait for self, 16px for
+          opponent) clears the player-name baseline. Without this
+          mt-, the parent's gap-1 (4px) leaves the name overlapping
+          the badge. mt-6 (self) / mt-5 (opponent) lands the name
+          ~4-6px below the badge's bottom edge. The cluster below
+          (absolute `top-full mt-1` of the outer frame) auto-
+          tracks because it's anchored to the frame bottom, not to
+          this stack. */}
       <div
-        className="flex flex-col items-center gap-0.5 max-w-full px-1"
+        className={
+          'flex flex-col items-center gap-0.5 max-w-full px-1 ' +
+          (perspective === 'self' ? 'mt-6' : 'mt-5')
+        }
         data-testid="player-name-stack"
       >
         {nameIsTargetable ? (

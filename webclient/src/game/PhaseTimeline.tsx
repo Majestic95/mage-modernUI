@@ -40,6 +40,7 @@ const TIMELINE_PHASES: PhaseConfig[] = [
     bgClass: 'bg-cyan-400',
     trackClass: 'bg-cyan-500/70',
     glowRgb: '34, 211, 238',
+    showStepLabels: true,
     steps: [
       { name: 'UNTAP', short: 'Untap' },
       { name: 'UPKEEP', short: 'Upkeep' },
@@ -52,6 +53,7 @@ const TIMELINE_PHASES: PhaseConfig[] = [
     bgClass: 'bg-sky-400',
     trackClass: 'bg-sky-500/70',
     glowRgb: '56, 189, 248',
+    showStepLabels: true,
     steps: [{ name: 'PRECOMBAT_MAIN', short: 'Main 1' }],
   },
   {
@@ -76,6 +78,7 @@ const TIMELINE_PHASES: PhaseConfig[] = [
     bgClass: 'bg-emerald-400',
     trackClass: 'bg-emerald-500/70',
     glowRgb: '74, 222, 128',
+    showStepLabels: true,
     steps: [{ name: 'POSTCOMBAT_MAIN', short: 'Main 2' }],
   },
   {
@@ -84,6 +87,7 @@ const TIMELINE_PHASES: PhaseConfig[] = [
     bgClass: 'bg-purple-400',
     trackClass: 'bg-purple-500/70',
     glowRgb: '192, 132, 252',
+    showStepLabels: true,
     steps: [
       { name: 'END_TURN', short: 'End Turn' },
       { name: 'CLEANUP', short: 'Cleanup' },

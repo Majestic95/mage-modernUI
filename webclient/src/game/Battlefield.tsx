@@ -157,7 +157,15 @@ export function Battlefield({
       */}
       <div
         data-testid="four-pod-grid"
-        className="flex-1 min-h-0 p-4 grid gap-4"
+        // Slice 70-Z polish round 20 (user direction 2026-04-30) —
+        // padding-bottom reserves clearance for the fixed-position
+        // hand fan. Hand section is `h-[280px]` anchored at
+        // `bottom: calc(var(--card-size-large) * -7/5 * 0.25)` (i.e.
+        // 25% of card height sits BELOW viewport), so the visible
+        // hand-fan strip occupies ~280 − 63 ≈ 217px above viewport
+        // bottom. pb-56 (224px) keeps the bottom pod's battlefield
+        // rows clear of the hand fan with a hair of breathing room.
+        className="flex-1 min-h-0 p-4 pb-56 grid gap-4"
         // Slice 70-E critic UI-Critical-1 — inline style for the
         // grid-template-areas. The Tailwind bracket arbitrary
         // [grid-template-areas:"..."] form splits on whitespace and
@@ -183,8 +191,24 @@ export function Battlefield({
       >
         {opponents.map((p, idx) => {
           const area = gridAreaForOpponent(idx, opponents.length);
+          // Slice 70-Z polish round 20 (user direction 2026-04-30) —
+          // `flex items-center` vertically centers PlayerArea inside
+          // a 1fr grid cell (LEFT / RIGHT pods sat at ~30% from top
+          // before; the row is tall, the content shorter). For TOP,
+          // we keep the original block layout: turning the TOP
+          // wrapper into a flex container collapses PlayerArea to
+          // its intrinsic width and pins it to the cell's left edge,
+          // breaking the horizontal centering that the original
+          // grid-stretched block layout provided.
+          const isSidePod = area === 'left' || area === 'right';
           return (
-            <div key={p.playerId} style={{ gridArea: area }} className="min-w-0">
+            <div
+              key={p.playerId}
+              style={{ gridArea: area }}
+              className={
+                'min-w-0' + (isSidePod ? ' flex items-center' : '')
+              }
+            >
               <PlayerArea
                 player={p}
                 perspective="opponent"
@@ -221,7 +245,18 @@ export function Battlefield({
 
         {/* Central focal zone — slice 70-E moves StackZone here per
             spec §3. Stack sits between the four pods rather than
-            below the opponents row (the prior slice-27 placement). */}
+            below the opponents row (the prior slice-27 placement).
+
+            Slice 70-Z polish round 19 + 21 (user directive 2026-04-30)
+            — round 19 added translateY(-8vh) to lift the bumped
+            255px focal toward viewport center. Round 21 halved focal
+            255→128 AND reverted battlefield cards to the original
+            72/80, shrinking the bottom-pod footprint. With both
+            changes, the grid's center-row midpoint already lands at
+            the visual center of the battlefield, so the upward
+            translate now over-corrects (focal favored the top half).
+            Reverted to no translate — the grid's natural center
+            placement is correct again. */}
         <div
           style={{ gridArea: 'center' }}
           data-testid="central-focal-zone"

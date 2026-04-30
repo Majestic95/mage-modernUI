@@ -946,7 +946,12 @@ describe('Game page', () => {
     ]);
   });
 
-  it('does not render step labels under single-step phases', () => {
+  it('renders step labels under every phase, including single-step phases', () => {
+    // Slice 70-Z polish round 23 (user direction 2026-04-30) — every
+    // phase now shows step labels. Previously only Combat did, so
+    // Main Phase 1's "Main 1" sub-label felt redundant with the
+    // phase header — but the user wanted symmetry across the bar
+    // for at-a-glance "what step am I in" reads.
     render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
     act(() => {
       useGameStore.setState({
@@ -958,9 +963,15 @@ describe('Game page', () => {
     const main1 = segments.find(
       (el) => el.getAttribute('data-phase') === 'Main Phase 1',
     )!;
-    expect(
-      main1.querySelector('[data-testid="phase-step-labels"]'),
-    ).toBeNull();
+    const labels = main1.querySelector('[data-testid="phase-step-labels"]');
+    expect(labels).not.toBeNull();
+    const main1StepLabels = main1.querySelectorAll(
+      '[data-testid="phase-step-label"]',
+    );
+    expect(main1StepLabels).toHaveLength(1);
+    expect(main1StepLabels[0]?.getAttribute('data-step')).toBe(
+      'PRECOMBAT_MAIN',
+    );
   });
 
   it('renders six combat ticks (5 standard + first-strike)', () => {

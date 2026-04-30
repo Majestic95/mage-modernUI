@@ -441,9 +441,14 @@ function FocalCard({
   // The breathing pulse (`animate-stack-glow-pulse`) was retired
   // in round 9 in favor of the spinning white-gold spotlight
   // ring rendered after the CardFace (see below).
+  // Slice 70-Z polish round 18 + 21 — halo bloom geometry tracks
+  // --card-size-focal: round 18 bumped 7→10px inset / 6→9px blur for
+  // 170→255; round 21 halved card 255→128 and scaled effects back
+  // (10→5px inset / 9→5px blur) so the halo still hugs the smaller
+  // card at the same proportional distance.
   const haloStyle: CSSProperties = {
     background: haloBackground,
-    filter: 'blur(6px)',
+    filter: 'blur(5px)',
     opacity: 0.85,
   };
 
@@ -456,9 +461,9 @@ function FocalCard({
       data-stack-glow={haloBackground}
       data-halo-multicolor={haloIsMulticolor || undefined}
       data-layout-id={layoutId}
-      initial={{ opacity: 0, y: -24, scale: 0.85 }}
+      initial={{ opacity: 0, y: -18, scale: 0.85 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: 24, scale: 0.85 }}
+      exit={{ opacity: 0, y: 18, scale: 0.85 }}
       transition={slow(STACK_ENTER_EXIT)}
       className="relative"
       // Slice 70-Z polish (user-feedback round 8) — `isolation:
@@ -484,7 +489,7 @@ function FocalCard({
       <div
         data-testid="stack-focal-glow"
         className={
-          'absolute -inset-[7px] rounded-xl pointer-events-none ' +
+          'absolute -inset-[5px] rounded-xl pointer-events-none ' +
           (haloIsMulticolor ? 'animate-halo-rotate' : '')
         }
         style={{ ...haloStyle, zIndex: -1 }}
@@ -525,7 +530,7 @@ function FocalCard({
       <div
         data-testid="stack-focal-spotlight"
         aria-hidden="true"
-        className="animate-stack-spotlight-rotate absolute -inset-1 rounded-xl pointer-events-none"
+        className="animate-stack-spotlight-rotate absolute -inset-[3px] rounded-xl pointer-events-none"
         style={{
           background:
             'conic-gradient(from var(--halo-angle, 0deg), ' +
@@ -540,6 +545,10 @@ function FocalCard({
           WebkitMaskComposite: 'xor',
           mask: 'linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)',
           maskComposite: 'exclude',
+          // Slice 70-Z polish round 18 + 21 — ring thickness tracks
+          // --card-size-focal: round 18 bumped 3→5px for 170→255,
+          // round 21 halved card 255→128 and scaled ring back to 3px
+          // so the spotlight reads at the same relative weight.
           padding: '3px',
         }}
       />
