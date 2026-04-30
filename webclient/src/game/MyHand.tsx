@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import type { WebCardView } from '../api/schemas';
+import type { WebCardView, WebPlayerView } from '../api/schemas';
 import { slow, SLOWMO } from '../animation/debug';
 import {
   HAND_HOVER_LIFT_MS,
@@ -8,9 +8,13 @@ import {
 } from '../animation/transitions';
 import { CardFace } from './CardFace';
 import { HoverCardDetail } from './HoverCardDetail';
+import { ManaPool } from './ManaPool';
+import { hasAnyMana } from './manaPoolUtil';
+import { REDESIGN } from '../featureFlags';
 
 export function MyHand({
   hand,
+  player,
   canAct,
   onObjectClick,
   isMyTurn,
@@ -19,6 +23,13 @@ export function MyHand({
   draggedCardId,
 }: {
   hand: Record<string, WebCardView>;
+  /**
+   * Slice 70-P (picture-catalog §2.3) — local player view, threaded
+   * through so the floating mana pool can mount in the hand region's
+   * top-right corner. Optional so legacy tests that don't care about
+   * mana pool placement don't need to construct a full player.
+   */
+  player?: WebPlayerView;
   canAct: boolean;
   onObjectClick: (id: string) => void;
   isMyTurn: boolean;
@@ -63,6 +74,85 @@ export function MyHand({
     return card.typeLine;
   };
 
+  // Slice 70-P (picture-catalog §4) — REDESIGN drops the panel
+  // chrome (border, padding, background tile, "Your hand (N)"
+  // header) so the hand fan floats over the battlefield's bottom
+  // edge per spec §4.1 ("Background: Transparent (no panel fill,
+  // no border)") + §4.2 ("Drop the 'Your hand (N)' header").
+  // Disabled-hint copy moves to the bottom-right corner as a faint
+  // pill since §4.2 says it can stay "as a faint pill near the End
+  // Step button OR drop entirely; the End Step button being
+  // disabled IS the signal." Keeping a faint inline hint preserves
+  // the slice-23 affordance without the prominent label box.
+  if (REDESIGN) {
+    // Slice 70-P critic Tech adjacent — gate the floating-pool
+    // wrapper on hasAnyMana so an empty pool produces NO DOM at
+    // all (catalog §2.3 "Empty pool: Don't render anything").
+    // Without the gate, the absolute-positioned wrapper still
+    // mounts as a 1px shell.
+    const showPool = !!player && hasAnyMana(player.manaPool);
+    return (
+      <div data-testid="my-hand" className="relative">
+        {/* Picture-catalog §2.3 — local mana pool floats at the
+            TOP-RIGHT of the hand region (NOT inside the player
+            frame). Renders glowing medium orbs per §2.3 "Glow
+            halo on each orb." Slice 70-P critic UI/UX-C1 fix —
+            glow={true} wires the spec-mandated halo through to
+            ManaOrb's box-shadow. */}
+        {showPool && (
+          <div
+            data-testid="hand-mana-pool"
+            className="absolute right-2 top-1 z-10"
+          >
+            <ManaPool player={player!} size="medium" glow />
+          </div>
+        )}
+        {disabledHint && (
+          <span
+            data-testid="hand-disabled-hint"
+            className="absolute right-2 bottom-1 text-[10px] text-zinc-500 italic z-10 pointer-events-none"
+          >
+            {disabledHint}
+          </span>
+        )}
+        {/* Slice 70-P critic UI/UX-I1 fix — reserve a right gutter
+            on the fan container so the rightmost hand card never
+            collides with the floating mana pool at narrow viewport
+            widths or 5-7+ hand sizes. The pool itself is at right-2
+            (8px from edge); a 5-orb pool spans ~136px. Gutter of
+            ~150px keeps the rightmost card off the pool footprint
+            without losing the visual centering. */}
+        <div className="relative h-52 pt-2 pr-[150px]">
+          {cards.length === 0 ? (
+            <span className="absolute left-3 top-3 text-xs text-zinc-600 italic">
+              Empty hand.
+            </span>
+          ) : (
+            <AnimatePresence mode="popLayout" initial={false}>
+              {cards.map((card, idx) => {
+                const isDragging = draggedCardId === card.id;
+                return (
+                  <HandCardSlot
+                    key={card.id}
+                    card={card}
+                    index={idx}
+                    total={cards.length}
+                    canAct={canAct}
+                    isDragging={isDragging}
+                    onObjectClick={onObjectClick}
+                    onPointerDown={onPointerDown}
+                    tooltip={cardTooltip(card)}
+                  />
+                );
+              })}
+            </AnimatePresence>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Legacy branch — unchanged from slice 57.
   return (
     <div
       data-testid="my-hand"

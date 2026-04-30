@@ -584,11 +584,12 @@ describe('PlayerFrame — REDESIGN flag on (slice 70-K)', () => {
     expect(screen.queryByText('ACTIVE')).toBeNull();
   });
 
-  it('does NOT render the inline mana pool / zone icons / library count', () => {
-    // Picture-catalog §6 (removed elements): mana pool relocates
-    // to top-right of hand region in slice 70-P; zone icons
-    // become a small adjacent cluster in 70-P. PlayerFrame's
-    // redesign branch shouldn't render any of them.
+  it('renders the slice-70-P info cluster (zone icons + opponent mana pool)', () => {
+    // Picture-catalog §2.2 + §2.3: zone icons + opponent mana pool
+    // sit in a small adjacent cluster on every redesigned
+    // PlayerFrame. Local-player frames render the cluster too —
+    // the mana pool slot is the only difference (local pool floats
+    // in the hand region, opponent pool sits inline here).
     flagState.redesign = true;
     render(
       <PlayerFrame
@@ -609,17 +610,68 @@ describe('PlayerFrame — REDESIGN flag on (slice 70-K)', () => {
         targetable={false}
       />,
     );
-    // Library count "47" should NOT appear (legacy strip rendered
-    // it via ZoneIcon zone="library").
-    expect(screen.queryByText('47')).toBeNull();
-    // "Hand" label should NOT appear (legacy showed handCount with
-    // a "Hand" prefix).
-    expect(screen.queryByText('Hand')).toBeNull();
-    // No ZoneIcon testids should be present — inline zone icons
-    // are not part of the redesigned PlayerFrame.
+    // Library count surfaces via the new cluster (ZoneIcon
+    // zone="library" inside PlayerFrameInfoCluster).
     expect(
-      screen.queryByTestId('zone-count-library'),
+      screen.getByTestId('zone-count-library'),
+    ).toHaveTextContent('47');
+    expect(screen.getByTestId('player-frame-info-self')).toBeInTheDocument();
+    // Self-perspective frames don't host the inline mana pool —
+    // local pool floats in the hand region per §2.3.
+    expect(
+      screen.queryByTestId(/^opponent-mana-pool-/),
     ).toBeNull();
+    // Legacy ACTIVE pill / "Hand" prefix label / inline mana
+    // overlays still don't appear.
+    expect(screen.queryByText('Hand')).toBeNull();
+  });
+
+  it('opponent frame renders the inline mana pool when non-empty (catalog §2.3)', () => {
+    flagState.redesign = true;
+    render(
+      <PlayerFrame
+        player={makePlayer({
+          name: 'bob',
+          manaPool: {
+            red: 2,
+            green: 0,
+            blue: 0,
+            white: 0,
+            black: 0,
+            colorless: 1,
+          },
+        })}
+        perspective="opponent"
+        onPlayerClick={() => {}}
+        targetable={false}
+      />,
+    );
+    expect(
+      screen.getByTestId(/^opponent-mana-pool-/),
+    ).toBeInTheDocument();
+  });
+
+  it('opponent frame omits the inline mana pool when the pool is empty', () => {
+    flagState.redesign = true;
+    render(
+      <PlayerFrame
+        player={makePlayer({
+          name: 'bob',
+          manaPool: {
+            red: 0,
+            green: 0,
+            blue: 0,
+            white: 0,
+            black: 0,
+            colorless: 0,
+          },
+        })}
+        perspective="opponent"
+        onPlayerClick={() => {}}
+        targetable={false}
+      />,
+    );
+    expect(screen.queryByTestId(/^opponent-mana-pool-/)).toBeNull();
   });
 
   it('opponent perspective uses medium portrait (80px)', () => {

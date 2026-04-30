@@ -2,7 +2,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { slow } from '../animation/debug';
 import { MANA_POOL_FADE, MANA_POOL_POP } from '../animation/transitions';
 import type { WebPlayerView } from '../api/schemas';
-import { ManaOrb, type ManaOrbColor } from './ManaOrb';
+import { ManaOrb, type ManaOrbColor, type ManaOrbSize } from './ManaOrb';
 
 /**
  * Player's mana pool — one {@link ManaOrb} per non-zero color, with
@@ -12,8 +12,34 @@ import { ManaOrb, type ManaOrbColor } from './ManaOrb';
  * {@link ManaOrb} atom. Per-color rendering moved into the orb;
  * the pool's job is just the AnimatePresence wrapper that animates
  * orbs in/out as the player's mana pool changes.
+ *
+ * <p>Slice 70-P (picture-catalog §2.3) — accepts {@code size} +
+ * {@code glow} props so the local floating placement (top-right of
+ * hand region) can render glowing medium orbs while the opponent
+ * inline cluster renders smaller non-glowing orbs ("Visible but
+ * smaller" per §2.3). Defaults preserve the existing slice-70-C
+ * behavior for the legacy in-strip mount.
  */
-export function ManaPool({ player }: { player: WebPlayerView }) {
+export function ManaPool({
+  player,
+  size = 'medium',
+  glow = false,
+}: {
+  player: WebPlayerView;
+  /**
+   * Slice 70-P — orb size variant. Defaults to {@code 'medium'}
+   * which preserves the slice-70-C contract. Opponent floating
+   * clusters pass {@code 'small'} per catalog §2.3 "smaller".
+   */
+  size?: ManaOrbSize;
+  /**
+   * Slice 70-P — when true, each orb renders the color-tinted
+   * box-shadow halo (catalog §2.3 "Glow halo on each orb"). The
+   * local floating mount in the hand region passes this; opponent
+   * inline mounts leave it false to keep the cluster low-key.
+   */
+  glow?: boolean;
+}) {
   const pool = player.manaPool;
   const cells: Array<[ManaOrbColor, number]> = [
     ['W', pool.white],
@@ -36,15 +62,7 @@ export function ManaPool({ player }: { player: WebPlayerView }) {
               exit={{ scale: 0, opacity: 0, transition: slow(MANA_POOL_FADE) }}
               transition={slow(MANA_POOL_POP)}
             >
-              {/*
-                Slice 70-C critic UI-#3 — pool uses medium (24px) not
-                small (16px). The 10px count text inside small was
-                cramped at typical pool counts (5+) and read as a smudge
-                rather than a digit. Medium gives the count a 12px
-                font that scans cleanly. The cost-rendering call sites
-                (ManaCost) keep their size choices.
-              */}
-              <ManaOrb color={color} count={n} size="medium" />
+              <ManaOrb color={color} count={n} size={size} glow={glow} />
             </motion.span>
           ))}
       </AnimatePresence>

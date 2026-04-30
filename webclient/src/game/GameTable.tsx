@@ -309,12 +309,25 @@ export function GameTable({ gameId, gameView, stream }: Props) {
 
       <section
         data-testid="game-table-hand"
-        className="[grid-area:hand] min-w-0 border-t border-zinc-800 px-4 pb-2"
+        // Slice 70-P (picture-catalog §4.1) — REDESIGN drops the
+        // border-t + side padding so the hand fan floats over the
+        // battlefield's bottom edge with no chrome (transparent bg,
+        // no border). Legacy branch keeps the bordered-strip look.
+        className={
+          REDESIGN
+            ? '[grid-area:hand] min-w-0 px-4 pb-2'
+            : '[grid-area:hand] min-w-0 border-t border-zinc-800 px-4 pb-2'
+        }
         aria-label="Your hand"
       >
         {me && (
           <MyHand
             hand={gameView.myHand}
+            // Slice 70-P — passes the local player view so the
+            // floating mana pool can render in MyHand's top-right
+            // corner (catalog §2.3). REDESIGN-only consumer; legacy
+            // branch ignores the prop cleanly via default undefined.
+            player={me}
             canAct={canAct}
             onObjectClick={onObjectClick}
             isMyTurn={!!me.isActive}

@@ -5,6 +5,7 @@ import { REDESIGN } from '../featureFlags';
 import { computeHaloBackground } from './halo';
 import { LifeCounter } from './LifeCounter';
 import { ManaPool } from './ManaPool';
+import { hasAnyMana } from './manaPoolUtil';
 import { PlayerPortrait } from './PlayerPortrait';
 import { PriorityTag } from './PriorityTag';
 import { ZoneIcon } from './ZoneIcon';
@@ -719,6 +720,24 @@ function PlayerFrameRedesigned({
         )}
       </div>
 
+      {/* Slice 70-P (picture-catalog §2.2 + §2.3) — zone icons +
+          opponent mana pool cluster, adjacent to the player frame.
+          Catalog: "Adjacent to the portrait — a small horizontal
+          cluster near the player frame, NOT attached to the
+          portrait stack."
+
+          For the LOCAL player the floating mana pool lives in the
+          hand region top-right (catalog §2.3 + slice 70-P MyHand
+          mount), so PlayerFrame here only carries the zone icons.
+          For OPPONENTS the mana pool sits in this cluster too
+          (catalog §2.3: "Position for opponents: Small cluster
+          adjacent to their player frame"). Empty pool renders
+          nothing. */}
+      <PlayerFrameInfoCluster
+        player={player}
+        perspective={perspective}
+      />
+
       {/* Eliminated slash overlay — picture-catalog §2.4. Today
           covers the PlayerFrame area only (portrait + name stack);
           slice 70-Z polish moves this to the whole-pod coverage
@@ -756,6 +775,88 @@ function PlayerFrameRedesigned({
           </motion.svg>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+/**
+ * Slice 70-P (picture-catalog §2.2 + §2.3) — secondary info cluster
+ * mounted beneath the name stack on every redesigned PlayerFrame.
+ *
+ * <p>Composition:
+ * <ul>
+ *   <li><b>Zone icons</b> (graveyard / exile / library) — small
+ *       horizontal row of count chips with the variant prop
+ *       routing self vs opponent rendering inside {@link ZoneIcon}
+ *       (clickable modal vs hover tooltip).</li>
+ *   <li><b>Mana pool</b> — for opponents only, when non-empty.
+ *       Local player's pool floats in the hand region top-right
+ *       per §2.3.</li>
+ * </ul>
+ *
+ * <p>Per catalog §2.2: "Not prominently visible — they're tucked
+ * near the player frame, low-priority chrome. Don't overdesign
+ * these." Caption-sized text, no chrome around the cluster, just
+ * adjacent to the portrait + name stack.
+ */
+function PlayerFrameInfoCluster({
+  player,
+  perspective,
+}: {
+  player: WebPlayerView;
+  perspective: 'self' | 'opponent';
+}) {
+  // Slice 70-P critic Tech-IMP-1 cleanup — schema-tied empty check
+  // beats the 6-field repeat. ManaPool already filters non-zero
+  // cells internally; this gate also avoids mounting the wrapper
+  // <span> when the pool is empty (catalog §2.3 "Empty pool: Don't
+  // render anything").
+  const opponentPoolNonEmpty =
+    perspective === 'opponent' && hasAnyMana(player.manaPool);
+
+  return (
+    // Slice 70-P critic UI/UX-C2 fix — absolute-positioned just
+    // below the parent frame's bbox, NOT a third row of the
+    // flex-col. Catalog §2.2: "Adjacent to the portrait — a small
+    // horizontal cluster near the player frame, NOT attached to
+    // the portrait stack." `top-full` anchors below the parent
+    // (which is `relative` per the redesigned PlayerFrame outer
+    // div); the cluster floats adjacent rather than peer-stacked
+    // with the portrait + name. whitespace-nowrap prevents the
+    // chips from wrapping into a second row at narrow viewports.
+    <div
+      data-testid={`player-frame-info-${perspective}`}
+      className="absolute top-full left-1/2 -translate-x-1/2 mt-1
+        flex items-center gap-2 text-[11px] text-text-secondary
+        whitespace-nowrap"
+    >
+      <ZoneIcon
+        zone="library"
+        count={player.libraryCount}
+        playerName={player.name}
+        variant={perspective}
+      />
+      <ZoneIcon
+        zone="graveyard"
+        cards={player.graveyard}
+        playerName={player.name}
+        variant={perspective}
+      />
+      <ZoneIcon
+        zone="exile"
+        cards={player.exile}
+        playerName={player.name}
+        variant={perspective}
+      />
+      {opponentPoolNonEmpty && (
+        // Slice 70-P critic UI/UX-I3 fix — opponent cluster uses
+        // size="small" per catalog §2.3 "Visible but smaller." No
+        // glow on opponent pools — keeps the cluster low-priority
+        // chrome and saves a layer per orb at 4-pod density.
+        <span data-testid={`opponent-mana-pool-${player.playerId}`}>
+          <ManaPool player={player} size="small" />
+        </span>
+      )}
     </div>
   );
 }

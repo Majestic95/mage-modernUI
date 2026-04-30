@@ -44,11 +44,11 @@ interface Props {
   label?: string;
   /**
    * Slice 70-C critic UX-I1 — accepts the local-vs-opponent
-   * discriminator now so slice 70-D's PlayerFrame can pass it without
-   * a re-wiring. Default {@code "self"} preserves the existing
-   * full-size + clickable-modal behavior; {@code "opponent"} is a
-   * stub today (renders identically) and slice 70-D will branch
-   * here to render the smaller G/E icon variant per spec §7.9.
+   * discriminator. Slice 70-P (picture-catalog §2.2) — opponent
+   * variant now branches: smaller chip styling and the
+   * graveyard/exile chip becomes a hover tooltip listing the cards
+   * (public information per MTG rules) rather than a clickable
+   * modal. Local-player chips keep the click-to-modal behavior.
    */
   variant?: 'self' | 'opponent';
 }
@@ -65,12 +65,8 @@ export function ZoneIcon({
   cards,
   playerName,
   label,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  variant: _variant = 'self',
+  variant = 'self',
 }: Props) {
-  // _variant accepted now for forward-compat with 70-D PlayerFrame
-  // (UX-I1). Today both branches render identically; 70-D will
-  // branch to a compact G/E icon for opponent.
   const displayLabel = label ?? DEFAULT_LABELS[zone];
   if (zone === 'library') {
     // Library is face-down — no modal, no clickability, just a
@@ -93,41 +89,81 @@ export function ZoneIcon({
       cards={cards ?? {}}
       playerName={playerName}
       label={displayLabel}
+      variant={variant}
     />
   );
 }
 
 /**
- * Graveyard + exile path — clickable when non-empty, opens the
- * shared {@link ZoneBrowser} modal. Owns the hidden-layoutId
- * sink so cross-zone resolve animations can land here.
+ * Graveyard + exile path. Behavior per picture-catalog §2.2:
+ * <ul>
+ *   <li><b>Self variant</b> — clickable when non-empty; opens the
+ *       shared {@link ZoneBrowser} modal listing every card.</li>
+ *   <li><b>Opponent variant</b> — hover tooltip listing the card
+ *       names (public information per MTG rules: "Opponent
+ *       graveyard/exile show on hover (tooltip — public
+ *       information per MTG rules)"). No modal click — the
+ *       tooltip suffices for at-a-glance reads. Avoids the
+ *       overdesign the catalog warns against ("Don't overdesign
+ *       these").</li>
+ * </ul>
+ *
+ * <p>Both variants own the hidden-layoutId sink so cross-zone
+ * resolve animations can land here.
  */
 function PublicZoneIcon({
   zone,
   cards,
   playerName,
   label,
+  variant,
 }: {
   zone: 'graveyard' | 'exile';
   cards: Record<string, WebCardView>;
   playerName: string;
   label: string;
+  variant: 'self' | 'opponent';
 }) {
   const [open, setOpen] = useState(false);
   const cardList = Object.values(cards);
   const count = cardList.length;
   const empty = count === 0;
+  // Slice 70-P — opponent tooltip text. Picture-catalog §2.2 says
+  // "show on hover" — we synthesize a newline-separated list of
+  // card names so a native title= tooltip surfaces it. For empty
+  // zones the title is omitted (no tooltip on a "0" chip).
+  //
+  // Slice 70-P critic UI/UX-I4 fix — cap the list at 10 entries
+  // so a long graveyard (mid-game mill / discard floods past 30+
+  // cards) doesn't produce a giant unstyled tooltip column that
+  // scrolls off-screen on most browsers. Surplus collapses to
+  // "... and N more"; the player can still open the modal
+  // experience via the public game log if they need full detail.
+  const TOOLTIP_CAP = 10;
+  const opponentTooltip =
+    variant === 'opponent' && !empty
+      ? buildOpponentTooltip(playerName, zone, cardList, TOOLTIP_CAP)
+      : `Browse ${playerName}'s ${zone}`;
   return (
     <span className="relative inline-block">
       <span className="text-text-secondary">{label}</span>{' '}
-      {empty ? (
-        <span data-testid={`zone-count-${zone}`} className="font-mono">
+      {empty || variant === 'opponent' ? (
+        // Opponent path renders a non-clickable count chip with a
+        // hover tooltip; same shape as the empty case so the
+        // user-visible difference is "tooltip vs nothing on hover."
+        <span
+          data-testid={`zone-count-${zone}`}
+          data-variant={variant}
+          className="font-mono"
+          title={opponentTooltip}
+        >
           {count}
         </span>
       ) : (
         <button
           type="button"
           data-testid={`zone-count-${zone}`}
+          data-variant={variant}
           onClick={() => setOpen(true)}
           className={
             'font-mono cursor-pointer text-text-primary ' +
@@ -185,4 +221,27 @@ function PublicZoneIcon({
       )}
     </span>
   );
+}
+
+/**
+ * Slice 70-P (UI/UX critic I4) — bounded tooltip body for opponent
+ * zone chips. Caps the visible card list at {@code cap} entries so
+ * a giant graveyard doesn't overflow the native browser tooltip's
+ * render space. Surplus collapses to "... and N more".
+ *
+ * <p>Returns a string suitable for the {@code title=} attribute.
+ * Newline separators render as line breaks in Chrome / Firefox /
+ * Safari native tooltips.
+ */
+function buildOpponentTooltip(
+  playerName: string,
+  zone: 'graveyard' | 'exile',
+  cardList: readonly { name: string }[],
+  cap: number,
+): string {
+  const visible = cardList.slice(0, cap);
+  const overflow = Math.max(0, cardList.length - cap);
+  const names = visible.map((c) => c.name).join('\n');
+  const suffix = overflow > 0 ? `\n... and ${overflow} more` : '';
+  return `${playerName}'s ${zone}:\n${names}${suffix}`;
 }

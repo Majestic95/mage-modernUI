@@ -124,4 +124,124 @@ describe('ZoneIcon', () => {
       expect(screen.getByText('Exile')).toBeInTheDocument();
     });
   });
+
+  // Slice 70-P (picture-catalog §2.2) — opponent variant: hover
+  // tooltip listing card names instead of clickable modal. Public
+  // information per MTG rules; modal would be overdesign.
+  describe('opponent variant (slice 70-P, picture-catalog §2.2)', () => {
+    it('non-empty opponent graveyard renders the count as plain text, NOT a button', () => {
+      render(
+        <ZoneIcon
+          zone="graveyard"
+          cards={{ a: FOREST }}
+          playerName="bob"
+          variant="opponent"
+        />,
+      );
+      const counter = screen.getByTestId('zone-count-graveyard');
+      expect(counter.tagName).not.toBe('BUTTON');
+      expect(counter.dataset['variant']).toBe('opponent');
+    });
+
+    it('opponent graveyard tooltip lists the card names', () => {
+      render(
+        <ZoneIcon
+          zone="graveyard"
+          cards={{ a: FOREST, b: { ...FOREST, id: 'b', name: 'Mountain' } }}
+          playerName="bob"
+          variant="opponent"
+        />,
+      );
+      const counter = screen.getByTestId('zone-count-graveyard');
+      // Format: "<name>'s <zone>:\n<card1>\n<card2>"
+      expect(counter.getAttribute('title')).toBe(
+        "bob's graveyard:\nForest\nMountain",
+      );
+    });
+
+    it('clicking the opponent chip does NOT open the ZoneBrowser modal', async () => {
+      const user = userEvent.setup();
+      render(
+        <ZoneIcon
+          zone="graveyard"
+          cards={{ a: FOREST }}
+          playerName="bob"
+          variant="opponent"
+        />,
+      );
+      await user.click(screen.getByTestId('zone-count-graveyard'));
+      expect(screen.queryByTestId('zone-browser')).toBeNull();
+    });
+
+    it('self variant still opens the modal (default behavior preserved)', async () => {
+      const user = userEvent.setup();
+      render(
+        <ZoneIcon
+          zone="graveyard"
+          cards={{ a: FOREST }}
+          playerName="alice"
+          variant="self"
+        />,
+      );
+      await user.click(screen.getByTestId('zone-count-graveyard'));
+      expect(screen.getByTestId('zone-browser')).toBeInTheDocument();
+    });
+
+    it('opponent variant still emits cross-zone layoutId sinks (slice 55 contract preserved)', () => {
+      // Slice 70-P Tech critic: scoping the sink to self-only would
+      // silently break opponent-zone cross-zone resolve glides
+      // (e.g., a Lightning Bolt resolving from the stack into an
+      // opponent's graveyard). Lock the contract for both variants.
+      render(
+        <ZoneIcon
+          zone="graveyard"
+          cards={{ a: FOREST }}
+          playerName="bob"
+          variant="opponent"
+        />,
+      );
+      const targets = screen.getAllByTestId('zone-target-graveyard');
+      expect(targets).toHaveLength(1);
+      expect(targets[0]).toHaveAttribute('data-layout-id', FOREST.cardId);
+    });
+
+    it('caps opponent tooltip at 10 cards with "... and N more" overflow (UI/UX critic I4)', () => {
+      // 13 cards → tooltip shows 10 names + "... and 3 more".
+      const cards: Record<string, typeof FOREST> = {};
+      for (let i = 0; i < 13; i++) {
+        cards[`card-${i}`] = { ...FOREST, id: `card-${i}`, name: `Card ${i}` };
+      }
+      render(
+        <ZoneIcon
+          zone="graveyard"
+          cards={cards}
+          playerName="bob"
+          variant="opponent"
+        />,
+      );
+      const counter = screen.getByTestId('zone-count-graveyard');
+      const title = counter.getAttribute('title') ?? '';
+      expect(title).toContain('Card 0');
+      expect(title).toContain('Card 9');
+      expect(title).not.toContain('Card 10');
+      expect(title).toContain('... and 3 more');
+    });
+
+    it('opponent tooltip omits the "and N more" suffix when count fits within cap', () => {
+      const cards = { a: FOREST, b: { ...FOREST, id: 'b', name: 'Mountain' } };
+      render(
+        <ZoneIcon
+          zone="graveyard"
+          cards={cards}
+          playerName="bob"
+          variant="opponent"
+        />,
+      );
+      const title =
+        screen
+          .getByTestId('zone-count-graveyard')
+          .getAttribute('title') ?? '';
+      expect(title).not.toContain('and');
+    });
+  });
 });
