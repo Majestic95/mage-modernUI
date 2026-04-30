@@ -28,6 +28,7 @@ export function PlayerArea({
   isDropTarget,
   onBoardDrop,
   tabIndex,
+  slotPart,
 }: {
   player: WebPlayerView;
   perspective: 'self' | 'opponent';
@@ -77,6 +78,17 @@ export function PlayerArea({
    * opp-left. Optional â€” undefined falls back to natural DOM order.
    */
   tabIndex?: number;
+  /**
+   * Slice 70-Z polish round 17 — splits the local pod across two
+   * separate grid slots: battlefield rows in the bottom-center
+   * (where they've always been), and the PlayerFrame in a fixed-
+   * positioned corner mount at bottom-right of the battlefield.
+   * {@code 'rows'} renders only the battlefield rows; {@code
+   * 'frame'} renders only the PlayerFrame; undefined renders both
+   * (legacy / opponent default). Drop-target affordance applies
+   * only to the rows mount.
+   */
+  slotPart?: 'rows' | 'frame';
 }) {
   const battlefield = Object.values(player.battlefield);
   // Slice 53 â€” group permanents into MTGA-style rows (creatures /
@@ -85,6 +97,16 @@ export function PlayerArea({
   // board with one Forest shows just the lands row.
   const rows = bucketBattlefield(battlefield);
   const orderedRows = rowOrder(perspective);
+  // Slice 70-Z.1 critic Tech IMP-1 — `rowOrder` was narrowed to the
+  // two MAIN rows (creatures + lands) for the redesigned per-pod
+  // composition; the legacy branch needs the full 3-row stack with
+  // artifacts in the middle (matches pre-70-Z.1 layout exactly so
+  // production users on REDESIGN=false don't lose visibility of
+  // artifacts/enchantments/battles when this slice ships).
+  const legacyOrderedRows: readonly ('creatures' | 'artifacts' | 'lands')[] =
+    perspective === 'self'
+      ? (['creatures', 'artifacts', 'lands'] as const)
+      : (['lands', 'artifacts', 'creatures'] as const);
 
   // Slice 69b (ADR 0010 v2 D5) â€” active / priority glow rings.
   // Stack additively: a player who is both active AND has priority
@@ -128,7 +150,7 @@ export function PlayerArea({
           No permanents yet.
         </span>
       ) : (
-        orderedRows.map((row) => {
+        legacyOrderedRows.map((row) => {
           const items = rows[row];
           if (items.length === 0) return null;
           return (
@@ -198,6 +220,181 @@ export function PlayerArea({
         targetable={targetable}
       />
     );
+
+    // Slice 70-Z.1 (user direction 2026-04-30) — REDESIGN
+    // battlefield-area composition. The legacy `battlefieldRows`
+    // built above is a flat top-to-bottom stack of all three rows
+    // (creatures + artifacts + lands). REDESIGN splits it into TWO
+    // regions per picture-catalog §2.1.0:
+    //   - MAIN ROWS: creatures + lands ONLY (artifacts handled
+    //     separately). Cards lay LEFT→RIGHT (horizontal) for
+    //     top/bottom pods, TOP→BOTTOM (vertical) for left/right
+    //     pods. Order per `rowOrder(perspective)`: creatures
+    //     always sit closest to the focal zone; lands always sit
+    //     closest to the player's screen edge.
+    //   - ARTIFACT BOX: small fixed-size side region containing
+    //     artifacts/enchantments/battles/unknown. Renders ONLY
+    //     when non-empty (no placeholder per user direction).
+    //     Position: vertical column to the side for top/bottom
+    //     pods, horizontal strip at the bottom for left/right pods.
+    // Cards inside each region shrink uniformly when count grows
+    // (BattlefieldRowGroup contract); zone dimensions never
+    // change.
+    const rowsOrientation: 'horizontal' | 'vertical' = isVertical
+      ? 'horizontal'
+      : 'vertical';
+    const artifactsOrientation: 'horizontal' | 'vertical' = isVertical
+      ? 'vertical'
+      : 'horizontal';
+
+    // Main rows wrapper — direction depends on pod axis. For
+    // right opponent the rows order is reversed via flex-row-reverse
+    // so lands sit at the right (screen edge) and creatures at the
+    // left (toward focal); the `rowOrder('opponent')` array is
+    // ['lands', 'creatures'] regardless.
+    const mainRowsClass = isVertical
+      ? 'flex flex-col gap-1.5 flex-1 min-w-0 min-h-0'
+      : position === 'right'
+        ? 'flex flex-row-reverse gap-1.5 flex-1 min-w-0 min-h-0'
+        : 'flex flex-row gap-1.5 flex-1 min-w-0 min-h-0';
+    // Slice 70-Z.1 critic Tech IMP-2 — when both main buckets are
+    // empty (e.g. an artifacts-only opening hand: turn-1 Mox), skip
+    // the wrapper entirely so the artifact box doesn't sit next to
+    // an invisible flex-1 div consuming the remaining axis space.
+    const mainRowsEmpty =
+      rows.creatures.length === 0 && rows.lands.length === 0;
+    const mainRowsRedesign = mainRowsEmpty ? null : (
+      <div className={mainRowsClass} data-testid="battlefield-main-rows">
+        {orderedRows.map((row) => {
+          const items = rows[row];
+          if (items.length === 0) return null;
+          return (
+            <BattlefieldRowGroup
+              key={row}
+              row={row}
+              permanents={items}
+              perspective={perspective}
+              orientation={rowsOrientation}
+              canAct={canAct}
+              onObjectClick={onObjectClick}
+              eligibleCombatIds={eligibleCombatIds}
+              combatRoles={combatRoles}
+            />
+          );
+        })}
+      </div>
+    );
+
+    // Artifact box — only rendered when non-empty (catalog §2.1
+    // "If artifact box is empty, render nothing"). Fixed dimension
+    // along the perpendicular axis to the main rows: narrow column
+    // (~100px wide) for top/bottom pods, short row (~100px tall)
+    // for left/right pods. The 100px estimate matches a single
+    // opponent-card slot (small variant) — final size pending live
+    // playtest review per user direction "I can confirm once we see
+    // it live whether we need to change it."
+    // Slice 70-Z.1 critic UI IMP-6 — artifact box must remain a
+    // STATIC rectangle per catalog §2.1.0. The wrapper stretches to
+    // the parent's cross-axis (h-full for vertical column, w-full
+    // for horizontal strip) so the inner BattlefieldRowGroup's own
+    // h-full / shrink-uniform logic resolves against a definite
+    // dimension instead of collapsing to its content height/width.
+    const artifactsBoxRedesign =
+      rows.artifacts.length > 0 ? (
+        <div
+          data-testid="artifact-zone"
+          className={
+            isVertical
+              ? 'flex-shrink-0 w-[100px] h-full min-h-0'
+              : 'flex-shrink-0 h-[100px] w-full min-w-0'
+          }
+        >
+          <BattlefieldRowGroup
+            row="artifacts"
+            permanents={rows.artifacts}
+            perspective={perspective}
+            orientation={artifactsOrientation}
+            canAct={canAct}
+            onObjectClick={onObjectClick}
+            eligibleCombatIds={eligibleCombatIds}
+            combatRoles={combatRoles}
+          />
+        </div>
+      ) : null;
+
+    // Battlefield area = main rows + artifact box composed per pod.
+    // - Top/Bottom (vertical pod): horizontal split (main left,
+    //   artifacts right).
+    // - Left/Right (horizontal pod): vertical split (main top,
+    //   artifacts bottom).
+    const battlefieldAreaClass = isVertical
+      ? 'flex flex-row gap-2 min-w-0 min-h-0'
+      : 'flex flex-col gap-2 min-w-0 min-h-0 h-full';
+    // Empty-board fallback: when EVERY bucket is empty, show the
+    // "No permanents yet." placeholder (preserves the legacy UX).
+    const allEmpty = battlefield.length === 0;
+    const battlefieldAreaRedesign = allEmpty ? (
+      <div className="flex flex-col gap-1.5">
+        {/* Slice 70-Z.1 critic UI IMP-5 — caption color via the
+            --color-text-secondary token (#9BA8B0) instead of the
+            hardcoded text-zinc-600 (#52525B) which read as too dark
+            against the canvas. */}
+        <span
+          className="text-xs italic"
+          style={{ color: 'var(--color-text-secondary)' }}
+        >
+          No permanents yet.
+        </span>
+      </div>
+    ) : (
+      <div
+        data-testid="battlefield-area"
+        className={battlefieldAreaClass}
+      >
+        {mainRowsRedesign}
+        {artifactsBoxRedesign}
+      </div>
+    );
+    // Slice 70-Z polish round 17 — slotPart-driven rendering.
+    // - 'rows':  only battlefield rows (drop target stays here).
+    // - 'frame': only PlayerFrame (no rows, no drop target).
+    // - undefined: both, legacy/opponent layout (default).
+    if (slotPart === 'frame') {
+      return (
+        <div
+          data-testid={`player-area-${perspective}-frame`}
+          data-position={position}
+          data-player-id={player.playerId}
+          data-active={player.isActive || undefined}
+          data-priority={player.hasPriority || undefined}
+        >
+          {playerFrame}
+        </div>
+      );
+    }
+    if (slotPart === 'rows') {
+      return (
+        <div
+          data-testid={`player-area-${perspective}-rows`}
+          data-position={position}
+          data-player-id={player.playerId}
+          data-droppable="board"
+          data-drop-target={isDropTarget || undefined}
+          data-active={player.isActive || undefined}
+          data-priority={player.hasPriority || undefined}
+          tabIndex={player.hasLeft ? undefined : tabIndex}
+          onPointerUp={onBoardDrop}
+          className={
+            'transition-colors ' +
+            (isDropTarget
+              ? 'rounded ring-2 ring-fuchsia-500/40 outline outline-dashed outline-fuchsia-500'
+              : '')
+          }
+        >
+          {battlefieldAreaRedesign}
+        </div>
+      );
+    }
     return (
       <div
         data-testid={`player-area-${perspective}`}
@@ -224,13 +421,13 @@ export function PlayerArea({
       >
         {position === 'bottom' ? (
           <>
-            {battlefieldRows}
+            {battlefieldAreaRedesign}
             {playerFrame}
           </>
         ) : (
           <>
             {playerFrame}
-            {battlefieldRows}
+            {battlefieldAreaRedesign}
           </>
         )}
       </div>

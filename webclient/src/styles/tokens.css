@@ -316,7 +316,17 @@
   --card-size-micro: 20px;     /* future: zone-icon stack indicator */
   --card-size-small: 72px;     /* opponent battlefield (70-K) */
   --card-size-medium: 80px;    /* local battlefield (current default) */
-  --card-size-large: 100px;    /* hand (current default) */
+  --card-size-large: 180px;    /* hand cards — slice 70-Z polish round 14
+                                  (user feedback 2026-04-30) bumped 80%
+                                  from the original 100px so the hand fan
+                                  reads at MTGA-grade size when it floats
+                                  at the bottom of the viewport. The
+                                  larger size is intentional: the
+                                  redesigned hand drops the panel-tray
+                                  chrome and overlaps the battlefield's
+                                  bottom edge instead, so the cards need
+                                  enough visual presence to read as the
+                                  player's primary action surface. */
   --card-size-focal: 170px;    /* central focal stack topmost (70-N) */
 
 

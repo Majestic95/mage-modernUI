@@ -182,9 +182,15 @@ describe('PlayerPortrait — halo variants', () => {
     ).toBeInTheDocument();
   });
 
-  it('haloVariant="none" suppresses the halo', () => {
+  it('haloVariant="none" suppresses BOTH ring and bloom layers', () => {
+    // Slice 70-Z polish (code critic T2) — the bloom layer was added
+    // in this slice; verify it's gated by haloVariant alongside the
+    // ring so consumers passing haloVariant="none" (GameLog avatar,
+    // CommanderDamage cell) don't accidentally get bloom.
     render(<PlayerPortrait player={makePlayer()} haloVariant="none" />);
     expect(screen.queryByTestId('player-portrait-halo')).toBeNull();
+    expect(screen.queryByTestId('player-portrait-halo-bloom')).toBeNull();
+    expect(screen.queryByTestId('player-portrait-halo-stack')).toBeNull();
   });
 
   it('halo data attributes reflect color-identity count', () => {
@@ -236,63 +242,68 @@ describe('PlayerPortrait — halo variants', () => {
     ).not.toHaveAttribute('data-rotating');
   });
 
-  it('radiates an outer box-shadow glow in the single-color mana-glow token (universal halo-glow rule)', () => {
-    // Slice 70-N.1 user directive 2026-04-30: every halo (player
-    // portrait + focal stack card + any future surface) MUST have
-    // an outer glow that radiates in its color, not just sit as a
-    // flat ring. Single-color portrait → one box-shadow layer.
+  it('renders a bloom layer with the same gradient as the ring (single color)', () => {
+    // Slice 70-Z polish — bloom is a blurred copy of the ring's
+    // conic-gradient extended outward. Single-color identity → both
+    // ring + bloom share a solid var(--color-mana-X) background.
     render(
       <PlayerPortrait
         player={makePlayer({ colorIdentity: ['G'] })}
         size="medium"
       />,
     );
-    const halo = screen.getByTestId('player-portrait-halo');
-    expect(halo.dataset['haloGlow']).toBe(
-      '0 0 14px 0 var(--color-mana-green-glow)',
-    );
+    const bloom = screen.getByTestId('player-portrait-halo-bloom');
+    expect(bloom).toBeInTheDocument();
+    expect(bloom.style.background).toContain('--color-mana-green');
+    expect(bloom.style.filter).toMatch(/blur\(\d+px\)/);
   });
 
-  it('layers one box-shadow per color for multicolor halos (universal halo-glow rule)', () => {
+  it('bloom + ring carry data-rotating="true" for multicolor identity', () => {
+    // Slice 70-Z polish — both children carry data-rotating for
+    // e2e/screenshot harness assertions. The animation itself
+    // lives on the parent halo-stack div per the lockstep
+    // guarantee test below.
     render(
       <PlayerPortrait
         player={makePlayer({ colorIdentity: ['W', 'U', 'B', 'G'] })}
         size="medium"
       />,
     );
-    const halo = screen.getByTestId('player-portrait-halo');
-    // Four colors → four layered shadows, additive composition.
-    expect(halo.dataset['haloGlow']).toBe(
-      '0 0 14px 0 var(--color-mana-white-glow), 0 0 14px 0 var(--color-mana-blue-glow), 0 0 14px 0 var(--color-mana-black-glow), 0 0 14px 0 var(--color-mana-green-glow)',
-    );
+    const bloom = screen.getByTestId('player-portrait-halo-bloom');
+    const ring = screen.getByTestId('player-portrait-halo');
+    expect(bloom.dataset['rotating']).toBe('true');
+    expect(ring.dataset['rotating']).toBe('true');
   });
 
-  it('uses colorless-glow for empty colorIdentity', () => {
+  it('bloom uses neutral team color for empty colorIdentity', () => {
     render(
       <PlayerPortrait
         player={makePlayer({ colorIdentity: [] })}
         size="medium"
       />,
     );
-    const halo = screen.getByTestId('player-portrait-halo');
-    expect(halo.dataset['haloGlow']).toBe(
-      '0 0 14px 0 var(--color-mana-colorless-glow)',
-    );
+    const bloom = screen.getByTestId('player-portrait-halo-bloom');
+    expect(bloom.style.background).toContain('--color-team-neutral');
   });
 
-  it('scales glow radius with portrait size (small=8px, medium=14px, large=18px)', () => {
-    // Smaller portraits get tighter glows so the radiated halo
-    // doesn't dwarf the avatar; larger pods get a wider glow that
-    // balances the bigger circle.
+  it('scales bloom blur+extent with portrait size (small=4/4, medium=7/8, large=9/11)', () => {
+    // Slice 70-Z polish round 6 — radiation distance halved so the
+    // bloom hugs the portrait closer rather than radiating broadly
+    // outward. Slice 70-Z polish (code critic I2) — assertions use
+    // top/right/bottom/left longhands instead of `inset` shorthand
+    // for jsdom CSSOM stability.
     const { rerender } = render(
       <PlayerPortrait
         player={makePlayer({ colorIdentity: ['R'] })}
         size="small"
       />,
     );
-    expect(
-      screen.getByTestId('player-portrait-halo').dataset['haloGlow'],
-    ).toBe('0 0 8px 0 var(--color-mana-red-glow)');
+    let bloom = screen.getByTestId('player-portrait-halo-bloom');
+    expect(bloom.style.filter).toBe('blur(4px)');
+    expect(bloom.style.top).toBe('-4px');
+    expect(bloom.style.right).toBe('-4px');
+    expect(bloom.style.bottom).toBe('-4px');
+    expect(bloom.style.left).toBe('-4px');
 
     rerender(
       <PlayerPortrait
@@ -300,9 +311,50 @@ describe('PlayerPortrait — halo variants', () => {
         size="large"
       />,
     );
-    expect(
-      screen.getByTestId('player-portrait-halo').dataset['haloGlow'],
-    ).toBe('0 0 18px 0 var(--color-mana-red-glow)');
+    bloom = screen.getByTestId('player-portrait-halo-bloom');
+    expect(bloom.style.filter).toBe('blur(9px)');
+    expect(bloom.style.top).toBe('-11px');
+    expect(bloom.style.right).toBe('-11px');
+    expect(bloom.style.bottom).toBe('-11px');
+    expect(bloom.style.left).toBe('-11px');
+  });
+
+  it('bloom z-index is -1 and isolated by the portrait wrapper (code critic C1)', () => {
+    // Wrapper has `isolation: isolate` which establishes a stacking
+    // context so `z-index: -1` on the bloom child can't escape into
+    // a parent context (e.g. PlayerFrame's filter stacking). Ensures
+    // the bloom always paints behind the image but never bleeds
+    // behind unintended ancestors.
+    render(
+      <PlayerPortrait
+        player={makePlayer({ colorIdentity: ['G'] })}
+        size="medium"
+      />,
+    );
+    const wrapper = screen.getByTestId('player-portrait');
+    const bloom = screen.getByTestId('player-portrait-halo-bloom');
+    expect(wrapper.style.isolation).toBe('isolate');
+    expect(bloom.style.zIndex).toBe('-1');
+  });
+
+  it('halo-stack parent carries the rotation animation (lockstep guarantee)', () => {
+    // Slice 70-Z polish (code critic I1) — animation classes live on
+    // a SHARED PARENT div so bloom + ring genuinely consume the same
+    // animated --halo-angle. Verify the parent (not the children)
+    // owns animate-halo-rotate when multicolor.
+    render(
+      <PlayerPortrait
+        player={makePlayer({ colorIdentity: ['W', 'U', 'B', 'G'] })}
+        size="medium"
+      />,
+    );
+    const stack = screen.getByTestId('player-portrait-halo-stack');
+    expect(stack.className).toMatch(/animate-halo-rotate/);
+    // Children no longer carry the animation themselves.
+    const bloom = screen.getByTestId('player-portrait-halo-bloom');
+    const ring = screen.getByTestId('player-portrait-halo');
+    expect(bloom.className).not.toMatch(/animate-halo-rotate/);
+    expect(ring.className).not.toMatch(/animate-halo-rotate/);
   });
 });
 
@@ -444,12 +496,15 @@ describe('PlayerPortrait — accessibility', () => {
     expect(img).toHaveAttribute('alt', '');
   });
 
-  it('halo is aria-hidden (decoration; color-identity SR signal lives on the parent PlayerFrame)', () => {
+  it('halo stack is aria-hidden (decoration; color-identity SR signal lives on the parent PlayerFrame)', () => {
+    // Slice 70-Z polish — aria-hidden moved from individual halo
+    // children to the shared halo-stack parent (one boundary, one
+    // SR-skip). Children inherit the hidden status from the
+    // parent's aria-hidden + their pointer-events:none class.
     render(<PlayerPortrait player={makePlayer()} />);
-    expect(screen.getByTestId('player-portrait-halo')).toHaveAttribute(
-      'aria-hidden',
-      'true',
-    );
+    expect(
+      screen.getByTestId('player-portrait-halo-stack'),
+    ).toHaveAttribute('aria-hidden', 'true');
   });
 });
 

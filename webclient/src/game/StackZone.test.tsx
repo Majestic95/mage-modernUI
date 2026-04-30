@@ -199,56 +199,58 @@ describe('StackZone — REDESIGN focal mode (picture-catalog §3.1)', () => {
     expect(focal.dataset['stackGlow']).toBe('var(--color-team-neutral)');
   });
 
-  it('applies the stack-glow-pulse animation class on the halo', () => {
+  it('renders a spinning white-gold spotlight ring around the focal card edge', () => {
+    // Slice 70-Z polish round 9 — `animate-stack-glow-pulse`
+    // (breathing opacity) replaced by a spinning white-gold
+    // spotlight (`animate-stack-spotlight-rotate`) on a sibling
+    // ring element. The spotlight is the active-attention mechanism
+    // for the topmost stack card.
     const card = makeCard({ id: 'spell-1', cardId: 'spell-1' });
     render(<StackZone stack={makeStack([card])} combat={[]} />);
+    const spotlight = screen.getByTestId('stack-focal-spotlight');
+    expect(spotlight.className).toMatch(/animate-stack-spotlight-rotate/);
+    // Halo div no longer carries the breathing pulse class.
     const halo = screen.getByTestId('stack-focal-glow');
-    expect(halo.className).toMatch(/animate-stack-glow-pulse/);
+    expect(halo.className).not.toMatch(/animate-stack-glow-pulse/);
   });
 
-  it('radiates outer glow in the single-color mana glow token (universal halo-glow rule)', () => {
-    // Slice 70-N.1 user directive — every halo must radiate its
-    // color outward via box-shadow, not just sit as a flat ring.
+  it('renders the focal halo via blurred conic-gradient sibling div (single color)', () => {
+    // Slice 70-Z polish — FocalCard halo migrated to the same
+    // blurred-gradient bloom approach as PlayerPortrait. The
+    // single halo div carries a solid `var(--color-mana-X)`
+    // background + filter:blur softening; bloom and ring rotate
+    // in lockstep on the shared --halo-angle.
     const card = makeCard({
       id: 'spell-1',
       cardId: 'spell-1',
       colors: ['R'],
     });
     render(<StackZone stack={makeStack([card])} combat={[]} />);
-    const focal = screen.getByTestId('stack-focal-card');
-    // Single color → one box-shadow layer in that color's -glow token.
-    expect(focal.dataset['haloOuterGlow']).toBe(
-      '0 0 32px 0 var(--color-mana-red-glow)',
-    );
+    const halo = screen.getByTestId('stack-focal-glow');
+    expect(halo.style.background).toContain('--color-mana-red');
+    expect(halo.style.filter).toMatch(/blur\(\d+px\)/);
   });
 
-  it('layers one outer-glow box-shadow per color for multicolor (universal halo-glow rule)', () => {
+  it('renders the focal halo as conic-gradient for multicolor (universal halo-glow rule)', () => {
     const card = makeCard({
       id: 'spell-1',
       cardId: 'spell-1',
       colors: ['W', 'U', 'B'],
     });
     render(<StackZone stack={makeStack([card])} combat={[]} />);
-    const focal = screen.getByTestId('stack-focal-card');
-    // Three colors → three layered box-shadows, each in that
-    // color's -glow token. Composes additively at the inner edge,
-    // tinted toward each color at the outer edge.
-    expect(focal.dataset['haloOuterGlow']).toBe(
-      '0 0 32px 0 var(--color-mana-white-glow), 0 0 32px 0 var(--color-mana-blue-glow), 0 0 32px 0 var(--color-mana-black-glow)',
-    );
+    const halo = screen.getByTestId('stack-focal-glow');
+    expect(halo.style.background).toMatch(/^conic-gradient\(/);
   });
 
-  it('falls back to colorless-glow outer glow when colors is empty', () => {
+  it('falls back to neutral team color when colors is empty', () => {
     const card = makeCard({
       id: 'spell-1',
       cardId: 'spell-1',
       colors: [],
     });
     render(<StackZone stack={makeStack([card])} combat={[]} />);
-    const focal = screen.getByTestId('stack-focal-card');
-    expect(focal.dataset['haloOuterGlow']).toBe(
-      '0 0 32px 0 var(--color-mana-colorless-glow)',
-    );
+    const halo = screen.getByTestId('stack-focal-glow');
+    expect(halo.style.background).toContain('--color-team-neutral');
   });
 
   it('adds animate-halo-rotate only when the topmost is multicolor', () => {
@@ -322,15 +324,32 @@ describe('StackZone — REDESIGN focal mode (picture-catalog §3.1)', () => {
   });
 
   it('reports fan-distance and fan-scale data attributes for diagnostics', () => {
+    // Slice 70-Z polish round 12 — queue tiles use a multiplicative
+    // shrink schedule: distance 1 = 0.80, distance 2 = 0.80 × 0.85
+    // = 0.68, distance 3 = 0.68 × 0.85 = 0.578. Produces a
+    // perspective-stack effect where each successive (older) card
+    // is 15% smaller than the one before it. Test asserts the
+    // first three positions; the same formula extends to deeper
+    // distances.
     const cards = Array.from({ length: 4 }, (_, i) =>
       makeCard({ id: `spell-${i}`, cardId: `spell-${i}` }),
     );
     render(<StackZone stack={makeStack(cards)} combat={[]} />);
     const fans = screen.getAllByTestId('stack-fan-card');
-    // distances 1..3 mapped to scales 0.85, 0.70, 0.55 per the
-    // 1 - distance × 0.15 curve (picture-catalog §3.1).
-    const scales = fans.map((f) => f.dataset['fanScale']).sort();
-    expect(scales).toEqual(['0.55', '0.70', '0.85']);
+    // Pair each tile's distance + scale and sort by distance so
+    // the assertion is order-stable regardless of DOM/React
+    // mounting order.
+    const pairs = fans
+      .map((f) => ({
+        distance: Number(f.dataset['fanDistance']),
+        scale: f.dataset['fanScale'],
+      }))
+      .sort((a, b) => a.distance - b.distance);
+    expect(pairs).toEqual([
+      { distance: 1, scale: '0.80' },
+      { distance: 2, scale: '0.68' },
+      { distance: 3, scale: '0.58' }, // 0.578 → toFixed(2)
+    ]);
   });
 
   it('exposes data-stack-count for e2e diagnostics', () => {

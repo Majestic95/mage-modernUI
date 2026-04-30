@@ -121,18 +121,25 @@ body {
 
 /*
  * Slice 70-F (ADR 0011 D5) — ambient particle-drift backdrop for
- * the battlefield. Uses radial-gradient(s) on a single oversized
- * background-image, animated via translate3d so the GPU compositor
- * handles the cycle (no layout, no paint per frame). 60s period
- * keeps motion subtle; absent under reduced-motion via the
- * ambient-default rule below.
+ * the battlefield. Radial-gradient blobs on an oversized
+ * background-image, with the GRADIENT ORIGIN drifting via
+ * background-position rather than the element via transform.
  *
- * The element is a single absolutely-positioned div in the
- * battlefield region (GameTable) — no per-particle React state.
+ * <p>Slice 70-Z polish (user feedback 2026-04-30) — earlier
+ * implementation used {@code transform: translate3d(-25%, -8%)}
+ * which physically moved the element bodily; the right side of
+ * the screen ended up uncovered as the element slid off-canvas
+ * left. Switched to background-position animation: the element
+ * stays full-screen, only the gradient seam migrates within it.
+ * Result: continuous coverage edge-to-edge with the same
+ * "breathing" feel.
+ *
+ * <p>60s period + alternate keeps motion subtle; absent under
+ * reduced-motion via the ambient-default rule below.
  */
 @keyframes particle-drift {
-  0%   { transform: translate3d(0, 0, 0); }
-  100% { transform: translate3d(-25%, -8%, 0); }
+  0%   { background-position: 0% 0%; }
+  100% { background-position: 100% 100%; }
 }
 
 /*
@@ -171,6 +178,25 @@ body {
 }
 
 /*
+ * Slice 70-Z polish (user directive 2026-04-30 round 9 + 18) —
+ * spinning white-gold spotlight ring around the top-of-stack
+ * focal card. Replaces `animate-stack-glow-pulse` (breathing
+ * opacity) as the active-card visual-attention mechanism. The
+ * ring is a conic-gradient with a bright sweep on a transparent
+ * base; the same `--halo-angle` `@property` registration drives
+ * rotation. Round 18 doubled the speed (5000ms → 2500ms/rev) so
+ * the sweep reads as urgent "spotlight scanning" rather than
+ * ambient drift.
+ *
+ * The keyframe shares the same `halo-rotate` definition above —
+ * both animations interpolate `--halo-angle` 0→360deg, only the
+ * duration differs.
+ */
+.animate-stack-spotlight-rotate {
+  animation: halo-rotate 2500ms linear infinite;
+}
+
+/*
  * Slice 70-G (critic UX-3) — brief flash on a CommanderDamage row
  * when its value changes. The wrapper animates a 1.0 → 1.06 → 1.0
  * scale + a subtle bg-tint flash, providing per-click feedback
@@ -193,20 +219,47 @@ body {
 }
 
 .animate-particle-drift {
-  /* Slice 70-F critic UI-#2 — gradient alphas raised from 0.04-0.07
-   * to 0.10-0.16 so the layer is actually perceptible against
-   * --color-bg-base (#0E1A20). The previous values, multiplied by
-   * the consumer's opacity-40 wrapper, landed at ~0.016-0.028
-   * effective alpha — below the discrimination threshold on most
-   * monitors. The wrapper's opacity-40 was dropped at the call
-   * site; this file owns the final alpha. */
+  /* Slice 70-Z polish (user feedback 2026-04-30 round 4) — swirling
+   * gold ↔ gray mix instead of discrete corner blobs. Previous
+   * 4-blob arrangement read as "gold on one side, gray on the
+   * other" with a clear seam between them; user wants a unified
+   * gradient where the two colors meet and mix.
+   *
+   * New approach: TWO large overlapping ellipse radial gradients,
+   * each spanning ~90% of the viewport. The overlap zone (the
+   * middle two-thirds of the screen) sees both gradients composing
+   * additively, so gold and gray blend continuously rather than
+   * having a discrete edge. Drift via background-position shifts
+   * the overlap zone laterally producing the swirl motion.
+   *
+   * Alphas halved vs. round 3 (peak 0.20-0.22 → 0.10-0.11) per
+   * user direction — atmosphere stays subtle, "dark-hued"
+   * background composes over --color-bg-base #0E1A20 without
+   * brightening it. */
   background-image:
-    radial-gradient(circle at 20% 30%, rgb(91 192 240 / 0.16) 0, transparent 22%),
-    radial-gradient(circle at 70% 60%, rgb(168 139 196 / 0.13) 0, transparent 28%),
-    radial-gradient(circle at 45% 80%, rgb(91 184 114 / 0.13) 0, transparent 25%),
-    radial-gradient(circle at 85% 18%, rgb(232 197 108 / 0.10) 0, transparent 18%);
-  background-size: 140% 140%;
-  animation: particle-drift 60000ms linear infinite alternate;
+    /* Warm gold — top-left half of canvas */
+    radial-gradient(ellipse 90% 80% at 30% 35%,
+      rgb(220 180 110 / 0.10) 0%,
+      rgb(220 180 110 / 0.05) 50%,
+      transparent 100%
+    ),
+    /* Cool gray — bottom-right half of canvas */
+    radial-gradient(ellipse 90% 80% at 70% 65%,
+      rgb(125 130 140 / 0.11) 0%,
+      rgb(125 130 140 / 0.05) 50%,
+      transparent 100%
+    );
+  /* Slice 70-Z polish — background-size controls how much
+   * "headroom" the gradient has to drift via background-position.
+   * 100% = gradient exactly fills viewport, no drift possible.
+   * 115% = 15% headroom; the visible viewport shifts through 15%
+   * of the oversized gradient image as bg-position cycles. All
+   * four blob centers stay on-screen at every drift phase
+   * (positioned 18-85% from each edge with 15% drift max), giving
+   * a more perceptible breathing motion without any color
+   * disappearing off-canvas. User-tuned 2026-04-30 (8% → 15%). */
+  background-size: 115% 115%;
+  animation: particle-drift 60000ms ease-in-out infinite alternate;
 }
 
 .animate-stack-glow-pulse {

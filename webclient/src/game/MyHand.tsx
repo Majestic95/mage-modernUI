@@ -102,7 +102,14 @@ export function MyHand({
         {showPool && (
           <div
             data-testid="hand-mana-pool"
-            className="absolute right-2 top-1 z-10"
+            // Slice 70-Z polish round 20 (user direction 2026-04-30) —
+            // mana pool moved UP via negative top so it clears the
+            // local PlayerFrame corner mount's PRIORITY pill that
+            // sits in the same screen quadrant. Was top-1 (4px); now
+            // -top-5 (-20px) gives ~24px vertical clearance above
+            // the pill at typical viewport sizes. Right anchor (and
+            // the floating-pool semantics) unchanged.
+            className="absolute right-2 -top-5 z-10"
           >
             <ManaPool player={player!} size="medium" glow />
           </div>
@@ -115,14 +122,22 @@ export function MyHand({
             {disabledHint}
           </span>
         )}
-        {/* Slice 70-P critic UI/UX-I1 fix — reserve a right gutter
-            on the fan container so the rightmost hand card never
-            collides with the floating mana pool at narrow viewport
-            widths or 5-7+ hand sizes. The pool itself is at right-2
-            (8px from edge); a 5-orb pool spans ~136px. Gutter of
-            ~150px keeps the rightmost card off the pool footprint
-            without losing the visual centering. */}
-        <div className="relative h-52 pt-2 pr-[150px]">
+        {/* Slice 70-Z polish round 17 — right gutter expanded from
+            150px to 200px to reserve room for the local PlayerFrame
+            corner mount (Battlefield round-17 change places the
+            local portrait at the bottom-right of the battlefield
+            region, just left of the side panel's ActionButton).
+            The fan now stops short of the portrait area so the
+            portrait is fully visible — no card overlap.
+            Slice 70-P critic UI/UX-I1 — gutter also includes the
+            floating mana pool (top-right of hand region, ~136px
+            wide for a 5-orb pool). 200px covers both.
+            Slice 70-Z polish round 14 — container height h-[280px]
+            fits 80%-bigger hand cards (180px wide × 252px tall via
+            --card-size-large) plus hover-lift headroom. The
+            container itself is fixed at viewport bottom (mounted
+            by GameTable). */}
+        <div className="relative h-[280px] pt-2 pr-[200px]">
           {cards.length === 0 ? (
             <span className="absolute left-3 top-3 text-xs text-zinc-600 italic">
               Empty hand.
@@ -238,8 +253,14 @@ function fanGeometry(index: number, total: number): {
 } {
   if (total <= 1) return { x: 0, y: 0, rot: 0 };
   const fromCenter = index - (total - 1) / 2;
-  // Tighter spread when the hand is large so cards stay visible.
-  const spreadPx = total > 5 ? Math.max(40, 80 - (total - 5) * 6) : 80;
+  // Slice 70-Z polish rounds 15 + 16 (user feedback 2026-04-30) —
+  // fanning distance bumped twice. Round 15: +40% (80 → 112). Round
+  // 16: another +25% (112 → 140). High-hand-size tightening floor
+  // 40 → 70; tightening step 6 → 10 (proportional). Card overlap
+  // at the redesigned 180px card width drops from ~55% to ~22% —
+  // each card's mana cost / name / art reads clearly at a glance,
+  // with just enough overlap to keep the fan silhouette intact.
+  const spreadPx = total > 5 ? Math.max(70, 140 - (total - 5) * 10) : 140;
   const maxAngle = 12;
   const x = fromCenter * spreadPx;
   const y = Math.abs(fromCenter) * 3;

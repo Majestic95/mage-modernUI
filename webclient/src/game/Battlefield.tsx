@@ -5,6 +5,7 @@ import { StackZone } from './StackZone';
 import { PlayerArea } from './PlayerArea';
 import { gridAreaForOpponent, selectOpponents } from './battlefieldLayout';
 import type { DragState } from './useDragState';
+import { REDESIGN } from '../featureFlags';
 
 export function Battlefield({
   gv,
@@ -96,7 +97,15 @@ export function Battlefield({
     // permanents are out. The whole Battlefield wrapper gets
     // overflow-y-auto for the rare case the combined intrinsic
     // height exceeds the viewport on a small laptop.
-    <div className="flex-1 flex flex-col relative overflow-y-auto">
+    // Slice 70-Z polish round 18 (user direction 2026-04-30) — no
+    // scrolling on the battlefield viewport in either dimension.
+    // Was `overflow-y-auto` (slice-57 safety valve for small-laptop
+    // intrinsic-height overflow); the local PlayerFrame's corner
+    // mount + the floating hand fan + larger card sizes pushed
+    // content past viewport bounds and the scrollbar appeared. The
+    // user wants a static viewport — content beyond bounds is
+    // clipped rather than scrolled.
+    <div className="flex-1 flex flex-col relative overflow-hidden">
       {/* Slice 70-E — SR announcers (priority + elimination) moved
           to GameTable root per technical critic N4. The parent now
           mutates only on grid-shape changes (rare), not on every
@@ -228,13 +237,21 @@ export function Battlefield({
           <StackZone stack={gv.stack} combat={gv.combat} />
         </div>
 
-        {/* Self pod — bottom of the 4-pod arrangement. */}
+        {/* Self pod — bottom-center of the 4-pod arrangement.
+            Slice 70-Z polish round 17 (user direction 2026-04-30) —
+            REDESIGN splits the local pod across two slots:
+            battlefield ROWS render in this bottom-center cell
+            (slotPart='rows'), while the PlayerFrame mounts as a
+            fixed-positioned sibling at the battlefield's bottom-
+            right corner (slotPart='frame', see below). Legacy keeps
+            the unified pod here. */}
         <div style={{ gridArea: 'bottom' }} className="min-w-0">
           {me ? (
             <PlayerArea
               player={me}
               perspective="self"
               position="bottom"
+              {...(REDESIGN ? { slotPart: 'rows' as const } : {})}
               canAct={canAct}
               onObjectClick={onObjectClick}
               targetable={eligibleTargetIds.has(me.playerId)}
@@ -251,6 +268,45 @@ export function Battlefield({
           )}
         </div>
       </div>
+
+      {/* Slice 70-Z polish round 17 + 19 — local PlayerFrame
+          mounted at fixed bottom-right of the Battlefield region
+          (anchors to the battlefield's relative-positioned root).
+          The PlayerFrameInfoCluster (Lib/Hand/Grave/Exile chips)
+          mounts at `top-full` of the PlayerFrame and extends
+          BELOW the frame's content box. Round 19 (user direction
+          2026-04-30) raised the corner mount from bottom-2 (8px)
+          to bottom-12 (48px) so the overflowing cluster fits
+          above the battlefield bottom edge with safe clearance,
+          and shifted left from right-2 to right-6 (8 → 24px) so
+          the portrait isn't pinned tight against the side-panel
+          boundary. z-index keeps it ABOVE any battlefield content
+          but BELOW floating overlays like GameDialog.
+          REDESIGN-only mount; legacy renders the unified pod above. */}
+      {REDESIGN && me && (
+        <div
+          data-testid="local-player-frame-corner"
+          // Round 20 (user direction 2026-04-30) — bumped right
+          // 24 → 40px so the Exile chip + count have breathing
+          // room from the side-panel boundary.
+          className="absolute bottom-12 right-10 z-20 pointer-events-auto"
+        >
+          <PlayerArea
+            player={me}
+            perspective="self"
+            position="bottom"
+            slotPart="frame"
+            canAct={canAct}
+            onObjectClick={onObjectClick}
+            targetable={eligibleTargetIds.has(me.playerId)}
+            eligibleCombatIds={eligibleCombatIds}
+            combatRoles={combatRoles}
+            isDropTarget={false}
+            onBoardDrop={onBoardDrop}
+            tabIndex={9}
+          />
+        </div>
+      )}
 
       {/* Slice 70-F — MyHand extracted to its own GameTable grid
           region (region 4 per spec §4). Battlefield no longer

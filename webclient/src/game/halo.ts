@@ -83,77 +83,11 @@ export function manaTokenForCode(code: string): string {
   }
 }
 
-/**
- * Slice 70-N.1 — single-character mana code → low-alpha glow token
- * suitable for {@code box-shadow}. The {@code -glow} tokens are
- * defined in tokens.css as the rgba feathered-edge variants of the
- * {@link manaTokenForCode} solid tokens. Unknown codes default to
- * the colorless glow so a future engine 6th-color doesn't render as
- * a transparent halo.
- */
-export function manaGlowTokenForCode(code: string): string {
-  switch (code) {
-    case 'W':
-      return 'var(--color-mana-white-glow)';
-    case 'U':
-      return 'var(--color-mana-blue-glow)';
-    case 'B':
-      return 'var(--color-mana-black-glow)';
-    case 'R':
-      return 'var(--color-mana-red-glow)';
-    case 'G':
-      return 'var(--color-mana-green-glow)';
-    default:
-      return 'var(--color-mana-colorless-glow)';
-  }
-}
-
-/**
- * Slice 70-N.1 (user directive 2026-04-30) — universal halo-glow
- * helper. Every halo surface (PlayerPortrait, FocalCard, any future
- * halo consumer) MUST radiate a soft outer glow in the same color(s)
- * as its inner ring/bands. The colored ring alone is not enough —
- * the user feedback was explicit that the color must "have a glow
- * effect that radiates from the color."
- *
- * <p>Returns a CSS {@code box-shadow} value composing one feathered
- * shadow per color in the identity, all centered on the element with
- * 0 spread (per picture-catalog "Color & motion impressions" anchor:
- * "Box-shadows with feathered edges (large blur radius, low alpha)
- * — not crisp 1px borders"):
- * <ul>
- *   <li>Single color → one shadow in that color's {@code -glow} token.</li>
- *   <li>Multicolor → one shadow per color, all at the same blur
- *       radius. They composite additively at the inner edge (where
- *       all colors overlap) and tint outward (where each color's
- *       intensity falls off). Visually reads as a multicolor glow
- *       cloud, not flat gold.</li>
- *   <li>Empty / eliminated → colorless glow (silver) so the radiate
- *       behavior is preserved at low intensity for the neutral case.</li>
- * </ul>
- *
- * <p>The {@code radiusPx} parameter lets each consumer pick a glow
- * extent appropriate to its element size — small portraits (32-96px)
- * use ~12-16px; the focal card (170×238) uses ~28-36px.
- */
-export function computeHaloGlow(
-  colorIdentity: readonly string[],
-  eliminated: boolean,
-  radiusPx: number,
-): string {
-  if (eliminated || colorIdentity.length === 0) {
-    return `0 0 ${radiusPx}px 0 var(--color-mana-colorless-glow)`;
-  }
-  if (colorIdentity.length === 1) {
-    return `0 0 ${radiusPx}px 0 ${manaGlowTokenForCode(colorIdentity[0]!)}`;
-  }
-  // Multicolor — one shadow per color, all centered with 0 spread.
-  // Browsers composite stacked box-shadows additively, so the result
-  // at the inner edge is roughly the sum of each color (tending
-  // toward white-gold at high color count, which matches MTG's
-  // multicolor visual language) while individual colors remain
-  // visible toward the outer edge of each shadow.
-  return colorIdentity
-    .map((code) => `0 0 ${radiusPx}px 0 ${manaGlowTokenForCode(code)}`)
-    .join(', ');
-}
+// Slice 70-Z polish (user directive 2026-04-30) — `computeHaloGlow`
+// + `manaGlowTokenForCode` removed. Both halo surfaces (PlayerPortrait
+// CircularHalo + StackZone FocalCard) now use the SAME blurred-
+// gradient sibling-div bloom approach (see PlayerPortrait.tsx +
+// StackZone.tsx FocalCard). The box-shadow-based glow couldn't
+// rotate with the conic-gradient ring, so for multicolor identities
+// the bloom was a static color sum while the ring rotated through
+// bands — a visual mismatch the unified approach resolves.

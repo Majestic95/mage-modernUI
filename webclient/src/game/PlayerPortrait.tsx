@@ -46,7 +46,7 @@
  */
 import { type CSSProperties, useMemo } from 'react';
 import type { WebPlayerView } from '../api/schemas';
-import { computeHaloBackground, computeHaloGlow, manaTokenForCode } from './halo';
+import { computeHaloBackground, manaTokenForCode } from './halo';
 import { scryfallCommanderImageUrl } from './scryfall';
 
 export type PlayerPortraitSize = 'small' | 'medium' | 'large';
@@ -138,11 +138,7 @@ export function PlayerPortrait({
 
   // Portrait filter for state variants. Eliminated is heavier
   // than disconnected per picture-catalog §2.4.
-  const portraitFilter = eliminated
-    ? 'grayscale(1) opacity(0.5)'
-    : disconnected
-      ? 'grayscale(0.6) opacity(0.7)'
-      : undefined;
+  const portraitFilter = stateFilter(eliminated, disconnected);
 
   return (
     <div
@@ -162,6 +158,14 @@ export function PlayerPortrait({
       aria-label={label}
       style={{
         position: 'relative',
+        // Slice 70-Z polish — `isolation: isolate` establishes a
+        // stacking context here so the halo bloom's `z-index: -1`
+        // can't escape the wrapper into a parent context. Without
+        // it, position:relative alone doesn't create a stacking
+        // context (z-index: auto), and we'd be relying on the
+        // PlayerFrame's `[filter:grayscale(0)]` to confine the
+        // bloom — fragile to Tailwind class churn (code critic C1).
+        isolation: 'isolate',
         width: sizePx,
         height: sizePx,
         borderRadius: '50%',
@@ -245,12 +249,10 @@ function FallbackInitial({
 
   // Same desaturation / opacity treatment as the real portrait
   // for state variants — keeps the visual contract consistent
-  // whether art loads or not.
-  const stateFilter = eliminated
-    ? 'grayscale(1) opacity(0.5)'
-    : disconnected
-      ? 'grayscale(0.6) opacity(0.7)'
-      : undefined;
+  // whether art loads or not. Shared helper so the two paths
+  // (img + fallback) can't drift if the catalog values change
+  // (code critic Dup2).
+  const filterValue = stateFilter(eliminated, disconnected);
 
   // Font size scales with the portrait — large portraits get
   // proportionally larger initials. Roughly half the portrait
@@ -273,13 +275,30 @@ function FallbackInitial({
         fontSize: `${fontSize}px`,
         lineHeight: 1,
         userSelect: 'none',
-        filter: stateFilter,
+        filter: filterValue,
         transition: 'filter 700ms ease-in-out',
       }}
     >
       {initial}
     </div>
   );
+}
+
+/**
+ * Slice 70-Z polish (code critic Dup2) — shared helper for the
+ * eliminated/disconnected portrait filter string. Both the real-art
+ * path and the fallback-initial path apply the SAME desaturation
+ * treatment per picture-catalog §2.4; centralizing the values here
+ * means the catalog can be retuned with a single edit instead of
+ * two parallel literals.
+ */
+function stateFilter(
+  eliminated: boolean,
+  disconnected: boolean,
+): string | undefined {
+  if (eliminated) return 'grayscale(1) opacity(0.5)';
+  if (disconnected) return 'grayscale(0.6) opacity(0.7)';
+  return undefined;
 }
 
 /**
@@ -313,23 +332,63 @@ function CircularHalo({
     [colorIdentity, eliminated],
   );
 
-  // Slice 70-N.1 — outer radiating glow (user directive 2026-04-30:
-  // every halo must "have a glow effect that radiates from the
-  // color"). Uses computeHaloGlow so the box-shadow color is
-  // sourced from the SAME color identity as the inner ring/bands.
-  // Glow radius scales with the portrait size — wider glows on
-  // bigger portraits feel proportional. Box-shadow is unaffected by
-  // the mask-composite carve-out below; it renders outside the
-  // element's bounds.
-  const glowRadius = paddingPx <= 1.5 ? 8 : paddingPx <= 2 ? 14 : 18;
-  const haloGlow = useMemo(
-    () => computeHaloGlow(colorIdentity, eliminated, glowRadius),
-    [colorIdentity, eliminated, glowRadius],
-  );
+  // Slice 70-Z polish (user feedback 2026-04-30 — bloom should
+  // MATCH the ring's rotating colors, not be a static color sum).
+  //
+  // Approach: render the bloom as a BLURRED COPY of the same
+  // conic-gradient the ring uses, expanded outward beyond the
+  // portrait via negative inset. The blur softens the gradient
+  // bands into a colored bloom that retains the rotational color
+  // information. When the ring rotates 12s/rev, the bloom rotates
+  // in lockstep (both consume the same {@code --halo-angle}
+  // animated CSS var via {@code animate-halo-rotate}), so the
+  // bloom color at any angle matches the ring color at that angle
+  // — fixing the previous "static rainbow sum vs rotating bands"
+  // mismatch.
+  //
+  // Earlier slices 70-N.1 and 70-Z used layered box-shadows that
+  // composited additively as a static color mush. The new
+  // blurred-gradient approach gives directional color (blue at
+  // top, red at right, green at bottom, etc., rotating) that
+  // mirrors what the ring shows at each instant.
+  // Slice 70-Z polish (user feedback 2026-04-30 round 6) — bloom
+  // radiation distance halved (extent: 8/16/22 → 4/8/11; blur:
+  // 7/14/18 → 4/7/9). Same strength at the ring edge (the peak
+  // alpha lives at the gradient's intrinsic 0% stop which is the
+  // inset boundary), just terminates sooner so the bloom hugs
+  // the portrait closer rather than radiating broadly outward.
+  // Opacity stays at 0.75 from earlier — only the falloff radius
+  // shrinks.
+  const bloomExtentPx = paddingPx <= 1.5 ? 4 : paddingPx <= 2 ? 8 : 11;
+  const bloomBlurPx = paddingPx <= 1.5 ? 4 : paddingPx <= 2 ? 7 : 9;
+
+  const rotates = colorIdentity.length > 1 && !eliminated;
+  const pulses = isActive && !eliminated;
+
+  // Slice 70-Z polish (code critic I2) — longhand top/right/bottom/
+  // left instead of `inset` shorthand. jsdom's CSSOM serialization
+  // for the logical-properties shorthand is inconsistent across
+  // versions; longhands are stable for tests + cross-browser.
+  const bloomStyle: CSSProperties = {
+    position: 'absolute',
+    top: `-${bloomExtentPx}px`,
+    right: `-${bloomExtentPx}px`,
+    bottom: `-${bloomExtentPx}px`,
+    left: `-${bloomExtentPx}px`,
+    borderRadius: '50%',
+    background: haloBackground,
+    filter: `blur(${bloomBlurPx}px)`,
+    opacity: 0.75,
+    zIndex: -1,
+  };
 
   const ringStyle: CSSProperties = {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
     background: haloBackground,
-    boxShadow: haloGlow,
     padding: `${paddingPx}px`,
     WebkitMask:
       'linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)',
@@ -339,30 +398,57 @@ function CircularHalo({
     borderRadius: '50%',
   };
 
-  const rotates = colorIdentity.length > 1 && !eliminated;
-  const pulses = isActive && !eliminated;
-
-  // Compose animation classes — both can apply simultaneously
-  // (active multicolor: halo rotates AND pulses).
-  const animClasses = [
-    rotates ? 'animate-halo-rotate' : '',
-    pulses ? 'animate-player-active-halo' : '',
-  ]
-    .filter(Boolean)
-    .join(' ');
+  // Slice 70-Z polish (user-feedback round 7 — bloom-on-top fix) —
+  // ROTATION lives on the shared parent so both children inherit
+  // the same animated `--halo-angle` for guaranteed lockstep, but
+  // the OPACITY pulse lives on each child individually.
+  //
+  // Why split: animating opacity creates a CSS stacking context on
+  // the animated element. If the pulse were on the parent halo-
+  // stack, the parent would gain a stacking context and bloom's
+  // `z-index: -1` would resolve INSIDE the parent's context — the
+  // entire halo-stack (bloom + ring) would paint as a unit at step 6
+  // (positioned z=auto) of the wrapper's stacking context, ON TOP
+  // OF the in-flow img. That visually hoisted the bloom over the
+  // portrait. Keeping the parent rotation-only (animating
+  // `--halo-angle` doesn't create a stacking context) leaves
+  // bloom's z=-1 resolving in the wrapper's stacking context where
+  // it correctly paints behind the img.
+  const parentAnim = rotates ? 'animate-halo-rotate' : '';
+  const childAnim = pulses ? 'animate-player-active-halo' : '';
 
   return (
     <div
-      data-testid="player-portrait-halo"
-      data-color-count={colorIdentity.length}
-      data-halo-glow={haloGlow}
-      data-eliminated={eliminated || undefined}
-      data-active={isActive || undefined}
-      data-rotating={rotates || undefined}
-      data-pulsing={pulses || undefined}
       aria-hidden="true"
-      className={'pointer-events-none absolute inset-0 ' + animClasses}
-      style={ringStyle}
-    />
+      data-testid="player-portrait-halo-stack"
+      className={'pointer-events-none absolute inset-0 ' + parentAnim}
+    >
+      {/* Bloom layer — blurred copy of the conic-gradient
+          extended outward via negative inset. Sits BEHIND the
+          portrait image via z-index: -1 + the wrapper's
+          `isolation: isolate` stacking context. Rotates in
+          lockstep with the ring via the parent's animated
+          `--halo-angle` (cascaded). Pulse opacity applied here
+          per-child so the parent doesn't gain a stacking
+          context. */}
+      <div
+        data-testid="player-portrait-halo-bloom"
+        data-rotating={rotates || undefined}
+        className={'pointer-events-none ' + childAnim}
+        style={bloomStyle}
+      />
+      {/* Ring layer — masked color band. Pulse opacity applied
+          per-child for the same stacking-context reason. */}
+      <div
+        data-testid="player-portrait-halo"
+        data-color-count={colorIdentity.length}
+        data-eliminated={eliminated || undefined}
+        data-active={isActive || undefined}
+        data-rotating={rotates || undefined}
+        data-pulsing={pulses || undefined}
+        className={'pointer-events-none ' + childAnim}
+        style={ringStyle}
+      />
+    </div>
   );
 }

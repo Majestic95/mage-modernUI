@@ -137,35 +137,68 @@ Four pods total. Each has the same anatomy with size/orientation variations per 
 
 ### 2.1 Position-specific layouts
 
+#### 2.1.0 Universal battlefield-area composition (slice 70-Z.1, user direction 2026-04-30)
+
+Every pod's battlefield region is a single composed surface (`data-testid="battlefield-area"`) with TWO sub-elements:
+
+- **Main rows** — exactly two: `creatures` and `lands`, in the order returned by `rowOrder(perspective)` (self → creatures→lands; opponent → lands→creatures). Creatures always sit closest to the central focal zone; lands always sit closest to the player's screen edge.
+- **Side artifact box** — a single perpendicular row (`data-testid="artifact-zone"`) holding ARTIFACTS, ENCHANTMENTS, BATTLES, land-artifacts, land-enchantments, AND any unknown future card type. The box is positioned PERPENDICULAR to the main-rows axis: top/bottom pods get a vertical column to the side; left/right pods get a horizontal strip at the bottom.
+
+**Bucket rules (`battlefieldRows.classifyPermanent`):**
+- `CREATURE` (anywhere in `types`) → creatures row. Wins over LAND, ARTIFACT, ENCHANTMENT.
+- `PLANESWALKER` → creatures row. Per user direction: "Planeswalkers and commanders should be in the 'creature' zone since they are creatures." Commanders fall through naturally — most are creatures or planeswalkers.
+- Pure `LAND` (no other non-land permanent type stacked) → lands row.
+- Everything else → artifact zone. **Default fallback for unknown types**: per user direction "if there is any question about a card type, it would, by default, go into the artifact zone." Defends future engine type introductions from rendering in a wrong row.
+
+**Sizing contract (catalog "rows fixed, cards shrink"):**
+- Main rows and the artifact box are STATIC rectangles. They do NOT grow or wrap as card count increases.
+- When card count exceeds the row's natural capacity, every tile in that row shrinks UNIFORMLY along the row's main axis. Slot stays square (`aspect-square`) so tap-rotation still fits.
+- Mechanism: flex container with `flex: 1 1 0` + `max-(width|height)` per tile + `min-(width|height): 0` on the container so it respects parent bounds.
+- Hover surfaces the full-size card (existing `HoverCardDetail` behavior).
+
+**Empty-state rules:**
+- Artifact box with zero permanents: render NOTHING (no placeholder, no border, no label). Per user direction: "If artifact box is empty, render nothing until it is needed."
+- Entire battlefield empty: replace the whole `battlefield-area` with a single `"No permanents yet."` italic caption.
+
+**Per-pod axis orientation** (drives `BattlefieldRowGroup.orientation`):
+
+| Pod position | Main rows axis | Artifact box axis |
+|---|---|---|
+| Top (2.A) / Bottom (2.D) | horizontal (cards left→right) | vertical column to the side |
+| Left (2.B) / Right (2.C) | vertical (cards top→bottom) | horizontal strip at the bottom |
+
 #### 2.A — Top opponent (Korvold position in the picture)
 
 - **Portrait position:** Centered horizontally near the top of the battlefield region.
-- **Battlefield rows:** **ABOVE** the portrait (a horizontal row of ~6 cards directly above the portrait, with optional smaller token row above that). The picture shows cards facing the local player (oriented as if the top opponent's cards are "approaching" the center).
+- **Battlefield-area:** **ABOVE** the portrait. Composition per §2.1.0 — two horizontal main rows (lands at top closest to the screen edge, creatures at bottom closest to the focal zone) plus a vertical artifact box positioned to the side (renders only when non-empty).
 - **Card size:** `--card-size-small` (~80×112 portrait per slice 70-I tokens).
 - **Player name + commander name:** below the portrait.
-- **Battlefield orientation:** rows flow left-to-right in flat horizontal rows, **traditional MTG-style — no curving**. (User direction 2026-04-30: curved arrangements are explicitly out of scope; the picture's curved appearance is decorative only and is not a fidelity target.)
-- **In picture:** Korvold has 6 face-down or back-side cards above his portrait + a row of horizontal "Treasure-token-style" smaller cards above that. Implementation: flat horizontal rows (creatures / other / lands per `bucketBattlefield`) above the portrait. Face-down cards still render at `BattlefieldTile` size — the rendering of "back side" is a separate concern (slice TBD if needed).
+- **Row orientation:** `horizontal` (cards lay left→right). Artifact box's inner row uses `vertical` orientation. **Traditional MTG-style — no curving.** (User direction 2026-04-30: curved arrangements are explicitly out of scope; the picture's curved appearance is decorative only and is not a fidelity target.)
+- **In picture:** Korvold has 6 face-down or back-side cards above his portrait + a row of horizontal "Treasure-token-style" smaller cards above that. Implementation per §2.1.0 (creatures / lands main rows + artifact side box). Face-down cards still render at `BattlefieldTile` size — the rendering of "back side" is a separate concern (slice TBD if needed).
 
 #### 2.B — Left opponent (Atraxa position)
 
 - **Portrait position:** Vertically centered along the left edge of the battlefield region.
-- **Battlefield rows:** **TO THE RIGHT** of the portrait (cards stack vertically along the left edge, lands closer to the screen edge / outside, creatures inward). 2 columns visible in picture.
+- **Battlefield-area:** **TO THE RIGHT** of the portrait. Composition per §2.1.0 — two vertical main rows (lands leftmost / closest to the screen edge, creatures rightmost / closest to the focal zone) plus a horizontal artifact box at the bottom (renders only when non-empty).
 - **Card size:** `--card-size-small`.
 - **Player name + commander name:** to the RIGHT of the portrait (since vertical real-estate above/below is constrained).
-- **In picture:** Atraxa has 2 columns of cards stacked vertically along the left edge with what appears to be 4-5 cards per column.
+- **Row orientation:** `vertical` (cards lay top→bottom). Artifact box's inner row uses `horizontal` orientation.
+- **In picture:** Atraxa has 2 columns of cards stacked vertically along the left edge with what appears to be 4-5 cards per column. Implementation per §2.1.0.
 
 #### 2.C — Right opponent (Meren position)
 
-- **Mirror of 2.B.** Portrait on the right edge, rows to the left of the portrait, name/commander to the LEFT of the portrait.
+- **Mirror of 2.B.** Portrait on the right edge, battlefield-area to the LEFT of the portrait (lands rightmost / closest to the screen edge, creatures leftmost / closest to the focal zone), name/commander to the LEFT of the portrait.
 - **Card size:** `--card-size-small`.
+- **Row orientation:** `vertical`. Artifact box's inner row uses `horizontal` orientation.
 
 #### 2.D — Bottom local (Locust God position)
 
 - **Portrait position:** Centered horizontally near the bottom of the battlefield region (above the hand fan).
 - **Portrait diameter:** ~96px (slightly larger than opponents' 80px to emphasize the local player).
-- **Battlefield rows:** **ABOVE** the portrait, expanding upward toward the focal zone. The picture shows ~10 permanents in a single row with full readability.
+- **Battlefield-area:** **ABOVE** the portrait, expanding upward toward the focal zone. Composition per §2.1.0 — two horizontal main rows (lands at bottom closest to the hand, creatures at top closest to the focal zone) plus a vertical artifact box positioned to the side (renders only when non-empty). The picture shows ~10 permanents in a single row with full readability; under heavier board states the row stays static and tiles shrink uniformly.
 - **Card size:** `--card-size-medium` (larger than opponents' small — local player gets ~125% the opponent's tile size for readability).
 - **Player name + commander name:** below the portrait but above the hand fan.
+- **Row orientation:** `horizontal`. Artifact box's inner row uses `vertical` orientation.
 - **In picture:** "The Locust God" + "God of the Swarm" labels visible. Halo glows blue-cyan with a soft pulse (Locust God's color identity = U).
 
 ### 2.2 ZoneIcons (graveyard / exile / library) — placement
@@ -231,7 +264,20 @@ Remove from the current implementation:
 ### 3.3 Empty state
 
 - **Render:** Nothing in the focal zone container.
-- **Background:** The particle-drift backdrop (already shipped, slice 70-F) shows through. Don't overlay any UI chrome.
+- **Background:** The particle-drift backdrop (already shipped, slice 70-F) shows through. Don't overlay any UI chrome. Palette per "Particle-drift palette" subsection below — **STATIC** dark-hued mix; explicitly NOT priority-player-tinted (priority is conveyed by the portrait halo pulse + PRIORITY pill, not by the backdrop).
+
+#### Particle-drift palette (slice 70-Z polish, user direction 2026-04-30)
+
+Two large overlapping ellipse radial gradients composite additively over `--color-bg-base #0E1A20`:
+
+- **Warm gold** centered at 30% 35% — `rgb(220 180 110 / 0.10)` peak, fading to transparent at 100% radius. Spans `ellipse 90% 80%`.
+- **Cool gray** centered at 70% 65% — `rgb(125 130 140 / 0.11)` peak, fading to transparent at 100% radius. Spans `ellipse 90% 80%`.
+
+The two gradients overlap heavily in the middle two-thirds of the canvas where their additive composite produces a continuous gold ↔ gray mix (no discrete blobs visible at the seam).
+
+**Drift mechanism:** the backdrop element has `background-size: 115%` (15% headroom past the viewport) and animates `background-position: 0% 0% → 100% 100%` over 60 seconds, alternating, ease-in-out. Both gradient centers stay on-screen at every drift phase; the perceived motion is the seam between gold and gray slowly migrating laterally — a subtle "breathing" swirl.
+
+**Alpha discipline:** peak alphas (0.10-0.11) keep the atmosphere subtle so the central focal zone stays visually dominant per "Empty space is intentional" anchor (Color & motion impressions §3). Do not raise these alphas without explicit user sign-off; the backdrop is meant to be felt, not seen as figure-ground chrome.
 - **Transition out:** When a stack item arrives, fade in the focal card via `STACK_ENTER_EXIT` motion (already wired).
 
 ### 3.4 What's NOT in the central focal zone
@@ -452,29 +498,31 @@ The following EXIST in the current code but should be **removed or relocated**:
 Every halo surface in the redesign — current and future — composes **two** color layers:
 
 1. **Inner ring / bands** — solid color (single) or `conic-gradient` of `--color-mana-X` tokens (multicolor) or neutral team color (colorless / eliminated). Renders the spell or player's color identity as a visible band around the host element. Animations: `animate-halo-rotate` (12s/rev for multicolor), `animate-stack-glow-pulse` or `animate-player-active-halo` for opacity pulse.
-2. **Outer radiating glow** — `box-shadow` in the SAME color(s) as the inner ring, **0 spread, large blur**. Sourced from `computeHaloGlow(colorIdentity, eliminated, radiusPx)` in `webclient/src/game/halo.ts`:
-   - Single color → one shadow in that color's `--color-mana-X-glow` token
-   - Multicolor → one shadow per color, all stacked at the same blur radius (composites additively at the inner edge, tints outward toward each color at the outer edge)
-   - Colorless / eliminated → one shadow in `--color-mana-colorless-glow`
+2. **Outer radiating glow / bloom** — a blurred copy of the SAME conic-gradient (or solid color) as the inner ring, extending past the host element via negative inset, with `filter: blur(...)` softening the bands into a radiating glow. The bloom layer rotates in lockstep with the ring on a SHARED parent's animated `--halo-angle`, so the bloom color at any compass direction matches the ring color at that direction at every instant — directional rotational color, not a static rainbow sum.
 
 The outer glow MUST be present. A halo that is only a colored ring (no radiating glow) is a catalog violation regardless of which surface it lives on. Critics flag this as a CRITICAL finding and the slice doesn't ship.
 
-**Glow radius scaling:** the `radiusPx` parameter to `computeHaloGlow` lets each consumer pick a glow extent appropriate to its element size:
+> **Slice 70-Z polish (user directive 2026-04-30) — bloom mechanism unified.** Earlier slice-70-N.1 used `computeHaloGlow` returning a `box-shadow` value composed of layered `--color-mana-X-glow` tokens. The box-shadow approach can't be rotated, so for multicolor identities the bloom appeared as a static color sum while the ring rotated through bands — a visible mismatch. Replaced uniformly with the blurred-gradient sibling-div approach above; box-shadow halos are deprecated. Both halo surfaces (`PlayerPortrait` CircularHalo + `StackZone` FocalCard) now use the same mechanism.
 
-| Surface | Element size | Glow radius |
+**Bloom-radius scaling:** the bloom's negative inset extent + filter blur are tuned per host element size:
+
+| Surface | Element size | Bloom inset / blur (approx.) |
 |---|---|---|
-| GameLog avatar (PlayerPortrait `size="small"`) | 32px | 8px |
-| Opponent pod (PlayerPortrait `size="medium"`) | 80px | 14px |
-| Local pod (PlayerPortrait `size="large"`) | 96px | 18px |
-| Focal stack card | 170×238 | 32px |
+| GameLog avatar (PlayerPortrait `size="small"`) | 32px | bloom suppressed via `haloVariant="none"` |
+| CommanderDamage cell (PlayerPortrait `size="small"`) | 32px | bloom suppressed via `haloVariant="none"` |
+| Opponent pod (PlayerPortrait `size="medium"`) | 80px | inset -8px / blur 7px |
+| Local pod (PlayerPortrait `size="large"`) | 96px | inset -11px / blur 9px |
+| Focal stack card | 170×238 | inset -8px / blur 10px |
 
-**Helpers:**
-- `computeHaloBackground(colorIdentity, eliminated)` — returns the inner ring/band CSS background.
-- `computeHaloGlow(colorIdentity, eliminated, radiusPx)` — returns the outer-glow CSS `box-shadow`.
-- `manaTokenForCode(code)` — single-character mana code → solid color token.
-- `manaGlowTokenForCode(code)` — single-character mana code → glow alpha token.
+**Helpers (post slice 70-Z polish):**
+- `computeHaloBackground(colorIdentity, eliminated)` — returns the inner ring/band CSS background; consumed by BOTH ring + bloom layers (the bloom is a blurred copy of this gradient).
+- `manaTokenForCode(code)` — single-character mana code → solid color CSS variable.
 
-**Current surfaces that consume both helpers (slice 70-N.1):** `PlayerPortrait` (CircularHalo) and `StackZone` FocalCard. New halo surfaces that ship later (e.g. CommanderDamage threshold cell, focal triggered ability tile) MUST use `computeHaloGlow`; do not invent per-surface glow logic.
+**Current surfaces:**
+- `PlayerPortrait` CircularHalo — wraps bloom + ring divs in a shared parent that owns the animation classes (`animate-halo-rotate`, `animate-player-active-halo`). Both children consume the parent's animated `--halo-angle` via cascade. Wrapper has `isolation: isolate` so the bloom's `z-index: -1` is contained.
+- `StackZone` FocalCard — single halo div with `background: <conic-gradient>` + `filter: blur(10px)` + `animate-stack-glow-pulse` (opacity) + `animate-halo-rotate` (multicolor). Sits at `-inset-2` extending past the focal CardFace edges.
+
+New halo surfaces that ship later (e.g. CommanderDamage threshold cell, focal triggered ability tile) MUST follow this two-layer recipe (or single blurred layer for static halos). Do not invent per-surface glow logic; do not reintroduce box-shadow as the radiation mechanism — it can't rotate.
 
 ---
 

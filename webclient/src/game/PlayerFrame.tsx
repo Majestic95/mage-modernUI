@@ -712,7 +712,10 @@ function PlayerFrameRedesigned({
         {commander && (
           <span
             data-testid="commander-name-label"
-            className="text-xs text-zinc-400 truncate max-w-full"
+            // Slice 70-Z polish round 21 (user direction 2026-04-30) —
+            // commander label bumped text-xs (12px) → text-sm (14px)
+            // for legibility on the corner-mount local frame.
+            className="text-sm text-zinc-400 truncate max-w-full"
             title={commander.name}
           >
             {commander.name}
@@ -826,8 +829,13 @@ function PlayerFrameInfoCluster({
     // chips from wrapping into a second row at narrow viewports.
     <div
       data-testid={`player-frame-info-${perspective}`}
+      // Slice 70-Z polish round 21 (user direction 2026-04-30) —
+      // cluster font bumped text-[11px] → text-[13px] for legibility
+      // alongside the bigger commander name. Hierarchy preserved:
+      // player name (text-base ≈ 16px, font-medium) > commander
+      // (text-sm 14px) > cluster (text-[13px]).
       className="absolute top-full left-1/2 -translate-x-1/2 mt-1
-        flex items-center gap-2 text-[11px] text-text-secondary
+        flex items-center gap-2 text-[13px] text-text-secondary
         whitespace-nowrap"
     >
       <ZoneIcon

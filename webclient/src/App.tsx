@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useAuthStore } from './auth/store';
 import { useGameStore } from './game/store';
+import { DemoGame } from './dev/DemoGame';
+import { isKnownScenario } from './dev/demoFixtures';
 import { CardSearch } from './pages/CardSearch';
 import { Decks } from './pages/Decks';
 import { Game } from './pages/Game';
@@ -120,6 +122,32 @@ export function App() {
   const spectateGameId = matchSpectatePath(window.location.pathname);
   if (spectateGameId) {
     return <SpectatorPlaceholder gameId={spectateGameId} />;
+  }
+
+  // Slice 70-Z polish-phase preview route. URL flag {@code ?demo=...}
+  // mounts {@link DemoGame} with a hardcoded fixture (no backend
+  // required). Gated on {@code import.meta.env.DEV} so production
+  // bundles ignore the flag and the demo module's static fixtures
+  // get tree-shaken. Resolved BEFORE the auth gate so the user
+  // doesn't have to log in to inspect the redesigned UI.
+  if (import.meta.env.DEV) {
+    const demoParam = new URLSearchParams(window.location.search).get('demo');
+    if (isKnownScenario(demoParam)) {
+      return (
+        <DemoGame
+          scenario={demoParam}
+          onLeave={() => {
+            // Drop the URL param + return to the normal app shell.
+            const url = new URL(window.location.href);
+            url.searchParams.delete('demo');
+            window.history.replaceState({}, '', url.toString());
+            // Force a re-render — the auth gate decides what comes
+            // next (Login or the lobby tabs).
+            window.location.reload();
+          }}
+        />
+      );
+    }
   }
 
   if (!session) {

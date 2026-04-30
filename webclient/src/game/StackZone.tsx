@@ -18,7 +18,7 @@ import {
 import { CardFace } from './CardFace';
 import { HoverCardDetail } from './HoverCardDetail';
 import { REDESIGN } from '../featureFlags';
-import { computeHaloBackground, computeHaloGlow } from './halo';
+import { computeHaloBackground } from './halo';
 import { TargetingArrow } from './TargetingArrow';
 
 /**
@@ -228,19 +228,18 @@ function StackFan({ entries }: { entries: readonly WebCardView[] }) {
   const overflow = Math.max(0, entries.length - 1 - FAN_CAP);
 
   const topmostHalo = computeHaloBackground(topmost.colors, false);
-  // Slice 70-N.1 — outer radiating glow sourced from the SAME color
-  // identity as the inner halo bands. User directive 2026-04-30:
-  // every halo must radiate its color. 32px glow radius reads as
-  // "soft halo" on the 170×238 focal card without spilling into the
-  // pod regions.
-  const topmostGlow = computeHaloGlow(topmost.colors, false, 32);
 
   return (
     <section
       data-testid="stack-zone"
       data-stack-mode="focal"
       data-stack-count={entries.length}
-      className="relative flex items-center justify-center"
+      // Slice 70-Z polish — `isolation: isolate` keeps the fan
+      // tiles' + focal halo's stacking contained inside the
+      // section, so DOM-order paint (fan tiles render first, focal
+      // last, focal halo's z=-1 within the focal's own context)
+      // produces a clean back-to-front stack.
+      className="relative flex items-center justify-center isolate"
     >
       <AnimatePresence mode="popLayout" initial={false}>
         {/* Fan items render BELOW the topmost. Reverse mapping order
@@ -259,7 +258,6 @@ function StackFan({ entries }: { entries: readonly WebCardView[] }) {
           key={topmost.id}
           card={topmost}
           haloBackground={topmostHalo}
-          haloGlow={topmostGlow}
           haloIsMulticolor={topmost.colors.length > 1}
           overflow={overflow}
         />
@@ -287,58 +285,93 @@ function StackFan({ entries }: { entries: readonly WebCardView[] }) {
  * card height so a future polish slice that retunes
  * {@code --card-size-focal} doesn't break the fan layout.
  */
+/**
+ * Slice 70-Z polish (user-feedback round 12 + 13) — queue scaling
+ * + overlap parameters. Tile #1 (closest to focal) sits at
+ * {@link FAN_BASE_SCALE} (0.80× focal); each subsequent tile
+ * shrinks by {@link FAN_SHRINK_FACTOR} (15% smaller than the
+ * previous, multiplicative). Every tile's LEFT EDGE anchors at
+ * the previous element's CENTER — including from focal → tile #1.
+ * That gives a uniform half-card overlap chain: focal is half
+ * covered by tile #1 (right half), tile #1 is half covered by
+ * tile #2, and so on. Newer tiles paint on top of older ones (DOM
+ * order via the reverse-mapped loop in StackFan).
+ */
+const FAN_BASE_SCALE = 0.8;
+const FAN_SHRINK_FACTOR = 0.85;
+
 function FanCard({
   card,
   distance,
 }: {
   card: WebCardView;
-  /** 1 = directly behind topmost, FAN_CAP = furthest visible. */
+  /** 1 = first tile right of focal, FAN_CAP = furthest right. */
   distance: number;
 }) {
-  const scale = 1 - distance * 0.15;
-  // ±5° → ±6° → ±7° → ±8° per position. Sign alternates by parity
-  // of `distance` so even tiles tip left and odd tiles tip right —
-  // produces the "deck of cards spread on a table" silhouette
-  // rather than a straight-line stack.
-  const rotateDeg =
-    (distance % 2 === 0 ? -1 : 1) * Math.min(8, 4 + distance);
-  // Fraction-of-focal-height vertical offset. Picks 0.10× per step
-  // — at 238px focal that's ~24px per position, comfortably above
-  // the focal's bottom edge.
-  const yOffset = `calc(var(--card-size-focal) * 7 / 5 * ${-distance * 0.1})`;
+  // Tile's own scale: queue card 1 = 0.80, queue card 2 = 0.80 ×
+  // 0.85 = 0.68, queue card 3 = 0.578, queue card 4 = 0.491.
+  const tileScale =
+    FAN_BASE_SCALE * Math.pow(FAN_SHRINK_FACTOR, distance - 1);
+
+  // Cumulative x-offset from focal center to THIS tile's center:
+  //   Σ_{i=1..distance} (card_i_halfwidth)
+  // Each tile's left edge anchors at the previous element's
+  // center — INCLUDING from focal → tile 1. That means tile 1's
+  // left edge sits at the focal's center (covering focal's right
+  // half by 50%), tile 2's left edge sits at tile 1's center
+  // (covering tile 1 by 50%), etc. The chain of left-edge-on-
+  // center anchors produces uniform 50% overlap visually
+  // throughout the stack queue (round-13 user direction —
+  // previously tile 1 sat with a small gap separating it from the
+  // focal, breaking the visual continuity).
+  let halfwidthsExpr = '0px';
+  for (let i = 1; i <= distance; i++) {
+    const s = FAN_BASE_SCALE * Math.pow(FAN_SHRINK_FACTOR, i - 1);
+    halfwidthsExpr += ` + (var(--card-size-focal) * ${s.toFixed(4)} / 2)`;
+  }
+  const xOffset = `calc(${halfwidthsExpr})`;
 
   // Slice 70-N UI critic C3 — namespace the layoutId so a fan tile
   // and the focal card never share an id during AnimatePresence's
-  // exit-old-enter-new overlap. The cross-zone glide track (hand →
-  // stack) lives on the FOCAL card's plain `cardId`; fans are
-  // intra-zone and don't need to participate in cross-zone glides.
+  // exit-old-enter-new overlap.
   const layoutId = card.cardId ? `stack-fan-${card.cardId}` : undefined;
 
+  // Hover preview reuses the same HoverCardDetail popover the focal
+  // card uses. User directive: "keep each card hoverable."
+  const tooltip = [card.typeLine, ...(card.rules ?? [])]
+    .filter(Boolean)
+    .join('\n');
+
   return (
-    <motion.div
-      layout
-      layoutId={layoutId}
-      data-testid="stack-fan-card"
-      data-fan-distance={distance}
-      data-fan-scale={scale.toFixed(2)}
-      data-layout-id={layoutId}
-      initial={{ opacity: 0, scale: scale * 0.9 }}
-      animate={{ opacity: 0.85, scale, rotate: rotateDeg }}
-      exit={{ opacity: 0, scale: scale * 0.85 }}
-      transition={slow(STACK_ENTER_EXIT)}
-      className="absolute pointer-events-none top-1/2 left-1/2"
+    <div
+      className="absolute top-1/2 left-1/2"
       style={{
-        // Center the wrapper at the section's center, then offset
-        // upward by `yOffset` so the fan rises above the focal card.
-        // The -50% translate centers the wrapper itself (since its
-        // intrinsic size is the focal card's 170×238); the additional
-        // calc() shifts it up.
-        transform: `translate(-50%, calc(-50% + ${yOffset}))`,
-        zIndex: -2,
+        transform: `translate(calc(-50% + ${xOffset}), -50%)`,
       }}
     >
-      <CardFace card={card} size="focal" />
-    </motion.div>
+      <motion.div
+        layout
+        layoutId={layoutId}
+        data-testid="stack-fan-card"
+        data-fan-distance={distance}
+        data-fan-scale={tileScale.toFixed(2)}
+        data-layout-id={layoutId}
+        initial={{ opacity: 0, scale: tileScale * 0.9 }}
+        animate={{ opacity: 1, scale: tileScale }}
+        exit={{ opacity: 0, scale: tileScale * 0.85 }}
+        transition={slow(STACK_ENTER_EXIT)}
+      >
+        <HoverCardDetail card={card}>
+          <div
+            data-testid="stack-fan-entry"
+            className="relative"
+            title={tooltip || card.name}
+          >
+            <CardFace card={card} size="focal" />
+          </div>
+        </HoverCardDetail>
+      </motion.div>
+    </div>
   );
 }
 
@@ -366,7 +399,6 @@ function FanCard({
 function FocalCard({
   card,
   haloBackground,
-  haloGlow,
   haloIsMulticolor,
   overflow,
 }: {
@@ -376,15 +408,6 @@ function FocalCard({
    * gradient (multicolor), or the team-neutral fallback.
    */
   haloBackground: string;
-  /**
-   * Slice 70-N.1 — CSS box-shadow value for the outer radiating
-   * glow. Sourced from {@code computeHaloGlow} so the glow color
-   * matches the card's color identity (single = that color's -glow
-   * token; multicolor = layered shadows, one per color; colorless =
-   * silver). Required for the "every halo radiates from its color"
-   * universal rule.
-   */
-  haloGlow: string;
   /**
    * Whether the halo background is a multicolor conic-gradient.
    * Drives whether {@code animate-halo-rotate} animates the
@@ -405,16 +428,23 @@ function FocalCard({
   // resolution where a fan tile promotes to focal.
   const layoutId = card.cardId ? card.cardId : undefined;
 
-  // Slice 70-N.1 — halo style. Background carries the inner color
-  // (solid or conic-gradient bands), filter softens the band edges
-  // into the catalog's "soft halo" treatment, and box-shadow
-  // radiates outward in the SAME color identity per
-  // computeHaloGlow (user directive 2026-04-30: every halo must
-  // glow in its color, not flat gold).
+  // Slice 70-Z polish (user-feedback round 10) — bloom radiation
+  // distance shrunk to 35% of the round-7 values (inset -20px →
+  // -7px, blur 18px → 6px) so the glow hugs the card edge closer
+  // rather than spreading broadly outward. Same strength at the
+  // ring edge (opacity unchanged at 0.85, gradient peak still at
+  // the inset boundary); only the falloff radius shortens. Mirrors
+  // the same "radiate half/third the distance" tuning the user
+  // applied to PlayerPortrait halos in round 6.
+  //
+  // The bloom rotates via `animate-halo-rotate` (multicolor only).
+  // The breathing pulse (`animate-stack-glow-pulse`) was retired
+  // in round 9 in favor of the spinning white-gold spotlight
+  // ring rendered after the CardFace (see below).
   const haloStyle: CSSProperties = {
     background: haloBackground,
-    filter: 'blur(10px)',
-    boxShadow: haloGlow,
+    filter: 'blur(6px)',
+    opacity: 0.85,
   };
 
   return (
@@ -424,7 +454,6 @@ function FocalCard({
       key={card.id}
       data-testid="stack-focal-card"
       data-stack-glow={haloBackground}
-      data-halo-outer-glow={haloGlow}
       data-halo-multicolor={haloIsMulticolor || undefined}
       data-layout-id={layoutId}
       initial={{ opacity: 0, y: -24, scale: 0.85 }}
@@ -432,18 +461,30 @@ function FocalCard({
       exit={{ opacity: 0, y: 24, scale: 0.85 }}
       transition={slow(STACK_ENTER_EXIT)}
       className="relative"
+      // Slice 70-Z polish (user-feedback round 8) — `isolation:
+      // isolate` establishes a stacking context here so the bloom
+      // halo's `z-index: -1` is CONTAINED to the focal card. Without
+      // it, the halo's negative z escapes to the nearest ancestor
+      // stacking context (probably the GameTable grid root) once
+      // Framer's transient opacity animation finishes — the bloom
+      // ends up painted way behind the battlefield content,
+      // invisible to the user. Same fix pattern as PlayerPortrait
+      // wrapper round 7.
+      style={{ isolation: 'isolate' }}
     >
-      {/* Pulsing halo — sits at -inset-2 (extends 8px past the card
-          edges) so the blur(10px) filter has room to feather without
-          clipping. animate-stack-glow-pulse modulates opacity 0.55
-          ↔ 1.0; animate-halo-rotate spins the conic-gradient origin
-          for multicolor cards (no-op for single-color). z-index: -1
-          places it behind the CardFace within the focal motion.div's
-          stacking context. */}
+      {/* Color-identity bloom halo — sits at -inset-[7px] past the
+          card edges, blur 6px so the gradient softens into a soft
+          color glow that hugs the card. animate-halo-rotate spins
+          the conic-gradient origin for multicolor cards (no-op for
+          single). z-index: -1 keeps it behind the CardFace within
+          the focal motion.div's stacking context. Round-10 user-
+          tuning halved-then-some the radiation distance from the
+          earlier -inset-5/blur-18 values — same edge strength,
+          tighter falloff. */}
       <div
         data-testid="stack-focal-glow"
         className={
-          'animate-stack-glow-pulse absolute -inset-2 rounded-xl pointer-events-none ' +
+          'absolute -inset-[7px] rounded-xl pointer-events-none ' +
           (haloIsMulticolor ? 'animate-halo-rotate' : '')
         }
         style={{ ...haloStyle, zIndex: -1 }}
@@ -469,6 +510,39 @@ function FocalCard({
           )}
         </div>
       </HoverCardDetail>
+      {/* Slice 70-Z polish (user directive 2026-04-30 round 9) —
+          spinning white-gold spotlight ring around the card edge.
+          Replaces the breathing pulse as the active-stack visual
+          attention mechanism. The conic-gradient has a bright
+          white→gold sweep on a transparent base; the WebkitMask
+          + mask-composite carve it into a thin perimeter ring; the
+          animate-stack-spotlight-rotate keyframe spins
+          --halo-angle around the card at 5s/rev so the sweep
+          travels around the perimeter, "scanning" the focal card.
+          Renders AFTER the CardFace in DOM order so its perimeter
+          paints over the card edge. Aria-hidden — purely
+          decorative. */}
+      <div
+        data-testid="stack-focal-spotlight"
+        aria-hidden="true"
+        className="animate-stack-spotlight-rotate absolute -inset-1 rounded-xl pointer-events-none"
+        style={{
+          background:
+            'conic-gradient(from var(--halo-angle, 0deg), ' +
+            'transparent 0deg, ' +
+            'rgba(255, 240, 180, 0.95) 35deg, ' +
+            'rgba(255, 215, 100, 1.0) 70deg, ' +
+            'rgba(255, 240, 180, 0.95) 105deg, ' +
+            'transparent 140deg, ' +
+            'transparent 360deg)',
+          WebkitMask:
+            'linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)',
+          WebkitMaskComposite: 'xor',
+          mask: 'linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)',
+          maskComposite: 'exclude',
+          padding: '3px',
+        }}
+      />
     </motion.div>
   );
 }

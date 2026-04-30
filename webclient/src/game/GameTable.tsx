@@ -201,27 +201,25 @@ export function GameTable({ gameId, gameView, stream }: Props) {
         // store subscriptions) but {@code display: none} hides it
         // visually — re-expanding restores its prior scroll
         // position cheaply.
-        // Slice 70-O critic Tech-CRITICAL-1/-2 fix — REDESIGN no
-        // longer reserves a `header` grid row. The redesigned
-        // GameHeader is rendered as a SIBLING of GameTable in
-        // Game.tsx (catalog §1.1 "Header sits OUTSIDE the side
-        // panel"), so the in-grid empty placeholder + its 1px
-        // border-bottom were dead chrome that violated §1.1's
-        // "no border, blends into the canvas" clause. Legacy
-        // !REDESIGN keeps the header row because the legacy
-        // GameHeader is identical-but-bordered.
+        // Slice 70-Z polish round 14 (user direction 2026-04-30) —
+        // REDESIGN drops the in-grid `hand` row entirely. The hand
+        // is now mounted as a `position: fixed` sibling pinned to
+        // the viewport bottom, overlapping the battlefield's lower
+        // edge so the play area gains the freed vertical space.
+        // (Slice 70-O previously also dropped the `header` row for
+        // analogous reasons — header is a sibling of GameTable.)
+        // Legacy `!REDESIGN` keeps the in-grid hand row since the
+        // legacy MyHand still uses panel-tray chrome.
         gridTemplateAreas: REDESIGN
           ? sidePanelCollapsed
-            ? '"battlefield" ' +
-              '"hand"'
-            : '"battlefield sidepanel" ' +
-              '"hand sidepanel"'
+            ? '"battlefield"'
+            : '"battlefield sidepanel"'
           : '"header header" ' +
             '"battlefield sidepanel" ' +
             '"hand sidepanel" ' +
             '"action sidepanel"',
         gridTemplateRows: REDESIGN
-          ? '1fr auto'
+          ? '1fr'
           : 'auto 1fr auto auto',
         gridTemplateColumns:
           REDESIGN && sidePanelCollapsed
@@ -294,7 +292,10 @@ export function GameTable({ gameId, gameView, stream }: Props) {
           {/* Slice 70-F critic UI-#2 — opacity-40 wrapper dropped;
             the keyframe owns the final alpha so the layer is
             actually visible (per-gradient alphas raised in
-            index.css). */}
+            index.css). Slice 70-Z polish reverted the per-priority
+            tinting — the backdrop is a static dark-gray + warm-gold
+            ambient palette per user direction; the gradient lives
+            entirely in the CSS class. */}
           <div className="animate-particle-drift h-full w-full" />
         </div>
 
@@ -307,36 +308,74 @@ export function GameTable({ gameId, gameView, stream }: Props) {
         />
       </main>
 
-      <section
-        data-testid="game-table-hand"
-        // Slice 70-P (picture-catalog §4.1) — REDESIGN drops the
-        // border-t + side padding so the hand fan floats over the
-        // battlefield's bottom edge with no chrome (transparent bg,
-        // no border). Legacy branch keeps the bordered-strip look.
-        className={
-          REDESIGN
-            ? '[grid-area:hand] min-w-0 px-4 pb-2'
-            : '[grid-area:hand] min-w-0 border-t border-zinc-800 px-4 pb-2'
-        }
-        aria-label="Your hand"
-      >
-        {me && (
-          <MyHand
-            hand={gameView.myHand}
-            // Slice 70-P — passes the local player view so the
-            // floating mana pool can render in MyHand's top-right
-            // corner (catalog §2.3). REDESIGN-only consumer; legacy
-            // branch ignores the prop cleanly via default undefined.
-            player={me}
-            canAct={canAct}
-            onObjectClick={onObjectClick}
-            isMyTurn={!!me.isActive}
-            hasPriority={!!me.hasPriority}
-            onPointerDown={beginHandPress}
-            draggedCardId={drag?.cardId ?? null}
-          />
-        )}
-      </section>
+      {/* Slice 70-Z polish round 14 (user direction 2026-04-30) —
+          REDESIGN hand is no longer an in-grid section. It mounts
+          as a `position: fixed` sibling pinned to viewport bottom
+          with `right: var(--side-panel-width)` so it spans the
+          battlefield column only (skips the side panel). The hand
+          fan visually OVERLAPS the battlefield's bottom edge for
+          space efficiency — battlefield content scrolls / paints
+          BEHIND the floating hand. Legacy keeps the in-grid
+          panel-tray look since legacy MyHand has chrome that
+          shouldn't float. */}
+      {!REDESIGN && (
+        <section
+          data-testid="game-table-hand"
+          className="[grid-area:hand] min-w-0 border-t border-zinc-800 px-4 pb-2"
+          aria-label="Your hand"
+        >
+          {me && (
+            <MyHand
+              hand={gameView.myHand}
+              player={me}
+              canAct={canAct}
+              onObjectClick={onObjectClick}
+              isMyTurn={!!me.isActive}
+              hasPriority={!!me.hasPriority}
+              onPointerDown={beginHandPress}
+              draggedCardId={drag?.cardId ?? null}
+            />
+          )}
+        </section>
+      )}
+      {REDESIGN && me && (
+        <section
+          data-testid="game-table-hand"
+          // Slice 70-Z polish round 16 (user feedback 2026-04-30) —
+          // hand container shifted DOWN so ~25% of each card sits
+          // BELOW viewport bottom. Frees vertical real estate for
+          // the battlefield (the player's local pod + bottom rows
+          // become more visible) and matches an MTGA-style "cards
+          // sitting at the very bottom of the screen, peeking
+          // above" silhouette. Offset is derived from
+          // --card-size-large so a future card-size retune
+          // propagates automatically: 25% of card height (which
+          // is card-width × 7/5 for the 5:7 portrait aspect).
+          className="fixed left-0 z-30 px-4 pointer-events-none"
+          style={{
+            right: 'var(--side-panel-width)',
+            bottom: 'calc(var(--card-size-large) * -7 / 5 * 0.25)',
+          }}
+          aria-label="Your hand"
+        >
+          {/* pointer-events-none on the section + auto on the
+              inner MyHand wrapper so empty stretches of the hand
+              area let pod / battlefield content underneath stay
+              clickable; only the actual cards capture clicks. */}
+          <div className="pointer-events-auto">
+            <MyHand
+              hand={gameView.myHand}
+              player={me}
+              canAct={canAct}
+              onObjectClick={onObjectClick}
+              isMyTurn={!!me.isActive}
+              hasPriority={!!me.hasPriority}
+              onPointerDown={beginHandPress}
+              draggedCardId={drag?.cardId ?? null}
+            />
+          </div>
+        </section>
+      )}
 
       <aside
         data-testid="game-table-sidepanel"
