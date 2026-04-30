@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { WebGameView, WebPlayerView } from '../api/schemas';
 import { LifeCounter } from './LifeCounter';
 
@@ -97,6 +97,14 @@ function CommanderDamageRow({ row, gameId }: RowProps) {
   const key = storageKey(gameId, row.opponentId, row.commanderId);
   const [damage, setDamage] = useState<number>(() => readDamage(key));
 
+  // Slice 70-G critic UX-3 — brief flash on every value change so
+  // a player rapid-logging combat hits gets per-click confirmation
+  // beyond the digit ticking up. The flash key is bumped on each
+  // adjust so React remounts the briefly-animated wrapper. Initial
+  // mount doesn't flash (the user didn't trigger it).
+  const flashKeyRef = useRef(0);
+  const [flashTrigger, setFlashTrigger] = useState(0);
+
   // Persist on every change. localStorage writes are synchronous +
   // cheap (one row), so no debounce is needed for the typical
   // "click ± a few times during combat" cadence.
@@ -113,6 +121,8 @@ function CommanderDamageRow({ row, gameId }: RowProps) {
   const adjust = useCallback(
     (delta: number) => {
       setDamage((d) => Math.max(0, d + delta));
+      flashKeyRef.current += 1;
+      setFlashTrigger(flashKeyRef.current);
     },
     [],
   );
@@ -144,7 +154,30 @@ function CommanderDamageRow({ row, gameId }: RowProps) {
           {row.commanderName}
         </span>
       </div>
-      <div className={counterWrapClass}>
+      {/*
+        Slice 70-G critic UX-3 — flash overlay rendered as a SIBLING
+        of the LifeCounter (not a wrapper). A wrapper would remount
+        the LifeCounter + its +/- buttons on every flash-key bump,
+        detaching userEvent's stored button reference and breaking
+        rapid-click flows. The overlay uses absolute positioning +
+        pointer-events-none so it sits above without eating clicks.
+        Bumping `key={flashTrigger}` remounts the overlay only,
+        replaying the 220ms keyframe from frame 0.
+      */}
+      <div className={`relative ${counterWrapClass}`}>
+        {flashTrigger > 0 && (
+          <div
+            key={flashTrigger}
+            data-testid={`cmdr-dmg-flash-${row.opponentId}-${row.commanderId}`}
+            aria-hidden="true"
+            // Slice 70-G critic Tech-C2 — corner radius matches the
+            // outer wrapper (`rounded` 8px when lethal; 0 otherwise)
+            // so the flash bg-tint doesn't briefly disagree with the
+            // wrapper's corners during the 220ms keyframe. Inheriting
+            // via `rounded-[inherit]` keeps the radii in lockstep.
+            className="absolute inset-0 pointer-events-none rounded-[inherit] animate-cmdr-dmg-flash"
+          />
+        )}
         <LifeCounter
           value={damage}
           interactive

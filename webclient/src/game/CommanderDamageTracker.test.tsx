@@ -189,6 +189,44 @@ describe('CommanderDamageTracker', () => {
     expect(row.className).toContain('text-status-danger');
   });
 
+  // Slice 70-G critic UX-3 — per-click flash feedback.
+  it('flashes on each adjust click (rapid-logging affordance)', async () => {
+    const opps = [makeOpponent('alice', 'Atraxa')];
+    const user = userEvent.setup();
+    render(
+      <CommanderDamageTracker
+        gameId="g1"
+        gameView={makeGameView(opps)}
+        opponents={opps}
+      />,
+    );
+    const incrementBtn = screen.getByLabelText('Increment Atraxa damage to you');
+
+    // Initial mount — no flash overlay yet (flashTrigger is 0).
+    expect(
+      screen.queryByTestId('cmdr-dmg-flash-alice-id-alice-cmdr-id'),
+    ).toBeNull();
+
+    // Click +1 → flash overlay mounts; rapid follow-up click
+    // remounts the SAME overlay (same testid) which restarts the
+    // keyframe from frame 0. The overlay being a sibling (not
+    // wrapper) means the LifeCounter button reference stays valid.
+    await user.click(incrementBtn);
+    expect(
+      screen.getByTestId('cmdr-dmg-flash-alice-id-alice-cmdr-id'),
+    ).toBeInTheDocument();
+    await user.click(incrementBtn);
+    // Overlay still present; `key={flashTrigger}` bumped so it
+    // remounted (animation replays).
+    expect(
+      screen.getByTestId('cmdr-dmg-flash-alice-id-alice-cmdr-id'),
+    ).toBeInTheDocument();
+    // Damage actually accrued (the bug this restructuring fixes).
+    expect(
+      screen.getByTestId('cmdr-dmg-value-alice-id-alice-cmdr-id').textContent,
+    ).toBe('2');
+  });
+
   it('different gameId reads different storage (no cross-game leakage)', () => {
     localStorage.setItem('mage-cmdr-dmg:g1:alice-id:alice-cmdr-id', '15');
     localStorage.setItem('mage-cmdr-dmg:g2:alice-id:alice-cmdr-id', '0');

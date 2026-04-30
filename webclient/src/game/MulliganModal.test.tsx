@@ -1,7 +1,11 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { isMulliganDialog, MulliganModal } from './MulliganModal';
+import {
+  _resetMulliganWarnCacheForTest,
+  isMulliganDialog,
+  MulliganModal,
+} from './MulliganModal';
 import { useGameStore } from './store';
 import {
   webGameViewSchema,
@@ -62,6 +66,12 @@ const fakeStream = () => ({
 });
 
 describe('isMulliganDialog', () => {
+  // Slice 70-G critic Tech-C1 — module-scope warn-dedup Set persists
+  // across tests. Reset between cases so warn-dedup doesn't leak.
+  beforeEach(() => {
+    _resetMulliganWarnCacheForTest();
+  });
+
   it('matches the engine convention (left=Mulligan, right=Keep)', () => {
     expect(isMulliganDialog(mulliganDialog)).toBe(true);
   });
@@ -91,6 +101,65 @@ describe('isMulliganDialog', () => {
     expect(
       isMulliganDialog({ method: 'gameAsk', data: {} }),
     ).toBe(false);
+  });
+
+  // Slice 70-G critic Tech-I2 — i18n drift detection.
+  it('logs a console.warn on suspected i18n drift (mulligan-like label that does not match)', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    // A future i18n-shipped server might localize "Mulligan" to
+    // "Mullen" / "Mull" / etc. The predicate returns false (modal
+    // doesn't render) but the warn surfaces the drift in dev tools.
+    isMulliganDialog({
+      method: 'gameAsk',
+      data: { options: { leftBtnText: 'Mullen', rightBtnText: 'Behoud' } },
+    });
+    expect(warnSpy).toHaveBeenCalledOnce();
+    expect(warnSpy.mock.calls[0]?.[0]).toMatch(/MulliganModal/);
+    expect(warnSpy.mock.calls[0]?.[0]).toMatch(/Mullen/);
+    warnSpy.mockRestore();
+  });
+
+  it('does NOT warn on the canonical "Mulligan"/"Keep" pair', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(isMulliganDialog(mulliganDialog)).toBe(true);
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it('does NOT warn on unrelated gameAsk dialogs (Proliferate Done, etc.)', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    isMulliganDialog({
+      method: 'gameAsk',
+      data: { options: { leftBtnText: 'Done', rightBtnText: '' } },
+    });
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  // Slice 70-G critic Tech-C1 — warn dedup. Without the latch, a
+  // gameUpdate storm during play could fire dozens of duplicate
+  // warns per second since the predicate is called from
+  // MulliganModal's render body on every store update.
+  it('dedups the drift warning per (left,right) pair (no spam)', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const driftDialog = {
+      method: 'gameAsk',
+      data: { options: { leftBtnText: 'Mullen', rightBtnText: 'Behoud' } },
+    };
+    // First call warns; subsequent calls with the same pair stay silent.
+    isMulliganDialog(driftDialog);
+    isMulliganDialog(driftDialog);
+    isMulliganDialog(driftDialog);
+    expect(warnSpy).toHaveBeenCalledOnce();
+    // A DIFFERENT drifted pair gets its own warn — useful when the
+    // engine sends multiple distinct localized labels in the
+    // same session.
+    isMulliganDialog({
+      method: 'gameAsk',
+      data: { options: { leftBtnText: 'Mullah', rightBtnText: 'Wahr' } },
+    });
+    expect(warnSpy).toHaveBeenCalledTimes(2);
+    warnSpy.mockRestore();
   });
 });
 

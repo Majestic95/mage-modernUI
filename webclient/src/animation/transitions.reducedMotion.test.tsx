@@ -243,4 +243,25 @@ describe('prefers-reduced-motion contract', () => {
     expect(css).toMatch(/\.animate-player-active-halo/);
     expect(css).toMatch(/\.animate-card-targeted-pulse/);
   });
+
+  // Slice 70-G — three new keyframes added.
+  it('ships slice 70-G keyframes (halo-rotate, particle-drift, cmdr-dmg-flash)', async () => {
+    const css = (await import('../index.css?raw')).default;
+    // Halo rotation per spec §7.3 — multicolor halos at 12s/rev.
+    expect(css).toMatch(/@keyframes\s+halo-rotate/);
+    expect(css).toMatch(/\.animate-halo-rotate[\s\S]*12000ms/);
+    // Particle-drift backdrop (slice 70-F).
+    expect(css).toMatch(/@keyframes\s+particle-drift/);
+    expect(css).toMatch(/\.animate-particle-drift/);
+    // CommanderDamage rapid-click feedback (critic UX-3 fix).
+    expect(css).toMatch(/@keyframes\s+cmdr-dmg-flash/);
+    expect(css).toMatch(/\.animate-cmdr-dmg-flash/);
+  });
+
+  it('player-active-halo period is 1900ms (slice 70-G LCM coherence fix)', async () => {
+    // Slice 70-B graphical critic flagged 1.0/1.5/2.0s LCM 6s
+    // peak-flash beat. 70-G shifted halo to 1.9s; new LCM ~19s.
+    const css = (await import('../index.css?raw')).default;
+    expect(css).toMatch(/\.animate-player-active-halo[\s\S]*1900ms/);
+  });
 });

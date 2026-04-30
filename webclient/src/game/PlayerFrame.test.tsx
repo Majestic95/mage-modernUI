@@ -218,6 +218,56 @@ describe('PlayerFrame', () => {
       expect(halo.style.background).toContain('var(--color-mana-green)');
     });
 
+    it('multicolor halo rotates per spec §7.3 (slice 70-G)', () => {
+      // Spec calls for "5 distinct bands rotating at 12s/revolution"
+      // for multicolor halos. The static conic-gradient was a stub
+      // in 70-D; 70-G adds the rotation.
+      render(
+        <PlayerFrame
+          player={makePlayer({ colorIdentity: ['W', 'U', 'B', 'G'] })}
+          perspective="self"
+          onPlayerClick={() => {}}
+          targetable={false}
+        />,
+      );
+      const halo = screen.getByTestId('player-halo');
+      expect(halo).toHaveAttribute('data-rotating', 'true');
+      expect(halo.className).toContain('animate-halo-rotate');
+    });
+
+    it('single-color halo does NOT rotate (uniform ring; rotation would burn paint)', () => {
+      render(
+        <PlayerFrame
+          player={makePlayer({ colorIdentity: ['R'] })}
+          perspective="self"
+          onPlayerClick={() => {}}
+          targetable={false}
+        />,
+      );
+      const halo = screen.getByTestId('player-halo');
+      expect(halo).not.toHaveAttribute('data-rotating');
+      expect(halo.className).not.toContain('animate-halo-rotate');
+    });
+
+    it('eliminated multicolor halo stops rotating (static neutral ring)', () => {
+      // When eliminated, the halo desaturates to a neutral ring;
+      // rotating would distract from the slash overlay's signal.
+      render(
+        <PlayerFrame
+          player={makePlayer({
+            colorIdentity: ['W', 'U', 'B', 'G'],
+            hasLeft: true,
+          })}
+          perspective="opponent"
+          onPlayerClick={() => {}}
+          targetable={false}
+        />,
+      );
+      const halo = screen.getByTestId('player-halo');
+      expect(halo).not.toHaveAttribute('data-rotating');
+      expect(halo.className).not.toContain('animate-halo-rotate');
+    });
+
     it('mask-composite ring mechanism — gradient is clipped to a 2px perimeter', () => {
       // Critic UI-C1 — without the mask, the conic gradient would
       // paint the entire pod surface and hide the content. The

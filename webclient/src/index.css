@@ -135,6 +135,63 @@ body {
   100% { transform: translate3d(-25%, -8%, 0); }
 }
 
+/*
+ * Slice 70-G (ADR 0011 D5) — halo rotation per design-system §7.3.
+ * Multicolor halos spin slowly so the alternating color bands read
+ * as a single rotating ring rather than a static pie chart.
+ *
+ * <p><b>Mechanism (slice 70-G critic Graph-C1 fix):</b> rotation is
+ * driven by an animated `--halo-angle` CSS variable that the
+ * conic-gradient consumes via `conic-gradient(from var(...))`.
+ * The earlier `transform: rotate` approach rotated the BOX, which
+ * on a non-square PlayerFrame caused the rectangle's corners to
+ * sweep through neighboring pod chrome at 45°/135° angles.
+ * Animating the gradient origin keeps the box static; only the
+ * color seam moves. Requires `@property` registration so the
+ * browser can interpolate the angle (vs treating it as a string
+ * that snaps frame-to-frame).
+ *
+ * <p>Reduced-motion silenced by default (no data-essential-motion);
+ * a still multicolor halo reads as a static pie chart, which is the
+ * acceptable fallback per slice 70-B's reduced-motion contract.
+ */
+@property --halo-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@keyframes halo-rotate {
+  from { --halo-angle: 0deg; }
+  to   { --halo-angle: 360deg; }
+}
+
+.animate-halo-rotate {
+  animation: halo-rotate 12000ms linear infinite;
+}
+
+/*
+ * Slice 70-G (critic UX-3) — brief flash on a CommanderDamage row
+ * when its value changes. The wrapper animates a 1.0 → 1.06 → 1.0
+ * scale + a subtle bg-tint flash, providing per-click feedback
+ * during rapid combat-damage logging. Bound to a React key change
+ * so each adjust triggers a fresh remount + animation play.
+ *
+ * <p>Reduced-motion silenced by default (no data-essential-motion);
+ * the visual cue under reduce is just the digit ticking up — same
+ * as before this slice. The animation is per-click feedback, not
+ * a state signal, so silencing it doesn't lose info.
+ */
+@keyframes cmdr-dmg-flash {
+  0%   { transform: scale(1);    background-color: transparent; }
+  40%  { transform: scale(1.06); background-color: rgb(255 255 255 / 0.06); }
+  100% { transform: scale(1);    background-color: transparent; }
+}
+
+.animate-cmdr-dmg-flash {
+  animation: cmdr-dmg-flash 220ms ease-out;
+}
+
 .animate-particle-drift {
   /* Slice 70-F critic UI-#2 — gradient alphas raised from 0.04-0.07
    * to 0.10-0.16 so the layer is actually perceptible against
@@ -157,7 +214,10 @@ body {
 }
 
 .animate-player-active-halo {
-  animation: player-active-halo 2000ms cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  /* Slice 70-G — 2000ms → 1900ms so the player-active / top-of-
+   * stack / targeted-pulse periods don't share LCM 6s (synchronized
+   * peak-flash). New LCM ~ 19s — peaks drift across the cycle. */
+  animation: player-active-halo 1900ms cubic-bezier(0.45, 0, 0.55, 1) infinite;
 }
 
 .animate-card-targeted-pulse {

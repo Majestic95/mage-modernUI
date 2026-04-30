@@ -336,13 +336,26 @@ function HaloRing({
     maskComposite: 'exclude',
   };
 
+  // Slice 70-G — spec §7.3 calls for multicolor halos to "rotate at
+  // 12s/revolution" so the alternating bands read as a spinning
+  // ring rather than a static pie chart. Apply rotation only when
+  // the halo is actually multicolor (single-color rings are
+  // visually identical at every angle; rotating them would just
+  // burn paint cycles). Eliminated state is also static (the halo
+  // desaturates to a neutral ring; rotation would distract from
+  // the slash overlay).
+  const rotates = colorIdentity.length > 1 && !eliminated;
   return (
     <div
       data-testid="player-halo"
       data-color-count={colorIdentity.length}
       data-eliminated={eliminated || undefined}
+      data-rotating={rotates || undefined}
       aria-hidden="true"
-      className="pointer-events-none absolute inset-0 rounded"
+      className={
+        'pointer-events-none absolute inset-0 rounded ' +
+        (rotates ? 'animate-halo-rotate' : '')
+      }
       style={ringStyle}
     />
   );
@@ -365,7 +378,12 @@ function computeHaloBackground(
       return `${manaTokenForCode(code)} ${start}deg ${end}deg`;
     })
     .join(', ');
-  return `conic-gradient(${stops})`;
+  // Slice 70-G critic Graph-C1 — `from var(--halo-angle, 0deg)` so
+  // the @keyframes halo-rotate animates the gradient ORIGIN rather
+  // than the element's transform. The box stays static; only the
+  // color seam rotates. The default `0deg` keeps non-rotating
+  // halos visually identical to the prior static rendering.
+  return `conic-gradient(from var(--halo-angle, 0deg), ${stops})`;
 }
 
 function manaTokenForCode(code: string): string {

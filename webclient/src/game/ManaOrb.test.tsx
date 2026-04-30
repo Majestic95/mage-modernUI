@@ -66,6 +66,26 @@ describe('ManaOrb', () => {
   });
 
   it.each([
+    ['W', 'mana-white-fg'],
+    ['U', 'mana-blue-fg'],
+    ['B', 'mana-black-fg'],
+    ['R', 'mana-red-fg'],
+    ['G', 'mana-green-fg'],
+    ['C', 'mana-colorless-fg'],
+  ])(
+    'count text on color %s uses the paired --color-%s token (slice 70-G contrast fix)',
+    (color, fgTokenName) => {
+      // Slice 70-G — replaced the global text-bg-base with per-color
+      // FG tokens. Each pair is hand-tuned to ≥7:1 contrast (WCAG
+      // AAA) against its base color. Asserting the inline-style
+      // color binding pins the token contract.
+      render(<ManaOrb color={color as 'W' | 'U' | 'B' | 'R' | 'G' | 'C'} count={5} />);
+      const orb = screen.getByTestId(`mana-orb-${color}`);
+      expect(orb.style.color).toBe(`var(--color-${fgTokenName})`);
+    },
+  );
+
+  it.each([
     ['W', 'mana-white'],
     ['U', 'mana-blue'],
     ['B', 'mana-black'],

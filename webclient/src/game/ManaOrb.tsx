@@ -70,8 +70,13 @@ export function ManaOrb({
   // burning two Tailwind utility classes per call. The token names are
   // closed-set + audited above so this is not a string-injection
   // surface.
+  // Slice 70-G — per-color FG token instead of a global text-bg-base.
+  // The fg pair is hand-tuned to ≥7:1 contrast against each base
+  // color (the lavender mana-black case was borderline at ~5.3:1
+  // before; deep-purple #1F1530 brings it well into AAA).
   const style: CSSProperties = {
     backgroundColor: `var(--color-${tokenName})`,
+    color: `var(--color-${tokenName}-fg)`,
     ...(glow
       ? { boxShadow: `0 0 8px 2px var(--color-${tokenName}-glow)` }
       : {}),
@@ -96,7 +101,7 @@ export function ManaOrb({
       style={style}
       className={
         'inline-flex items-center justify-center rounded-full font-mono ' +
-        'leading-none align-middle text-bg-base font-semibold ' +
+        'leading-none align-middle font-semibold ' +
         SIZE_CLASSES[size]
       }
     >

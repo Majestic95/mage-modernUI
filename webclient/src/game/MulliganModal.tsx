@@ -235,7 +235,30 @@ function PlayerStatusPanel({
  *
  * <p>Exported so {@code GameDialog} can short-circuit when this
  * modal is the active renderer.
+ *
+ * <p>Slice 70-G critic Tech-I2 — i18n robustness. The match is on
+ * the English literals "Mulligan"/"Keep". Upstream xmage doesn't
+ * ship a translated server today, but if a future version does,
+ * this predicate would silently return false → MulliganModal
+ * hides → GameDialog renders the legacy AskDialog without the
+ * modal chrome. The console.warn below surfaces the drift in dev
+ * tools so a maintainer notices BEFORE the regression ships.
+ *
+ * <p>Slice 70-G critic Tech-C1 — warn dedup latch. The predicate
+ * is called from MulliganModal's render body on every store update;
+ * a `gameUpdate` storm would otherwise fire dozens of duplicate
+ * warns per second on a drifted label. Module-scope Set tracks
+ * which (left,right) pairs we've already warned about; clears
+ * when the test suite calls {@link _resetMulliganWarnCacheForTest}.
  */
+const warnedDriftLabels = new Set<string>();
+
+/** Visible-for-test reset hook. Module-scope Set persists across
+ *  test cases; call this in beforeEach to keep tests isolated. */
+export function _resetMulliganWarnCacheForTest(): void {
+  warnedDriftLabels.clear();
+}
+
 export function isMulliganDialog(pendingDialog: {
   method: string;
   data?: unknown;
@@ -246,5 +269,25 @@ export function isMulliganDialog(pendingDialog: {
     | undefined;
   const left = data?.options?.leftBtnText ?? '';
   const right = data?.options?.rightBtnText ?? '';
-  return left === 'Mulligan' && right === 'Keep';
+  if (left === 'Mulligan' && right === 'Keep') return true;
+
+  // Heuristic drift detector. A gameAsk with leftBtnText matching
+  // /mull/i (Mull*, Mulligan, Mulliganer hypothetical i18n stems)
+  // but NOT exactly "Mulligan" suggests i18n drift shipped. The
+  // early-return above already handled the canonical pair, so the
+  // /mull/i match here is unambiguous.
+  if (typeof left === 'string' && /mull/i.test(left)) {
+    const key = `${left}|${right}`;
+    if (!warnedDriftLabels.has(key)) {
+      warnedDriftLabels.add(key);
+      // eslint-disable-next-line no-console
+      console.warn(
+        '[MulliganModal] gameAsk with mulligan-like label drift — ' +
+          `left="${left}" right="${right}". MulliganModal will NOT render; ` +
+          'falls back to legacy AskDialog. Likely i18n shipped on the ' +
+          'engine side; update isMulliganDialog match accordingly.',
+      );
+    }
+  }
+  return false;
 }

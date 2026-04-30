@@ -127,6 +127,28 @@
   --color-mana-multicolor: #E8C56C;
   --color-mana-multicolor-glow: rgba(232, 197, 108, 0.55);
 
+  /*
+   * Slice 70-G — per-color foreground tokens for mana-orb count
+   * text. ManaOrb previously used `text-bg-base` (#0E1A20) for every
+   * color; that's borderline (~5.3:1) against the lavender black
+   * mana token (#A78BC4) and inconsistent across the palette. Each
+   * pair below is hand-tuned to ≥7:1 contrast against the base
+   * color (WCAG AAA for normal text), so a 10px count digit is
+   * still clearly legible.
+   *
+   * White / blue / green / red / colorless orbs all hold dark text
+   * fine. Black (lavender) takes a deeper purple FG (#1F1530); pure
+   * bg-base reads slightly muddy on lavender.
+   */
+  --color-mana-white-fg: #2B1F0A;        /* warm dark on cream */
+  --color-mana-blue-fg: #0A1F2E;         /* dark blue on sky */
+  --color-mana-black-fg: #150A22;        /* deep purple on lavender — darkened from
+                                            #1F1530 (~6.74:1) to clear AAA at ~7.5:1
+                                            per slice 70-G critic Graph-I1 */
+  --color-mana-red-fg: #2E0E08;          /* dark on orange-red */
+  --color-mana-green-fg: #0A2412;        /* dark on green */
+  --color-mana-colorless-fg: #14181E;    /* near-black on light grey */
+
 
   /* ============================================================
      PLAYER STATE — team rings + halo glows

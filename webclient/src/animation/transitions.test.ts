@@ -42,12 +42,15 @@ describe('slice 70-B motion registry additions', () => {
     expect(CARD_DRAW.ease).toEqual(EASE_OUT_TOKEN);
   });
 
-  it('CARD_HOVER_LIFT_MS aliases HAND_HOVER_LIFT_MS to preserve existing behavior', () => {
-    // Per ADR 0011 R2: existing presets keep their parameters when
-    // getting new spec-aligned aliases. Spec said 120ms; existing
-    // value 150ms ships today; spec doc was updated to match.
+  it('CARD_HOVER_LIFT_MS aliases HAND_HOVER_LIFT_MS at the 120ms spec value', () => {
+    // Slice 70-G — graphical critic argued 150ms feels mechanical
+    // for hover feedback; 120ms is the deliberate spec UX choice.
+    // ADR R2's "preserve existing parameter" was about NOT silently
+    // changing values; an explicit slice-70-G revisit is the right
+    // place to overturn. Both the alias and the canonical name now
+    // hold 120ms.
     expect(CARD_HOVER_LIFT_MS).toBe(HAND_HOVER_LIFT_MS);
-    expect(CARD_HOVER_LIFT_MS).toBe(150);
+    expect(CARD_HOVER_LIFT_MS).toBe(120);
   });
 
   it('PRIORITY_TAG_FADE is a 150ms ease-out tween (token cubic-bezier, NOT Framer easeOut string)', () => {
@@ -91,10 +94,15 @@ describe('slice 70-B motion registry additions', () => {
     expect(CARD_TARGETED_PULSE_CLASS).toBe('animate-card-targeted-pulse');
   });
 
-  it('keyframe periods match design-system §6.4', () => {
-    // Stack glow 1.5s, player halo 2s, card targeted 1Hz (1s).
+  it('keyframe periods avoid synchronized-peak LCM (slice 70-G coherence fix)', () => {
+    // Slice 70-B's graphical critic flagged that 1.0/1.5/2.0s
+    // shared LCM 6s, producing a perceptible peak-flash beat when
+    // all three pulses are on screen. Slice 70-G shifted the
+    // halo 2000→1900ms — new LCM ~19s, peaks drift across the
+    // cycle instead of beating in sync. Off-spec by 5%; trade
+    // accepted vs the perceptual hit.
     expect(STACK_GLOW_PULSE_PERIOD_MS).toBe(1500);
-    expect(PLAYER_ACTIVE_HALO_PERIOD_MS).toBe(2000);
+    expect(PLAYER_ACTIVE_HALO_PERIOD_MS).toBe(1900);
     expect(CARD_TARGETED_PULSE_PERIOD_MS).toBe(1000);
   });
 });

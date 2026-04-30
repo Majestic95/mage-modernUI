@@ -111,7 +111,13 @@ export const UNTAP_STAGGER_DELAY_MS = 50;
 // CSS transition-duration values in milliseconds.
 export const STACK_ZONE_COLLAPSE_MS = 200;
 export const LIFE_TOTAL_COLOR_MS = 300;
-export const HAND_HOVER_LIFT_MS = 150;
+// Slice 70-G — 150ms → 120ms per the slice 70-B graphical critic's
+// argument that 150ms feels mechanical for a hover-lift. 120ms
+// matches the original spec value (slice 70-B reconciled spec to
+// registry under R2; 70-G is the right place to overturn). 30ms
+// faster reads as more responsive without losing the lift's
+// "reaching toward you" curve.
+export const HAND_HOVER_LIFT_MS = 120;
 // TAP_ROTATE_MS removed in slice 58 — Framer Motion's MANA_TAP_ROTATE
 // spring (above) replaces the linear CSS transition for permanent
 // tap/untap. No CSS consumers remain.
@@ -247,10 +253,22 @@ export const CARD_TARGETED_PULSE_CLASS = 'animate-card-targeted-pulse';
  * shorthand lives in src/index.css alongside the keyframes.
  *
  * <p>Spec periods: stack-glow-pulse 1500ms, player-active-halo
- * 2000ms, card-targeted-pulse 1000ms (1Hz per design-system §6.4).
+ * 1900ms (was 2000ms — slice 70-G coherence fix), card-targeted-pulse
+ * 1000ms.
+ *
+ * <p>Slice 70-G — slice 70-B's graphical critic flagged that the
+ * original 1.0s/1.5s/2.0s shared LCM 6s, producing a synchronized
+ * peak-flash every 6 seconds when all three pulses are on screen
+ * (typical mid-combat: active halo + top-of-stack glow + targeted
+ * card). Bumping the halo to 1.9s makes the LCM 57 seconds
+ * (lcm(10, 15, 19) = 2850 / gcd(5) = 570 → 57.0s at 100ms
+ * granularity — 19 is prime, so the only shared factor with 10/15
+ * is the 5 from gcd(10, 15) = 5). Peaks now drift for nearly a
+ * full minute before re-synchronizing. Off-spec by 100ms (5%);
+ * imperceptible vs. the 6s-beat perceptual hit it fixes.
  */
 export const STACK_GLOW_PULSE_PERIOD_MS = 1500;
-export const PLAYER_ACTIVE_HALO_PERIOD_MS = 2000;
+export const PLAYER_ACTIVE_HALO_PERIOD_MS = 1900;
 export const CARD_TARGETED_PULSE_PERIOD_MS = 1000;
 
 /**
