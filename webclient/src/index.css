@@ -76,22 +76,97 @@ body {
 }
 
 /*
- * Slice 52d — accessibility: honor prefers-reduced-motion across
- * EVERY CSS transition + animation in the app. Framer Motion
- * animations are already gated by <MotionConfig reducedMotion="user">
- * at the game-page root (see Game.tsx). This rule covers the CSS
- * surface — hand fan hover-lift, battlefield tap rotation, stack
- * zone collapse, life-total color flash, and any future Tailwind
- * `transition-*` rule we add.
+ * Slice 70-B (ADR 0011 D4) — design-system motion keyframes. Each of
+ * the three pulse animations is referenced by name from
+ * src/animation/transitions.ts (STACK_GLOW_PULSE_CLASS etc.) so
+ * consumers apply the class without typing the keyframe name as a
+ * magic string.
+ *
+ * These are NON-essential animations: the prefers-reduced-motion
+ * rule below kills them by default. Card-zone movement (the
+ * Framer Motion layoutId graph) is essential and uses
+ * data-essential-motion to opt out — see the rule comment.
+ */
+
+/*
+ * Slice 70-B critic graphical-C2 fix: animate intensity (opacity of a
+ * fixed-blur shadow), NOT blur radius, so the shadow doesn't change
+ * geometry kind (sharp → blurred → sharp) over the pulse cycle. The
+ * 12px blur stays constant; opacity modulates 0 → 0.85 so the ring
+ * reads as "intensity breath" rather than "outline that occasionally
+ * blooms".
+ *
+ * Slice 70-B critic graphical-I3 fix: pulse easing is
+ * cubic-bezier(0.45, 0, 0.55, 1) — closer to sine than ease-in-out so
+ * the cycle reads as "breathing", not "holding at peaks". The
+ * difference is most perceptible on the slow 2000ms halo; ease-in-out
+ * holds at extremes long enough to feel mechanical at that period.
+ */
+
+@keyframes stack-glow-pulse {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 1.0; }
+}
+
+@keyframes player-active-halo {
+  0%, 100% { opacity: 0.65; }
+  50%      { opacity: 1.0; }
+}
+
+@keyframes card-targeted-pulse {
+  /* Fixed-geometry shadow; only opacity changes. */
+  0%, 100% { box-shadow: 0 0 8px 2px rgb(168 85 247 / 0.30); }
+  50%      { box-shadow: 0 0 8px 2px rgb(168 85 247 / 0.85); }
+}
+
+.animate-stack-glow-pulse {
+  animation: stack-glow-pulse 1500ms cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+.animate-player-active-halo {
+  animation: player-active-halo 2000ms cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+.animate-card-targeted-pulse {
+  animation: card-targeted-pulse 1000ms cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+/*
+ * Slice 52d → 70-B (ADR 0011 D4) — accessibility: honor
+ * prefers-reduced-motion across the CSS animation/transition surface.
+ * Framer Motion JS animations have a parallel control point at
+ * <MotionConfig reducedMotion="user"> in Game.tsx.
+ *
+ * Slice 70-B scope-fix: the prior rule killed ALL animations
+ * unconditionally, including spec-essential card-zone movement that
+ * conveys game state (per design-system §6.3). The scoped rule
+ * preserves that behavior for unmarked elements (today's surface —
+ * hand-fan hover-lift, life-color flash, stack-zone collapse, the
+ * three pulse animations above) but lets card-zone elements opt out
+ * by setting `data-essential-motion` on themselves or any ancestor.
+ *
+ * The :not() pair excludes BOTH the marked element AND any
+ * descendants — so `data-essential-motion` on a battlefield wrapper
+ * preserves animation on every motion.div inside. Pseudo-elements
+ * inherit the host's selector match.
  *
  * Zero-duration is preferred over `none` because some libraries
  * watch transitionend events; we want them to fire immediately,
  * not never. 0.01ms is the standard safe value.
  */
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  /*
+   * Slice 70-B critic technical-C1 fix: pseudo-elements need the
+   * same descendant-of-essential exclusion as real elements,
+   * otherwise a ::before / ::after under a marked subtree (e.g. a
+   * decorative arrow on a battlefield card) gets killed even though
+   * its host opted out. Pseudo-elements only attach to real
+   * elements — their match against `[data-essential-motion] *`
+   * checks whether the host is inside an essential subtree.
+   */
+  *:not([data-essential-motion]):not([data-essential-motion] *),
+  *::before:not([data-essential-motion] *),
+  *::after:not([data-essential-motion] *) {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;

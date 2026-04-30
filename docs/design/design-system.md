@@ -189,23 +189,23 @@ Single typeface family for the entire app — a sans-serif with good legibility 
 
 ### 6.4 Named motion specs
 
-Each named motion has fixed duration, easing, and behavior. Components reference them by name.
+Each named motion has fixed duration, easing, and behavior. Components reference them by name. The registry of record is `webclient/src/animation/transitions.ts` — when a parameter below disagrees with the registry, **the registry wins** (per ADR 0011 R2: existing presets keep their parameters even when getting new spec-aligned aliases). Slice 70-B reconciled this section to match the registry.
 
-- **`card-draw`** — card slides from library position to hand position, 250ms, `--motion-ease-out`. Scales 0.85 → 1.0 in parallel.
-- **`card-cast`** — card slides from hand to top of stack, 200ms, `--motion-ease-out`. Briefly scales to 1.1 (emphasis) then settles to 1.0 over an additional 150ms.
-- **`card-resolve`** — card animates from stack to its destination zone (battlefield, graveyard, exile, hand, library). Duration determined by distance, capped at 400ms. Easing `--motion-ease-out`.
-- **`card-tap`** — 90° rotation around card center, 180ms, `--motion-ease-out`. Untap is the reverse with the same parameters.
-- **`card-hover-lift`** — hand card scales to 1.10 and translates up by `--space-3`, 120ms, `--motion-ease-out`. Reverses on un-hover.
-- **`card-targeted`** — pulses `--color-card-frame-targeted` border at 1Hz while the targeting state is active.
-- **`life-tick`** — life total animates between old and new value. For changes ≤10, ticks integer-by-integer at 60ms per tick. For changes >10, animates over a fixed 1500-2000ms regardless of magnitude (use `--motion-duration-deliberate` × 2). Damage flashes `--color-status-danger`; gain flashes `--color-status-success`.
-- **`life-floating-number`** — a floating "+N" or "-N" appears above the player frame, fades in over 100ms, holds for 600ms, fades and rises over 400ms. Color matches the change direction.
-- **`stack-glow-pulse`** — topmost stack card gets a continuous pulsing color-identity glow at 1.5s period.
-- **`player-active-halo`** — active player's portrait ring glows and slowly rotates if multicolor (5 distinct bands rotating at 12s/revolution). Pulses at 2s period.
-- **`priority-tag-appear`** — floating "PRIORITY" tag fades in at 150ms, holds while priority is held, fades out at 150ms when priority passes.
-- **`elimination-slash`** — a diagonal red claw-rip overlay animates across the eliminated player's pod over 600ms, then persists. Permanents on that pod fade out over 800ms in parallel. Permanents that were active when life hit zero get a brief "burn" effect (deferred to post-launch polish).
-- **`disconnected-overlay`** — pod desaturates over 200ms, overlay fades in with "DISCONNECTED" text. Reverse on reconnect.
-- **`game-start-deal`** — opening hand cards animate from library to hand in sequence, 80ms stagger between cards, each card 300ms `card-draw` motion. Commanders simultaneously float into command zones, 600ms total.
-- **`particle-drift`** — ambient background particles drift slowly across the battlefield, CSS keyframe-driven, no React state involvement.
+- **`card-draw`** (`CARD_DRAW`) — card slides from library position to hand position, 250ms, `--motion-ease-out`. Scales 0.85 → 1.0 in parallel.
+- **`card-cast`** — card slides from hand to top of stack, 200ms, `--motion-ease-out`. Briefly scales to 1.1 (emphasis) then settles to 1.0 over an additional 150ms. *(Registry preset deferred to slice 70-F.)*
+- **`card-resolve`** (`LAYOUT_GLIDE`) — card animates from stack to its destination zone (battlefield, graveyard, exile, hand, library) via the Framer Motion layoutId graph. Spring physics (stiffness 280, damping 26, mass 0.7) — duration emerges from spring settling rather than a fixed cap. Reduced-motion preserves the layoutId graph (game-state communication) but skips the tween — see §6.3.
+- **`card-tap`** (`MANA_TAP_ROTATE`) — 90° rotation around card center via Framer Motion spring (stiffness 420, damping 20, mass 0.5). The spring overshoots past 90° and settles back — registry parameters supersede the prior "180ms ease-out" spec. Untap is the reverse with the same parameters.
+- **`card-hover-lift`** (`CARD_HOVER_LIFT_MS` = `HAND_HOVER_LIFT_MS`) — hand card scales to 1.10 and translates up by `--space-3`, **150ms**, `--motion-ease-out`. Reverses on un-hover. *(Registry value 150ms supersedes the original 120ms spec.)*
+- **`card-targeted`** (`CARD_TARGETED_PULSE_CLASS`) — pulses `--color-card-frame-targeted` border at 1Hz (1000ms period) while the targeting state is active. CSS keyframe `card-targeted-pulse`.
+- **`life-tick`** — life total animates between old and new value. For changes ≤10, ticks integer-by-integer at 60ms per tick. For changes >10, animates over a fixed 1500-2000ms regardless of magnitude (use `--motion-duration-deliberate` × 2). Damage flashes `--color-status-danger`; gain flashes `--color-status-success`. *(Registry preset deferred; current implementation uses `LIFE_FLASH_POP` spring for the scale-pop — distinct from the integer-tick animation specced here.)*
+- **`life-floating-number`** (`DELTA_FLOAT_UP`) — a floating "+N" or "-N" appears above the player frame, fades in over 100ms, holds for 600ms, fades and rises over 400ms. Color matches the change direction. Registry tween: 700ms ease-out (combined fade+rise).
+- **`stack-glow-pulse`** (`STACK_GLOW_PULSE_CLASS`) — topmost stack card gets a continuous pulsing color-identity glow at 1.5s period (1500ms). CSS keyframe `stack-glow-pulse`.
+- **`player-active-halo`** (`PLAYER_ACTIVE_HALO_CLASS`) — active player's portrait ring glows at 2s period (2000ms). CSS keyframe `player-active-halo`. The 12s multicolor band rotation specced in earlier drafts is deferred to slice 70-D's PlayerFrame implementation.
+- **`priority-tag-appear`** (`PRIORITY_TAG_FADE`) — floating "PRIORITY" tag fades in at 150ms, holds while priority is held, fades out at 150ms when priority passes.
+- **`elimination-slash`** (`ELIMINATION_SLASH` + `ELIMINATION_PERMANENT_FADE`) — a diagonal red claw-rip overlay animates across the eliminated player's pod over 600ms, then persists. Permanents on that pod fade out over 800ms in parallel. Permanents that were active when life hit zero get a brief "burn" effect (deferred to post-launch polish).
+- **`disconnected-overlay`** — pod desaturates over 200ms, overlay fades in with "DISCONNECTED" text. Reverse on reconnect. *(Registry preset deferred to slice 70-D.)*
+- **`game-start-deal`** — opening hand cards animate from library to hand in sequence, 80ms stagger between cards, each card 250ms `card-draw` motion (per the registry, not 300ms). Commanders simultaneously float into command zones, 600ms total. *(Composition only — `card-draw` ships in 70-B; the stagger orchestration ships in 70-F.)*
+- **`particle-drift`** — ambient background particles drift slowly across the battlefield, CSS keyframe-driven, no React state involvement. *(Keyframe ships in 70-F.)*
 
 ---
 

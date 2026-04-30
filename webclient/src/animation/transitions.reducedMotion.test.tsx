@@ -206,4 +206,41 @@ describe('prefers-reduced-motion contract', () => {
     expect(css).toMatch(/transition-duration:\s*0\.01ms\s*!important/);
     expect(css).toMatch(/animation-duration:\s*0\.01ms\s*!important/);
   });
+
+  // Slice 70-B (ADR 0011 D4) — scope-fix contract.
+  it('the reduced-motion rule scopes via :not([data-essential-motion]) so card movement opts out', async () => {
+    // Slice 52d's rule was a "kill ALL animations" hammer. Slice 70-B
+    // refactors it to leave card-zone movement intact (per
+    // design-system §6.3 — card movement conveys game state and must
+    // not be silenced) while still killing ambient/hover/pulse
+    // animations. The mechanism is a `data-essential-motion` opt-out
+    // attribute. This test pins the selector shape so a future
+    // regression that drops the :not() can't silently revert the fix.
+    const css = (await import('../index.css?raw')).default;
+    expect(css).toMatch(/:not\(\[data-essential-motion\]\)/);
+    // The :not() pair on real elements excludes both the marked
+    // element AND any descendants.
+    expect(css).toMatch(/:not\(\[data-essential-motion\]\):not\(\[data-essential-motion\] \*\)/);
+    // Critic technical-C1 — pseudo-elements need the same
+    // descendant-of-essential exclusion or a ::before / ::after
+    // under a marked subtree gets killed even though its host opted
+    // out. Pin the carve-out so a future regression can't silently
+    // strip it.
+    expect(css).toMatch(/\*::before:not\(\[data-essential-motion\] \*\)/);
+    expect(css).toMatch(/\*::after:not\(\[data-essential-motion\] \*\)/);
+  });
+
+  it('ships the design-system §6.4 keyframes (stack-glow-pulse, player-active-halo, card-targeted-pulse)', async () => {
+    // The three pulse keyframes are slice 70-B foundation work; later
+    // slices (70-D PlayerFrame, 70-F top-of-stack) will apply them
+    // via the *_CLASS constants in transitions.ts. Pin their presence
+    // so the registry constants don't reference dead CSS names.
+    const css = (await import('../index.css?raw')).default;
+    expect(css).toMatch(/@keyframes\s+stack-glow-pulse/);
+    expect(css).toMatch(/@keyframes\s+player-active-halo/);
+    expect(css).toMatch(/@keyframes\s+card-targeted-pulse/);
+    expect(css).toMatch(/\.animate-stack-glow-pulse/);
+    expect(css).toMatch(/\.animate-player-active-halo/);
+    expect(css).toMatch(/\.animate-card-targeted-pulse/);
+  });
 });
