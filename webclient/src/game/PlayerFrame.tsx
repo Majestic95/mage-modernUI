@@ -27,13 +27,25 @@ import { ELIMINATION_SLASH } from '../animation/transitions';
  *       ({@link ELIMINATION_SLASH}) animates across the pod</li>
  * </ul>
  *
- * <p><b>Disconnected state</b> is intentionally NOT rendered here
- * yet — {@code WebPlayerView.hasLeft} conflates concession +
- * timeout + disconnect (upstream {@code Player.hasLeft()} TODO at
- * Mage/Player.java:289-297). A separate wire signal (e.g.
- * {@code connectionState}) lands with slice 70-H or earlier; until
- * then, hasLeft renders only the eliminated treatment. Documented
- * as a critic-I5 deferral.
+ * <p><b>Disconnected state</b> ships in slice 70-H (ADR 0011 D3 /
+ * ADR 0010 v2 D11(e)). The schema-1.23 wire field
+ * {@code connectionState} is consulted alongside {@code hasLeft};
+ * the treatments compose as follows:
+ * <ul>
+ *   <li>{@code hasLeft=true} (terminal — concession / timeout /
+ *       eliminated) renders the slash overlay + 0.45 opacity +
+ *       full grayscale. Takes precedence over connectionState.</li>
+ *   <li>{@code connectionState="disconnected"} && {@code !hasLeft}
+ *       (recoverable — sockets dropped but the player can rejoin)
+ *       renders 0.7 opacity + partial grayscale + a centered
+ *       "DISCONNECTED" pill. Lighter than eliminated so the
+ *       recoverable-vs-terminal distinction reads at a glance.</li>
+ *   <li>Both states leave the colorIdentity halo visible (the
+ *       commander identity remains the player's signature).</li>
+ * </ul>
+ * The per-prompt timeout response (TIMEOUT auto-pass to engine) is
+ * deferred to slice 70-H.5; this slice ships only the detection +
+ * UI surface.
  *
  * <p><b>Active-player signaling</b> stays as the existing inline
  * ACTIVE pill from PlayerArea — slice 70-E routes it through the
@@ -63,11 +75,20 @@ export function PlayerFrame({
   targetable,
 }: Props) {
   const eliminated = player.hasLeft;
+  // Slice 70-H — recoverable disconnected state. Suppress when
+  // eliminated since hasLeft is the terminal state and takes
+  // precedence visually (slash overlay + heavier desaturation
+  // already communicates "this player is gone"; layering a
+  // recoverable-state pill on top would muddy the read).
+  const disconnected =
+    !eliminated && player.connectionState === 'disconnected';
 
   // Critic N11 — aria-label synthesis moves here from PlayerArea.
   // Critic UX-I3 — colorIdentity is included in the SR label so
   // blind users get the strategic-info signal that sighted users
   // get from the halo ring (Atraxa = WUBG threats; Edgar = WB).
+  // Slice 70-H — disconnected state appended after eliminated so
+  // SR users get the recoverable/terminal distinction by ordering.
   const ariaLabel = [
     player.name || 'Unknown player',
     `${player.life} life`,
@@ -75,6 +96,7 @@ export function PlayerFrame({
     player.isActive ? 'active turn' : null,
     player.hasPriority ? 'has priority' : null,
     eliminated ? 'eliminated' : null,
+    disconnected ? 'disconnected' : null,
     formatColorIdentity(player.colorIdentity),
   ]
     .filter(Boolean)
@@ -84,6 +106,7 @@ export function PlayerFrame({
     <div
       data-testid={`player-frame-${perspective}`}
       data-eliminated={eliminated || undefined}
+      data-disconnected={disconnected || undefined}
       role="group"
       aria-label={ariaLabel}
       // Critic Graphical-G2 fix — `filter: grayscale(...)` is a CSS
@@ -93,11 +116,20 @@ export function PlayerFrame({
       // class below) gets a guaranteed-smooth animation in every
       // browser without the Framer string-crossfade caveat. The
       // grayscale toggle is paired with the opacity fade.
+      //
+      // Slice 70-H — disconnected state lands at 0.7 opacity +
+      // grayscale(0.6); deliberately LIGHTER than eliminated
+      // (0.45 / 1.0) so the recoverable vs terminal distinction
+      // is visually obvious. The transition class is shared so
+      // socket recovery / loss animates smoothly via the same
+      // 700ms ease-in path.
       className={
         'relative transition-[opacity,filter] duration-700 ease-in ' +
         (eliminated
           ? 'opacity-[0.45] [filter:grayscale(1)]'
-          : 'opacity-100 [filter:grayscale(0)]')
+          : disconnected
+            ? 'opacity-[0.7] [filter:grayscale(0.6)]'
+            : 'opacity-100 [filter:grayscale(0)]')
       }
     >
       {/*
@@ -215,6 +247,82 @@ export function PlayerFrame({
         halo on each side of the 3px fill, more resilient over
         bright pod content.
       */}
+      {/*
+        Slice 70-H (ADR 0011 D3) — DISCONNECTED pill overlay.
+        Sibling to the slash, not a wrapper, so it doesn't disturb
+        existing focus / event paths. Rendered ABOVE the halo (JSX
+        order matches paint order in absolute-positioned siblings)
+        and BELOW the slash (which is gated on `eliminated` and
+        mutually exclusive with disconnected via the derived var).
+
+        Slice 70-H critic UX-I1 fix — pill is positioned in the
+        top-right corner, NOT centered, so the LifeCounter / zone
+        chips / mana pool / hand count remain visible on
+        disconnected opponents. Strategic info ("can I race a
+        disconnected opponent at 3 life?") needs to stay readable;
+        a centered overlay would obscure exactly the data players
+        plan around. Trade-off: less dramatic than a centered
+        treatment, but matches the recoverable-state mental model
+        (a corner badge says "status indicator," a full-frame
+        treatment says "permanently gone").
+
+        Slice 70-H critic UX-C1 fix — copy is "Disconnected —
+        waiting for reconnect" not bare "Disconnected", because
+        slice 70-H.5 (the per-prompt auto-pass timer) is deferred.
+        Without auto-pass, a disconnected prompt-holder will stall
+        the engine. The expanded copy sets the right expectation:
+        "the system is waiting, intentionally, for them to come
+        back." Bare "Disconnected" implied the system would
+        auto-handle it, which today it does not.
+
+        Pointer-events:none keeps the pill from intercepting clicks
+        on the underlying frame controls; users with a pending
+        target dialog can still try to target a disconnected player
+        (the engine routes the target to the disconnected handler's
+        buffer and the response surfaces on reconnect — slice
+        70-H.5 will add the auto-pass-on-timeout fallback for the
+        no-reconnect case).
+      */}
+      <AnimatePresence>
+        {disconnected && (
+          <motion.div
+            key="disconnected-pill"
+            data-testid={`disconnected-pill-${perspective}`}
+            data-essential-motion="true"
+            aria-hidden="true"
+            className="pointer-events-none absolute right-1 top-1"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.25, ease: 'easeIn' }}
+          >
+            <span
+              className="rounded px-2 py-0.5 text-[0.65rem] font-medium uppercase tracking-wider whitespace-nowrap"
+              style={{
+                // Slice 70-H critic UI-C1 fix — retarget to extant
+                // design-system tokens. tokens.css defines
+                // --color-bg-overlay (semi-transparent black, the
+                // same value used behind modals — appropriate for a
+                // pill that needs to read over arbitrary frame
+                // content), --color-text-primary (the body-text
+                // contrast token), and --color-text-muted (the
+                // decorative-text tier — appropriate for a 1px
+                // border that should not compete with the label).
+                // Earlier draft invented --color-surface-overlay /
+                // --color-text-on-overlay / --color-text-tertiary
+                // which don't exist and silently masked the
+                // theming via fallback colors.
+                backgroundColor: 'var(--color-bg-overlay)',
+                color: 'var(--color-text-primary)',
+                border: '1px solid var(--color-text-muted)',
+              }}
+            >
+              Disconnected — waiting for reconnect
+            </span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <AnimatePresence>
         {eliminated && (
           <motion.svg

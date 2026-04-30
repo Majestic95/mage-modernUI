@@ -66,6 +66,16 @@ import java.util.Map;
  *     {@code --color-team-neutral}. For partner / background commander
  *     pairings the list is the union of both identities. Added in
  *     schema 1.22 (ADR 0011 D5).
+ * @param connectionState live socket-state of the player from the
+ *     WebApi facade's POV. {@code "connected"} when the player has
+ *     ≥1 active game-stream WebSocket; {@code "disconnected"} when
+ *     all sockets are closed but the player is still in the game
+ *     (not {@code hasLeft}). Drives the PlayerFrame DISCONNECTED
+ *     overlay per design-system §7.3 — desaturate + text label,
+ *     player can recover by reconnecting. Distinct from
+ *     {@code hasLeft} (terminal) — disconnected is recoverable.
+ *     Added in schema 1.23 (ADR 0011 D3 / ADR 0010 v2 D11(e)
+ *     deferred work, slice 70-H).
  */
 public record WebPlayerView(
         String playerId,
@@ -90,6 +100,15 @@ public record WebPlayerView(
         List<String> designationNames,
         List<WebCommandObjectView> commandList,
         String teamId,
-        List<String> colorIdentity
+        List<String> colorIdentity,
+        String connectionState
 ) {
+
+    /** {@link #connectionState} — player has ≥1 active game-stream socket. */
+    public static final String CONNECTION_STATE_CONNECTED = "connected";
+
+    /** {@link #connectionState} — all game-stream sockets closed; player
+     *  may still reconnect. {@code hasLeft} is the terminal state;
+     *  this is the recoverable intermediate. */
+    public static final String CONNECTION_STATE_DISCONNECTED = "disconnected";
 }

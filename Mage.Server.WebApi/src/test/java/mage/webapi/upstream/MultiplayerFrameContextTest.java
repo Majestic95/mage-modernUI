@@ -121,6 +121,78 @@ class MultiplayerFrameContextTest {
     }
 
     @Test
+    void empty_connectionStateForAnyPlayer_isConnected() {
+        // Slice 70-H — EMPTY's bundled tracker is the
+        // EVERY_PLAYER_CONNECTED default. Tests that don't set up a
+        // tracker get "connected" for every player, preserving the
+        // pre-70-H wire shape (no DISCONNECTED overlay surfaces).
+        assertEquals("connected",
+                MultiplayerFrameContext.EMPTY
+                        .connectionStateFor(UUID.randomUUID()));
+    }
+
+    @Test
+    void empty_connectionStateForNullPlayerId_isConnected() {
+        // Defensive: null playerId (malformed PlayerView) defaults
+        // to "connected" so we never paint a healthy player as
+        // disconnected on a transient lookup failure.
+        assertEquals("connected",
+                MultiplayerFrameContext.EMPTY.connectionStateFor(null));
+    }
+
+    @Test
+    void withConnectionTracker_overridesDefaultLookup() {
+        // Slice 70-H — withConnectionTracker returns a copy with
+        // the supplied tracker swapped in. The copy preserves the
+        // goading map (no allocation churn for the goading data)
+        // and threads the new tracker into connectionStateFor().
+        UUID disconnected = UUID.fromString(
+                "dddddddd-4444-4444-4444-444444444444");
+        WebSocketConnectionTracker tracker = playerId ->
+                disconnected.equals(playerId)
+                        ? "disconnected"
+                        : "connected";
+        MultiplayerFrameContext ctx =
+                MultiplayerFrameContext.EMPTY.withConnectionTracker(tracker);
+
+        assertEquals("disconnected", ctx.connectionStateFor(disconnected));
+        assertEquals("connected",
+                ctx.connectionStateFor(UUID.randomUUID()));
+    }
+
+    @Test
+    void withConnectionTracker_nullTracker_fallsBackToEveryPlayerConnected() {
+        // Defensive: passing null swaps in the EVERY_PLAYER_CONNECTED
+        // sentinel, not a NullPointerException at lookup time.
+        UUID disconnected = UUID.fromString(
+                "dddddddd-4444-4444-4444-444444444444");
+        MultiplayerFrameContext base = MultiplayerFrameContext.EMPTY
+                .withConnectionTracker(playerId ->
+                        disconnected.equals(playerId)
+                                ? "disconnected" : "connected");
+        // Sanity — base reports disconnected.
+        assertEquals("disconnected",
+                base.connectionStateFor(disconnected));
+        // Reset to default — the disconnected lookup now returns
+        // "connected" because the tracker was nulled out.
+        MultiplayerFrameContext reset = base.withConnectionTracker(null);
+        assertEquals("connected", reset.connectionStateFor(disconnected));
+    }
+
+    @Test
+    void withConnectionTracker_sameTracker_returnsSameInstance() {
+        // Idempotency check: passing the already-bound tracker is a
+        // no-op. EMPTY's tracker is EVERY_PLAYER_CONNECTED, so
+        // calling withConnectionTracker(EVERY_PLAYER_CONNECTED) on
+        // EMPTY returns EMPTY itself (no fresh allocation).
+        assertSame(MultiplayerFrameContext.EMPTY,
+                MultiplayerFrameContext.EMPTY.withConnectionTracker(
+                        WebSocketConnectionTracker.EVERY_PLAYER_CONNECTED),
+                "Re-binding the existing tracker must be a no-op "
+                        + "(same instance), not a fresh allocation.");
+    }
+
+    @Test
     void multipleGoaders_allSurfaceInTheList() {
         // A permanent goaded by 2 different players (4p FFA — alice
         // and carol both cast Goading Vortex on bob's creature)

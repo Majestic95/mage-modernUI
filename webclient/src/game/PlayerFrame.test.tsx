@@ -103,6 +103,154 @@ describe('PlayerFrame', () => {
     expect(frame).toHaveAccessibleName(/eliminated/);
   });
 
+  describe('disconnected overlay (slice 70-H)', () => {
+    // Slice 70-H — the DISCONNECTED state is recoverable (sockets
+    // dropped, player can reconnect) and renders LIGHTER than
+    // eliminated (terminal). Three composition cases need locking:
+    //   - connected + !hasLeft: no overlay
+    //   - disconnected + !hasLeft: pill renders
+    //   - disconnected + hasLeft: pill SUPPRESSED (eliminated wins)
+
+    it('renders the Disconnected pill when connectionState is "disconnected" and not hasLeft', () => {
+      render(
+        <PlayerFrame
+          player={makePlayer({
+            name: 'bob',
+            hasLeft: false,
+            connectionState: 'disconnected',
+          })}
+          perspective="opponent"
+          onPlayerClick={() => {}}
+          targetable={false}
+        />,
+      );
+      expect(
+        screen.getByTestId('disconnected-pill-opponent'),
+      ).toBeInTheDocument();
+      expect(screen.getByTestId('player-frame-opponent')).toHaveAttribute(
+        'data-disconnected',
+        'true',
+      );
+      // Pill carries the human-readable label so SR users picking it
+      // up via aria-hidden=false fallback still get the signal (today
+      // it's aria-hidden, but a future a11y review could flip that).
+      expect(
+        screen.getByTestId('disconnected-pill-opponent'),
+      ).toHaveTextContent(/disconnected/i);
+    });
+
+    it('does NOT render the pill when connectionState is "connected"', () => {
+      render(
+        <PlayerFrame
+          player={makePlayer({
+            name: 'alice',
+            connectionState: 'connected',
+          })}
+          perspective="self"
+          onPlayerClick={() => {}}
+          targetable={false}
+        />,
+      );
+      expect(screen.queryByTestId('disconnected-pill-self')).toBeNull();
+      expect(screen.getByTestId('player-frame-self')).not.toHaveAttribute(
+        'data-disconnected',
+      );
+    });
+
+    it('SUPPRESSES the pill when also eliminated (terminal wins)', () => {
+      // The hasLeft state is terminal — the slash overlay + heavier
+      // desaturation already communicates "this player is gone."
+      // Layering a recoverable-state pill on top would muddy the read.
+      // Per PlayerFrame.tsx the `disconnected` derived var is gated on
+      // `!eliminated && connectionState === 'disconnected'`, so this
+      // case must produce ONLY the slash (eliminated), no pill.
+      render(
+        <PlayerFrame
+          player={makePlayer({
+            name: 'carol',
+            hasLeft: true,
+            connectionState: 'disconnected',
+          })}
+          perspective="opponent"
+          onPlayerClick={() => {}}
+          targetable={false}
+        />,
+      );
+      expect(
+        screen.queryByTestId('disconnected-pill-opponent'),
+      ).toBeNull();
+      // Slash still renders.
+      expect(
+        screen.getByTestId('elimination-slash-opponent'),
+      ).toBeInTheDocument();
+      // data-eliminated wins; data-disconnected is suppressed.
+      const frame = screen.getByTestId('player-frame-opponent');
+      expect(frame).toHaveAttribute('data-eliminated', 'true');
+      expect(frame).not.toHaveAttribute('data-disconnected');
+    });
+
+    it('aria-label includes "disconnected" when in the recoverable state', () => {
+      // SR users get the disconnected signal via the composed
+      // ariaLabel even though the pill itself is aria-hidden. The
+      // word ordering puts "disconnected" between persona signals
+      // and the colorIdentity description.
+      render(
+        <PlayerFrame
+          player={makePlayer({
+            name: 'bob',
+            hasLeft: false,
+            connectionState: 'disconnected',
+          })}
+          perspective="opponent"
+          onPlayerClick={() => {}}
+          targetable={false}
+        />,
+      );
+      const frame = screen.getByTestId('player-frame-opponent');
+      expect(frame).toHaveAccessibleName(/disconnected/);
+    });
+
+    it('aria-label does NOT include "disconnected" when eliminated wins', () => {
+      // Mutual exclusion at the SR layer too — eliminated takes
+      // precedence in the visual treatment AND in the SR label, so
+      // SR users don't hear the redundant "eliminated, disconnected"
+      // pair. Just "eliminated."
+      render(
+        <PlayerFrame
+          player={makePlayer({
+            name: 'carol',
+            hasLeft: true,
+            connectionState: 'disconnected',
+          })}
+          perspective="opponent"
+          onPlayerClick={() => {}}
+          targetable={false}
+        />,
+      );
+      const frame = screen.getByTestId('player-frame-opponent');
+      expect(frame).toHaveAccessibleName(/eliminated/);
+      expect(frame).not.toHaveAccessibleName(/disconnected/);
+    });
+
+    it('1.22 fixture (no connectionState field) defaults to "connected" via Zod', () => {
+      // The makePlayer helper omits connectionState; Zod's
+      // .default('connected') fires on the missing key. Verify by
+      // checking the parsed object's field directly, then asserting
+      // the pill is not rendered.
+      const player = makePlayer({ name: 'alice' });
+      expect(player.connectionState).toBe('connected');
+      render(
+        <PlayerFrame
+          player={player}
+          perspective="self"
+          onPlayerClick={() => {}}
+          targetable={false}
+        />,
+      );
+      expect(screen.queryByTestId('disconnected-pill-self')).toBeNull();
+    });
+  });
+
   describe('elimination overlay', () => {
     it('renders the slash SVG when hasLeft is true', () => {
       render(

@@ -50,9 +50,16 @@ public final class MultiplayerFrameContext {
      * live {@link Game} reference. Callers that pass {@link #EMPTY}
      * receive {@code null}/{@code List.of()} for every multiplayer
      * field — wire-shape is preserved but no value population.
+     *
+     * <p>Slice 70-H — the bundled
+     * {@link WebSocketConnectionTracker} is
+     * {@link WebSocketConnectionTracker#EVERY_PLAYER_CONNECTED} so
+     * tests don't need a live AuthService.
      */
     public static final MultiplayerFrameContext EMPTY =
-            new MultiplayerFrameContext(Map.of());
+            new MultiplayerFrameContext(
+                    Map.of(),
+                    WebSocketConnectionTracker.EVERY_PLAYER_CONNECTED);
 
     /**
      * Permanent UUID → set of player UUIDs that have goaded this
@@ -61,8 +68,64 @@ public final class MultiplayerFrameContext {
      */
     private final Map<UUID, Set<UUID>> goadingByPermanent;
 
-    private MultiplayerFrameContext(Map<UUID, Set<UUID>> goadingByPermanent) {
+    /**
+     * Slice 70-H (ADR 0011 D3 / ADR 0010 v2 D11(e)) — per-player
+     * WS-layer connection-state oracle. Built by the production
+     * caller {@code WebSocketCallbackHandler.mapGameView} from a
+     * lambda over {@code AuthService} + route-filtered socket counts
+     * (see {@code WebSocketCallbackHandler.gamePlayerSocketCount}).
+     * Tests / legacy paths use
+     * {@link WebSocketConnectionTracker#EVERY_PLAYER_CONNECTED} so
+     * the wire-shape contract test doesn't need a real WS layer.
+     *
+     * <p>Never null — defensive null-replace happens in
+     * {@link #withConnectionTracker(WebSocketConnectionTracker)}.
+     */
+    private final WebSocketConnectionTracker connectionTracker;
+
+    private MultiplayerFrameContext(
+            Map<UUID, Set<UUID>> goadingByPermanent,
+            WebSocketConnectionTracker connectionTracker) {
         this.goadingByPermanent = goadingByPermanent;
+        this.connectionTracker = connectionTracker == null
+                ? WebSocketConnectionTracker.EVERY_PLAYER_CONNECTED
+                : connectionTracker;
+    }
+
+    /**
+     * Slice 70-H — return a copy of this context with the supplied
+     * connection tracker swapped in. Used by
+     * {@code WebSocketCallbackHandler.mapGameView} to thread its
+     * route-filtered socket-count oracle into the per-frame context
+     * without forcing every {@link #extract(Game)} caller to know
+     * about the WS layer.
+     *
+     * <p>{@code tracker == null} → EVERY_PLAYER_CONNECTED default.
+     * Idempotent — calling with the same tracker reuses the existing
+     * goading map by reference.
+     */
+    public MultiplayerFrameContext withConnectionTracker(
+            WebSocketConnectionTracker tracker) {
+        WebSocketConnectionTracker effective = tracker == null
+                ? WebSocketConnectionTracker.EVERY_PLAYER_CONNECTED
+                : tracker;
+        if (effective == this.connectionTracker) {
+            return this;
+        }
+        return new MultiplayerFrameContext(this.goadingByPermanent, effective);
+    }
+
+    /**
+     * Slice 70-H — resolve the connection state of {@code playerId}
+     * via the bundled tracker. Defensive: a null playerId (malformed
+     * PlayerView) defaults to "connected" so we never paint a
+     * healthy player as disconnected on a transient lookup failure.
+     */
+    public String connectionStateFor(UUID playerId) {
+        if (playerId == null) {
+            return mage.webapi.dto.stream.WebPlayerView.CONNECTION_STATE_CONNECTED;
+        }
+        return connectionTracker.connectionStateFor(playerId);
     }
 
     /**
@@ -82,7 +145,8 @@ public final class MultiplayerFrameContext {
     static MultiplayerFrameContext forTesting(
             Map<UUID, Set<UUID>> goadingByPermanent) {
         return new MultiplayerFrameContext(
-                goadingByPermanent == null ? Map.of() : goadingByPermanent);
+                goadingByPermanent == null ? Map.of() : goadingByPermanent,
+                WebSocketConnectionTracker.EVERY_PLAYER_CONNECTED);
     }
 
     /**
@@ -117,7 +181,9 @@ public final class MultiplayerFrameContext {
             }
             return goading == null
                     ? EMPTY
-                    : new MultiplayerFrameContext(goading);
+                    : new MultiplayerFrameContext(
+                            goading,
+                            WebSocketConnectionTracker.EVERY_PLAYER_CONNECTED);
         } catch (RuntimeException ex) {
             LOG.debug("MultiplayerFrameContext.extract failed; returning empty: {}",
                     ex.toString());

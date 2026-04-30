@@ -12,6 +12,7 @@ import mage.view.TableClientMessage;
 import mage.webapi.SchemaVersion;
 import mage.game.Game;
 import mage.players.Player;
+import mage.webapi.auth.AuthService;
 import mage.webapi.dto.stream.WebStreamFrame;
 import mage.webapi.embed.EmbeddedServer;
 import mage.webapi.mapper.ChatMessageMapper;
@@ -20,6 +21,7 @@ import mage.webapi.mapper.GameViewMapper;
 import mage.webapi.upstream.GameLookup;
 import mage.webapi.upstream.MultiplayerFrameContext;
 import mage.webapi.upstream.StackCardIdHint;
+import mage.webapi.upstream.WebSocketConnectionTracker;
 import org.jboss.remoting.callback.AsynchInvokerCallbackHandler;
 import org.jboss.remoting.callback.Callback;
 import org.slf4j.Logger;
@@ -193,6 +195,18 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
      * cardId-equals-id behavior on the wire.
      */
     private final EmbeddedServer embedded;
+    /**
+     * Slice 70-H — optional handle to the AuthService for the
+     * route-filtered cross-handler connection-state oracle threaded
+     * into {@link MultiplayerFrameContext} via a per-frame
+     * {@link WebSocketConnectionTracker}. Null in unit tests that
+     * don't stand up an AuthService — the {@link #mapGameView} path
+     * then falls back to {@link
+     * WebSocketConnectionTracker#EVERY_PLAYER_CONNECTED}, which
+     * preserves the pre-slice-70-H wire behavior (no DISCONNECTED
+     * overlay surfaces).
+     */
+    private final AuthService authService;
     private final Set<WsContext> sockets = ConcurrentHashMap.newKeySet();
     private final Deque<WebStreamFrame> buffer = new ArrayDeque<>(BUFFER_CAPACITY);
 
@@ -313,20 +327,38 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
      * that exercise mapping in isolation use this overload.
      */
     public WebSocketCallbackHandler(String username) {
-        this(username, null);
+        this(username, null, null);
     }
 
     /**
-     * Production ctor: receives the {@link EmbeddedServer} so the
-     * slice-52a stack-cardId hint can resolve the underlying
-     * {@code Card} UUID for {@code Spell} entries on the stack. The
-     * embedded reference is held weakly here in spirit (we never
-     * mutate it, only call {@code managerFactory()} to walk
-     * controllers); a null is accepted defensively.
+     * Slice 52a ctor: receives the {@link EmbeddedServer} for the
+     * stack-cardId hint. Slice 70-H deprecates this two-arg form for
+     * production use (the AuthService field is null → no DISCONNECTED
+     * overlay) but preserves it as a test convenience for callers
+     * that don't stand up an AuthService.
      */
     public WebSocketCallbackHandler(String username, EmbeddedServer embedded) {
+        this(username, embedded, null);
+    }
+
+    /**
+     * Slice 70-H production ctor: receives both the
+     * {@link EmbeddedServer} (slice 52a stack-cardId hint) and the
+     * {@link AuthService} (cross-handler connection-state oracle).
+     * The auth reference is held by the handler so the per-frame
+     * tracker built in {@link #mapGameView} can ask "is opponent X
+     * connected on a player-route socket in this game?" via
+     * {@link AuthService#connectionStateFor(UUID, UUID)}. A null
+     * {@code authService} preserves the pre-slice-70-H wire shape
+     * (every player reads as connected) — used by tests that don't
+     * boot an AuthService.
+     */
+    public WebSocketCallbackHandler(String username,
+                                    EmbeddedServer embedded,
+                                    AuthService authService) {
         this.username = username;
         this.embedded = embedded;
+        this.authService = authService;
     }
 
     /**
@@ -386,6 +418,48 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
     }
 
     /**
+     * Slice 70-H (per critic C3) — count sockets bound to the
+     * supplied {@code gameId} on the player route only. The handler
+     * is per-username (not per-game), so a user with a lobby socket
+     * + a game socket has both entries in {@link #sockets}; a naive
+     * {@link #socketCount} would report "connected" for any logged-
+     * in user even if their game socket is dead. The slice 70-H
+     * connection-state oracle needs the route-filtered, game-scoped
+     * count so the disconnected detection isn't masked by the
+     * lobby socket.
+     *
+     * <p>Filter: socket has both
+     * {@link GameStreamHandler#ATTR_GAME_ID} == gameId AND
+     * {@link #ATTR_ROUTE_KIND} == {@link #ROUTE_PLAYER}. Spectator-
+     * route sockets (slice 71) explicitly do not count as the
+     * player's connection — a player who is also a spectator on a
+     * different game is still "disconnected" from this game's
+     * perspective.
+     *
+     * <p>Returns 0 when {@code gameId} is null (defensive — caller
+     * shouldn't pass null but the route-filter would never match
+     * anyway).
+     */
+    public int gamePlayerSocketCount(UUID gameId) {
+        if (gameId == null) {
+            return 0;
+        }
+        int count = 0;
+        for (WsContext ctx : sockets) {
+            Object boundGameId = ctx.attribute(
+                    mage.webapi.ws.GameStreamHandler.ATTR_GAME_ID);
+            if (!gameId.equals(boundGameId)) {
+                continue;
+            }
+            Object routeKind = ctx.attribute(ATTR_ROUTE_KIND);
+            if (ROUTE_PLAYER.equals(routeKind)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /**
      * Close every WebSocket registered on this handler with the given
      * close code + reason. Called when the owning WebSession ends
      * (logout / sweep) so connected clients observe the close instead
@@ -405,7 +479,13 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
         sockets.clear();
     }
 
-    String username() {
+    /**
+     * The username this handler represents. Public since slice 70-H so
+     * {@link mage.webapi.auth.AuthService#handlerByUsername(String)}
+     * can scan the handler registry without reflection or a
+     * package-leaking helper. Unchanged for the handler's lifetime.
+     */
+    public String username() {
         return username;
     }
 
@@ -939,6 +1019,44 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
         UUID recipientPlayerId = liveGame == null
                 ? null
                 : resolveRecipientPlayerId(gameId);
+        // Slice 70-H — bind the route-filtered cross-handler
+        // connection-state oracle to this gameId so the mapper can
+        // populate WebPlayerView.connectionState. EMPTY is the
+        // tracker-less fallback used in tests / when authService is
+        // absent (every player reads as connected — wire shape
+        // preserved, no DISCONNECTED overlay surfaces). Per critic
+        // C3: the lookup must filter by ATTR_ROUTE_KIND==ROUTE_PLAYER
+        // so a player with a healthy lobby socket but a dead game
+        // socket reads as disconnected, not connected.
+        //
+        // Slice 70-H critic UX-C2/N3 fix — defensive short-circuit
+        // for the recipient's own playerId. The handler IS the
+        // recipient and is currently sending this very frame, so
+        // its socket count is by construction ≥1 on the player
+        // route. But there's a structural race window between WS
+        // socket close + reopen + `register()` re-registration
+        // where the AuthService snapshot could observe 0 sockets,
+        // producing a frame that paints alice's OWN PlayerFrame as
+        // disconnected on alice's screen. Reading `connectionState`
+        // for the recipient through a "you're always connected on
+        // your own screen" guard eliminates the race entirely. The
+        // recipient cannot meaningfully observe themselves as
+        // disconnected — by the time a frame reaches them, they
+        // are connected. Off-by-one frames at reconnect-replay are
+        // also covered because the recipient's handler doesn't
+        // append frames during its own offline window.
+        if (gameId != null && authService != null) {
+            final UUID frameGameId = gameId;
+            final UUID self = recipientPlayerId;
+            mpCtx = mpCtx.withConnectionTracker(playerId -> {
+                if (self != null && self.equals(playerId)) {
+                    return mage.webapi.dto.stream.WebPlayerView
+                            .CONNECTION_STATE_CONNECTED;
+                }
+                return authService.connectionStateFor(
+                        frameGameId, playerId);
+            });
+        }
         Set<UUID> playersInRange = liveGame == null
                 ? null
                 : MultiplayerFrameContext.playersInRange(liveGame, recipientPlayerId);

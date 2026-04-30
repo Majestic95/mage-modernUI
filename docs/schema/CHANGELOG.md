@@ -19,6 +19,82 @@ minor mismatches.
 
 ---
 
+## 1.23 — 2026-04-29 — Player connectionState for DISCONNECTED overlay (slice 70-H)
+
+Adds one additive field — `WebPlayerView.connectionState: string` —
+exposing the WS-layer connection state per ADR 0011 D3 / ADR 0010
+v2 D11(e). Drives the PlayerFrame DISCONNECTED overlay (desaturate
++ "Disconnected" pill) per design-system §7.3.
+
+### `WebPlayerView` — added `connectionState` field
+
+```diff
+   "colorIdentity":   ["W", "U", "B"],
++  "connectionState": "connected"
+ }
+```
+
+Two values today:
+
+- `"connected"` — player has ≥1 active player-route socket
+  (filtered by `ATTR_ROUTE_KIND == "player"` per slice 70-H critic
+  C3) on this gameId.
+- `"disconnected"` — all such sockets have closed but the player
+  is still seated in the game (`hasLeft=false`). Recoverable on
+  reconnect — the player can rejoin and the engine resumes their
+  pod's prompts. Distinct from `hasLeft=true` which is terminal.
+
+Server-side, the field is populated by
+`AuthService.connectionStateFor(gameId, playerId)` via the
+`WebSocketConnectionTracker` threaded into `MultiplayerFrameContext`
+on every game-stream frame. AI players (no entry in
+`userPlayerMap`) always read as `"connected"` by fail-open default.
+
+### Forward-compat note
+
+A 1.22 client receiving a 1.23 payload ignores `connectionState`
+silently. A 1.23 client receiving a 1.22 payload defaults the field
+to `"connected"` via `z.string().default('connected')` — Zod's
+default fires on missing key only, not on null. The mapper always
+emits a non-null value, so the distinction is academic on the
+production wire but matters for older fixtures.
+
+### Slice 70-H scope
+
+This bump ships the wire-field detection surface + the PlayerFrame
+DISCONNECTED overlay. The per-prompt disconnect-timer (ADR 0010 v2
+D11(e)) and the auto-pass response to the engine are deferred to
+slice 70-H.5; the `WebDialogClear.REASON_TIMEOUT` constant lands in
+this slice as forward-compat for that follow-up. No
+`dialogClear{reason:"TIMEOUT"}` frames are emitted by the server
+yet.
+
+### Client contract (per slice 70-H critic UX-I4)
+
+**Clients MUST NOT use `connectionState` to dismiss any pending
+dialogs locally.** The server (via `AuthService` + the
+`WebSocketCallbackHandler` per-prompt timer landing in slice 70-H.5)
+owns dialog teardown via `dialogClear{playerId, reason}` frames.
+A 1.23 client that observes `connectionState="disconnected"` for a
+player with a pending dialog targeting them must continue to render
+the dialog until either:
+
+1. A `dialogClear` frame for that player arrives (server-side
+   teardown, the only authoritative signal), or
+2. A subsequent `gameUpdate` frame restructures the dialog's
+   relevance (e.g., the prompt's targets change, the player's
+   `hasLeft` flips, the priority shifts).
+
+`connectionState` is a UI-state signal (drives the PlayerFrame
+overlay) — it is not load-bearing for any state-machine transition.
+Treating it as one risks divergent client/server state when the
+server's authoritative timeout policy disagrees with the client's
+own timer (e.g., server gives a 60s grace window, client times out
+after 30s and silently dismisses, server later sends the actual
+response when the player reconnects within 60s).
+
+---
+
 ## 1.22 — 2026-04-29 — Player colorIdentity for halo rendering (slice 70-D)
 
 Adds one additive field — `WebPlayerView.colorIdentity: string[]` —

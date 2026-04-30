@@ -7,7 +7,9 @@ import mage.server.managers.SessionManager;
 import mage.webapi.SchemaVersion;
 import mage.webapi.WebApiException;
 import mage.webapi.dto.WebSession;
+import mage.webapi.dto.stream.WebPlayerView;
 import mage.webapi.embed.EmbeddedServer;
+import mage.webapi.upstream.GameLookup;
 import mage.webapi.ws.WebSocketCallbackHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,6 +17,7 @@ import org.slf4j.LoggerFactory;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -90,6 +93,110 @@ public final class AuthService implements AutoCloseable {
      */
     public Optional<WebSocketCallbackHandler> handlerFor(String upstreamSessionId) {
         return Optional.ofNullable(handlersBySessionId.get(upstreamSessionId));
+    }
+
+    /**
+     * Slice 70-H — find the active {@link WebSocketCallbackHandler}
+     * (if any) for {@code username}. Returns the first matching
+     * handler in iteration order; the newest-wins login policy
+     * (ADR 0004 D7) ensures at most one handler exists per username
+     * at any time, so iteration order is observable but not load-
+     * bearing.
+     *
+     * <p>Used by {@link #connectionStateFor(UUID, UUID)} to ask "is
+     * the player whose username is X currently connected on a
+     * player-route socket in this game?" — a building block for the
+     * schema-1.23 {@link WebPlayerView#connectionState} wire field.
+     *
+     * <p>Linear scan over a {@link ConcurrentHashMap}; O(N) in
+     * active sessions, but N is small (mostly &lt;100 across a
+     * playtest) and the call is made at most once per opponent per
+     * mapped frame. If session counts grow large, a secondary index
+     * by username can be added to the registry; benchmark first.
+     */
+    public Optional<WebSocketCallbackHandler> handlerByUsername(String username) {
+        if (username == null) {
+            return Optional.empty();
+        }
+        for (WebSocketCallbackHandler h : handlersBySessionId.values()) {
+            if (username.equals(h.username())) {
+                return Optional.of(h);
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * Slice 70-H (ADR 0011 D3 / ADR 0010 v2 D11(e)) — return the
+     * connection state of {@code playerId} in {@code gameId} for the
+     * schema-1.23 {@link WebPlayerView#connectionState} wire field.
+     * Implements the {@code WebSocketConnectionTracker} contract that
+     * the per-frame {@link mage.webapi.upstream.MultiplayerFrameContext}
+     * threads into the mapper.
+     *
+     * <p>Resolution chain:
+     * <ol>
+     *   <li>{@code playerId} → {@code userId} via the engine's
+     *       per-game {@code userPlayerMap} (reverse-lookup since
+     *       upstream stores it as userId → playerId).</li>
+     *   <li>{@code userId} → {@code username} via the
+     *       {@code UserManager}.</li>
+     *   <li>{@code username} → handler via
+     *       {@link #handlerByUsername}.</li>
+     *   <li>{@code handler.gamePlayerSocketCount(gameId) &gt; 0}
+     *       (route-filtered, per critic C3) → connected.</li>
+     * </ol>
+     *
+     * <p>Defensive fail-open at every step: any null intermediate
+     * returns {@code "connected"}. Reasons:
+     * <ul>
+     *   <li>AI players have no entry in {@code userPlayerMap} — they
+     *       are always "connected" semantically (no socket needed).</li>
+     *   <li>A transient lookup failure must not paint a healthy
+     *       player as disconnected — the DISCONNECTED overlay is
+     *       visible UX, fail-open is the safer default.</li>
+     *   <li>Username with no active handler IS a real disconnected
+     *       case (logged out without {@code hasLeft}) — that path
+     *       returns DISCONNECTED.</li>
+     * </ul>
+     */
+    public String connectionStateFor(UUID gameId, UUID playerId) {
+        if (gameId == null || playerId == null) {
+            return WebPlayerView.CONNECTION_STATE_CONNECTED;
+        }
+        Optional<Map<UUID, UUID>> userPlayerMap = GameLookup.findUserPlayerMap(
+                gameId, embedded.managerFactory());
+        if (userPlayerMap.isEmpty()) {
+            return WebPlayerView.CONNECTION_STATE_CONNECTED;
+        }
+        UUID userId = null;
+        for (Map.Entry<UUID, UUID> e : userPlayerMap.get().entrySet()) {
+            if (playerId.equals(e.getValue())) {
+                userId = e.getKey();
+                break;
+            }
+        }
+        if (userId == null) {
+            // AI player or unknown — fail-open. AI never disconnects.
+            return WebPlayerView.CONNECTION_STATE_CONNECTED;
+        }
+        String otherUsername = embedded.managerFactory().userManager()
+                .getUser(userId)
+                .map(mage.server.User::getName)
+                .orElse(null);
+        if (otherUsername == null) {
+            return WebPlayerView.CONNECTION_STATE_CONNECTED;
+        }
+        WebSocketCallbackHandler handler = handlerByUsername(otherUsername).orElse(null);
+        if (handler == null) {
+            // No active handler = logged out / never logged in.
+            // Treat as disconnected (intermediate state — hasLeft is
+            // the terminal state). Recoverable on re-login.
+            return WebPlayerView.CONNECTION_STATE_DISCONNECTED;
+        }
+        return handler.gamePlayerSocketCount(gameId) > 0
+                ? WebPlayerView.CONNECTION_STATE_CONNECTED
+                : WebPlayerView.CONNECTION_STATE_DISCONNECTED;
     }
 
     /**
@@ -269,7 +376,15 @@ public final class AuthService implements AutoCloseable {
         // alternative (a static accessor) would couple every test to
         // a live embedded singleton; ctor injection keeps the unit
         // tests that synthesize a handler directly working.
-        WebSocketCallbackHandler handler = new WebSocketCallbackHandler(username, embedded);
+        //
+        // Slice 70-H — also pass {@code this} so the handler can
+        // build a per-frame WebSocketConnectionTracker that consults
+        // {@link #connectionStateFor(UUID, UUID)} for the schema-1.23
+        // connectionState wire field. AuthService → handler → AuthService
+        // is a non-circular reference (AuthService is fully constructed
+        // before any handler is registered).
+        WebSocketCallbackHandler handler =
+                new WebSocketCallbackHandler(username, embedded, this);
         handlersBySessionId.put(upstreamSessionId, handler);
         sessionManager().createSession(upstreamSessionId, handler);
     }

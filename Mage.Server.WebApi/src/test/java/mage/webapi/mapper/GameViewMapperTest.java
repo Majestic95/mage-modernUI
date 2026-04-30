@@ -98,9 +98,11 @@ class GameViewMapperTest {
     }
 
     @Test
-    void playerView_jsonShape_locksTwentyThreeFields_schema122() throws Exception {
+    void playerView_jsonShape_locksTwentyFourFields_schema123() throws Exception {
         // Schema 1.20 (slice 69a, ADR 0010 v2 D3a) added teamId.
         // Schema 1.22 (slice 70-D, ADR 0011 D5) added colorIdentity.
+        // Schema 1.23 (slice 70-H, ADR 0011 D3 / ADR 0010 v2 D11(e))
+        //   added connectionState.
         // Lock the wire shape so any future field add/remove fails here
         // first instead of leaking into the webclient.
         mage.webapi.dto.stream.WebPlayerView dto =
@@ -110,17 +112,20 @@ class GameViewMapperTest {
                         Map.of(), Map.of(), Map.of(), Map.of(),
                         new WebManaPoolView(0, 0, 0, 0, 0, 0),
                         true, true, true, true, false, false, false,
-                        List.of(), List.of(), null, List.of());
+                        List.of(), List.of(), null, List.of(),
+                        mage.webapi.dto.stream.WebPlayerView
+                                .CONNECTION_STATE_CONNECTED);
         JsonNode node = JSON.valueToTree(dto);
-        assertEquals(23, node.size(),
-                "WebPlayerView must have exactly 23 fields; got: " + node);
+        assertEquals(24, node.size(),
+                "WebPlayerView must have exactly 24 fields; got: " + node);
         for (String field : List.of(
                 "playerId", "name", "life", "wins", "winsNeeded",
                 "libraryCount", "handCount", "graveyard", "exile",
                 "sideboard", "battlefield", "manaPool", "controlled",
                 "isHuman", "isActive", "hasPriority", "hasLeft",
                 "monarch", "initiative", "designationNames",
-                "commandList", "teamId", "colorIdentity")) {
+                "commandList", "teamId", "colorIdentity",
+                "connectionState")) {
             assertTrue(node.has(field), "missing field: " + field);
         }
         assertTrue(node.get("teamId").isNull(),
@@ -132,6 +137,16 @@ class GameViewMapperTest {
                         + "non-Commander player fixture; mapper must emit "
                         + "List.of() not null per N9 (Zod default fires "
                         + "only on missing key, not null value).");
+        assertEquals("connected", node.get("connectionState").asText(),
+                "Slice 70-H — connectionState is a non-null string; "
+                        + "the wire format always carries one of "
+                        + "CONNECTION_STATE_CONNECTED / "
+                        + "CONNECTION_STATE_DISCONNECTED. Old (1.22) "
+                        + "clients tolerate the new field via Zod's "
+                        + ".default('connected'); new clients receiving "
+                        + "an old (1.22) frame default to 'connected' "
+                        + "for the missing key (Zod default fires on "
+                        + "missing key, not null value).");
     }
 
     @Test

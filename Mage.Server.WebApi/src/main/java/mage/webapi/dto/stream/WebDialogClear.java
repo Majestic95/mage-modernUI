@@ -25,11 +25,15 @@ package mage.webapi.dto.stream;
  * / {@code gameInform} frames for the same gameId.
  *
  * @param playerId  UUID (stringified) of the player who left
- * @param reason    short machine-parseable reason code; v2 emits
- *                  {@code "PLAYER_LEFT"} for any leaver detection.
- *                  Future v3 may add {@code "TIMEOUT"} /
- *                  {@code "DISCONNECT"} / {@code "ELIMINATED"}
- *                  if upstream surfaces them distinctly.
+ * @param reason    short machine-parseable reason code. v2 ships
+ *                  {@code "PLAYER_LEFT"} for any hasLeft transition
+ *                  (concession / engine-skipped / eliminated). Slice
+ *                  70-H (schema 1.23) added {@code "TIMEOUT"} for
+ *                  per-prompt disconnect-timer fires — the
+ *                  disconnected player is NOT yet hasLeft (still
+ *                  recoverable on reconnect), but their open prompt
+ *                  has been cleaned up on every other client's UI
+ *                  to prevent stuck "waiting on Bob" affordances.
  */
 public record WebDialogClear(
         String playerId,
@@ -38,4 +42,14 @@ public record WebDialogClear(
 
     /** Reason code emitted for any leaver detection in v2. */
     public static final String REASON_PLAYER_LEFT = "PLAYER_LEFT";
+
+    /**
+     * Slice 70-H — per-prompt disconnect-timer fired without the
+     * player reconnecting. Distinct from {@link #REASON_PLAYER_LEFT}
+     * (terminal) — TIMEOUT is recoverable; the player can reconnect
+     * and their pod re-renders normally. The auto-pass response
+     * to the engine is sub-slice 70-H.5; this slice ships only the
+     * detection + UI-teardown signal.
+     */
+    public static final String REASON_TIMEOUT = "TIMEOUT";
 }

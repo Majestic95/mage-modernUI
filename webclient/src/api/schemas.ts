@@ -546,6 +546,35 @@ export const webPlayerViewSchema = z.object({
   // fires only on a missing key, not on a literal null — server-side
   // mapper emits List.of() never null.
   colorIdentity: z.array(z.string()).default([]),
+  // Schema 1.23 (ADR 0011 D3 / ADR 0010 v2 D11(e), slice 70-H) —
+  // WS-layer connection state. "connected" when the player has
+  // ≥1 active player-route socket in this game; "disconnected"
+  // when all such sockets have closed but the player is still
+  // seated (recoverable on reconnect — distinct from terminal
+  // hasLeft). Drives the PlayerFrame DISCONNECTED overlay
+  // (desaturate + label, design-system §7.3).
+  //
+  // Three guards layer here:
+  //   - z.enum locks the literal set so a typo in PlayerFrame's
+  //     comparison ('Disconnected' vs 'disconnected') is caught at
+  //     the type level. Critic UI-I2 of slice 70-H surfaced this
+  //     as a silent-misclassification risk on the prior z.string().
+  //   - .catch('connected') gracefully tolerates a future server
+  //     emitting a new state value (e.g. 'reconnecting' in some
+  //     v3 expansion) by coercing it to "connected" rather than
+  //     hard-failing the parse — the consuming UI must work even
+  //     against a one-version-ahead server, and connectionState is
+  //     non-load-bearing (the worst case is a brief stale overlay
+  //     state until the next gameUpdate frame).
+  //   - .default('connected') fires on missing key (a 1.22 server
+  //     sending a frame with no connectionState field). Critic I8
+  //     of slice 70-H technical critic — default must NOT be
+  //     .optional() or Zod emits undefined and the UI mishandles
+  //     "missing" vs "explicitly connected".
+  connectionState: z
+    .enum(['connected', 'disconnected'])
+    .catch('connected')
+    .default('connected'),
 });
 export type WebPlayerView = z.infer<typeof webPlayerViewSchema>;
 

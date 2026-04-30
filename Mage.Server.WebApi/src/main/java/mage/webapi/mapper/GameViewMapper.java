@@ -255,7 +255,15 @@ public final class GameViewMapper {
                 // formats; for commander formats the union of every
                 // commander's color identity (handles partner /
                 // background pairings).
-                deriveColorIdentity(pv.getCommandObjectList())
+                deriveColorIdentity(pv.getCommandObjectList()),
+                // Slice 70-H (ADR 0011 D3 / ADR 0010 v2 D11(e)) —
+                // connectionState drives the PlayerFrame
+                // DISCONNECTED overlay. Resolved via the tracker
+                // bundled in MultiplayerFrameContext (production
+                // path: WebSocketCallbackHandler.mapGameView builds
+                // a route-filtered socket-count oracle around
+                // AuthService; test / legacy path: EVERY_PLAYER_CONNECTED).
+                effective.connectionStateFor(pv.getPlayerId())
         );
     }
 
