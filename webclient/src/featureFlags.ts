@@ -37,3 +37,38 @@
  */
 export const KEEP_ELIMINATED: boolean =
   import.meta.env['VITE_FEATURE_KEEP_ELIMINATED'] !== 'false';
+
+/**
+ * Slice 70-I (redesign push, 2026-04-29) — gates the visual redesign
+ * landing across slices 70-I through 70-P + 70-Z polish.
+ *
+ * <p>When ON: PlayerFrame renders the picture-catalog §2 portrait-
+ * stacked anatomy, side panel reorganized per §5, central focal zone
+ * redesigned per §3, header bar matches §1, etc. The redesigned UI
+ * is what the user's reference screenshot depicts.
+ *
+ * <p>When OFF (default): the pre-redesign layout shipped at slice
+ * 70-H.5 stays in effect — header strip + horizontal-strip
+ * PlayerFrame + multi-button ActionPanel + flex-wrap StackZone +
+ * PhaseTimeline-on-top side panel. This is the layout currently
+ * deployed to production.
+ *
+ * <p><b>Opt-in semantics</b> (intentionally inverse of
+ * KEEP_ELIMINATED's "off-only" allowlist): the redesign is opt-in
+ * during development. Only the literal string {@code 'true'} or
+ * {@code '1'} enables it. Any other value (unset, empty, 'false',
+ * '0', garbage) keeps the production layout. Flag flips to default-
+ * ON only after slice 70-Z polish signs off and the user approves
+ * the production cutover.
+ *
+ * <p><b>Single source of truth.</b> Per the convention above, only
+ * the gating module (this file) reads the env var. Components import
+ * {@code REDESIGN} as a boolean. Tests can override via
+ * {@code vi.mock('../featureFlags', ...)} per the existing
+ * battlefieldLayout.test.ts pattern.
+ *
+ * <p>Reference: docs/design/picture-catalog.md, docs/design/slice-plan-redesign-2026-04-29.md
+ */
+export const REDESIGN: boolean =
+  import.meta.env['VITE_FEATURE_REDESIGN'] === 'true' ||
+  import.meta.env['VITE_FEATURE_REDESIGN'] === '1';

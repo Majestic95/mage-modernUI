@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:redesign": "vite --mode redesign",
     "build": "vite build",
+    "build:redesign": "vite build --mode redesign",
     "build:strict": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b",
