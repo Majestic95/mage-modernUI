@@ -12,6 +12,7 @@ import { AbilityPickerDialog } from './AbilityPickerDialog';
 import { InformDialog } from './InformDialog';
 import { CombatPanel } from './CombatPanel';
 import { ManaPayPanel } from './ManaPayPanel';
+import { isMulliganDialog } from '../MulliganModal';
 
 interface Props {
   stream: GameStream | null;
@@ -32,6 +33,13 @@ export function GameDialog({ stream }: Props) {
   const clearDialog = useGameStore((s) => s.clearDialog);
 
   if (!dialog) return null;
+
+  // Slice 70-F — the mulligan flow is a gameAsk with the
+  // "Mulligan"/"Keep" button text convention. MulliganModal at the
+  // GameTable shell level renders the full-mode chrome around it;
+  // short-circuit here so the legacy AskDialog doesn't double-render
+  // the same dispatch surface.
+  if (isMulliganDialog(dialog)) return null;
 
   // gameSelect is upstream's "free priority / combat" prompt.
   // Three sub-modes:

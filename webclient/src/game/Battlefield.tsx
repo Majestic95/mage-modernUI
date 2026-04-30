@@ -1,27 +1,32 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import type { WebCardView, WebGameView } from '../api/schemas';
-import { GameStream } from './stream';
-import { useGameStore } from './store';
-import {
-  deriveInteractionMode,
-  type InteractionMode,
-} from './interactionMode';
-import { isBoardClickable, routeObjectClick } from './clickRouter';
-import { ManaCost } from './ManaCost';
-import { MyHand } from './MyHand';
+import { useMemo } from 'react';
+import type { WebGameView } from '../api/schemas';
+import type { InteractionMode } from './interactionMode';
 import { StackZone } from './StackZone';
 import { PlayerArea } from './PlayerArea';
 import { gridAreaForOpponent, selectOpponents } from './battlefieldLayout';
+import type { DragState } from './useDragState';
 
 export function Battlefield({
   gv,
-  stream,
+  mode,
+  canAct,
+  onObjectClick,
+  drag,
 }: {
   gv: WebGameView;
-  stream: GameStream | null;
+  /**
+   * Slice 70-F — interaction state lifted to GameTable so MyHand
+   * (now in its own grid region, sibling of Battlefield) and the
+   * battlefield's PlayerAreas share one source of truth. Battlefield
+   * is now a render-mostly consumer; the only derivations it still
+   * owns are gv-shape data (me, opponents, eligibleTargetIds,
+   * combatRoles).
+   */
+  mode: InteractionMode;
+  canAct: boolean;
+  onObjectClick: (id: string) => void;
+  drag: DragState | null;
 }) {
-  const pendingDialog = useGameStore((s) => s.pendingDialog);
-  const clearDialog = useGameStore((s) => s.clearDialog);
   const me = useMemo(
     () => gv.players.find((p) => p.playerId === gv.myPlayerId) ?? null,
     [gv.players, gv.myPlayerId],
@@ -31,109 +36,11 @@ export function Battlefield({
     [gv.players, gv.myPlayerId],
   );
 
-  // Slice 16: derive the interaction mode and route board clicks
-  // through the shared clickRouter. The mode is a function of the
-  // pending dialog + game view â€” pure derivation, no stored state.
-  // Each mode (free, target, manaPay, declareAttackers,
-  // declareBlockers, modal) has explicit dispatch in clickRouter,
-  // replacing the slice-15 "if (targeting) ..." pattern.
-  const mode: InteractionMode = useMemo(
-    () => deriveInteractionMode(pendingDialog),
-    [pendingDialog],
-  );
-
-  // Slice 16 / U5 fix: compare priority by playerId, not by
-  // username. Upstream's getControllingPlayerHint can decorate
-  // priorityPlayerName with " (as <name>)" suffixes (mind control,
-  // control magic) which broke the prior name-based check even in
-  // 1v1.
-  const myPriority = !!me?.hasPriority;
-  const canAct = isBoardClickable(mode, myPriority) && stream != null;
-
-  const out = useMemo(
-    () =>
-      stream
-        ? {
-            sendObjectClick: (id: string) => stream.sendObjectClick(id),
-            sendPlayerResponse: (
-              mid: number,
-              kind: 'uuid' | 'string' | 'boolean' | 'integer' | 'manaType',
-              v: unknown,
-            ) => stream.sendPlayerResponse(mid, kind, v),
-            clearDialog,
-          }
-        : null,
-    [stream, clearDialog],
-  );
-
-  const onObjectClick = (id: string) => {
-    if (!out) return;
-    routeObjectClick(mode, id, myPriority, out);
-  };
-
-  // Slice 36 â€” drag-to-play from hand. Pointer-events DnD per ADR
-  // 0005 Â§6 (no third-party library). Anchor the press in a ref so
-  // a quick click (no movement) stays a click; cross a 5px
-  // threshold to enter drag mode and surface a floating preview
-  // following the cursor. PlayerArea elements are the drop zones;
-  // they fire onPointerUp which (when drag is active) routes the
-  // hand-card UUID through the same clickRouter the click path
-  // uses â€” same engine behavior, just a more natural mouse-first
-  // gesture.
-  const [drag, setDrag] = useState<
-    { cardId: string; x: number; y: number } | null
-  >(null);
-  const dragStartRef = useRef<
-    | { cardId: string; x: number; y: number; pointerId: number }
-    | null
-  >(null);
-
-  const beginHandPress = (cardId: string, ev: React.PointerEvent) => {
-    if (ev.button !== 0) return; // primary button only
-    dragStartRef.current = {
-      cardId,
-      x: ev.clientX,
-      y: ev.clientY,
-      pointerId: ev.pointerId,
-    };
-  };
-
-  // Mount-only listeners. The press anchor is a ref (no re-render
-  // on pointerdown), so binding/unbinding on every drag-state change
-  // would never see the updated ref. Instead, attach once and read
-  // the ref each event.
-  useEffect(() => {
-    const DRAG_THRESHOLD_SQ = 5 * 5;
-    const onMove = (ev: PointerEvent) => {
-      const start = dragStartRef.current;
-      if (!start || ev.pointerId !== start.pointerId) return;
-      const dx = ev.clientX - start.x;
-      const dy = ev.clientY - start.y;
-      if (dx * dx + dy * dy <= DRAG_THRESHOLD_SQ) return;
-      setDrag((curr) =>
-        curr && curr.cardId === start.cardId
-          ? { ...curr, x: ev.clientX, y: ev.clientY }
-          : { cardId: start.cardId, x: ev.clientX, y: ev.clientY },
-      );
-    };
-    const onUp = () => {
-      dragStartRef.current = null;
-      setDrag(null);
-    };
-    document.addEventListener('pointermove', onMove);
-    document.addEventListener('pointerup', onUp);
-    document.addEventListener('pointercancel', onUp);
-    return () => {
-      document.removeEventListener('pointermove', onMove);
-      document.removeEventListener('pointerup', onUp);
-      document.removeEventListener('pointercancel', onUp);
-    };
-  }, []);
-
-  // Fired by either PlayerArea on pointerup. If a drag was in
-  // progress, that's a "drop on the board" â€” route the hand-card
-  // UUID through the same path a click would. The document-level
-  // pointerup listener clears state immediately after.
+  // Drop dispatch — drag-in-progress on a PlayerArea pointerup is
+  // routed as an object click so the engine treats it identically
+  // to a click on the destination board. Lives here (not in
+  // GameTable) because it consumes onObjectClick which is itself
+  // a callback to GameTable's click-router output.
   const onBoardDrop = () => {
     if (drag) {
       onObjectClick(drag.cardId);
@@ -169,13 +76,11 @@ export function Battlefield({
     return roles;
   }, [gv.combat]);
 
-  // Slice 36 â€” surface the dragged card as a floating preview that
-  // tracks the cursor. We resolve the card object from the hand
-  // (the only place drag origins are bound today).
-  const draggedCard = useMemo<WebCardView | null>(() => {
-    if (!drag) return null;
-    return gv.myHand[drag.cardId] ?? null;
-  }, [drag, gv.myHand]);
+  // Slice 70-F — floating drag preview moved to GameTable. With the
+  // hand region now a sibling of the battlefield region, the
+  // preview belongs at the shell level so it can float over either
+  // region as the cursor crosses between them. Battlefield no
+  // longer owns a `draggedCard` lookup or the preview JSX.
 
   return (
     // Slice 57 (UX audit fix B) â€” Battlefield restructure. Pre-fix:
@@ -211,23 +116,8 @@ export function Battlefield({
           sr-only class hides it visually â€” the visual surfaces are
           the PlayerArea glow rings (D5) + the existing PRIORITY /
           ACTIVE pills (D9 redundant-encoding rule). */}
-      {/* SR announcers moved to GameTable.tsx (slice 70-E critic N4). */}
-      {drag && draggedCard && (
-        <div
-          data-testid="drag-preview"
-          className="fixed pointer-events-none z-50"
-          style={{ left: drag.x + 12, top: drag.y + 12 }}
-        >
-          <div className="inline-flex items-baseline gap-1 px-2 py-1 rounded text-xs border border-fuchsia-500 bg-zinc-900 shadow-lg">
-            <span className="font-medium text-zinc-100">
-              {draggedCard.name}
-            </span>
-            {draggedCard.manaCost && (
-              <ManaCost cost={draggedCard.manaCost} size="sm" />
-            )}
-          </div>
-        </div>
-      )}
+      {/* SR announcers + drag preview moved to GameTable.tsx
+          (slice 70-E critic N4 + slice 70-F MyHand region extract). */}
       {/* Opponents row(s) â€” top. flex-shrink-0 = intrinsic height.
           Slice 69b (ADR 0010 v2 D5): layout adapts to opponent count
           via CSS Grid. 1 opponent = vertical stack (1v1 unchanged); 2
@@ -347,22 +237,12 @@ export function Battlefield({
         </div>
       </div>
 
-      {/* My hand â€” bottom slot, ALWAYS visible at full height. Was
-          inside self section pre-slice-57; moved out so an
-          overflowing battlefield can't scroll the hand off-screen. */}
-      {me && (
-        <div className="flex-shrink-0 border-t border-zinc-800 px-4 pb-2">
-          <MyHand
-            hand={gv.myHand}
-            canAct={canAct}
-            onObjectClick={onObjectClick}
-            isMyTurn={!!me.isActive}
-            hasPriority={!!me.hasPriority}
-            onPointerDown={beginHandPress}
-            draggedCardId={drag?.cardId ?? null}
-          />
-        </div>
-      )}
+      {/* Slice 70-F — MyHand extracted to its own GameTable grid
+          region (region 4 per spec §4). Battlefield no longer
+          renders the hand inline; the bottom-region of the
+          GameTable shell mounts MyHand as a sibling of Battlefield,
+          consuming drag state from the same useDragState hook
+          via GameTable. */}
     </div>
   );
 }

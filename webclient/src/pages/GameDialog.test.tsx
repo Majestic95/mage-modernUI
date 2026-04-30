@@ -291,19 +291,18 @@ describe('GameDialog', () => {
 
   /* ---------- slice 17: button-text overrides via options ---------- */
 
-  it('gameAsk: options.UI.btn.text overrides render as button labels (mulligan)', async () => {
-    // Mulligan loop populates options.leftBtnText="Mulligan" /
-    // options.rightBtnText="Keep" via upstream HumanPlayer.java:404.
-    // Default Yes/No labels should not appear when overrides are
-    // present. Real-world fix for the "Question / Yes / No" UX bug
-    // surfaced in the play session.
+  it('gameAsk: mulligan flow short-circuits — GameDialog renders nothing (MulliganModal takes over)', () => {
+    // Slice 70-F — the mulligan branch is detected by leftBtnText=
+    // "Mulligan" + rightBtnText="Keep" and rendered by the
+    // GameTable-level MulliganModal with full-mode chrome. GameDialog
+    // returns null for this branch so the legacy AskDialog doesn't
+    // double-render the same dispatch surface. The MulliganModal's
+    // own "Mulligan"/"Keep" buttons + dispatch contract is covered
+    // in MulliganModal.test.tsx.
     const stream = fakeStream();
-    const user = userEvent.setup();
     const data = emptyDialog({
       message: 'Mulligan down to 6 cards?',
     });
-    // Inject the slice-17 options field. emptyDialog() defaults
-    // options to all-empty via Zod default; we override here.
     const dataWithOptions = {
       ...data,
       options: {
@@ -325,14 +324,12 @@ describe('GameDialog', () => {
     });
     render(<GameDialog stream={stream} />);
 
-    expect(screen.getByRole('button', { name: /^Mulligan$/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^Keep$/i })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^Yes$/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^No$/i })).not.toBeInTheDocument();
-
-    // Click "Mulligan" sends boolean=true (left = primary = true).
-    await user.click(screen.getByRole('button', { name: /^Mulligan$/i }));
-    expect(stream.sendPlayerResponse).toHaveBeenCalledWith(17, 'boolean', true);
+    // GameDialog renders nothing for mulligan — both the legacy
+    // Yes/No labels AND the new Mulligan/Keep labels are absent
+    // from this surface.
+    expect(screen.queryByRole('button', { name: /^Mulligan$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Keep$/i })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('game-dialog')).not.toBeInTheDocument();
   });
 
   it('gameAsk: empty button-text override falls back to default Yes/No', () => {

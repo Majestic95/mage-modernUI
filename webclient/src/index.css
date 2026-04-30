@@ -119,6 +119,39 @@ body {
   50%      { box-shadow: 0 0 8px 2px rgb(168 85 247 / 0.85); }
 }
 
+/*
+ * Slice 70-F (ADR 0011 D5) — ambient particle-drift backdrop for
+ * the battlefield. Uses radial-gradient(s) on a single oversized
+ * background-image, animated via translate3d so the GPU compositor
+ * handles the cycle (no layout, no paint per frame). 60s period
+ * keeps motion subtle; absent under reduced-motion via the
+ * ambient-default rule below.
+ *
+ * The element is a single absolutely-positioned div in the
+ * battlefield region (GameTable) — no per-particle React state.
+ */
+@keyframes particle-drift {
+  0%   { transform: translate3d(0, 0, 0); }
+  100% { transform: translate3d(-25%, -8%, 0); }
+}
+
+.animate-particle-drift {
+  /* Slice 70-F critic UI-#2 — gradient alphas raised from 0.04-0.07
+   * to 0.10-0.16 so the layer is actually perceptible against
+   * --color-bg-base (#0E1A20). The previous values, multiplied by
+   * the consumer's opacity-40 wrapper, landed at ~0.016-0.028
+   * effective alpha — below the discrimination threshold on most
+   * monitors. The wrapper's opacity-40 was dropped at the call
+   * site; this file owns the final alpha. */
+  background-image:
+    radial-gradient(circle at 20% 30%, rgb(91 192 240 / 0.16) 0, transparent 22%),
+    radial-gradient(circle at 70% 60%, rgb(168 139 196 / 0.13) 0, transparent 28%),
+    radial-gradient(circle at 45% 80%, rgb(91 184 114 / 0.13) 0, transparent 25%),
+    radial-gradient(circle at 85% 18%, rgb(232 197 108 / 0.10) 0, transparent 18%);
+  background-size: 140% 140%;
+  animation: particle-drift 60000ms linear infinite alternate;
+}
+
 .animate-stack-glow-pulse {
   animation: stack-glow-pulse 1500ms cubic-bezier(0.45, 0, 0.55, 1) infinite;
 }

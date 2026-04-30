@@ -1,12 +1,23 @@
 import { useMemo } from 'react';
-import type { WebGameView } from '../api/schemas';
+import type { WebCardView, WebGameView } from '../api/schemas';
 import type { GameStream } from './stream';
 import { ActionPanel } from '../pages/ActionPanel';
 import { Battlefield } from './Battlefield';
+import { CommanderDamageTracker } from './CommanderDamageTracker';
 import { GameLog } from './GameLog';
 import { GameDialog } from './dialogs/GameDialog';
+import { ManaCost } from './ManaCost';
+import { MulliganModal } from './MulliganModal';
+import { MyHand } from './MyHand';
 import { PhaseTimeline } from './PhaseTimeline';
-import { formatEliminationAnnouncement } from './battlefieldLayout';
+import { formatEliminationAnnouncement, selectOpponents } from './battlefieldLayout';
+import {
+  deriveInteractionMode,
+  type InteractionMode,
+} from './interactionMode';
+import { isBoardClickable, routeObjectClick } from './clickRouter';
+import { useDragState } from './useDragState';
+import { useGameStore } from './store';
 
 /**
  * Slice 70-E (ADR 0011 D5) — 6-region CSS Grid shell per
@@ -61,6 +72,7 @@ import { formatEliminationAnnouncement } from './battlefieldLayout';
  * isolation pattern).
  */
 interface Props {
+  gameId: string;
   gameView: WebGameView;
   stream: GameStream | null;
 }
@@ -70,7 +82,7 @@ interface Props {
 // panel grow unreadably wide at 2560×1440.
 const SIDE_PANEL_WIDTH = 'clamp(280px, 22vw, 360px)';
 
-export function GameTable({ gameView, stream }: Props) {
+export function GameTable({ gameId, gameView, stream }: Props) {
   // Slice 69d (D11a + D13) — eliminated-player live region. Now at
   // GameTable root so the parent doesn't mutate when battlefield
   // contents change. Empty string when KEEP_ELIMINATED is on (the
@@ -79,6 +91,63 @@ export function GameTable({ gameView, stream }: Props) {
     () => formatEliminationAnnouncement(gameView.players),
     [gameView.players],
   );
+
+  // Slice 70-F — drag-state ownership lifted from Battlefield. With
+  // MyHand now in its own grid region (sibling of Battlefield, not
+  // child), the two need a shared owner for the drag state. The
+  // hook also owns the document-level pointermove/up listeners.
+  const { drag, beginHandPress } = useDragState();
+
+  // Slice 70-F — interaction-mode derivation lifted alongside drag
+  // state so MyHand (drag source) and Battlefield (drop targets +
+  // PlayerArea click) can share one source of truth. Battlefield
+  // re-derives gv-shape data (eligibleTargetIds, combatRoles, me,
+  // opponents) internally — those are cheap and don't need lifting.
+  const pendingDialog = useGameStore((s) => s.pendingDialog);
+  const clearDialog = useGameStore((s) => s.clearDialog);
+  const me = useMemo(
+    () => gameView.players.find((p) => p.playerId === gameView.myPlayerId) ?? null,
+    [gameView.players, gameView.myPlayerId],
+  );
+  const opponents = useMemo(
+    () => selectOpponents(gameView.players, gameView.myPlayerId),
+    [gameView.players, gameView.myPlayerId],
+  );
+  const mode: InteractionMode = useMemo(
+    () => deriveInteractionMode(pendingDialog),
+    [pendingDialog],
+  );
+  const myPriority = !!me?.hasPriority;
+  const canAct = isBoardClickable(mode, myPriority) && stream != null;
+  const out = useMemo(
+    () =>
+      stream
+        ? {
+            sendObjectClick: (id: string) => stream.sendObjectClick(id),
+            sendPlayerResponse: (
+              mid: number,
+              kind: 'uuid' | 'string' | 'boolean' | 'integer' | 'manaType',
+              v: unknown,
+            ) => stream.sendPlayerResponse(mid, kind, v),
+            clearDialog,
+          }
+        : null,
+    [stream, clearDialog],
+  );
+  const onObjectClick = (id: string) => {
+    if (!out) return;
+    routeObjectClick(mode, id, myPriority, out);
+  };
+
+  // Floating drag preview — was inside Battlefield's render tree;
+  // moved here so it sits at the same DOM level as MyHand and the
+  // pod regions, all under one fixed-position overlay. The card
+  // lookup uses gv.myHand (the only place drag origins are bound
+  // today).
+  const draggedCard: WebCardView | null = useMemo(() => {
+    if (!drag) return null;
+    return gameView.myHand[drag.cardId] ?? null;
+  }, [drag, gameView.myHand]);
 
   return (
     <div
@@ -93,9 +162,15 @@ export function GameTable({ gameView, stream }: Props) {
       // overlap it (technical critic I1).
       style={{
         ['--side-panel-width' as string]: SIDE_PANEL_WIDTH,
+        // Slice 70-F — added a `hand` row between battlefield and
+        // action so MyHand sits in its own region per spec §4. The
+        // side panel still spans every body row on the right.
         gridTemplateAreas:
-          '"header header" "battlefield sidepanel" "action sidepanel"',
-        gridTemplateRows: 'auto 1fr auto',
+          '"header header" ' +
+          '"battlefield sidepanel" ' +
+          '"hand sidepanel" ' +
+          '"action sidepanel"',
+        gridTemplateRows: 'auto 1fr auto auto',
         gridTemplateColumns: `minmax(0, 1fr) ${SIDE_PANEL_WIDTH}`,
       }}
     >
@@ -138,10 +213,53 @@ export function GameTable({ gameView, stream }: Props) {
 
       <main
         data-testid="game-table-battlefield"
-        className="[grid-area:battlefield] min-w-0 min-h-0 flex flex-col"
+        className="[grid-area:battlefield] min-w-0 min-h-0 flex flex-col relative"
       >
-        <Battlefield gv={gameView} stream={stream} />
+        {/*
+          Slice 70-F — particle-drift ambient backdrop. Sits behind
+          the battlefield content via absolute positioning + lower
+          stacking (no z-index needed; the children don't set their
+          own). Reduced-motion silences the keyframe per slice 70-B
+          contract (no data-essential-motion = killed under reduce).
+        */}
+        <div
+          data-testid="particle-drift-layer"
+          aria-hidden="true"
+          className="absolute inset-0 pointer-events-none overflow-hidden"
+        >
+          {/* Slice 70-F critic UI-#2 — opacity-40 wrapper dropped;
+            the keyframe owns the final alpha so the layer is
+            actually visible (per-gradient alphas raised in
+            index.css). */}
+          <div className="animate-particle-drift h-full w-full" />
+        </div>
+
+        <Battlefield
+          gv={gameView}
+          mode={mode}
+          canAct={canAct}
+          onObjectClick={onObjectClick}
+          drag={drag}
+        />
       </main>
+
+      <section
+        data-testid="game-table-hand"
+        className="[grid-area:hand] min-w-0 border-t border-zinc-800 px-4 pb-2"
+        aria-label="Your hand"
+      >
+        {me && (
+          <MyHand
+            hand={gameView.myHand}
+            canAct={canAct}
+            onObjectClick={onObjectClick}
+            isMyTurn={!!me.isActive}
+            hasPriority={!!me.hasPriority}
+            onPointerDown={beginHandPress}
+            draggedCardId={drag?.cardId ?? null}
+          />
+        )}
+      </section>
 
       <aside
         data-testid="game-table-sidepanel"
@@ -162,16 +280,16 @@ export function GameTable({ gameView, stream }: Props) {
           <GameLog />
         </div>
         {/*
-          Slice 70-F will mount CommanderDamageTracker here. Until
-          then, render an unstyled marker div — UI critic Nice-5
-          flagged that the previous `border-t + py-2` empty slot
-          looked like a render glitch. The aria-hidden div with
-          zero content reserves the slot for 70-F without the
-          half-state visual chrome.
+          Slice 70-F — CommanderDamageTracker mounts in the slot
+          70-E reserved. Client-only manual tracker per spec §7.15
+          (the engine does not enforce its accuracy). Hidden when
+          there's no commander game in progress (no command zone
+          entries on any player).
         */}
-        <div
-          data-testid="commander-damage-slot"
-          aria-hidden="true"
+        <CommanderDamageTracker
+          gameId={gameId}
+          gameView={gameView}
+          opponents={opponents}
         />
       </aside>
 
@@ -187,6 +305,36 @@ export function GameTable({ gameView, stream }: Props) {
         The dialog's `right-` offset reads --side-panel-width above
         so its bottom-right shells dock LEFT of the panel. */}
       <GameDialog stream={stream} />
+
+      {/* Slice 70-F — Mulligan modal wraps the engine's gameAsk
+          mulligan flow with the spec §Mulligan full-mode chrome
+          (4-pod "deciding" status panels). Wire contract is
+          unchanged — MulliganModal renders AskDialog inside its
+          modal shell; the response goes through the same
+          sendPlayerResponse path. */}
+      <MulliganModal stream={stream} gameView={gameView} />
+
+      {/* Slice 70-F — floating drag preview moved up from
+          Battlefield. Sits at the GameTable level so it can float
+          over the hand region (now a sibling) as well as the
+          battlefield. fixed + pointer-events-none so it never eats
+          clicks. */}
+      {drag && draggedCard && (
+        <div
+          data-testid="drag-preview"
+          className="fixed pointer-events-none z-50"
+          style={{ left: drag.x + 12, top: drag.y + 12 }}
+        >
+          <div className="inline-flex items-baseline gap-1 px-2 py-1 rounded text-xs border border-fuchsia-500 bg-zinc-900 shadow-lg">
+            <span className="font-medium text-zinc-100">
+              {draggedCard.name}
+            </span>
+            {draggedCard.manaCost && (
+              <ManaCost cost={draggedCard.manaCost} size="sm" />
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

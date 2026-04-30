@@ -65,7 +65,7 @@ function renderInLayoutGroup(node: React.ReactElement) {
 
 describe('GameTable shell', () => {
   it('renders all four regions: header / battlefield / side panel / action', () => {
-    renderInLayoutGroup(<GameTable gameView={makeGameView()} stream={null} />);
+    renderInLayoutGroup(<GameTable gameId="test-game" gameView={makeGameView()} stream={null} />);
     expect(screen.getByTestId('game-table')).toBeInTheDocument();
     expect(screen.getByTestId('game-table-header')).toBeInTheDocument();
     expect(screen.getByTestId('game-table-battlefield')).toBeInTheDocument();
@@ -77,7 +77,7 @@ describe('GameTable shell', () => {
     // Three non-blocking dialogs (gameSelect / gameTarget /
     // gamePlayMana) read this var via right-[calc(var(--side-panel-width)+1rem)]
     // so they dock LEFT of the panel rather than overlapping it.
-    renderInLayoutGroup(<GameTable gameView={makeGameView()} stream={null} />);
+    renderInLayoutGroup(<GameTable gameId="test-game" gameView={makeGameView()} stream={null} />);
     const root = screen.getByTestId('game-table');
     expect(root.style.getPropertyValue('--side-panel-width')).toContain('clamp');
   });
@@ -87,7 +87,7 @@ describe('GameTable shell', () => {
     // separate atomic regions. Slice 70-E moves them from
     // Battlefield to GameTable so unrelated battlefield mutations
     // (cards entering / leaving) don't trigger spurious re-announces.
-    renderInLayoutGroup(<GameTable gameView={makeGameView()} stream={null} />);
+    renderInLayoutGroup(<GameTable gameId="test-game" gameView={makeGameView()} stream={null} />);
     const priority = screen.getByTestId('priority-announcer');
     const elimination = screen.getByTestId('elimination-announcer');
     // Both should be direct children of game-table (not inside the
@@ -98,28 +98,31 @@ describe('GameTable shell', () => {
   });
 
   it('side panel hosts PhaseTimeline + GameLog + CommanderDamageTracker slot', () => {
-    renderInLayoutGroup(<GameTable gameView={makeGameView()} stream={null} />);
+    renderInLayoutGroup(<GameTable gameId="test-game" gameView={makeGameView()} stream={null} />);
     const panel = screen.getByTestId('game-table-sidepanel');
     // GameLog is inside the side panel (was in Game.tsx main flex).
     expect(panel).toContainElement(screen.getByTestId('game-log'));
     // PhaseTimeline placement — was between header and main; now in
     // the side panel above GameLog.
     expect(panel.textContent).toMatch(/Turn|Phase|Beg|Main|Combat|End/i);
-    // Slice 70-F slot for CommanderDamageTracker.
-    expect(panel).toContainElement(
-      screen.getByTestId('commander-damage-slot'),
-    );
+    // Slice 70-F — CommanderDamageTracker renders only when an
+    // opponent has a commander on the wire (commandList entries
+    // with kind="commander"). The base fixture has no commanders,
+    // so the tracker returns null and the slot is absent. The
+    // tracker-render-when-commanders-present case is covered in
+    // CommanderDamageTracker.test.tsx.
+    expect(screen.queryByTestId('commander-damage-tracker')).toBeNull();
   });
 
   it('central focal zone houses the Stack (spec §3)', () => {
     // The Stack moves from below the opponents row to the geometric
     // center between the four pods.
-    renderInLayoutGroup(<GameTable gameView={makeGameView()} stream={null} />);
+    renderInLayoutGroup(<GameTable gameId="test-game" gameView={makeGameView()} stream={null} />);
     expect(screen.getByTestId('central-focal-zone')).toBeInTheDocument();
   });
 
   it('battlefield uses the 4-pod grid (top/left/right/bottom + center)', () => {
-    renderInLayoutGroup(<GameTable gameView={makeGameView()} stream={null} />);
+    renderInLayoutGroup(<GameTable gameId="test-game" gameView={makeGameView()} stream={null} />);
     expect(screen.getByTestId('four-pod-grid')).toBeInTheDocument();
     // Self pod always at bottom; opponent at top for the 1v1 case.
     expect(screen.getByTestId('player-area-self')).toBeInTheDocument();

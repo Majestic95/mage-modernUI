@@ -252,3 +252,16 @@ export const CARD_TARGETED_PULSE_CLASS = 'animate-card-targeted-pulse';
 export const STACK_GLOW_PULSE_PERIOD_MS = 1500;
 export const PLAYER_ACTIVE_HALO_PERIOD_MS = 2000;
 export const CARD_TARGETED_PULSE_PERIOD_MS = 1000;
+
+/**
+ * Slice 70-F (ADR 0011 D5) — ambient particle-drift backdrop. CSS
+ * keyframe defined in src/index.css; consumers apply this class to
+ * an absolutely-positioned div behind the battlefield content.
+ *
+ * <p>Reduced-motion: silenced by the global rule (no
+ * data-essential-motion) — the keyframe is purely aesthetic, not
+ * state-conveying. Slow 60-second cycle to read as "alive" without
+ * distracting from gameplay.
+ */
+export const PARTICLE_DRIFT_CLASS = 'animate-particle-drift';
+export const PARTICLE_DRIFT_PERIOD_MS = 60_000;
