@@ -103,6 +103,23 @@ if [[ -f "$STATE_DIR/ngrok.pid" ]]; then
   fi
 fi
 
+# Defensive: if a previous orchestrator's WebApi JVM survived its bash
+# wrapper (mvn child outliving parent), the port is still bound and
+# the new boot will fail with "Port already in use." Detect via
+# netstat and surface the Windows PID + the wmic command to kill it.
+# We don't kill automatically — could be a legitimate other JVM the
+# operator wants to keep — but tell them exactly what to run.
+if PORT_BIND=$(netstat -ano 2>/dev/null \
+        | grep ":${XMAGE_WEBAPI_PORT} " \
+        | grep LISTENING | awk '{print $5}' | head -1) \
+        && [[ -n "$PORT_BIND" ]]; then
+  err "Port $XMAGE_WEBAPI_PORT is already bound (PID $PORT_BIND)."
+  err "If this is a leftover JVM from a previous orchestrator run, kill it:"
+  err "    wmic process where \"ProcessId=$PORT_BIND\" call terminate"
+  err "Then re-run $0."
+  exit 1
+fi
+
 NGROK_LOG="$STATE_DIR/ngrok.log"
 ngrok http "$XMAGE_WEBAPI_PORT" --log=stdout >"$NGROK_LOG" 2>&1 &
 NGROK_PID=$!
@@ -159,30 +176,78 @@ log "  VITE_XMAGE_WEBAPI_URL = $NGROK_URL"
 cd "$WEBCLIENT_DIR"
 VERCEL_LOG="$STATE_DIR/vercel.log"
 
-# `--yes` skips interactive prompts (uses linked project settings).
-# We pipe through tee so the user sees deploy progress AND we capture
-# the final URL.
-if ! VITE_XMAGE_WEBAPI_URL="$NGROK_URL" \
-       vercel --prod --yes 2>&1 | tee "$VERCEL_LOG"; then
+# Build locally with the env var, then push the prebuilt output to
+# Vercel. Vercel's cloud build path doesn't see local env vars
+# (they need to be configured server-side via `vercel env add`),
+# but the prebuilt path uploads `.vercel/output/` directly so the
+# bundle has VITE_XMAGE_WEBAPI_URL baked in correctly.
+log "  Building bundle locally with VITE_XMAGE_WEBAPI_URL baked in"
+if ! VITE_XMAGE_WEBAPI_URL="$NGROK_URL" npm run build 2>&1 | tail -3; then
+  err "Local webclient build failed"
+  exit 1
+fi
+
+# `vercel build` consumes the local build output and writes
+# `.vercel/output/` in the format Vercel expects. Then `vercel
+# deploy --prebuilt --prod` uploads that directory.
+log "  Wrapping into Vercel build artifact"
+if ! VITE_XMAGE_WEBAPI_URL="$NGROK_URL" vercel build --prod --yes 2>&1 | tail -5; then
+  err "vercel build failed"
+  exit 1
+fi
+
+log "  Uploading prebuilt artifact to Vercel"
+if ! vercel deploy --prebuilt --prod --yes 2>&1 | tee "$VERCEL_LOG"; then
   err "Vercel deploy failed. See $VERCEL_LOG"
   exit 1
 fi
 
-VERCEL_URL=$(grep -Eo 'https://[a-zA-Z0-9.-]+\.vercel\.app' "$VERCEL_LOG" | tail -1)
-if [[ -z "$VERCEL_URL" ]]; then
-  err "Could not parse Vercel URL from output. See $VERCEL_LOG"
+# Extract the project-specific production URL (always present —
+# matches `xmage-playtest-<hash>-<scope>.vercel.app`) and the
+# stable alias (matches `<project>.vercel.app` only — present when
+# the project has a configured alias / production domain).
+#
+# Alias is preferred for the friend-facing URL because:
+#   - Vercel's default deployment protection gates the per-deploy
+#     URL with a 401 for non-team-members; the alias is publicly
+#     reachable.
+#   - The alias is stable across redeploys (a new ngrok URL each
+#     session means a new deploy each session, but friends keep
+#     bookmarking the same alias).
+#
+# CORS allowlist on the server includes BOTH so:
+#   - If the friend hits the alias (the URL we tell them) → match.
+#   - If the friend somehow lands on the per-deploy URL → also match.
+VERCEL_URL_PROD=$(grep -Eo 'https://[a-zA-Z0-9-]+-[a-zA-Z0-9-]+-[a-zA-Z0-9-]+\.vercel\.app' "$VERCEL_LOG" | tail -1)
+VERCEL_URL_ALIAS=$(grep -E '^Aliased:' "$VERCEL_LOG" | grep -Eo 'https://[a-zA-Z0-9-]+\.vercel\.app' | tail -1)
+
+if [[ -z "$VERCEL_URL_PROD" && -z "$VERCEL_URL_ALIAS" ]]; then
+  err "Could not parse any Vercel URL from output. See $VERCEL_LOG"
   exit 1
 fi
+
+VERCEL_URL="${VERCEL_URL_ALIAS:-$VERCEL_URL_PROD}"
 echo "$VERCEL_URL" > "$STATE_DIR/vercel.url"
-log "Vercel deployment: $VERCEL_URL"
+
+# Build the CORS allowlist with both URLs (alias preferred for the
+# friend-facing announcement, but include the per-deploy URL too in
+# case of redirect or direct-link scenarios).
+CORS_ALLOWLIST="$VERCEL_URL,http://localhost:5173,http://localhost:4173"
+if [[ -n "$VERCEL_URL_PROD" && "$VERCEL_URL_PROD" != "$VERCEL_URL" ]]; then
+  CORS_ALLOWLIST="$VERCEL_URL_PROD,$CORS_ALLOWLIST"
+fi
+
+log "Vercel deployment (per-deploy): ${VERCEL_URL_PROD:-<none>}"
+log "Vercel deployment (alias):      ${VERCEL_URL_ALIAS:-<none>}"
+log "Friend-facing URL:              $VERCEL_URL"
 
 # --- 3. Start the WebApi server --------------------------------------
 log "Phase 3 — starting WebApi server (foreground)"
 
 cd "$WEBAPI_DIR"
-export PATH="$JAVA_HOME/bin:$PATH"
+export JAVA_HOME
 export XMAGE_PROFILE=prod
-export XMAGE_CORS_ORIGINS="$VERCEL_URL,http://localhost:5173,http://localhost:4173"
+export XMAGE_CORS_ORIGINS="$CORS_ALLOWLIST"
 export XMAGE_ADMIN_PASSWORD
 export XMAGE_WEBAPI_PORT
 
@@ -205,4 +270,9 @@ cat <<BANNER >&2
 
 BANNER
 
-mvn -q exec:java
+# Delegate to run.sh — owns the canonical mainClass + --add-opens
+# JBoss Remoting reflection-access bundle. Reinventing the mvn
+# invocation here would skip those flags and the engine's JBoss
+# Remoting layer (transitive via mage-server) would crash on JDK
+# 17+ class-load.
+exec ./run.sh
