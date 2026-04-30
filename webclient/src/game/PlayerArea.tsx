@@ -202,6 +202,12 @@ export function PlayerArea({
       <div
         data-testid={`player-area-${perspective}`}
         data-position={position}
+        // Slice 70-N — exposes the player's UUID so the StackZone
+        // combat-mode arrow renderer can target the defending
+        // player's pod (defender of attacker → defender arrows
+        // when the attacker isn't blocked). REDESIGN-branch only;
+        // legacy markup below leaves it off intentionally.
+        data-player-id={player.playerId}
         data-droppable="board"
         data-drop-target={isDropTarget || undefined}
         data-active={player.isActive || undefined}

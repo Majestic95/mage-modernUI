@@ -218,7 +218,14 @@ export function Battlefield({
           data-testid="central-focal-zone"
           className="flex items-center justify-center min-h-0"
         >
-          <StackZone stack={gv.stack} />
+          {/* Slice 70-N — combat threaded through so the REDESIGN
+              focal-zone renderer can switch to combat-arrow mode
+              when stack is empty AND combat is in progress
+              (catalog §3.2). gv.combat is already memoized into
+              combatRoles above; pass the raw groups here so
+              StackZone can map attackers → defenders / blockers
+              by ID. Legacy branch ignores the prop. */}
+          <StackZone stack={gv.stack} combat={gv.combat} />
         </div>
 
         {/* Self pod — bottom of the 4-pod arrangement. */}

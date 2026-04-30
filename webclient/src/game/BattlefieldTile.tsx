@@ -90,6 +90,14 @@ export function BattlefieldTile({
         <button
           type="button"
           data-testid="permanent"
+          // Slice 70-N — exposes the permanent's underlying card UUID
+          // (== {@code perm.card.id}) so the StackZone combat-mode
+          // arrow renderer can {@code querySelector} for the
+          // attacker's bounding rect by ID. The button (not the
+          // outer slot) carries the attribute so the arrow anchors
+          // on the rendered card surface, not on whitespace inside
+          // the slot.
+          data-permanent-id={perm.card.id}
           data-tapped={tapped}
           data-combat-eligible={isEligibleCombat || undefined}
           data-combat-role={combatRole ?? undefined}

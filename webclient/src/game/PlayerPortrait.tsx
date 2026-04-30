@@ -148,6 +148,14 @@ export function PlayerPortrait({
     <div
       data-testid="player-portrait"
       data-size={size}
+      // Slice 70-N — exposes the player's UUID on the portrait
+      // wrapper specifically, so the combat-arrow geometry hook in
+      // StackZone can target the PORTRAIT (per picture-catalog §3.2:
+      // "Arrow target: the defending player's portrait OR the
+      // blocking creature's BattlefieldTile") rather than the
+      // outer pod center. Preserves the data-player-id on PlayerArea
+      // as a fallback for legacy or pod-level selectors.
+      data-portrait-target-player-id={player.playerId}
       data-eliminated={eliminated || undefined}
       data-disconnected={disconnected || undefined}
       role="img"
