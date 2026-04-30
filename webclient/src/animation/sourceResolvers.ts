@@ -64,6 +64,31 @@ export function resolveFocalZoneCenter(): { x: number; y: number } | null {
 }
 
 /**
+ * Resolve a battlefield tile's bbox by cardId. Uses the
+ * {@code data-card-id} attribute that BattlefieldRowGroup emits on
+ * each motion.div. Used by ImpactOverlay (slice 70-Z.4 critic
+ * CRIT-1 fix) to capture the dying tile's screen position at
+ * event-handler time, before React re-renders without the card.
+ */
+export function resolveTileBBox(cardId: string): {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+} | null {
+  if (typeof document === 'undefined') return null;
+  const el = document.querySelector(`[data-card-id="${cardId}"]`);
+  if (!el) return null;
+  const rect = (el as Element).getBoundingClientRect();
+  return {
+    left: rect.left,
+    top: rect.top,
+    width: rect.width,
+    height: rect.height,
+  };
+}
+
+/**
  * Resolve the destination portrait center for a commander_returned
  * event. Uses {@code data-portrait-target-player-id} (the same
  * selector StackZone's combat arrows use, slice 70-N).

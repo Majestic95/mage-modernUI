@@ -108,16 +108,12 @@ export function BattlefieldRowGroup({
               layout
               layoutId={layoutId}
               data-layout-id={layoutId}
+              data-card-id={perm.card.cardId || undefined}
               initial={{ opacity: 0, y: 24, scale: 0.85 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -16, scale: 0.85 }}
               transition={slow(BATTLEFIELD_ENTER_EXIT)}
               // Slice 70-K.1 + 70-Z.1 — flex-shrink-able SQUARE slot.
-              // `aspect-square` forces width:height = 1:1 so the slot
-              // shrinks uniformly in both dimensions when the main
-              // axis tightens. flex: 1 1 0 distributes available main-
-              // axis space equally; min-(width|height): 0 lets the
-              // child shrink below its intrinsic content size.
               className="aspect-square"
               style={
                 isVertical

@@ -201,6 +201,93 @@ body {
 }
 
 /*
+ * Slice 70-Z.4 — impact-tier (C) keyframes. Three flavors:
+ * dust-crumple (creature death), bright-dissolve (exile), and the
+ * shared particle-drift used by both. Each is consumed inline by
+ * the per-tile components (DustParticles, BrightDissolveParticles)
+ * via `animation: <name> Xms ...`. The board-wipe ripple keyframe
+ * lives separately because it animates a transform/opacity on a
+ * fixed-position div, not on the tile itself.
+ *
+ * Reduced motion: all four are non-essential and silenced by the
+ * global `@media (prefers-reduced-motion: reduce)` rule below.
+ * Card body fades to invisible (0.01ms) so the visual impact is
+ * skipped while the card's removal-from-DOM still happens through
+ * the normal AnimatePresence exit path.
+ */
+@keyframes card-dust-crumple {
+  /* Slice 70-Z.4 critic UI/UX-IMP-2 fix — initial 0-8% impact
+   * flash brightens the card briefly so the death reads as
+   * "killed" (impact moment) rather than "fading away." The
+   * subsequent 8-100% ramp is the original dust crumple (darken
+   * + blur + scale-down). */
+  0% {
+    opacity: 1;
+    transform: scale(1);
+    filter: brightness(1) saturate(1);
+  }
+  8% {
+    opacity: 1;
+    transform: scale(1.04);
+    filter: brightness(1.4) saturate(1.5);
+  }
+  60% {
+    opacity: 0.55;
+    transform: scale(0.92);
+    filter: brightness(0.7) saturate(0.5) blur(0.5px);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.85);
+    filter: brightness(0.4) saturate(0) blur(2px);
+  }
+}
+
+@keyframes card-bright-dissolve {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+    filter: brightness(1) saturate(1);
+  }
+  40% {
+    opacity: 0.9;
+    transform: scale(1.04);
+    filter: brightness(2.2) saturate(0.3);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.05);
+    filter: brightness(3) saturate(0);
+  }
+}
+
+@keyframes dust-particle-drift {
+  0% {
+    opacity: 0.85;
+    transform: translate(0, 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--p-dx, 0), var(--p-dy, 24px)) scale(0.4);
+  }
+}
+
+@keyframes board-wipe-ripple {
+  0% {
+    transform: scale(0);
+    opacity: 0.55;
+  }
+  60% {
+    transform: scale(0.9);
+    opacity: 0.35;
+  }
+  100% {
+    transform: scale(1.1);
+    opacity: 0;
+  }
+}
+
+/*
  * Slice 70-G (critic UX-3) — brief flash on a CommanderDamage row
  * when its value changes. The wrapper animates a 1.0 → 1.06 → 1.0
  * scale + a subtle bg-tint flash, providing per-click feedback

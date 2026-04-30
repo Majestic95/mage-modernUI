@@ -291,6 +291,94 @@ describe('CardAnimationLayer — reduced motion', () => {
   });
 });
 
+describe('CardAnimationLayer — impact tier (slice 70-Z.4)', () => {
+  function injectTile(cardId: string): HTMLElement {
+    const tile = document.createElement('div');
+    tile.setAttribute('data-card-id', cardId);
+    tile.getBoundingClientRect = () =>
+      ({ left: 200, top: 300, width: 80, height: 112, right: 280, bottom: 412, x: 200, y: 300, toJSON: () => ({}) }) as DOMRect;
+    document.body.appendChild(tile);
+    return tile;
+  }
+
+  it('mounts tile-dust-overlay when creature_died fires for a tile in the DOM', () => {
+    const card = makeCard('card-died', 'Bear Cub', ['CREATURE']);
+    act(() => {
+      useGameStore.setState({ gameView: makeGameView(card) });
+    });
+    const tile = injectTile(card.cardId);
+    renderLayer();
+    act(() => {
+      emit({ kind: 'creature_died', cardId: card.cardId, ownerSeat: 0 });
+    });
+    expect(screen.getByTestId('tile-dust-overlay')).toBeInTheDocument();
+    document.body.removeChild(tile);
+  });
+
+  it('mounts tile-exile-overlay when permanent_exiled fires', () => {
+    const card = makeCard('card-exiled', 'Sol Ring', ['ARTIFACT']);
+    act(() => {
+      useGameStore.setState({ gameView: makeGameView(card) });
+    });
+    const tile = injectTile(card.cardId);
+    renderLayer();
+    act(() => {
+      emit({ kind: 'permanent_exiled', cardId: card.cardId, ownerSeat: 0 });
+    });
+    expect(screen.getByTestId('tile-exile-overlay')).toBeInTheDocument();
+    document.body.removeChild(tile);
+  });
+
+  it('mounts board-wipe-ripple on board_wipe events', () => {
+    const card = makeCard('card-wipe', 'Bear', ['CREATURE']);
+    act(() => {
+      useGameStore.setState({ gameView: makeGameView(card) });
+    });
+    // Inject a portrait element so resolvePortraitCenter finds it.
+    const portrait = document.createElement('div');
+    portrait.setAttribute('data-portrait-target-player-id', 'pid-0');
+    portrait.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 200, height: 200, right: 200, bottom: 200, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+    document.body.appendChild(portrait);
+
+    renderLayer();
+    act(() => {
+      emit({
+        kind: 'board_wipe',
+        cardIds: ['c1', 'c2', 'c3'],
+        epicenterSeat: 0,
+      });
+    });
+    expect(screen.getByTestId('board-wipe-ripple')).toBeInTheDocument();
+    document.body.removeChild(portrait);
+  });
+
+  it('does NOT mount impact overlays when prefers-reduced-motion is set', () => {
+    window.matchMedia = vi.fn().mockImplementation((q: string) => ({
+      matches: q.includes('reduce'),
+      media: q,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })) as typeof window.matchMedia;
+    const card = makeCard('card-reduced', 'Bear', ['CREATURE']);
+    act(() => {
+      useGameStore.setState({ gameView: makeGameView(card) });
+    });
+    const tile = injectTile(card.cardId);
+    renderLayer();
+    act(() => {
+      emit({ kind: 'creature_died', cardId: card.cardId, ownerSeat: 0 });
+    });
+    expect(screen.queryByTestId('tile-dust-overlay')).toBeNull();
+    expect(screen.queryByTestId('board-wipe-ripple')).toBeNull();
+    document.body.removeChild(tile);
+  });
+});
+
 describe('CardAnimationLayer — commander_returned', () => {
   it('does NOT mount the glide if no portrait DOM element matches the playerId', () => {
     // jsdom won't have a real PlayerPortrait mounted in this isolated

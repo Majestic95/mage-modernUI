@@ -490,6 +490,61 @@ The following EXIST in the current code but should be **removed or relocated**:
 
 ---
 
+## Region 7 — Card animation system (transient overlays)
+
+> **Slice 70-Z.2 / 70-Z.3 / 70-Z.4 (user direction 2026-04-30):** three named animation tiers vary by gameplay context. Standard glides for routine plays; cinematic poses for the spells that should pull the eye; in-place impacts for the moment of destruction. The seam is one diff function (`gameDelta.diffGameViews`) → typed events on a module-singleton bus → the `CardAnimationLayer` overlay portal that mounts the appropriate visuals.
+
+### 7.0 Three tiers
+
+| Tier | Trigger | Visual |
+|---|---|---|
+| **B (standard)** | Default for any cast / resolve / move-zone | Cross-zone Framer `layoutId` glide via `LAYOUT_GLIDE` spring (stiffness 280 / damping 26 / mass 0.7). Already wired pre-redesign; the seam keeps it as the "do nothing extra" path. |
+| **A (cinematic)** | Commander cast OR planeswalker cast OR `manaValue ≥ 7` | 1.5× scale focal pose at the central focal zone center, holds for `CINEMATIC_HOLD_MS` (250ms), color-tinted ribbon trail along an arcing quadratic-Bezier path. |
+| **C (impact)** | Per-event (creature death, permanent exiled, board wipe, commander returned) | In-place keyframe (dust crumple / bright dissolve) + per-tile particle field. Board wipe synthesizes a single radial-gradient ripple at the epicenter pod. |
+
+### 7.1 Cinematic cast (A)
+
+- **Threshold rationale:** commander + planeswalker casts deserve flair as named board-state-defining moments. CMC ≥ 7 is the de facto "big spell" threshold in commander format with mana acceleration. Below 7, the vast majority of casts are routine and shouldn't earn a 650ms interruption.
+- **Casting pose:** card flies (via `layoutId={cardId}` cross-zone interpolation) from the cast source bbox to the central focal zone center, scales to 1.5× of `--card-size-focal`, holds for 250ms, then unmounts. The StackZone focal tile (which has the same `layoutId`) is gated by `useIsCinematicCastActive` and renders null during the hold so two motion.divs with the same id don't collide.
+- **Ribbon trail:** SVG quadratic-Bezier path from cast source to focal-zone center. Single-color spells use `manaTokenForCode` per color; multicolor uses an SVG `<linearGradient>` with one stop per color. `stroke-dashoffset` animates from `var(--ribbon-length)` to 0 over 600ms (drawing the line), then opacity fades the last 40%.
+- **Source bbox:** `from === 'hand'` resolves to `[data-testid="my-hand"]`; opponent casts resolve via `[data-player-id="${ownerPlayerId}"]` (NOT seat→position — see slice 70-Z.3 critic CRIT-1: seat indexes don't survive non-seat-0 local players).
+- **Destination bbox:** `[data-testid="central-focal-zone"]` — the grid's center cell, NOT viewport center (which is offset by side-panel width).
+
+### 7.2 Commander return (still A-tier — overlay-rendered, glide trajectory)
+
+- **Trigger:** `commander_returned` — a commander left the battlefield WITHOUT entering graveyard or exile (the player chose to redirect to the command zone).
+- **Destination:** the player's `PlayerPortrait` (per §6.3 the visible CommandZone strip was removed; the portrait is the canonical commander surface).
+- **Trajectory:** Framer `layoutId` interpolates the card from its battlefield bbox to the portrait position. 600ms tween with `ease: [0.25, 0.1, 0.25, 1]` (slower than LAYOUT_GLIDE's spring; "deliberate flight" reads better than spring's "alive bounce" for this slow event).
+- **Card payload:** stub reconstructed from `commandList[].name` + `imageNumber` (synthesized as `cardNumber` so the scryfall image lookup resolves). Other fields (mana cost, P/T) are blank — fine because the 600ms glide is brief.
+
+### 7.3 Impact (C)
+
+- **Creature death** (`creature_died`): an `ImpactOverlay` mounts at the dying tile's bbox (captured via `[data-card-id="..."]` at event-handler time) and runs the `card-dust-crumple` keyframe over 600ms — initial **0–8% impact flash** (brightness 1→1.4, scale 1→1.04) reads as the killing blow, then 8–100% dust (opacity 1→0, scale 1.04→0.85, brightness 1.4→0.4, blur 0→2px). 10 dust particles drift downward with random lateral spread; earthy `rgba(82, 82, 91, 0.85)` palette. The original tile's AnimatePresence exit (default B-glide) runs in parallel beneath the overlay so the underlying card visually fades while the overlay paints the disintegration above it.
+- **Permanent exiled** (`permanent_exiled`): same overlay mechanism, runs `card-bright-dissolve` keyframe (brightness peak 2.2× at 40%, ramps to 3× at 100% with opacity 0; scale 1→1.05 expansion) over 500ms. 16 white-violet particles `rgba(216, 180, 254, 0.9)` burst RADIALLY (full 360° spread). Distinct geometry + palette so death and exile read differently.
+- **Board wipe** (`board_wipe` — synthesized when ≥2 destruction events fire in one snapshot): one fixed-position radial-gradient ripple mounts at the **epicenter pod's portrait** (resolved via `[data-portrait-target-player-id]`, NOT the slot-split-ambiguous `[data-player-id]`). Base diameter 2000px (covers any practical viewport), 700ms keyframe (`board-wipe-ripple`): scale 0→1.1, opacity 0.55→0. Reads as a screen-spanning shockwave, not a localized bloom. Per-permanent overlays stagger by `BOARD_WIPE_STAGGER_MS` (80ms) so the wave reads outward from the epicenter.
+- **Performance budget:** `MAX_CONCURRENT_DISINTEGRATES = 4`. A wipe destroying ≥5 permanents animates the first 4; surplus get the default B-glide exit alone. Single ripple still fires regardless.
+- **Why a layer overlay (not in-tile keyframe):** AnimatePresence in BattlefieldRowGroup snapshots a child's exit props at the LAST render where the child was present. By the time the snapshot diff fires `creature_died`, the dying card has already been removed from the row's `permanents` array — its motion.div's exit props were captured BEFORE the event fired (with no impact branch). Layer-rendering the impact at the captured bbox sidesteps the AnimatePresence freezing problem (slice 70-Z.4 critic CRIT-1 redesign).
+
+### 7.4 Reduced motion contract
+
+- The Framer `layoutId` cross-zone glide via `LAYOUT_GLIDE` is **essential motion** (it conveys "card moved zones") and is preserved under `prefers-reduced-motion: reduce` via the existing `data-essential-motion` opt-out.
+- All decorative overlays — casting pose, ribbon trail, commander-return glide, dust crumple, bright dissolve, board-wipe ripple, per-tile particles — are gated at `CardAnimationLayer`'s event-handler boundary (`prefersReducedMotion()` per-call). When reduce is set, the layer emits NO overlays; tiles get the default B glide.
+- The CSS keyframes (`card-dust-crumple`, `card-bright-dissolve`, `dust-particle-drift`, `board-wipe-ripple`, `ribbon-sweep`) are also silenced by the global `@media (prefers-reduced-motion: reduce)` rule in `index.css` as belt-and-suspenders.
+- **Known limitation (slice 70-Z.3 critic IMP-3):** `commander_returned` under reduced motion produces a silent disappearance — there's no destination layoutId match for the command zone (which has its own id space, disjoint from cardId), so without the overlay the card has nothing to glide TO. Acceptable per the catalog's "decorative overlays may drop entirely under reduce" rule.
+
+### 7.5 z-index ladder
+
+- **Animation overlays:** `z-[35]` (CardAnimationLayer container).
+- **Side panel + floating action dock:** `z-30` — overlays paint over table chrome.
+- **Interactive dialogs (GameDialog, ZoneBrowser, ConcedeConfirm, GameEndOverlay banner, TargetingArrow):** `z-40` — interactive surfaces ALWAYS paint over decorative overlays. Catalog rule: a cinematic-cast pose must NEVER obscure a target-confirmation dialog.
+- **HoverCardDetail portal:** `z-50` — naturally floats above the layer when the user hovers a card.
+
+### 7.6 Counterspell visual fidelity (known limitation)
+
+The wire does NOT flag countered vs. resolved. For permanent-type spells (commander, planeswalker, creature, artifact, enchantment, battle), the diff cleanly distinguishes "left stack but did not enter battlefield = countered" — these emit `countered`. For instants and sorceries, both "resolved normally" and "countered" land in the graveyard, so the diff cannot tell them apart and emits `resolve_to_grave` for either case. A countered Lightning Bolt looks identical to a resolved one. **Documented limitation per user direction 2026-04-30** ("Permanents only" — simplest, never lies). Future slice could parse log-text "countered" markers if it becomes user-visible.
+
+---
+
 ## Universal halo glow (load-bearing rule)
 
 > **User directive 2026-04-30, slice 70-N.1:**

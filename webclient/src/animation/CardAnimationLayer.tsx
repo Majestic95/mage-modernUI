@@ -8,14 +8,27 @@ import {
 import { CastingPoseOverlay } from './CastingPoseOverlay';
 import { RibbonTrail } from './RibbonTrail';
 import { CommanderReturnGlide } from './CommanderReturnGlide';
+import { BoardWipeRipple } from './BoardWipeRipple';
+import { ImpactOverlay } from './ImpactOverlay';
 import {
   resolveCastSourceCenter,
   resolveCommanderReturnTarget,
   resolveFocalZoneCenter,
+  resolveTileBBox,
   stubCardFromCommandList,
 } from './sourceResolvers';
+import {
+  BOARD_WIPE_STAGGER_MS,
+  MAX_CONCURRENT_DISINTEGRATES,
+} from './transitions';
 import { useGameStore } from '../game/store';
 import type { WebCardView } from '../api/schemas';
+
+interface ActiveImpact {
+  kind: 'dust' | 'exile';
+  bbox: { left: number; top: number; width: number; height: number };
+  staggerMs: number;
+}
 
 interface ActiveCinematic {
   card: WebCardView;
@@ -75,6 +88,12 @@ export function CardAnimationLayer(): React.JSX.Element {
   const [activeReturns, setActiveReturns] = useState<
     Map<string, ActiveReturn>
   >(() => new Map());
+  const [activeRipples, setActiveRipples] = useState<
+    Map<string, { center: { x: number; y: number } }>
+  >(() => new Map());
+  const [activeImpacts, setActiveImpacts] = useState<
+    Map<string, ActiveImpact>
+  >(() => new Map());
 
   // Cast subscription — when a cinematic cast fires, capture the
   // card payload + add to the active-cinematic map so the overlay
@@ -109,6 +128,121 @@ export function CardAnimationLayer(): React.JSX.Element {
       setActiveCinematic((prev) => {
         const next = new Map(prev);
         next.set(evt.cardId, { card, sourceCenter, targetCenter });
+        return next;
+      });
+    });
+  }, []);
+
+  // creature_died / permanent_exiled subscriptions — slice 70-Z.4
+  // critic CRIT-1 redesign. Capture the dying tile's bbox at
+  // event-handler time (the synchronous Zustand subscribe path
+  // means the tile is still in the DOM when we read it; React
+  // hasn't yet re-rendered with the dying card removed). Mount an
+  // ImpactOverlay at that bbox to play the dust/dissolve keyframe
+  // and particle field.
+  //
+  // BattlefieldRowGroup's AnimatePresence still runs its default
+  // B-glide exit on the dying motion.div in parallel — that fades
+  // the underlying card away while the ImpactOverlay paints the
+  // disintegration above it. The overlay-based approach sidesteps
+  // the AnimatePresence-snapshots-stale-props bug from the first
+  // pass: there's no need for BattlefieldRowGroup to know the
+  // exitKind because the impact visual is layer-rendered, not
+  // tile-rendered. Map leak (CRIT-2) also resolved — every
+  // ImpactOverlay self-cleans via onComplete.
+  //
+  // Reduced motion: skip mounting entirely so the tile gets the
+  // default B-glide exit alone (no decoration).
+  useEffect(() => {
+    const offDied = on('creature_died', (evt) => {
+      if (prefersReducedMotion()) return;
+      const bbox = resolveTileBBox(evt.cardId);
+      if (!bbox) return;
+      countAgainstBudget(() => {
+        setActiveImpacts((prev) => {
+          const next = new Map(prev);
+          next.set(evt.cardId, { kind: 'dust', bbox, staggerMs: 0 });
+          return next;
+        });
+      });
+    });
+    const offExiled = on('permanent_exiled', (evt) => {
+      if (prefersReducedMotion()) return;
+      const bbox = resolveTileBBox(evt.cardId);
+      if (!bbox) return;
+      countAgainstBudget(() => {
+        setActiveImpacts((prev) => {
+          const next = new Map(prev);
+          next.set(evt.cardId, { kind: 'exile', bbox, staggerMs: 0 });
+          return next;
+        });
+      });
+    });
+    return () => {
+      offDied();
+      offExiled();
+    };
+  }, []);
+
+  // board_wipe subscription — single screen-pulse ripple at the
+  // epicenter pod's center, plus per-permanent dust/dissolve
+  // impacts staggered by BOARD_WIPE_STAGGER_MS so the wave reads.
+  //
+  // Slice 70-Z.4 critic CRIT-2 + IMPORTANT-1 fix: the per-permanent
+  // creature_died / permanent_exiled events fire FIRST (they're
+  // emitted by gameDelta before the synthesized board_wipe event,
+  // see gameDelta.ts ordering), populating activeImpacts with
+  // staggerMs=0. When board_wipe arrives, we re-write each cardId's
+  // entry with staggerMs = index * BOARD_WIPE_STAGGER_MS so the
+  // wave reads as outward propagation from the epicenter.
+  useEffect(() => {
+    return on('board_wipe', (evt) => {
+      if (prefersReducedMotion()) return;
+      const gv = useGameStore.getState().gameView;
+      if (!gv) return;
+      const player = gv.players[evt.epicenterSeat];
+      if (!player) return;
+      // Use the portrait selector (unique per player) instead of
+      // data-player-id (which has multiple matches on the local
+      // pod's slot-split). Slice 70-Z.4 critic UI/UX-CRIT-4 fix.
+      const portraitEl =
+        typeof document !== 'undefined'
+          ? document.querySelector(
+              `[data-portrait-target-player-id="${player.playerId}"]`,
+            )
+          : null;
+      let center: { x: number; y: number };
+      if (portraitEl) {
+        const rect = (portraitEl as Element).getBoundingClientRect();
+        center = {
+          x: rect.left + rect.width / 2,
+          y: rect.top + rect.height / 2,
+        };
+      } else {
+        center = {
+          x: typeof window !== 'undefined' ? window.innerWidth / 2 : 0,
+          y: typeof window !== 'undefined' ? window.innerHeight / 2 : 0,
+        };
+      }
+      const rippleId = evt.cardIds.join('|');
+      setActiveRipples((prev) => {
+        const next = new Map(prev);
+        next.set(rippleId, { center });
+        return next;
+      });
+
+      // Re-write each impacted cardId's entry with a staggered
+      // animationDelay matching its index in the wipe.
+      setActiveImpacts((prev) => {
+        const next = new Map(prev);
+        evt.cardIds.forEach((cardId, idx) => {
+          const existing = next.get(cardId);
+          if (!existing) return;
+          next.set(cardId, {
+            ...existing,
+            staggerMs: idx * BOARD_WIPE_STAGGER_MS,
+          });
+        });
         return next;
       });
     });
@@ -198,8 +332,62 @@ export function CardAnimationLayer(): React.JSX.Element {
           }}
         />
       ))}
+      {Array.from(activeRipples.entries()).map(([rippleId, entry]) => (
+        <BoardWipeRipple
+          key={`ripple-${rippleId}`}
+          center={entry.center}
+          onComplete={() => {
+            setActiveRipples((prev) => {
+              if (!prev.has(rippleId)) return prev;
+              const next = new Map(prev);
+              next.delete(rippleId);
+              return next;
+            });
+          }}
+        />
+      ))}
+      {Array.from(activeImpacts.entries()).map(([cardId, entry]) => (
+        <ImpactOverlay
+          key={`impact-${cardId}`}
+          cardId={cardId}
+          kind={entry.kind}
+          bbox={entry.bbox}
+          staggerMs={entry.staggerMs}
+          onComplete={() => {
+            setActiveImpacts((prev) => {
+              if (!prev.has(cardId)) return prev;
+              const next = new Map(prev);
+              next.delete(cardId);
+              return next;
+            });
+          }}
+        />
+      ))}
     </div>
   );
+}
+
+/**
+ * Slice 70-Z.4 — performance budget enforcement. Caps the number of
+ * concurrent disintegrate animations so a 5+ permanent board wipe
+ * doesn't spawn 50+ motion.divs. The first MAX_CONCURRENT_DISINTEGRATES
+ * destructions get the visual treatment; surplus snap to graveyard
+ * via the standard B glide. The board-wipe ripple still fires once
+ * regardless.
+ *
+ * <p><b>Counter:</b> increments on each populate; decrements on
+ * setTimeout matching the longer of dust/exile durations. Race-free
+ * because both increments and decrements happen on the JS main
+ * thread.
+ */
+let activeDisintegrateCount = 0;
+function countAgainstBudget(populate: () => void): void {
+  if (activeDisintegrateCount >= MAX_CONCURRENT_DISINTEGRATES) return;
+  populate();
+  activeDisintegrateCount += 1;
+  setTimeout(() => {
+    activeDisintegrateCount = Math.max(0, activeDisintegrateCount - 1);
+  }, 700);
 }
 
 /**
