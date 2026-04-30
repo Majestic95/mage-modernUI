@@ -1,13 +1,29 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { CommanderDamageTracker } from './CommanderDamageTracker';
 import {
   webGameViewSchema,
   webPlayerViewSchema,
   type WebGameView,
   type WebPlayerView,
 } from '../api/schemas';
+
+// Slice 70-L — flag-mock at file level. Existing 8 tests run
+// against REDESIGN=false; new 2×2-grid tests flip the flag on.
+const flagState = vi.hoisted(() => ({
+  redesign: false,
+  keepEliminated: true,
+}));
+vi.mock('../featureFlags', () => ({
+  get REDESIGN() {
+    return flagState.redesign;
+  },
+  get KEEP_ELIMINATED() {
+    return flagState.keepEliminated;
+  },
+}));
+
+import { CommanderDamageTracker } from './CommanderDamageTracker';
 
 function makeOpponent(name: string, commanderName?: string): WebPlayerView {
   return webPlayerViewSchema.parse({
@@ -254,5 +270,132 @@ describe('CommanderDamageTracker', () => {
     expect(
       screen.getByTestId('cmdr-dmg-value-alice-id-alice-cmdr-id').textContent,
     ).toBe('0');
+  });
+});
+
+// Slice 70-L — REDESIGN flag tests for the 2×2 grid layout.
+describe('CommanderDamageTracker — REDESIGN flag on (slice 70-L, picture-catalog §5.B)', () => {
+  beforeEach(() => {
+    flagState.redesign = true;
+    localStorage.clear();
+  });
+  afterEach(() => {
+    flagState.redesign = false;
+  });
+
+  it('renders cells (not rows) when redesign is on', () => {
+    const opps = [
+      makeOpponent('alice', 'Atraxa'),
+      makeOpponent('bob', 'Korvold'),
+      makeOpponent('carol', 'Meren'),
+    ];
+    render(
+      <CommanderDamageTracker
+        gameId="g1"
+        gameView={makeGameView(opps)}
+        opponents={opps}
+      />,
+    );
+    // Redesign attribute on the section root.
+    expect(
+      screen.getByTestId('commander-damage-tracker'),
+    ).toHaveAttribute('data-redesign', 'true');
+    // Per-cell test ids exist for each opponent commander.
+    expect(
+      screen.getByTestId('cmdr-dmg-cell-alice-id-alice-cmdr-id'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId('cmdr-dmg-cell-bob-id-bob-cmdr-id'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId('cmdr-dmg-cell-carol-id-carol-cmdr-id'),
+    ).toBeInTheDocument();
+  });
+
+  it('each cell hosts a PlayerPortrait (small, no halo)', () => {
+    const opps = [makeOpponent('alice', 'Atraxa')];
+    render(
+      <CommanderDamageTracker
+        gameId="g1"
+        gameView={makeGameView(opps)}
+        opponents={opps}
+      />,
+    );
+    const cell = screen.getByTestId('cmdr-dmg-cell-alice-id-alice-cmdr-id');
+    const portrait = within(cell).getByTestId('player-portrait');
+    expect(portrait).toHaveAttribute('data-size', 'small');
+    // Halo suppressed in commander-damage cells per picture-catalog
+    // §5.B (the cell border + lethal ring is the visual signal,
+    // not a per-cell halo).
+    expect(within(cell).queryByTestId('player-portrait-halo')).toBeNull();
+  });
+
+  it('lethal damage threshold (≥21) flags data-lethal + ring', async () => {
+    localStorage.setItem(
+      'mage-cmdr-dmg:g1:alice-id:alice-cmdr-id',
+      '21',
+    );
+    const opps = [makeOpponent('alice', 'Atraxa')];
+    render(
+      <CommanderDamageTracker
+        gameId="g1"
+        gameView={makeGameView(opps)}
+        opponents={opps}
+      />,
+    );
+    const cell = screen.getByTestId(
+      'cmdr-dmg-cell-alice-id-alice-cmdr-id',
+    );
+    expect(cell).toHaveAttribute('data-lethal', 'true');
+  });
+
+  it('+/- buttons still work in cells', async () => {
+    const opps = [makeOpponent('alice', 'Atraxa')];
+    render(
+      <CommanderDamageTracker
+        gameId="g1"
+        gameView={makeGameView(opps)}
+        opponents={opps}
+      />,
+    );
+    const value = screen.getByTestId(
+      'cmdr-dmg-value-alice-id-alice-cmdr-id',
+    );
+    expect(value.textContent).toBe('0');
+    const buttons = screen.getAllByLabelText(/Increment.*damage to you/);
+    await userEvent.click(buttons[0]!);
+    await userEvent.click(buttons[0]!);
+    await userEvent.click(buttons[0]!);
+    expect(value.textContent).toBe('3');
+  });
+
+  it('cell layout uses CSS Grid 2-cols', () => {
+    const opps = [
+      makeOpponent('alice', 'Atraxa'),
+      makeOpponent('bob', 'Korvold'),
+    ];
+    render(
+      <CommanderDamageTracker
+        gameId="g1"
+        gameView={makeGameView(opps)}
+        opponents={opps}
+      />,
+    );
+    const tracker = screen.getByTestId('commander-damage-tracker');
+    // The grid container is the only child div with grid-cols-2 class.
+    const grid = tracker.querySelector('.grid.grid-cols-2');
+    expect(grid).not.toBeNull();
+  });
+
+  it('hides entirely when no commander entries (non-Commander format)', () => {
+    const opps = [makeOpponent('alice')]; // no commander
+    const { container } = render(
+      <CommanderDamageTracker
+        gameId="g1"
+        gameView={makeGameView(opps)}
+        opponents={opps}
+      />,
+    );
+    expect(container).toBeEmptyDOMElement();
   });
 });

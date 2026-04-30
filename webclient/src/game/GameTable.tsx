@@ -298,7 +298,10 @@ export function GameTable({ gameId, gameView, stream }: Props) {
           intrinsic content height, breaking auto-scroll-to-bottom.
         */}
         <div className="flex-1 min-h-0 flex flex-col">
-          <GameLog />
+          {/* Slice 70-L — players prop drives the redesigned
+              game-log avatar resolution. Legacy log path
+              ignores it cleanly (default = empty list). */}
+          <GameLog players={gameView.players} />
         </div>
         {/*
           Slice 70-F — CommanderDamageTracker mounts in the slot

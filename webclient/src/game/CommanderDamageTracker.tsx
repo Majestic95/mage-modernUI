@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { WebGameView, WebPlayerView } from '../api/schemas';
+import { REDESIGN } from '../featureFlags';
 import { LifeCounter } from './LifeCounter';
+import { PlayerPortrait } from './PlayerPortrait';
 
 /**
  * Slice 70-F (ADR 0011 D5) — manual commander-damage tracker per
@@ -35,6 +37,14 @@ interface CommanderRow {
   opponentName: string;
   commanderId: string;
   commanderName: string;
+  /**
+   * Slice 70-L — full opponent view so the redesign branch can
+   * pass it to PlayerPortrait for art resolution. Optional in
+   * the type for back-compat with any test that constructs rows
+   * synthetically without a full player view; the redesign
+   * branch falls back to the no-portrait layout when absent.
+   */
+  opponent?: WebPlayerView;
 }
 
 const STORAGE_KEY_PREFIX = 'mage-cmdr-dmg';
@@ -55,11 +65,41 @@ export function CommanderDamageTracker({ gameId, gameView, opponents }: Props) {
         opponentName: opp.name || 'Unknown',
         commanderId: co.id,
         commanderName: co.name || 'Unknown commander',
+        opponent: opp,
       })),
   );
 
   if (rows.length === 0) {
     return null;
+  }
+
+  // Slice 70-L (redesign push, picture-catalog §5.B) — 2×2 grid
+  // when the redesign flag is on. Each cell shows the opponent's
+  // commander portrait + damage number in a compact form.
+  // Threshold-flash + lethal-ring + localStorage persistence + per-
+  // game-cycle remount key (Tech-N4 fix) all carry over.
+  if (REDESIGN) {
+    return (
+      <section
+        data-testid="commander-damage-tracker"
+        data-redesign="true"
+        aria-label="Commander damage tracker"
+        className="border-t border-zinc-800 px-3 py-2 space-y-2"
+      >
+        <header className="text-xs uppercase tracking-wide text-text-secondary">
+          Commander damage
+        </header>
+        <div className="grid grid-cols-2 gap-2">
+          {rows.map((row) => (
+            <CommanderDamageCell
+              key={`${row.opponentId}:${row.commanderId}:${gameView.gameCycle}`}
+              row={row}
+              gameId={gameId}
+            />
+          ))}
+        </div>
+      </section>
+    );
   }
 
   return (
@@ -85,6 +125,83 @@ export function CommanderDamageTracker({ gameId, gameView, opponents }: Props) {
         ))}
       </ul>
     </section>
+  );
+}
+
+/**
+ * Slice 70-L (redesign push) — single grid cell rendering an
+ * opponent's commander portrait + damage number in the 2×2 grid.
+ * Reuses the same localStorage / flash / lethal-threshold logic
+ * as {@link CommanderDamageRow} but with a vertical compact
+ * layout suited to the cell aspect ratio.
+ */
+function CommanderDamageCell({ row, gameId }: { row: CommanderRow; gameId: string }) {
+  const key = storageKey(gameId, row.opponentId, row.commanderId);
+  const [damage, setDamage] = useState<number>(() => readDamage(key));
+  const flashKeyRef = useRef(0);
+  const [flashTrigger, setFlashTrigger] = useState(0);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(key, String(damage));
+    } catch {
+      /* storage disabled — fail silent */
+    }
+  }, [key, damage]);
+
+  const adjust = useCallback((delta: number) => {
+    setDamage((d) => Math.max(0, d + delta));
+    flashKeyRef.current += 1;
+    setFlashTrigger(flashKeyRef.current);
+  }, []);
+
+  const lethal = damage >= 21;
+  const cellRingClass = lethal
+    ? 'ring-2 ring-status-danger'
+    : 'ring-1 ring-zinc-800';
+
+  return (
+    <div
+      data-testid={`cmdr-dmg-cell-${row.opponentId}-${row.commanderId}`}
+      data-lethal={lethal || undefined}
+      className={
+        'relative flex items-center gap-2 rounded p-1.5 ' + cellRingClass
+      }
+    >
+      {flashTrigger > 0 && (
+        <div
+          key={flashTrigger}
+          data-testid={`cmdr-dmg-flash-${row.opponentId}-${row.commanderId}`}
+          aria-hidden="true"
+          className="absolute inset-0 pointer-events-none rounded-[inherit] animate-cmdr-dmg-flash"
+        />
+      )}
+      {row.opponent ? (
+        <PlayerPortrait
+          player={row.opponent}
+          size="small"
+          haloVariant="none"
+          ariaLabel={`${row.opponentName} commander damage`}
+        />
+      ) : (
+        // No opponent view — preserve the cell width so the grid
+        // doesn't reflow.
+        <span
+          aria-hidden="true"
+          className="block flex-shrink-0"
+          style={{ width: 32, height: 32 }}
+        />
+      )}
+      <div className="flex flex-col flex-1 min-w-0">
+        <LifeCounter
+          value={damage}
+          interactive
+          onAdjust={adjust}
+          label={`${row.commanderName} damage to you`}
+          testId={`cmdr-dmg-value-${row.opponentId}-${row.commanderId}`}
+        />
+      </div>
+    </div>
   );
 }
 

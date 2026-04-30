@@ -74,3 +74,9 @@ mage-bundle.zip
 # vercel project link (per-deployer, not committed) — webclient
 # directory only; root vercel deploys aren't expected
 /webclient/.vercel/
+
+# node_modules at any depth — vitest can write a .vite cache
+# at the repo root if invoked from the wrong cwd. The webclient
+# subfolder has its own gitignore covering its node_modules; this
+# root rule catches stragglers.
+node_modules/
