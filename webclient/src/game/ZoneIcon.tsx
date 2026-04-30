@@ -33,14 +33,17 @@ import { ZoneBrowser } from './ZoneBrowser';
  * glide regardless of order.
  */
 interface Props {
-  zone: 'graveyard' | 'exile' | 'library';
-  /** Count for library; ignored when {@code cards} is provided. */
+  zone: 'graveyard' | 'exile' | 'library' | 'hand';
+  /**
+   * Count for library + hand; ignored when {@code cards} is
+   * provided (graveyard / exile derive count from the cards map).
+   */
   count?: number;
   /** Card map for graveyard / exile. Required for those zones. */
   cards?: Record<string, WebCardView>;
   /** Owning player name; renders in the modal title + label. */
   playerName: string;
-  /** Optional short label override; default is "Grave" / "Exile" / "Lib". */
+  /** Optional short label override; default is "Grave" / "Exile" / "Lib" / "Hand". */
   label?: string;
   /**
    * Slice 70-C critic UX-I1 — accepts the local-vs-opponent
@@ -57,6 +60,13 @@ const DEFAULT_LABELS: Record<Props['zone'], string> = {
   graveyard: 'Grave',
   exile: 'Exile',
   library: 'Lib',
+  // Slice 70-P.1 (user directive 2026-04-30) — hand size is
+  // strategic info ("does the opponent have a Counterspell?")
+  // surfaced as a display-only chip in the same cluster as the
+  // graveyard/exile/library chips. Catalog §2.5 listed handCount
+  // as removed from the legacy strip but didn't relocate it; the
+  // cluster is the natural home.
+  hand: 'Hand',
 };
 
 export function ZoneIcon({
@@ -68,15 +78,17 @@ export function ZoneIcon({
   variant = 'self',
 }: Props) {
   const displayLabel = label ?? DEFAULT_LABELS[zone];
-  if (zone === 'library') {
-    // Library is face-down — no modal, no clickability, just a
-    // count. The chip shape mirrors the prior PlayerArea inline
-    // "Lib N" rendering; renaming into ZoneIcon centralizes the
-    // styling so a future spec change applies once.
+  if (zone === 'library' || zone === 'hand') {
+    // Library + hand are display-only counts. Library is face-down
+    // (engine §7.9). Hand is private to the holder for opponents
+    // (we only have the count, not the actual cards) and is
+    // rendered visually for the local player as the hand fan, so
+    // the chip is just a strategic-info readout. Same chip shape;
+    // the tests data-testid encodes which zone it represents.
     return (
       <span className="inline-block">
         <span className="text-text-secondary">{displayLabel}</span>{' '}
-        <span data-testid="zone-count-library" className="font-mono">
+        <span data-testid={`zone-count-${zone}`} className="font-mono">
           {count ?? 0}
         </span>
       </span>

@@ -61,6 +61,25 @@ describe('ZoneIcon', () => {
     });
   });
 
+  describe('hand (slice 70-P.1)', () => {
+    it('renders the count with no clickable behavior (private cards but public count)', () => {
+      render(<ZoneIcon zone="hand" count={5} playerName="bob" />);
+      const counter = screen.getByTestId('zone-count-hand');
+      expect(counter.textContent).toBe('5');
+      expect(counter.tagName).not.toBe('BUTTON');
+    });
+
+    it('uses the "Hand" default label', () => {
+      render(<ZoneIcon zone="hand" count={7} playerName="alice" />);
+      expect(screen.getByText('Hand')).toBeInTheDocument();
+    });
+
+    it('renders 0 when count is omitted', () => {
+      render(<ZoneIcon zone="hand" playerName="alice" />);
+      expect(screen.getByTestId('zone-count-hand').textContent).toBe('0');
+    });
+  });
+
   describe('graveyard / exile', () => {
     it('empty graveyard renders count 0 as plain text (no button)', () => {
       render(

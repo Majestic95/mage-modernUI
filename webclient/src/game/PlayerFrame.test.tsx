@@ -615,15 +615,18 @@ describe('PlayerFrame — REDESIGN flag on (slice 70-K)', () => {
     expect(
       screen.getByTestId('zone-count-library'),
     ).toHaveTextContent('47');
+    // Slice 70-P.1 — Hand chip surfaces handCount in the cluster
+    // so opponent hand size stays visible.
+    expect(screen.getByTestId('zone-count-hand')).toHaveTextContent('6');
     expect(screen.getByTestId('player-frame-info-self')).toBeInTheDocument();
     // Self-perspective frames don't host the inline mana pool —
     // local pool floats in the hand region per §2.3.
     expect(
       screen.queryByTestId(/^opponent-mana-pool-/),
     ).toBeNull();
-    // Legacy ACTIVE pill / "Hand" prefix label / inline mana
-    // overlays still don't appear.
-    expect(screen.queryByText('Hand')).toBeNull();
+    // Slice 70-P.1 — "Hand" label DOES appear now (Hand chip in
+    // the cluster). The legacy strip's "Hand" prefix is gone, but
+    // the cluster surfaces the same strategic info via ZoneIcon.
   });
 
   it('opponent frame renders the inline mana pool when non-empty (catalog §2.3)', () => {

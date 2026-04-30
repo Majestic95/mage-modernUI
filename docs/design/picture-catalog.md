@@ -173,10 +173,11 @@ Four pods total. Each has the same anatomy with size/orientation variations per 
 - **Visual:** Small square icons (~16-20px) with a count badge.
 - **Position:** Adjacent to the portrait — a small horizontal cluster near the player frame, NOT attached to the portrait stack. The picture doesn't show these prominently for opponents (subtle); for the local player they're slightly more visible but still understated.
 - **Per zone:**
+  - **Library:** Just a number (no icon — libraries are face-down per spec §7.9).
+  - **Hand:** Just a number (slice 70-P.1, user directive 2026-04-30 — opponent hand size is strategic public info; legacy strip showed it inline and the redesigned cluster needed an explicit home for it).
   - **Graveyard:** `🪦` or simple `G` glyph + count.
   - **Exile:** `❌` or simple `E` glyph + count.
-  - **Library:** Just a number (no icon — libraries are face-down per spec §7.9).
-- **Click:** Local-player graveyard/exile open the existing `ZoneBrowser` modal. Opponent graveyard/exile show on hover (tooltip — public information per MTG rules). Library is display-only.
+- **Click:** Local-player graveyard/exile open the existing `ZoneBrowser` modal. Opponent graveyard/exile show on hover (tooltip — public information per MTG rules; capped at 10 cards + "... and N more" overflow per slice 70-P critic UI/UX-I4). Library + Hand are display-only counts (no click, no tooltip).
 - **In picture:** Not prominently visible — they're tucked near the player frame, low-priority chrome. Don't overdesign these.
 
 ### 2.3 Mana pool — placement

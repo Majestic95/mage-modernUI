@@ -836,6 +836,19 @@ function PlayerFrameInfoCluster({
         playerName={player.name}
         variant={perspective}
       />
+      {/* Slice 70-P.1 (user directive 2026-04-30) — Hand N chip.
+          Strategic info that the legacy strip surfaced inline; the
+          redesigned anatomy didn't have a home for it until now.
+          Cluster is the natural fit per catalog §2.2 "small
+          horizontal cluster near the player frame." Display-only
+          (the local hand is rendered visually as the fan; opponent
+          hands are private cards but public count). */}
+      <ZoneIcon
+        zone="hand"
+        count={player.handCount}
+        playerName={player.name}
+        variant={perspective}
+      />
       <ZoneIcon
         zone="graveyard"
         cards={player.graveyard}
