@@ -1,4 +1,4 @@
-import type { WebCardView } from '../api/schemas';
+import type { WebCardView, WebCommandObjectView } from '../api/schemas';
 
 /**
  * Build a Scryfall image URL from a card's set + collector number.
@@ -25,5 +25,32 @@ export function scryfallImageUrl(
   if (!card.expansionSetCode || !card.cardNumber) return null;
   const set = card.expansionSetCode.toLowerCase();
   const num = encodeURIComponent(card.cardNumber);
+  return `https://api.scryfall.com/cards/${set}/${num}?format=image&version=${version}`;
+}
+
+/**
+ * Slice 70-J — Scryfall image URL for a player's commander entry.
+ *
+ * <p>{@link WebCommandObjectView} carries the same set + number data
+ * as {@link WebCardView} but under different field names
+ * ({@code imageNumber: number} vs {@code cardNumber: string}). This
+ * helper bridges that shape difference so {@link PlayerPortrait}
+ * can resolve the commander art without manual field-juggling.
+ *
+ * <p>Default version is {@code 'art_crop'} (just the artwork, no
+ * card frame) — that's the right shape for the circular portrait
+ * crop used by player pods + game-log avatars + commander-damage
+ * cells. Callers that need the full card image (hover preview,
+ * stack focal) pass {@code 'normal'} explicitly.
+ */
+export function scryfallCommanderImageUrl(
+  commander: WebCommandObjectView,
+  version: ScryfallVersion = 'art_crop',
+): string | null {
+  if (!commander.expansionSetCode || commander.imageNumber == null) {
+    return null;
+  }
+  const set = commander.expansionSetCode.toLowerCase();
+  const num = encodeURIComponent(String(commander.imageNumber));
   return `https://api.scryfall.com/cards/${set}/${num}?format=image&version=${version}`;
 }

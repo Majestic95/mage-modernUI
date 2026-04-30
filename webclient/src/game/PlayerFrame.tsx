@@ -1,6 +1,7 @@
 import { useMemo, type CSSProperties } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import type { WebPlayerView } from '../api/schemas';
+import { computeHaloBackground } from './halo';
 import { LifeCounter } from './LifeCounter';
 import { ManaPool } from './ManaPool';
 import { PriorityTag } from './PriorityTag';
@@ -469,47 +470,7 @@ function HaloRing({
   );
 }
 
-function computeHaloBackground(
-  colorIdentity: readonly string[],
-  eliminated: boolean,
-): string {
-  if (eliminated || colorIdentity.length === 0) {
-    return 'var(--color-team-neutral)';
-  }
-  if (colorIdentity.length === 1) {
-    return manaTokenForCode(colorIdentity[0]!);
-  }
-  const stops = colorIdentity
-    .map((code, i) => {
-      const start = (i * 360) / colorIdentity.length;
-      const end = ((i + 1) * 360) / colorIdentity.length;
-      return `${manaTokenForCode(code)} ${start}deg ${end}deg`;
-    })
-    .join(', ');
-  // Slice 70-G critic Graph-C1 — `from var(--halo-angle, 0deg)` so
-  // the @keyframes halo-rotate animates the gradient ORIGIN rather
-  // than the element's transform. The box stays static; only the
-  // color seam rotates. The default `0deg` keeps non-rotating
-  // halos visually identical to the prior static rendering.
-  return `conic-gradient(from var(--halo-angle, 0deg), ${stops})`;
-}
-
-function manaTokenForCode(code: string): string {
-  switch (code) {
-    case 'W':
-      return 'var(--color-mana-white)';
-    case 'U':
-      return 'var(--color-mana-blue)';
-    case 'B':
-      return 'var(--color-mana-black)';
-    case 'R':
-      return 'var(--color-mana-red)';
-    case 'G':
-      return 'var(--color-mana-green)';
-    default:
-      // Unknown color code — server should never emit this, but
-      // default to neutral so a future engine upgrade with a 6th
-      // color doesn't render as transparent.
-      return 'var(--color-team-neutral)';
-  }
-}
+// Slice 70-J — computeHaloBackground + manaTokenForCode extracted
+// to ./halo.ts for reuse by PlayerPortrait's circular halo. Imports
+// happen at the top of the file. Slice 70-K will delete the
+// HaloRing component above when PlayerPortrait owns the halo.
