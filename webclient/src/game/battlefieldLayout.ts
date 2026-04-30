@@ -69,30 +69,48 @@ export function formatEliminationAnnouncement(
 }
 
 /**
- * Slice 69b (ADR 0010 v2 D5) — opponent-row layout classname for N
- * players. Pure helper, kept in its own module so Battlefield.tsx can
- * stay component-only (react-refresh requires that to fast-reload
- * cleanly).
+ * Slice 70-E (ADR 0011 D5) — replaces the slice-69b
+ * {@code opponentRowClassname} flat-row helper with a grid-area
+ * lookup. The new GameTable shell positions opponents at TOP / LEFT
+ * / RIGHT positions of the battlefield grid (self stays at BOTTOM)
+ * per design-system §3 / screens-game-table-commander-4p.md §2.
  *
- *   - 0 / 1 opponents: vertical stack (1v1 unchanged from pre-69b).
- *   - 2 opponents:     2-col grid (3p FFA, 2HG opp row).
- *   - 3+ opponents:    3-col grid (4p FFA + headroom for v3 5p+
- *                      formats — falls through rather than throwing
- *                      so an unsupported server-side format renders
- *                      sanely instead of crashing the page).
+ * <p>Mapping by opponent index (preserves the slice 69b clockwise
+ * convention from {@code Battlefield.tsx:289-294} — opp-right (idx 0)
+ * → opp-top (idx 1) → opp-left (idx 2) for 4p FFA):
  *
- * Asymmetric grid-template-areas (12-o'clock / 9 / 3) for table-feel
- * is deferred to v3 polish per ADR D5 consequences.
+ * <ul>
+ *   <li>1 opponent (1v1) → {@code top}</li>
+ *   <li>2 opponents (3p FFA) → idx 0: {@code right}, idx 1: {@code top}
+ *       (cross-table read: your opponent on the right + the third
+ *       opposite — natural FFA flow)</li>
+ *   <li>3 opponents (4p FFA) → idx 0: {@code right}, idx 1: {@code top},
+ *       idx 2: {@code left}</li>
+ *   <li>4+ opponents (5p+ — engine supports up to 10) → fall back to
+ *       {@code top} for any overflow index. Spec only locks 4p; 5p+
+ *       gets a degraded grid-area assignment until a future ADR
+ *       defines the layout. Renders sanely; doesn't crash.</li>
+ * </ul>
  *
- * The base classes (flex-shrink-0, border-b, p-4) form the contract
- * the parent flex layout depends on; every branch carries them.
+ * <p>Pure helper, kept in its own module so Battlefield.tsx can stay
+ * component-only (react-refresh requires that to fast-reload).
  */
-export function opponentRowClassname(opponentCount: number): string {
-  if (opponentCount <= 1) {
-    return 'flex-shrink-0 border-b border-zinc-800 p-4 space-y-4';
+export type OpponentGridArea = 'top' | 'left' | 'right';
+
+export function gridAreaForOpponent(
+  idx: number,
+  count: number,
+): OpponentGridArea {
+  if (count <= 1) {
+    return 'top';
   }
-  if (opponentCount === 2) {
-    return 'flex-shrink-0 border-b border-zinc-800 p-4 grid grid-cols-2 gap-4';
+  if (count === 2) {
+    return idx === 0 ? 'right' : 'top';
   }
-  return 'flex-shrink-0 border-b border-zinc-800 p-4 grid grid-cols-3 gap-4';
+  // 3+ opponents — full clockwise rotation. idx 3+ overflow falls
+  // back to 'top' (sane render for unsupported 5p+ formats).
+  if (idx === 0) return 'right';
+  if (idx === 1) return 'top';
+  if (idx === 2) return 'left';
+  return 'top';
 }

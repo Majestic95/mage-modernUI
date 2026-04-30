@@ -11,11 +11,7 @@ import { ManaCost } from './ManaCost';
 import { MyHand } from './MyHand';
 import { StackZone } from './StackZone';
 import { PlayerArea } from './PlayerArea';
-import {
-  formatEliminationAnnouncement,
-  opponentRowClassname,
-  selectOpponents,
-} from './battlefieldLayout';
+import { gridAreaForOpponent, selectOpponents } from './battlefieldLayout';
 
 export function Battlefield({
   gv,
@@ -196,7 +192,13 @@ export function Battlefield({
     // overflow-y-auto for the rare case the combined intrinsic
     // height exceeds the viewport on a small laptop.
     <div className="flex-1 flex flex-col relative overflow-y-auto">
-      {/* Slice 69b (ADR 0010 v2 D5 + D13 + synthesis miss #2) â€” screen-
+      {/* Slice 70-E — SR announcers (priority + elimination) moved
+          to GameTable root per technical critic N4. The parent now
+          mutates only on grid-shape changes (rare), not on every
+          permanent ETB / battlefield update. Below was the original
+          slice 69b sr-only announcer placement.
+
+          Slice 69b (ADR 0010 v2 D5 + D13 + synthesis miss #2) — screen-
           reader announcer for priority / phase transitions. Lives at
           the Battlefield root so the live region is dedicated, not
           buried inside a section that mutates for unrelated reasons
@@ -209,39 +211,7 @@ export function Battlefield({
           sr-only class hides it visually â€” the visual surfaces are
           the PlayerArea glow rings (D5) + the existing PRIORITY /
           ACTIVE pills (D9 redundant-encoding rule). */}
-      <div
-        role="status"
-        aria-live="polite"
-        aria-atomic="true"
-        data-testid="priority-announcer"
-        className="sr-only"
-      >
-        Priority: {gv.priorityPlayerName || '—'},{' '}
-        Active: {gv.activePlayerName || '—'},{' '}
-        {gv.phase || ''} {gv.step || ''}
-      </div>
-      {/* Slice 69d (ADR 0010 v2 D11a + D13) — surface eliminated
-          players in their OWN live region with its own atomic
-          boundary. Pre-fix this lived inside the priority announcer
-          above, but with aria-atomic=true ANY priority pass
-          re-announces the eliminated list — a 4p FFA with one
-          eliminated player would re-read "Eliminated: alice" on
-          every turn for the rest of the game. Splitting into two
-          regions means each one only fires on changes to its OWN
-          content: priority transitions don't re-trigger
-          elimination announcements, and vice versa. The visual
-          surface (D11a / slice 69b's !hasLeft filter) drops
-          eliminated PlayerAreas from layout entirely; blind users
-          would otherwise have no cue that the game changed shape. */}
-      <div
-        role="status"
-        aria-live="polite"
-        aria-atomic="true"
-        data-testid="elimination-announcer"
-        className="sr-only"
-      >
-        {formatEliminationAnnouncement(gv.players)}
-      </div>
+      {/* SR announcers moved to GameTable.tsx (slice 70-E critic N4). */}
       {drag && draggedCard && (
         <div
           data-testid="drag-preview"
@@ -270,67 +240,112 @@ export function Battlefield({
           root above â€” NOT here, because cards entering / leaving
           permanents would mutate this section and trigger spurious
           "priority change" announcements. */}
-      <section
-        data-testid="opponents-row"
-        className={opponentRowClassname(opponents.length)}
+      {/*
+        Slice 70-E (ADR 0011 D5) — 4-pod arrangement per design-spec
+        §3 / screens-game-table-commander-4p.md §2. Opponents occupy
+        TOP / LEFT / RIGHT positions; self stays at BOTTOM; central
+        focal zone (Stack) sits in the middle.
+
+        Grid template:
+          ".    top    ."
+          "left center right"
+          ".    bottom ."
+
+        Empty cells render nothing — the column tracks collapse to
+        their content (`auto`) so a 1v1 layout (only `top` opponent)
+        doesn't show empty side gutters. Each pod owns its own click
+        + drop affordances; the grid is a positioning shell only.
+      */}
+      <div
+        data-testid="four-pod-grid"
+        className="flex-1 min-h-0 p-4 grid gap-4"
+        // Slice 70-E critic UI-Critical-1 — inline style for the
+        // grid-template-areas. The Tailwind bracket arbitrary
+        // [grid-template-areas:"..."] form splits on whitespace and
+        // dropped the rule when area names contained spaces. Inline
+        // style sidesteps the Tailwind tokenizer entirely. Also
+        // resolves UI-Important-4 (consistent inline-style approach
+        // for both outer + inner grids).
+        //
+        // Critic UI-Important-3 — side columns use minmax(0, max-content)
+        // so a long PlayerFrame name (e.g. a verbose username) can't
+        // push the central column off-screen at 1280×720. The
+        // max-content cap floors at 0 (collapses to 0 if no opponent
+        // is at that position) and grows only up to the longest
+        // intrinsic content — a hard ceiling vs auto's "as wide as
+        // needed."
+        style={{
+          gridTemplateAreas:
+            '". top ." "left center right" ". bottom ."',
+          gridTemplateColumns:
+            'minmax(0, max-content) minmax(0, 1fr) minmax(0, max-content)',
+          gridTemplateRows: 'auto minmax(0, 1fr) auto',
+        }}
       >
-        {opponents.map((p, idx) => (
-          <PlayerArea
-            key={p.playerId}
-            player={p}
-            perspective="opponent"
-            canAct={canAct}
-            onObjectClick={onObjectClick}
-            targetable={eligibleTargetIds.has(p.playerId)}
-            eligibleCombatIds={eligibleCombatIds}
-            combatRoles={combatRoles}
-            isDropTarget={drag != null}
-            onBoardDrop={onBoardDrop}
-            // Slice 69b (D13) — explicit tab order. Clockwise from your
-            // seat: opp-right (idx 0) → opp-top (idx 1) → opp-left
-            // (idx 2) for 4p FFA. Index increments so a future v3
-            // asymmetric layout can preserve the convention without
-            // changing the consumer's contract.
-            tabIndex={10 + idx}
-          />
-        ))}
+        {opponents.map((p, idx) => {
+          const area = gridAreaForOpponent(idx, opponents.length);
+          return (
+            <div key={p.playerId} style={{ gridArea: area }} className="min-w-0">
+              <PlayerArea
+                player={p}
+                perspective="opponent"
+                canAct={canAct}
+                onObjectClick={onObjectClick}
+                targetable={eligibleTargetIds.has(p.playerId)}
+                eligibleCombatIds={eligibleCombatIds}
+                combatRoles={combatRoles}
+                isDropTarget={drag != null}
+                onBoardDrop={onBoardDrop}
+                // Slice 69b (D13) — clockwise tab order preserved.
+                tabIndex={10 + idx}
+              />
+            </div>
+          );
+        })}
         {opponents.length === 0 && (
-          <p className="text-zinc-500 italic">No opponents in this view.</p>
-        )}
-      </section>
-
-      {/* Stack â€” between players (slice 27). Collapses to nothing
-          when empty so the surrounding layout doesn't shift. */}
-      <StackZone stack={gv.stack} />
-
-      {/* Self battlefield â€” middle-bottom. flex-1 so it absorbs
-          excess vertical space when small (no awkward gap to hand). */}
-      <section className="flex-1 p-4 space-y-4 min-h-0">
-        {me ? (
-          <PlayerArea
-            player={me}
-            perspective="self"
-            canAct={canAct}
-            onObjectClick={onObjectClick}
-            targetable={eligibleTargetIds.has(me.playerId)}
-            eligibleCombatIds={eligibleCombatIds}
-            combatRoles={combatRoles}
-            isDropTarget={drag != null}
-            onBoardDrop={onBoardDrop}
-            // Slice 69b (D13) â€” "you" is FIRST in the clockwise tab
-            // order: you (9) â†’ opp-right (10) â†’ opp-top (11) â†’
-            // opp-left (12). Without this index, natural DOM order
-            // puts self LAST (it's the third section), which breaks
-            // self-targeting flows (Lightning Bolt face) under
-            // keyboard nav.
-            tabIndex={9}
-          />
-        ) : (
-          <p className="text-zinc-500 italic">
-            Spectator view â€” no controlling player.
+          // Critic UI-Nice-8 — center the empty-state message in the
+          // top cell rather than letting it hug the top-left corner.
+          <p
+            style={{ gridArea: 'top' }}
+            className="text-zinc-500 italic text-center self-center"
+          >
+            No opponents in this view.
           </p>
         )}
-      </section>
+
+        {/* Central focal zone — slice 70-E moves StackZone here per
+            spec §3. Stack sits between the four pods rather than
+            below the opponents row (the prior slice-27 placement). */}
+        <div
+          style={{ gridArea: 'center' }}
+          data-testid="central-focal-zone"
+          className="flex items-center justify-center min-h-0"
+        >
+          <StackZone stack={gv.stack} />
+        </div>
+
+        {/* Self pod — bottom of the 4-pod arrangement. */}
+        <div style={{ gridArea: 'bottom' }} className="min-w-0">
+          {me ? (
+            <PlayerArea
+              player={me}
+              perspective="self"
+              canAct={canAct}
+              onObjectClick={onObjectClick}
+              targetable={eligibleTargetIds.has(me.playerId)}
+              eligibleCombatIds={eligibleCombatIds}
+              combatRoles={combatRoles}
+              isDropTarget={drag != null}
+              onBoardDrop={onBoardDrop}
+              tabIndex={9}
+            />
+          ) : (
+            <p className="text-zinc-500 italic">
+              Spectator view — no controlling player.
+            </p>
+          )}
+        </div>
+      </div>
 
       {/* My hand â€” bottom slot, ALWAYS visible at full height. Was
           inside self section pre-slice-57; moved out so an

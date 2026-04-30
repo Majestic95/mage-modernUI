@@ -96,7 +96,14 @@ export function PlayerArea({
       data-drop-target={isDropTarget || undefined}
       data-active={player.isActive || undefined}
       data-priority={player.hasPriority || undefined}
-      tabIndex={tabIndex}
+      // Slice 70-E critic UX-2 — eliminated seats drop their explicit
+      // tabIndex so they're not dead keyboard stops. The
+      // targetable-name button is suppressed inside PlayerFrame
+      // (eliminated players aren't legal targets); landing focus on
+      // an unactionable div with only an "alice, eliminated"
+      // aria-label wastes a tab stop. SR users still reach the seat
+      // via linear traversal — only keyboard tab order skips it.
+      tabIndex={player.hasLeft ? undefined : tabIndex}
       // Slice 70-D critic UX-C1 — no role="region" without an
       // aria-label (ARIA spec: an unlabeled region is dropped from
       // the landmark list). The inner PlayerFrame's labeled

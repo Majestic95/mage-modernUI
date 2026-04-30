@@ -24,9 +24,17 @@ export function GameLog() {
   }, [entries]);
 
   return (
-    <aside
+    // Slice 70-E critic UI-Nice-9 — was <aside> but GameTable's
+    // side-panel container is also <aside>; nested landmarks confuse
+    // SR users. Demoted to <section> (still navigable via heading
+    // landmarks; the parent <aside> is the actual complementary
+    // landmark for SR traversal).
+    <section
       data-testid="game-log"
-      className="w-72 border-l border-zinc-800 bg-zinc-900/40 flex flex-col"
+      // Slice 70-E (technical critic I5) — width comes from the
+      // GameTable side-panel column (clamp(280px, 22vw, 360px)).
+      className="flex-1 min-h-0 flex flex-col"
+      aria-label="Game log"
     >
       <header className="text-xs text-zinc-500 uppercase tracking-wide px-3 py-2 border-b border-zinc-800">
         Game log ({entries.length})
@@ -56,7 +64,7 @@ export function GameLog() {
           ))
         )}
       </div>
-    </aside>
+    </section>
   );
 }
 

@@ -15,7 +15,7 @@ vi.mock('../featureFlags', () => ({
 
 import {
   formatEliminationAnnouncement,
-  opponentRowClassname,
+  gridAreaForOpponent,
   selectOpponents,
 } from './battlefieldLayout';
 
@@ -55,50 +55,49 @@ function basePlayer(overrides: Partial<WebPlayerView>): WebPlayerView {
  * silently revert 4p FFA to a vertical stack (which fails the layout
  * audit at FFA densities).
  */
-describe('Battlefield opponentRowClassname (slice 69b D5)', () => {
-  it('1 opponent → vertical stack (1v1 unchanged)', () => {
-    const cls = opponentRowClassname(1);
-    expect(cls).toContain('space-y-4');
-    expect(cls).not.toContain('grid');
+describe('Battlefield gridAreaForOpponent (slice 70-E D5)', () => {
+  // Slice 70-E replaced opponentRowClassname (flat-row helper) with
+  // a grid-area lookup for the new 4-pod arrangement: opponents at
+  // top/left/right, self at bottom, central focal zone (Stack) in
+  // the middle. The clockwise convention from slice 69b D13 is
+  // preserved — opp-right (idx 0) → opp-top (idx 1) → opp-left
+  // (idx 2) for 4p FFA.
+
+  it('1 opponent (1v1) → top', () => {
+    expect(gridAreaForOpponent(0, 1)).toBe('top');
   });
 
-  it('0 opponents → vertical stack (degenerate "no opponents" message)', () => {
-    // Empty-state message ("No opponents in this view.") renders inside
-    // the same section. Vertical layout is correct for that string.
-    const cls = opponentRowClassname(0);
-    expect(cls).toContain('space-y-4');
-    expect(cls).not.toContain('grid');
+  it('2 opponents (3p FFA) → idx 0: right, idx 1: top', () => {
+    // Cross-table read: opponent-right + opponent-opposite. Spec §2
+    // doesn't lock 3p, but right+top reads more naturally than
+    // right+left (which would leave the top empty).
+    expect(gridAreaForOpponent(0, 2)).toBe('right');
+    expect(gridAreaForOpponent(1, 2)).toBe('top');
   });
 
-  it('2 opponents → 2-col grid (3p FFA, 2HG opponent row)', () => {
-    const cls = opponentRowClassname(2);
-    expect(cls).toContain('grid grid-cols-2 gap-4');
-    expect(cls).not.toContain('space-y-4');
+  it('3 opponents (4p FFA) → clockwise right/top/left', () => {
+    expect(gridAreaForOpponent(0, 3)).toBe('right');
+    expect(gridAreaForOpponent(1, 3)).toBe('top');
+    expect(gridAreaForOpponent(2, 3)).toBe('left');
   });
 
-  it('3 opponents → 3-col grid (4p FFA)', () => {
-    const cls = opponentRowClassname(3);
-    expect(cls).toContain('grid grid-cols-3 gap-4');
-    expect(cls).not.toContain('space-y-4');
+  it('4+ opponents (5p+ unsupported format) → idx ≥ 3 falls back to top', () => {
+    // v2 ships FFA up to 4p. Falling back to 'top' keeps the UI
+    // sane if a server somehow emits an unsupported format
+    // (engine supports up to 10 players).
+    expect(gridAreaForOpponent(3, 4)).toBe('top');
+    expect(gridAreaForOpponent(4, 5)).toBe('top');
   });
 
-  it('4+ opponents → still 3-col (5p+ formats fall through, polished in v3)', () => {
-    // v2 ships FFA up to 4p. 5p+ formats are deferred per ADR scope.
-    // Falling through to 3-col rather than throwing keeps the UI
-    // sane if a server somehow emits an unsupported format.
-    expect(opponentRowClassname(4)).toContain('grid-cols-3');
-    expect(opponentRowClassname(5)).toContain('grid-cols-3');
-  });
-
-  it('shape is stable (always carries the section base classes)', () => {
-    // The base classes (flex-shrink-0, border-b, p-4) form the
-    // contract the parent flex layout depends on. Any branch that
-    // dropped them would push the opponents row off the screen.
-    for (const n of [0, 1, 2, 3, 4]) {
-      const cls = opponentRowClassname(n);
-      expect(cls).toContain('flex-shrink-0');
-      expect(cls).toContain('border-b');
-      expect(cls).toContain('p-4');
+  it('returns one of the three valid grid areas for any input', () => {
+    // Type-safety check: every (idx, count) pair lands on a known
+    // area. The 4-pod grid template only declares top/left/right/
+    // bottom/center; opponent positions are top/left/right.
+    const valid = new Set(['top', 'left', 'right']);
+    for (let count = 1; count <= 6; count++) {
+      for (let idx = 0; idx < count; idx++) {
+        expect(valid.has(gridAreaForOpponent(idx, count))).toBe(true);
+      }
     }
   });
 });

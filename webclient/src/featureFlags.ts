@@ -22,12 +22,18 @@
  * that if hasLeft players are in its props the layout intentionally
  * kept them.
  *
- * <p>Default {@code false} — slice 70-D ships the overlay code but
- * the legacy "drop on hasLeft" filter remains the runtime behavior
- * until slice 70-E flips this to {@code true} as part of the
- * 6-region layout shell rollout. Rationale: between 70-D and 70-E,
- * the existing 3-col grid (ADR 0010 D5) would render a slashed pod
- * in a grid cell that was previously collapsed — visually awkward.
+ * <p>Default flipped to {@code true} in slice 70-E (the 6-region
+ * layout shell rollout). Eliminated pods now stay in the layout
+ * with the slice 70-D slash overlay. The flag remains as a
+ * kill-switch — set {@code VITE_FEATURE_KEEP_ELIMINATED=false} in
+ * the environment to revert to the legacy collapse behavior (slice
+ * 69b's flat-row layout dropped eliminated seats entirely).
+ *
+ * <p><b>Allowlist semantics</b> (slice 70-E technical critic C2):
+ * The flag uses an explicit "off-only" allowlist so that empty /
+ * garbage env values default to ON (the new production default)
+ * rather than silently flipping to false. Only the literal string
+ * {@code 'false'} disables the flag.
  */
 export const KEEP_ELIMINATED: boolean =
-  import.meta.env['VITE_FEATURE_KEEP_ELIMINATED'] === 'true';
+  import.meta.env['VITE_FEATURE_KEEP_ELIMINATED'] !== 'false';

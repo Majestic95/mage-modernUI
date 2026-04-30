@@ -3,14 +3,10 @@ import { LayoutGroup, MotionConfig } from 'framer-motion';
 import { useAuthStore } from '../auth/store';
 import { GameStream } from '../game/stream';
 import { useGameStore } from '../game/store';
-import { ActionPanel } from './ActionPanel';
-import { GameDialog } from '../game/dialogs/GameDialog';
 import { GameEndOverlay } from '../game/GameEndOverlay';
-import { PhaseTimeline } from '../game/PhaseTimeline';
-import { GameLog } from '../game/GameLog';
 import { GameHeader } from '../game/GameHeader';
+import { GameTable } from '../game/GameTable';
 import { Waiting } from '../game/Waiting';
-import { Battlefield } from '../game/Battlefield';
 
 interface Props {
   gameId: string;
@@ -134,6 +130,13 @@ export function Game({ gameId, onLeave }: Props) {
     //     budget. If a future feature would exceed that (e.g. a
     //     graveyard popover that shows 60 cards with layoutId), put
     //     it in its own LayoutGroup or no LayoutGroup at all.
+    // Slice 70-E (ADR 0011 D5) — MotionConfig + LayoutGroup STAY at
+    // the page root per technical critic C1. GameTable renders
+    // beneath them; siblings (GameDialog, GameEndOverlay) that need
+    // to participate in the cross-zone layoutId graph remain
+    // descendants of the LayoutGroup. Header banner + protocol-error
+    // strip stay at this level so they sit ABOVE GameTable's grid
+    // shell rather than competing with it for grid space.
     <MotionConfig reducedMotion="user">
       <LayoutGroup>
         <div className="h-screen flex flex-col bg-zinc-950 text-zinc-100 overflow-hidden">
@@ -149,19 +152,13 @@ export function Game({ gameId, onLeave }: Props) {
               {protocolError}
             </div>
           )}
-          {gameView && <PhaseTimeline gameView={gameView} />}
-          <main className="flex-1 flex min-h-0">
-            <div className="flex-1 flex flex-col min-w-0">
-              {gameView ? (
-                <Battlefield gv={gameView} stream={stream} />
-              ) : (
-                <Waiting connection={connection} />
-              )}
-            </div>
-            {gameView && <GameLog />}
-          </main>
-          {gameView && <ActionPanel stream={stream} />}
-          <GameDialog stream={stream} />
+          <div className="flex-1 min-h-0">
+            {gameView ? (
+              <GameTable gameView={gameView} stream={stream} />
+            ) : (
+              <Waiting connection={connection} />
+            )}
+          </div>
           <GameEndOverlay gameId={gameId} onLeave={onLeave} />
         </div>
       </LayoutGroup>

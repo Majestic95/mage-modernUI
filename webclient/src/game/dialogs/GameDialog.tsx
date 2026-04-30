@@ -49,7 +49,7 @@ export function GameDialog({ stream }: Props) {
           data-testid="game-dialog"
           data-method={dialog.method}
           data-combat-mode={mode.kind}
-          className="fixed bottom-4 right-4 z-40 max-w-sm w-full bg-zinc-900 border border-zinc-700 rounded-lg p-5 space-y-3 shadow-2xl"
+          className="fixed bottom-4 right-[calc(var(--side-panel-width,0px)+1rem)] z-40 max-w-sm w-full bg-zinc-900 border border-zinc-700 rounded-lg p-5 space-y-3 shadow-2xl"
         >
           <CombatPanel
             dialog={dialog}
@@ -75,7 +75,7 @@ export function GameDialog({ stream }: Props) {
         aria-modal="false"
         data-testid="game-dialog"
         data-method={dialog.method}
-        className="fixed bottom-4 right-4 z-40 max-w-sm w-full bg-zinc-900 border border-zinc-700 rounded-lg p-5 space-y-3 shadow-2xl"
+        className="fixed bottom-4 right-[calc(var(--side-panel-width,0px)+1rem)] z-40 max-w-sm w-full bg-zinc-900 border border-zinc-700 rounded-lg p-5 space-y-3 shadow-2xl"
       >
         <DialogContent dialog={dialog} stream={stream} clearDialog={clearDialog} />
       </div>
@@ -94,7 +94,7 @@ export function GameDialog({ stream }: Props) {
         aria-modal="false"
         data-testid="game-dialog"
         data-method={dialog.method}
-        className="fixed bottom-4 right-4 z-40 max-w-sm w-full bg-zinc-900 border border-zinc-700 rounded-lg p-5 space-y-3 shadow-2xl"
+        className="fixed bottom-4 right-[calc(var(--side-panel-width,0px)+1rem)] z-40 max-w-sm w-full bg-zinc-900 border border-zinc-700 rounded-lg p-5 space-y-3 shadow-2xl"
       >
         <DialogContent dialog={dialog} stream={stream} clearDialog={clearDialog} />
       </div>
