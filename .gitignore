@@ -66,3 +66,11 @@ mage-bundle.zip
 # build targets
 /deploy
 /temp
+
+# playtest runtime state — scripts/playtest-up.sh writes ngrok PID,
+# tunnel URL, vercel deploy log here. Per-session ephemeral.
+/.playtest/
+
+# vercel project link (per-deployer, not committed) — webclient
+# directory only; root vercel deploys aren't expected
+/webclient/.vercel/
