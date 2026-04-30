@@ -46,6 +46,11 @@ get UX coverage?" is answerable by scanning one column.
 
 ---
 
+| 70-K.1 | Standard (layout-fix slice; first slice run under the new critic checklist) | UI (per critic-checklist-redesign.md template) | none — single tier checklist run | CRITICAL: height: 100% chain broken by HoverCardDetail's inline-flex span with items-center cross-axis (cards would render 0×0 in real browsers despite jsdom tests passing). IMPORTANT: opponent pods didn't honor --card-size-small (carry-over from 70-K). IMPORTANT: bottom local pod renders portrait above rows; catalog §2.D says rows above portrait (carry-over from 70-K). All three fixed; the CRITICAL was caught only because the critic loaded the picture-catalog and traced the CSS chain manually — validation that the new process catches what the old one missed. |
+| 70-M | Architectural (single morphing ActionButton + side-panel reorder + footer drop) | UI (per critic-checklist-redesign.md) | none | No CRITICAL findings. IMPORTANT-1: disabled state used fuchsia tokens carried over from legacy ActionPanel (caught via tokens.css comment about violet/fuchsia separation). IMPORTANT-2/3/4/5: label wording diverged from catalog §5.C ("Declare Attackers" → "Attack", "End Turn" → "End Step", menu item labels mismatched). IMPORTANT-6: F6 + Esc-when-menu-closed hotkeys uncovered by tests. IMPORTANT-7: menu backdrop z-40 tied with GameDialog z-40 producing inconsistent click-out. CARRY-OVER-1: side panel `bg-zinc-900/40` instead of catalog §5.0 `--color-bg-elevated` (slice 70-E carry-over invalidated by catalog 2026-04-29). All fixed pre-commit. |
+
+---
+
 ## Process amendment 2026-04-30 — picture-catalog as load-bearing critic reference
 
 After slice 70-K shipped with the row-stretch carry-over bug

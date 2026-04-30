@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import type { WebCardView, WebGameView } from '../api/schemas';
 import type { GameStream } from './stream';
+import { ActionButton } from './ActionButton';
 import { ActionPanel } from '../pages/ActionPanel';
 import { Battlefield } from './Battlefield';
 import { CommanderDamageTracker } from './CommanderDamageTracker';
@@ -10,6 +11,7 @@ import { ManaCost } from './ManaCost';
 import { MulliganModal } from './MulliganModal';
 import { MyHand } from './MyHand';
 import { PhaseTimeline } from './PhaseTimeline';
+import { REDESIGN } from '../featureFlags';
 import {
   formatEliminationAnnouncement,
   selectOpponents,
@@ -177,12 +179,23 @@ export function GameTable({ gameId, gameView, stream }: Props) {
         // Slice 70-F — added a `hand` row between battlefield and
         // action so MyHand sits in its own region per spec §4. The
         // side panel still spans every body row on the right.
-        gridTemplateAreas:
-          '"header header" ' +
-          '"battlefield sidepanel" ' +
-          '"hand sidepanel" ' +
-          '"action sidepanel"',
-        gridTemplateRows: 'auto 1fr auto auto',
+        //
+        // Slice 70-M (picture-catalog §6.1) — REDESIGN drops the
+        // 'action' grid row entirely. The single morphing
+        // ActionButton lives at the bottom of the side panel
+        // (catalog §5.C). Side panel grows to fill the freed
+        // vertical space.
+        gridTemplateAreas: REDESIGN
+          ? '"header header" ' +
+            '"battlefield sidepanel" ' +
+            '"hand sidepanel"'
+          : '"header header" ' +
+            '"battlefield sidepanel" ' +
+            '"hand sidepanel" ' +
+            '"action sidepanel"',
+        gridTemplateRows: REDESIGN
+          ? 'auto 1fr auto'
+          : 'auto 1fr auto auto',
         gridTemplateColumns: `minmax(0, 1fr) ${SIDE_PANEL_WIDTH}`,
       }}
     >
@@ -285,8 +298,18 @@ export function GameTable({ gameId, gameView, stream }: Props) {
       <aside
         data-testid="game-table-sidepanel"
         className={
+          // Slice 70-M critic CARRY-OVER-1 fix — picture-catalog
+          // §5.0 specifies --color-bg-elevated (#152229) for the
+          // panel background. The legacy `bg-zinc-900/40` was a
+          // slice 70-E carryover that the catalog (added
+          // 2026-04-29) invalidated. Slice 70-M is the first
+          // panel-touching slice after the catalog landed; the
+          // checklist process flagged it. Applies to BOTH legacy
+          // and REDESIGN paths since the panel container itself
+          // is shared and the catalog token is a generic dark-
+          // teal that reads correctly under either layout.
           '[grid-area:sidepanel] flex flex-col ' +
-          'border-l border-zinc-800 bg-zinc-900/40 min-h-0'
+          'border-l border-zinc-800 bg-bg-elevated min-h-0'
         }
       >
         <PhaseTimeline gameView={gameView} />
@@ -315,14 +338,25 @@ export function GameTable({ gameId, gameView, stream }: Props) {
           gameView={gameView}
           opponents={opponents}
         />
+        {/* Slice 70-M (picture-catalog §5.C) — single morphing
+            ActionButton at the bottom of the side panel under the
+            commander damage tracker. REDESIGN-only; legacy keeps
+            the multi-button ActionPanel in the action footer
+            below. */}
+        {REDESIGN && <ActionButton stream={stream} />}
       </aside>
 
-      <footer
-        data-testid="game-table-action"
-        className="[grid-area:action] border-t border-zinc-800"
-      >
-        {gameView && <ActionPanel stream={stream} />}
-      </footer>
+      {/* Slice 70-M (picture-catalog §6.1) — REDESIGN drops the
+          action footer entirely. The morphing button + ellipsis
+          menu live in the side panel above. */}
+      {!REDESIGN && (
+        <footer
+          data-testid="game-table-action"
+          className="[grid-area:action] border-t border-zinc-800"
+        >
+          {gameView && <ActionPanel stream={stream} />}
+        </footer>
+      )}
 
       {/* GameDialog is positioned via fixed children that escape this
         grid; we just mount it here so React's tree owns the lifecycle.
