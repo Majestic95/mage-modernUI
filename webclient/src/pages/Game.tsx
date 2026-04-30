@@ -6,6 +6,7 @@ import { useGameStore } from '../game/store';
 import { GameEndOverlay } from '../game/GameEndOverlay';
 import { CardAnimationLayer } from '../animation/CardAnimationLayer';
 import { DeltaPump } from '../animation/DeltaPump';
+import { resetAnimationState } from '../animation/animationState';
 import { GameHeader } from '../game/GameHeader';
 import { GameTable } from '../game/GameTable';
 import { Waiting } from '../game/Waiting';
@@ -71,6 +72,13 @@ export function Game({ gameId, onLeave }: Props) {
       clearTimeout(timer);
       stream.close();
       reset();
+      // Slice 70-Z.3 — clear in-flight animation state alongside the
+      // store reset so a player who plays two games in one session
+      // doesn't see stale cinematic-cast / impact state on the
+      // second game's first cast. animationState lives outside the
+      // Zustand store (see animation/animationState.ts) and needs
+      // its own reset call.
+      resetAnimationState();
     };
   }, [stream, reset]);
 

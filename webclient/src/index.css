@@ -222,6 +222,32 @@ body {
   animation: cmdr-dmg-flash 220ms ease-out;
 }
 
+/*
+ * Slice 70-Z.3 — ribbon-trail sweep. Animates an SVG path's
+ * stroke-dashoffset from its full length down to 0, "drawing" the
+ * stroke from source to destination, then fades opacity in the last
+ * 40% of the duration so the trail dissipates after the cinematic
+ * cast arrives. Path length per-trail comes through `--ribbon-length`
+ * (set inline by RibbonTrail.tsx). Reduced motion: silenced by the
+ * global @media (prefers-reduced-motion: reduce) rule below — the
+ * RibbonTrail component itself is also gated at the CardAnimationLayer
+ * level, so this is belt-and-suspenders coverage.
+ */
+@keyframes ribbon-sweep {
+  0% {
+    stroke-dashoffset: var(--ribbon-length);
+    stroke-opacity: 0.85;
+  }
+  60% {
+    stroke-dashoffset: 0;
+    stroke-opacity: 0.85;
+  }
+  100% {
+    stroke-dashoffset: 0;
+    stroke-opacity: 0;
+  }
+}
+
 .animate-particle-drift {
   /* Slice 70-Z polish (user feedback 2026-04-30 round 4) — swirling
    * gold ↔ gray mix instead of discrete corner blobs. Previous

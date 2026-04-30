@@ -20,6 +20,7 @@ import { HoverCardDetail } from './HoverCardDetail';
 import { REDESIGN } from '../featureFlags';
 import { computeHaloBackground } from './halo';
 import { TargetingArrow } from './TargetingArrow';
+import { useIsCinematicCastActive } from '../animation/useIsCinematicCastActive';
 
 /**
  * Slice 70-N (ADR 0011 D5, picture-catalog §3) — central focal-zone
@@ -427,6 +428,15 @@ function FocalCard({
   // a `stack-fan-` prefix to avoid collisions during a stack
   // resolution where a fan tile promotes to focal.
   const layoutId = card.cardId ? card.cardId : undefined;
+
+  // Slice 70-Z.3 — when this cardId is mid-cinematic-cast, skip the
+  // focal tile entirely so the CastingPoseOverlay's
+  // {@code layoutId={cardId}} owns the layoutId graph for the hold
+  // window. Once endCinematicCast fires (overlay unmounts), this
+  // hook flips to false, the focal tile mounts here, and Framer
+  // glides centerscreen → stack from the overlay's last bbox.
+  const isCinematicHold = useIsCinematicCastActive(card.cardId);
+  if (isCinematicHold) return null;
 
   // Slice 70-Z polish (user-feedback round 10) — bloom radiation
   // distance shrunk to 35% of the round-7 values (inset -20px →
