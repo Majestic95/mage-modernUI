@@ -10,7 +10,11 @@ import { ManaCost } from './ManaCost';
 import { MulliganModal } from './MulliganModal';
 import { MyHand } from './MyHand';
 import { PhaseTimeline } from './PhaseTimeline';
-import { formatEliminationAnnouncement, selectOpponents } from './battlefieldLayout';
+import {
+  formatEliminationAnnouncement,
+  selectOpponents,
+  useConnectionStateAnnouncements,
+} from './battlefieldLayout';
 import {
   deriveInteractionMode,
   type InteractionMode,
@@ -91,6 +95,14 @@ export function GameTable({ gameId, gameView, stream }: Props) {
     () => formatEliminationAnnouncement(gameView.players),
     [gameView.players],
   );
+  // Slice 70-H.5 (per slice 70-H critic UX-I3) — diff-based aria-live
+  // text for connection-state transitions. The PlayerFrame's
+  // role="group" aria-label already says "disconnected" but most SR
+  // engines don't announce attribute changes on a group; this
+  // dedicated polite region announces "alice disconnected" /
+  // "alice reconnected" once per transition so SR users get parity
+  // with the sighted-user pill fade.
+  const connectionStateText = useConnectionStateAnnouncements(gameView.players);
 
   // Slice 70-F — drag-state ownership lifted from Battlefield. With
   // MyHand now in its own grid region (sibling of Battlefield, not
@@ -197,6 +209,15 @@ export function GameTable({ gameId, gameView, stream }: Props) {
         className="sr-only"
       >
         {eliminationText}
+      </div>
+      <div
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        data-testid="connection-state-announcer"
+        className="sr-only"
+      >
+        {connectionStateText}
       </div>
 
       <header

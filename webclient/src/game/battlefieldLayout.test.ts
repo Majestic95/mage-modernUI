@@ -308,3 +308,109 @@ describe('Battlefield formatEliminationAnnouncement (slice 69d D11a + D13)', () 
     flagState.keepEliminated = false;
   });
 });
+
+// Slice 70-H.5 (per slice 70-H critic UX-I3) — connection-state
+// transition announcer. The PlayerFrame's role="group" aria-label
+// includes "disconnected" but most SR engines don't announce
+// attribute changes on a group element; this hook drives a
+// dedicated polite live region announcing transitions once.
+import { renderHook, act } from '@testing-library/react';
+import { useConnectionStateAnnouncements } from './battlefieldLayout';
+
+describe('useConnectionStateAnnouncements (slice 70-H.5)', () => {
+  const ME = '11111111-1111-1111-1111-111111111111';
+  const A = '22222222-2222-2222-2222-222222222222';
+
+  it('first render returns empty (no transition to announce)', () => {
+    const players = [
+      basePlayer({ playerId: ME, name: 'me', connectionState: 'connected' }),
+      basePlayer({ playerId: A, name: 'alice', connectionState: 'connected' }),
+    ];
+    const { result } = renderHook(() => useConnectionStateAnnouncements(players));
+    expect(result.current).toBe('');
+  });
+
+  it('connected → disconnected transition announces "<name> disconnected"', () => {
+    vi.useFakeTimers();
+    const initial = [
+      basePlayer({ playerId: ME, name: 'me', connectionState: 'connected' }),
+      basePlayer({ playerId: A, name: 'alice', connectionState: 'connected' }),
+    ];
+    const { result, rerender } = renderHook(
+      (p: WebPlayerView[]) => useConnectionStateAnnouncements(p),
+      { initialProps: initial },
+    );
+    expect(result.current).toBe('');
+    rerender([
+      basePlayer({ playerId: ME, name: 'me', connectionState: 'connected' }),
+      basePlayer({ playerId: A, name: 'alice', connectionState: 'disconnected' }),
+    ]);
+    expect(result.current).toBe('alice disconnected');
+    vi.useRealTimers();
+  });
+
+  it('disconnected → connected transition announces "<name> reconnected"', () => {
+    vi.useFakeTimers();
+    const initial = [
+      basePlayer({ playerId: ME, name: 'me', connectionState: 'connected' }),
+      basePlayer({ playerId: A, name: 'alice', connectionState: 'disconnected' }),
+    ];
+    const { result, rerender } = renderHook(
+      (p: WebPlayerView[]) => useConnectionStateAnnouncements(p),
+      { initialProps: initial },
+    );
+    expect(result.current).toBe('');
+    rerender([
+      basePlayer({ playerId: ME, name: 'me', connectionState: 'connected' }),
+      basePlayer({ playerId: A, name: 'alice', connectionState: 'connected' }),
+    ]);
+    expect(result.current).toBe('alice reconnected');
+    vi.useRealTimers();
+  });
+
+  it('hasLeft transition suppresses the disconnect announcement (eliminated wins)', () => {
+    vi.useFakeTimers();
+    const initial = [
+      basePlayer({ playerId: ME, name: 'me' }),
+      basePlayer({ playerId: A, name: 'alice', connectionState: 'connected' }),
+    ];
+    const { result, rerender } = renderHook(
+      (p: WebPlayerView[]) => useConnectionStateAnnouncements(p),
+      { initialProps: initial },
+    );
+    // Alice eliminated + drops socket simultaneously — eliminated
+    // takes precedence; SR users hear elimination only, not the
+    // redundant "alice eliminated, alice disconnected" pair.
+    rerender([
+      basePlayer({ playerId: ME, name: 'me' }),
+      basePlayer({
+        playerId: A,
+        name: 'alice',
+        connectionState: 'disconnected',
+        hasLeft: true,
+      }),
+    ]);
+    expect(result.current).toBe('');
+    vi.useRealTimers();
+  });
+
+  it('clears the announcement after 1500ms so an identical transition re-fires', () => {
+    vi.useFakeTimers();
+    const initial = [
+      basePlayer({ playerId: A, name: 'alice', connectionState: 'connected' }),
+    ];
+    const { result, rerender } = renderHook(
+      (p: WebPlayerView[]) => useConnectionStateAnnouncements(p),
+      { initialProps: initial },
+    );
+    rerender([
+      basePlayer({ playerId: A, name: 'alice', connectionState: 'disconnected' }),
+    ]);
+    expect(result.current).toBe('alice disconnected');
+    act(() => {
+      vi.advanceTimersByTime(1500);
+    });
+    expect(result.current).toBe('');
+    vi.useRealTimers();
+  });
+});

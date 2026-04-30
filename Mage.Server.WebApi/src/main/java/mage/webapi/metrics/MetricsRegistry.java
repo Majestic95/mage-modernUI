@@ -68,6 +68,14 @@ public final class MetricsRegistry {
     public static final String ROI_FILTER_FAILURES_TOTAL = "xmage_roi_filter_failures_total";
 
     /**
+     * Counter — incremented when slice 70-H.5's per-prompt
+     * disconnect-timer fires. One increment per (handler, gameId)
+     * timeout — the auto-pass attempt + dialogClear-TIMEOUT broadcast
+     * are atomic from a metrics perspective.
+     */
+    public static final String DISCONNECT_TIMEOUTS_TOTAL = "xmage_disconnect_timeouts_total";
+
+    /**
      * Counter description map — paired with each counter for the
      * Prometheus {@code # HELP} line. Kept here (not as javadoc on
      * each constant) so the format() loop has one canonical source.
@@ -78,9 +86,11 @@ public final class MetricsRegistry {
             BUFFER_OVERFLOW_DROPS_TOTAL,
                     "Frames dropped because the per-handler 64-frame resume buffer was full.",
             DIALOG_CLEARS_EMITTED_TOTAL,
-                    "dialogClear envelopes synthesized on hasLeft transitions (ADR 0010 v2 D11b).",
+                    "dialogClear envelopes synthesized on hasLeft transitions or disconnect-timeouts (ADR 0010 v2 D11b/D11e).",
             ROI_FILTER_FAILURES_TOTAL,
-                    "RoI filter resolved to fail-open (no filter) on a transient (ADR 0010 v2 R8)."
+                    "RoI filter resolved to fail-open (no filter) on a transient (ADR 0010 v2 R8).",
+            DISCONNECT_TIMEOUTS_TOTAL,
+                    "Per-prompt disconnect-timers that fired (slice 70-H.5, ADR 0010 v2 D11(e))."
     );
 
     private static final ConcurrentHashMap<String, AtomicLong> COUNTERS = new ConcurrentHashMap<>();

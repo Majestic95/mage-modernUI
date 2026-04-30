@@ -207,6 +207,67 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
      * overlay surfaces).
      */
     private final AuthService authService;
+    /**
+     * Slice 70-H.5 — upstream session id for this handler's user, used
+     * by the disconnect-timer fire body to dispatch best-effort
+     * auto-pass via {@code MageServerImpl.sendPlayerXxx} (which all
+     * accept sessionId as the responding-player identifier). Null in
+     * tests that don't boot AuthService — the auto-pass code path
+     * then no-ops, but the dialogClear-TIMEOUT broadcast still fires.
+     */
+    private final String upstreamSessionId;
+    /**
+     * Slice 70-H.5 — per-game record of the most recent prompt method
+     * sent to this handler's user. Set on every prompt frame
+     * ({@code gameAsk}, {@code gameTarget}, etc.); cleared on every
+     * non-prompt state frame ({@code gameUpdate}, {@code gameOver},
+     * {@code endGameInfo}, {@code gameInit}). When the disconnect-
+     * timer fires it dispatches auto-pass per the recorded method
+     * (e.g. gameAsk → sendPlayerBoolean(false), gameTarget →
+     * sendPlayerUUID(null)). Empty / missing entry = no open prompt
+     * for that game; the timer never schedules.
+     */
+    private final Map<UUID, String> openPromptMethodByGame =
+            new ConcurrentHashMap<>();
+    /**
+     * Slice 70-H.5 — per-game disconnect-timer registry. Each entry
+     * is an {@link java.util.concurrent.atomic.AtomicReference} to
+     * the active {@link java.util.concurrent.ScheduledFuture} for a
+     * gameId; null indicates no timer scheduled. The atomic ref
+     * single-flights the cancel-on-register vs fire-on-timer race
+     * (per critic I5 of slice 70-H technical critic): both paths
+     * CAS-set null before acting on the prior value, so a register
+     * arriving in the same millisecond as the timer body firing
+     * will produce exactly one outcome.
+     */
+    private final Map<UUID, java.util.concurrent.atomic.AtomicReference<
+            java.util.concurrent.ScheduledFuture<?>>> timersByGame =
+            new ConcurrentHashMap<>();
+
+    /**
+     * Slice 70-H.5 — wire methods that constitute "prompt open"
+     * (engine has asked this handler's user for a response). When
+     * one of these arrives, {@link #openPromptMethodByGame} is
+     * updated for the gameId; the timer can then arm if the user's
+     * sockets all close.
+     */
+    private static final Set<String> PROMPT_METHODS = Set.of(
+            "gameAsk", "gameTarget", "gameSelect",
+            "gamePlayMana", "gamePlayXMana",
+            "gameSelectAmount", "gameChooseChoice",
+            "gameChooseAbility");
+
+    /**
+     * Slice 70-H.5 — wire methods that close any open prompt for
+     * the carrying gameId. Receipt clears {@link
+     * #openPromptMethodByGame} and cancels any pending timer.
+     * {@code gameInform} is intentionally NOT here — it can arrive
+     * mid-prompt as a free-text engine narration without resolving
+     * the prompt; closing on gameInform would prematurely cancel
+     * the timer.
+     */
+    private static final Set<String> PROMPT_CLOSE_METHODS = Set.of(
+            "gameInit", "gameUpdate", "gameOver", "endGameInfo");
     private final Set<WsContext> sockets = ConcurrentHashMap.newKeySet();
     private final Deque<WebStreamFrame> buffer = new ArrayDeque<>(BUFFER_CAPACITY);
 
@@ -327,7 +388,7 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
      * that exercise mapping in isolation use this overload.
      */
     public WebSocketCallbackHandler(String username) {
-        this(username, null, null);
+        this(username, null, null, null);
     }
 
     /**
@@ -338,27 +399,42 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
      * that don't stand up an AuthService.
      */
     public WebSocketCallbackHandler(String username, EmbeddedServer embedded) {
-        this(username, embedded, null);
+        this(username, embedded, null, null);
     }
 
     /**
-     * Slice 70-H production ctor: receives both the
-     * {@link EmbeddedServer} (slice 52a stack-cardId hint) and the
-     * {@link AuthService} (cross-handler connection-state oracle).
-     * The auth reference is held by the handler so the per-frame
-     * tracker built in {@link #mapGameView} can ask "is opponent X
-     * connected on a player-route socket in this game?" via
-     * {@link AuthService#connectionStateFor(UUID, UUID)}. A null
-     * {@code authService} preserves the pre-slice-70-H wire shape
-     * (every player reads as connected) — used by tests that don't
-     * boot an AuthService.
+     * Slice 70-H test ctor (without sessionId, no auto-pass dispatch).
+     * Three-arg form preserved for tests that need an AuthService
+     * for connection-state lookups but don't exercise the
+     * auto-pass / disconnect-timer paths.
      */
     public WebSocketCallbackHandler(String username,
                                     EmbeddedServer embedded,
                                     AuthService authService) {
+        this(username, embedded, authService, null);
+    }
+
+    /**
+     * Slice 70-H.5 production ctor: receives the
+     * {@link EmbeddedServer} (slice 52a stack-cardId hint), the
+     * {@link AuthService} (cross-handler connection-state oracle +
+     * disconnect-timer scheduler + dialogClear-TIMEOUT broadcast
+     * helper), and the upstream session id (for auto-pass dispatch
+     * via {@code MageServerImpl.sendPlayerXxx}). A null
+     * {@code authService} preserves the pre-slice-70-H wire shape
+     * (every player reads as connected, no timer arms); a null
+     * {@code upstreamSessionId} preserves the pre-slice-70-H.5
+     * shape (timer arms + dialogClear-TIMEOUT broadcasts but
+     * auto-pass is a no-op).
+     */
+    public WebSocketCallbackHandler(String username,
+                                    EmbeddedServer embedded,
+                                    AuthService authService,
+                                    String upstreamSessionId) {
         this.username = username;
         this.embedded = embedded;
         this.authService = authService;
+        this.upstreamSessionId = upstreamSessionId;
     }
 
     /**
@@ -404,13 +480,40 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
             return false;
         }
         LOG.debug("WS register: user={}, total sockets={}", username, sizeAfter);
+        // Slice 70-H.5 — reconnect cancels any pending disconnect-
+        // timer for the freshly-bound gameId. The player came back
+        // before the timeout fired; engine state hasn't changed; the
+        // open prompt (if any) is still answerable on a live socket.
+        Object boundGameId = ctx.attribute(GameStreamHandler.ATTR_GAME_ID);
+        if (boundGameId instanceof UUID gameId) {
+            cancelDisconnectTimer(gameId);
+        }
         return true;
     }
 
-    /** Remove a closed socket. Called from Javalin's {@code onClose}. */
+    /**
+     * Remove a closed socket. Called from Javalin's {@code onClose}.
+     *
+     * <p>Slice 70-H.5 — if the closed socket was bound to a gameId
+     * with an open prompt for this user AND no other player-route
+     * socket remains for that gameId, arm the disconnect-timer.
+     * Symmetric to {@link #register} which cancels the timer on
+     * reconnect.
+     */
     public void unregister(WsContext ctx) {
         sockets.remove(ctx);
         LOG.debug("WS unregister: user={}, total sockets={}", username, sockets.size());
+        // Slice 70-H.5 — extract gameId from the just-closed socket
+        // (set at WS upgrade time per GameStreamHandler.onConnect).
+        // Spectator-route sockets don't carry a prompt for this user
+        // and shouldn't arm the timer; the route check is implicit
+        // because openPromptMethodByGame only gets populated for
+        // player-route prompts (engine fires GAME_ASK etc. only at
+        // seated players).
+        Object boundGameId = ctx.attribute(GameStreamHandler.ATTR_GAME_ID);
+        if (boundGameId instanceof UUID gameId) {
+            maybeArmDisconnectTimer(gameId);
+        }
     }
 
     public int socketCount() {
@@ -477,6 +580,18 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
             }
         }
         sockets.clear();
+        // Slice 70-H.5 (per slice-70-H technical critic C2) —
+        // session teardown (logout / sweep) must cancel any
+        // outstanding disconnect-timers. Otherwise the timer would
+        // fire later against an already-disposed handler, broadcast
+        // a dialogClear into a dead game, and leak the
+        // ScheduledFuture's handler reference for the timer's
+        // remaining duration. Cancelling here closes the loop.
+        cancelAllDisconnectTimers();
+        // Drop the open-prompt records too — the handler is
+        // disposed; no future register() will revive its prompt
+        // state.
+        openPromptMethodByGame.clear();
     }
 
     /**
@@ -603,6 +718,12 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
         // order. Per ADR 0010 v2 D11b: dialogClear is fire-and-forget
         // UI teardown, not a state-machine transition.
         observeHasLeft(cc, frame);
+        // Slice 70-H.5 — track prompt-open vs prompt-closed transitions
+        // for the disconnect-timer state machine. Prompt frames arm the
+        // expectation that a response is pending; state frames clear
+        // the expectation. Runs after broadcast so the timer's view of
+        // "who's connected" matches what the client actually saw.
+        observePromptState(cc, frame);
     }
 
     // ---------- Slice 49 — AI-action diagnostic ----------
@@ -738,6 +859,401 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
     Set<UUID> leaversForTest(UUID gameId) {
         Set<UUID> set = prevHasLeftByGame.get(gameId);
         return set == null ? Set.of() : Set.copyOf(set);
+    }
+
+    // ---------- Slice 70-H.5 — disconnect-timer state machine ----------
+
+    /**
+     * Slice 70-H.5 — observe prompt-open vs prompt-closed transitions
+     * per outgoing frame. Prompt frames ({@link #PROMPT_METHODS})
+     * record the method against the gameId; close frames
+     * ({@link #PROMPT_CLOSE_METHODS}) clear the record AND cancel any
+     * pending timer (the engine moved on; the timer's purpose has
+     * elapsed). Other methods (chat, dialogClear, gameInform, etc.)
+     * leave the state unchanged.
+     *
+     * <p>Package-private for unit tests. Production callers route
+     * through {@link #dispatch}.
+     */
+    void observePromptState(ClientCallback cc, WebStreamFrame frame) {
+        UUID gameId = cc.getObjectId();
+        if (gameId == null || frame == null) {
+            return;
+        }
+        String method = frame.method();
+        if (method == null) {
+            return;
+        }
+        if (PROMPT_METHODS.contains(method)) {
+            openPromptMethodByGame.put(gameId, method);
+            // A fresh prompt arriving means the engine is asking for
+            // a response NOW; any prior pending timer for the same
+            // gameId is stale (it would have been from a previous
+            // prompt). Cancel + re-arm-on-next-disconnect semantics.
+            cancelDisconnectTimer(gameId);
+        } else if (PROMPT_CLOSE_METHODS.contains(method)) {
+            openPromptMethodByGame.remove(gameId);
+            cancelDisconnectTimer(gameId);
+        }
+    }
+
+    /**
+     * Slice 70-H.5 — arm the disconnect-timer for {@code gameId} if
+     * (a) this handler has an open prompt for that game, and (b) the
+     * route-filtered player-route socket count for that game is now
+     * zero. Idempotent: if a timer is already pending for the gameId,
+     * leaves it alone (the existing schedule is fine; no need to
+     * reset the deadline on every onClose call).
+     *
+     * <p>Package-private for tests; production callers route through
+     * {@link #unregister}.
+     */
+    void maybeArmDisconnectTimer(UUID gameId) {
+        if (gameId == null || authService == null) {
+            return;
+        }
+        if (!openPromptMethodByGame.containsKey(gameId)) {
+            return;
+        }
+        if (gamePlayerSocketCount(gameId) > 0) {
+            return;
+        }
+        java.util.concurrent.atomic.AtomicReference<
+                java.util.concurrent.ScheduledFuture<?>> ref =
+                timersByGame.computeIfAbsent(
+                        gameId,
+                        k -> new java.util.concurrent.atomic.AtomicReference<>());
+        // Single-flight: only arm if no future already pending. The
+        // CAS path eliminates a race where two onClose calls arrive
+        // in the same millisecond on different engine threads and
+        // both try to schedule.
+        if (ref.get() != null) {
+            return;
+        }
+        int delaySeconds = authService.disconnectTimeoutSeconds();
+        java.util.concurrent.ScheduledFuture<?> future =
+                authService.disconnectTimerScheduler().schedule(
+                        () -> fireDisconnectTimer(gameId),
+                        delaySeconds,
+                        java.util.concurrent.TimeUnit.SECONDS);
+        if (!ref.compareAndSet(null, future)) {
+            // Another thread armed first; cancel ours, keep theirs.
+            future.cancel(false);
+        } else if (LOG.isDebugEnabled()) {
+            LOG.debug("Disconnect-timer armed: user={}, game={}, delay={}s",
+                    username, gameId, delaySeconds);
+        }
+    }
+
+    /**
+     * Slice 70-H.5 — cancel the disconnect-timer for {@code gameId}
+     * if one is pending. Used on (a) socket reconnect, (b) prompt-
+     * close frame arrival, (c) closeAllSockets, (d) END_GAME_INFO,
+     * (e) gameInit (game-2 of best-of-three).
+     *
+     * <p>Idempotent: no-op when no timer is pending. Package-private
+     * for tests.
+     */
+    void cancelDisconnectTimer(UUID gameId) {
+        if (gameId == null) {
+            return;
+        }
+        java.util.concurrent.atomic.AtomicReference<
+                java.util.concurrent.ScheduledFuture<?>> ref =
+                timersByGame.get(gameId);
+        if (ref == null) {
+            return;
+        }
+        java.util.concurrent.ScheduledFuture<?> future = ref.getAndSet(null);
+        if (future != null) {
+            future.cancel(false);
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("Disconnect-timer cancelled: user={}, game={}",
+                        username, gameId);
+            }
+        }
+    }
+
+    /**
+     * Slice 70-H.5 — cancel every pending disconnect-timer this
+     * handler holds. Called from {@link #closeAllSockets} on session
+     * teardown so the scheduler doesn't leak references after the
+     * handler is logically disposed.
+     */
+    void cancelAllDisconnectTimers() {
+        for (UUID gameId : new ArrayList<>(timersByGame.keySet())) {
+            cancelDisconnectTimer(gameId);
+        }
+        timersByGame.clear();
+    }
+
+    /**
+     * Slice 70-H.5 — timer fire body. Re-checks the "still
+     * disconnected" + "still prompt-open" preconditions inside the
+     * scheduler thread (per critic I5 — guards against the race
+     * where a register or prompt-close arrives between schedule and
+     * fire), then broadcasts the dialogClear-TIMEOUT cross-handler
+     * via {@link AuthService#broadcastDialogClearToGame} and
+     * attempts a best-effort auto-pass via the recorded prompt
+     * method.
+     *
+     * <p>Auto-pass is best-effort: per-method dispatch routes
+     * through {@code MageServerImpl.sendPlayerXxx} which requires
+     * the disconnected user's upstream sessionId. If sessionId is
+     * null (test handler) or the upstream session has been reaped
+     * by {@code UserManagerImpl.checkExpired}, the auto-pass
+     * silently no-ops and the host can manually concede on the
+     * disconnected player's behalf.
+     */
+    void fireDisconnectTimer(UUID gameId) {
+        try {
+            if (gameId == null || authService == null) {
+                return;
+            }
+            // Race guard: the scheduler fired our task, but did the
+            // user reconnect or the engine close the prompt in the
+            // intervening period?
+            if (gamePlayerSocketCount(gameId) > 0) {
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("Disconnect-timer fired but user reconnected; "
+                            + "skipping: user={}, game={}", username, gameId);
+                }
+                return;
+            }
+            String promptMethod = openPromptMethodByGame.get(gameId);
+            if (promptMethod == null) {
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("Disconnect-timer fired but prompt was closed; "
+                            + "skipping: user={}, game={}", username, gameId);
+                }
+                return;
+            }
+            // Resolve this user's playerId for the dialogClear payload.
+            UUID playerId = embedded == null
+                    ? null
+                    : resolveOwnPlayerId(gameId);
+            if (playerId == null) {
+                LOG.warn("Disconnect-timer fired but cannot resolve playerId "
+                        + "for user={} game={}; skipping broadcast.",
+                        username, gameId);
+                return;
+            }
+            LOG.info("Disconnect-timer fired: user={}, game={}, "
+                    + "promptMethod={} — emitting dialogClear-TIMEOUT + "
+                    + "best-effort auto-pass", username, gameId, promptMethod);
+            // Cross-handler broadcast: every other player in the game
+            // sees the TIMEOUT signal so their "waiting on Bob" UI
+            // dismisses.
+            authService.broadcastDialogClearToGame(
+                    gameId, playerId,
+                    mage.webapi.dto.stream.WebDialogClear.REASON_TIMEOUT);
+            // Best-effort engine progress.
+            attemptAutoPass(gameId, promptMethod);
+            // Slice 70 (ADR 0010 v2 D10) — count timer-fired auto-pass
+            // attempts on the admin /metrics endpoint. Distinct from
+            // DIALOG_CLEARS_EMITTED_TOTAL (which counts every dialog
+            // clear including PLAYER_LEFT).
+            mage.webapi.metrics.MetricsRegistry.increment(
+                    mage.webapi.metrics.MetricsRegistry
+                            .DISCONNECT_TIMEOUTS_TOTAL);
+            // Clear the prompt-open record; the timer just resolved
+            // it. The next prompt will arm a fresh state.
+            openPromptMethodByGame.remove(gameId);
+        } catch (RuntimeException ex) {
+            LOG.warn("Disconnect-timer fire body threw: user={}, game={}: {}",
+                    username, gameId, ex.toString());
+        } finally {
+            // The future is done either way; clear our reference so a
+            // subsequent disconnect can re-arm.
+            java.util.concurrent.atomic.AtomicReference<
+                    java.util.concurrent.ScheduledFuture<?>> ref =
+                    timersByGame.get(gameId);
+            if (ref != null) {
+                ref.set(null);
+            }
+        }
+    }
+
+    /**
+     * Slice 70-H.5 — best-effort auto-pass dispatch. The disconnected
+     * player's prompt is resolved with a sensible default per method:
+     * <ul>
+     *   <li>{@code gameAsk} (yes/no) → {@code false} (decline)</li>
+     *   <li>{@code gameTarget} → {@code null} UUID (skip target)</li>
+     *   <li>{@code gameSelect} (combat) → {@code null} UUID (no
+     *       attack/block)</li>
+     *   <li>{@code gamePlayMana} / {@code gamePlayXMana} →
+     *       {@code false} (don't pay)</li>
+     *   <li>{@code gameSelectAmount} → {@code 0} (minimum)</li>
+     *   <li>{@code gameChooseChoice} → empty string (skip)</li>
+     *   <li>{@code gameChooseAbility} → {@code null} UUID (skip)</li>
+     * </ul>
+     *
+     * <p>Failures are caught and logged; the dialogClear-TIMEOUT
+     * signal already gave the audience the right mental model
+     * regardless of whether auto-pass resolves the engine's prompt.
+     */
+    private void attemptAutoPass(UUID gameId, String promptMethod) {
+        if (embedded == null || upstreamSessionId == null) {
+            LOG.debug("attemptAutoPass: skipping (no embedded/sessionId): user={}",
+                    username);
+            return;
+        }
+        try {
+            switch (promptMethod) {
+                case "gameAsk", "gamePlayMana", "gamePlayXMana" ->
+                        embedded.server().sendPlayerBoolean(
+                                gameId, upstreamSessionId, Boolean.FALSE);
+                case "gameTarget", "gameSelect", "gameChooseAbility" ->
+                        embedded.server().sendPlayerUUID(
+                                gameId, upstreamSessionId, null);
+                case "gameSelectAmount" ->
+                        embedded.server().sendPlayerInteger(
+                                gameId, upstreamSessionId, Integer.valueOf(0));
+                case "gameChooseChoice" ->
+                        embedded.server().sendPlayerString(
+                                gameId, upstreamSessionId, "");
+                default -> LOG.debug("attemptAutoPass: unknown promptMethod={} "
+                                + "for user={}; no dispatch", promptMethod, username);
+            }
+        } catch (mage.MageException ex) {
+            LOG.warn("attemptAutoPass MageException: user={}, method={}, game={}: {}",
+                    username, promptMethod, gameId, ex.getMessage());
+        } catch (RuntimeException ex) {
+            LOG.warn("attemptAutoPass unexpected error: user={}, method={}, game={}",
+                    username, promptMethod, gameId, ex);
+        }
+    }
+
+    /**
+     * Slice 70-H.5 — resolve THIS handler's user's playerId in the
+     * given game for the dialogClear payload. Mirrors the
+     * {@link #resolveRecipientPlayerId} pattern (used by the slice-
+     * 69c RoI filter) but inlined here so the timer body has no
+     * dependency on the engine-thread mapper context.
+     *
+     * <p>Returns null when the embedded server isn't booted (test
+     * handler), the user isn't seated in the game, or reflection
+     * fails. The caller's null-check skips the broadcast.
+     */
+    private UUID resolveOwnPlayerId(UUID gameId) {
+        if (embedded == null || gameId == null) {
+            return null;
+        }
+        UUID userId = embedded.managerFactory().userManager()
+                .getUserByName(username)
+                .map(mage.server.User::getId)
+                .orElse(null);
+        if (userId == null) {
+            return null;
+        }
+        return GameLookup.findUserPlayerMap(gameId, embedded.managerFactory())
+                .map(m -> m.get(userId))
+                .orElse(null);
+    }
+
+    /**
+     * Slice 70-H.5 — public hook used by
+     * {@link AuthService#broadcastDialogClearToGame} to deliver a
+     * synthesized dialogClear frame into THIS handler's pipeline.
+     * The frame is appended to the buffer (so reconnect-via-since
+     * replays it) and broadcast to live sockets.
+     *
+     * <p>messageId is set to {@code lastBufferedMessageId + 1} so
+     * the frame sits AFTER every previously-buffered frame in
+     * messageId order — a {@code ?since=N} reconnect where N is the
+     * recipient's last-seen messageId before the broadcast will
+     * correctly replay the dialogClear. Empty buffer → messageId 1
+     * (reasonable default; real frames never start at 0).
+     */
+    public void appendAndBroadcastSyntheticDialogClear(
+            UUID gameId, UUID leaverPlayerId, String reason) {
+        if (gameId == null || leaverPlayerId == null || reason == null) {
+            return;
+        }
+        int syntheticMessageId = nextSyntheticMessageId();
+        WebStreamFrame frame = new WebStreamFrame(
+                SchemaVersion.CURRENT,
+                "dialogClear",
+                syntheticMessageId,
+                gameId.toString(),
+                new mage.webapi.dto.stream.WebDialogClear(
+                        leaverPlayerId.toString(), reason));
+        appendBuffer(frame);
+        // Reuse the existing fan-out path. The first arg cc is null
+        // because the synthesized frame has no triggering callback;
+        // broadcast handles cc==null defensively (the only cc usage
+        // there is for chat-route filtering, which is gated on
+        // method=="chatMessage").
+        broadcastSynthetic(frame);
+        // Slice 70 — mirror the slice-69c emitDialogClear metric so
+        // ops sees the volume on the admin /metrics endpoint.
+        mage.webapi.metrics.MetricsRegistry.increment(
+                mage.webapi.metrics.MetricsRegistry.DIALOG_CLEARS_EMITTED_TOTAL);
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("dialogClear synthesized via cross-handler broadcast: "
+                    + "user={}, game={}, leaver={}, reason={}, msgId={}",
+                    username, gameId, leaverPlayerId, reason, syntheticMessageId);
+        }
+    }
+
+    /**
+     * Slice 70-H.5 — return a messageId strictly greater than every
+     * id currently in the buffer. Used for synthesized frames whose
+     * id is not assigned by upstream's callback counter.
+     */
+    private int nextSyntheticMessageId() {
+        synchronized (buffer) {
+            int max = 0;
+            for (WebStreamFrame f : buffer) {
+                if (f.messageId() > max) {
+                    max = f.messageId();
+                }
+            }
+            return max + 1;
+        }
+    }
+
+    /**
+     * Slice 70-H.5 — reduced fan-out path used for synthesized
+     * frames that have no triggering {@link ClientCallback}. Reuses
+     * the route-kind filter (so dialogClear delivers only to player
+     * sockets, never spectator) but skips the chat-scoping logic
+     * (chat is the only frame that needs cc.getObjectId() for chatId
+     * matching).
+     */
+    private void broadcastSynthetic(WebStreamFrame frame) {
+        if (sockets.isEmpty()) {
+            return;
+        }
+        List<WsContext> snapshot = new ArrayList<>(sockets);
+        String frameRouteKind = routeKindFor(frame);
+        for (WsContext ctx : snapshot) {
+            if (frameRouteKind != null && !shouldDeliverByRoute(ctx, frameRouteKind)) {
+                continue;
+            }
+            try {
+                ctx.send(frame);
+                mage.webapi.metrics.MetricsRegistry.increment(
+                        mage.webapi.metrics.MetricsRegistry.FRAMES_EGRESSED_TOTAL);
+            } catch (RuntimeException ex) {
+                LOG.warn("Synthetic-frame send failed: user={}, method={}: {}",
+                        username, frame.method(), ex.getMessage());
+            }
+        }
+    }
+
+    /** Test helper — current open-prompt method for {@code gameId}, or null. */
+    String openPromptMethodForTest(UUID gameId) {
+        return openPromptMethodByGame.get(gameId);
+    }
+
+    /** Test helper — true when a disconnect-timer is currently armed for {@code gameId}. */
+    boolean hasArmedDisconnectTimerForTest(UUID gameId) {
+        java.util.concurrent.atomic.AtomicReference<
+                java.util.concurrent.ScheduledFuture<?>> ref =
+                timersByGame.get(gameId);
+        return ref != null && ref.get() != null;
     }
 
     /**

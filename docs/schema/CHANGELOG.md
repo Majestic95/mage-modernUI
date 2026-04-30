@@ -63,11 +63,30 @@ production wire but matters for older fixtures.
 
 This bump ships the wire-field detection surface + the PlayerFrame
 DISCONNECTED overlay. The per-prompt disconnect-timer (ADR 0010 v2
-D11(e)) and the auto-pass response to the engine are deferred to
-slice 70-H.5; the `WebDialogClear.REASON_TIMEOUT` constant lands in
-this slice as forward-compat for that follow-up. No
-`dialogClear{reason:"TIMEOUT"}` frames are emitted by the server
-yet.
+D11(e)) + auto-pass + cross-handler `dialogClear{reason:"TIMEOUT"}`
+broadcast land in slice 70-H.5 (no schema bump — the
+`WebDialogClear.REASON_TIMEOUT` constant + the wire fields are
+already in place since 1.23). Slice 70-H.5 ships:
+
+- Per-prompt disconnect-timer state machine in
+  `WebSocketCallbackHandler` (60s default, configurable via
+  `XMAGE_DISCONNECT_TIMEOUT_SEC`, clamped to [30, 180]). Arms on
+  prompt-open + last-socket-close; cancels on reconnect or
+  prompt-close frame; fires the auto-pass + dialogClear-TIMEOUT.
+- Cross-handler dialogClear broadcast via
+  `AuthService.broadcastDialogClearToGame` so every other player's
+  UI dismisses the "waiting on Bob" affordance.
+- Best-effort auto-pass dispatch by prompt method
+  (gameAsk → false, gameTarget → null, gameSelectAmount → 0, etc.)
+  via `MageServerImpl.sendPlayerXxx`.
+- `aria-live="polite"` connection-state announcer in `GameTable`
+  ("alice disconnected" / "alice reconnected") for SR parity per
+  slice 70-H critic UX-I3.
+- Cleanup hooks: `closeAllSockets` cancels every armed timer (per
+  critic C2); `gameInit` / `gameUpdate` / `gameOver` /
+  `endGameInfo` cancel the per-game timer (per critic C1).
+- New metric `xmage_disconnect_timeouts_total` counts every fired
+  timer for ops observability.
 
 ### Client contract (per slice 70-H critic UX-I4)
 

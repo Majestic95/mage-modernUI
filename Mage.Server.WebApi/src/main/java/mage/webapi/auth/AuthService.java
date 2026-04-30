@@ -70,8 +70,25 @@ public final class AuthService implements AutoCloseable {
     private final EmbeddedServer embedded;
     private final WebSessionStore store;
     private final ScheduledExecutorService sweeper;
+    /**
+     * Slice 70-H.5 — single shared {@link ScheduledExecutorService} for
+     * the per-prompt disconnect-timers (per critic N11 of slice 70-H
+     * technical critic). One daemon thread services every handler's
+     * timer; bounded ownership beats N daemon threads for N users.
+     * Cleanly shut down in {@link #close()} alongside the session
+     * sweeper.
+     */
+    private final ScheduledExecutorService disconnectTimerScheduler;
     private final ConcurrentHashMap<String, WebSocketCallbackHandler> handlersBySessionId =
             new ConcurrentHashMap<>();
+    /**
+     * Slice 70-H.5 — disconnect-timeout in seconds, read from
+     * {@code XMAGE_DISCONNECT_TIMEOUT_SEC} at construction time.
+     * Default 60; clamped to [30, 180]. Bad values fall back to the
+     * default with a WARN log (per critic N10 — soft-fail, not throw,
+     * since this is non-load-bearing UX timing).
+     */
+    private final int disconnectTimeoutSeconds;
 
     public AuthService(EmbeddedServer embedded, WebSessionStore store) {
         this.embedded = embedded;
@@ -82,6 +99,36 @@ public final class AuthService implements AutoCloseable {
             return t;
         });
         this.sweeper.scheduleAtFixedRate(this::sweep, 60, 60, TimeUnit.SECONDS);
+        this.disconnectTimerScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "webapi-disconnect-timer");
+            t.setDaemon(true);
+            return t;
+        });
+        this.disconnectTimeoutSeconds = readDisconnectTimeoutSeconds();
+        LOG.info("Disconnect-timer policy: {}s on prompt-open + last-socket-close",
+                disconnectTimeoutSeconds);
+    }
+
+    /**
+     * Slice 70-H.5 — accessor for the shared disconnect-timer
+     * scheduler. Per critic N11, one scheduler at AuthService level
+     * (one daemon thread, predictable shutdown) beats N per-handler
+     * schedulers for N users.
+     */
+    public ScheduledExecutorService disconnectTimerScheduler() {
+        return disconnectTimerScheduler;
+    }
+
+    /**
+     * Slice 70-H.5 — disconnect-timer duration in seconds. Read from
+     * {@code XMAGE_DISCONNECT_TIMEOUT_SEC} env var at AuthService
+     * construction; clamped to [30, 180] with WARN-on-fallback (per
+     * critic N10). The bound matches reasonable network-blip tolerance
+     * (30s lower bound prevents flickering on brief re-connects;
+     * 180s upper bound caps the worst-case "stuck game" window).
+     */
+    public int disconnectTimeoutSeconds() {
+        return disconnectTimeoutSeconds;
     }
 
     /**
@@ -330,14 +377,113 @@ public final class AuthService implements AutoCloseable {
         // (close sockets + disconnect upstream) doesn't get interrupted
         // mid-iteration. Hardening fix 2026-04-26.
         sweeper.shutdown();
+        // Slice 70-H.5 — also tear down the disconnect-timer scheduler
+        // on AuthService close. Per-handler timer cancellation already
+        // ran via closeAllSockets in silentDisconnect; this is the
+        // belt-and-suspenders cleanup for tasks that leaked past
+        // those hooks.
+        disconnectTimerScheduler.shutdown();
         try {
             if (!sweeper.awaitTermination(5, TimeUnit.SECONDS)) {
                 sweeper.shutdownNow();
             }
+            if (!disconnectTimerScheduler.awaitTermination(5, TimeUnit.SECONDS)) {
+                disconnectTimerScheduler.shutdownNow();
+            }
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
             sweeper.shutdownNow();
+            disconnectTimerScheduler.shutdownNow();
         }
+    }
+
+    /**
+     * Slice 70-H.5 (ADR 0010 v2 D11(e)) — broadcast a synthesized
+     * {@code dialogClear} frame to every handler whose user is
+     * seated in {@code gameId}. Used when one player's per-prompt
+     * disconnect-timer fires; the other players' UIs need the
+     * teardown signal so the "waiting on Bob" affordance dismisses.
+     *
+     * <p>Walks {@link #handlersBySessionId} and resolves each
+     * handler's user ID. If that user ID appears in the engine's
+     * per-game {@code userPlayerMap}, the handler receives the
+     * synthesized frame (appended to its buffer for reconnect-
+     * replay safety, then broadcast to live sockets via the
+     * handler's {@code appendAndBroadcastSynthetic} hook).
+     *
+     * <p>Best-effort: per-handler failures are logged at DEBUG and
+     * skipped — the contract is "every handler that CAN receive
+     * gets the frame," not "every handler atomically receives it."
+     * The reason field on the wire (e.g. {@code "TIMEOUT"}) tells
+     * clients which dialogClear flavor this is.
+     */
+    public void broadcastDialogClearToGame(UUID gameId, UUID leaverPlayerId, String reason) {
+        if (gameId == null || leaverPlayerId == null || reason == null) {
+            return;
+        }
+        java.util.Optional<Map<UUID, UUID>> userPlayerMap =
+                GameLookup.findUserPlayerMap(gameId, embedded.managerFactory());
+        if (userPlayerMap.isEmpty()) {
+            LOG.debug("broadcastDialogClearToGame: no userPlayerMap for game {}; "
+                    + "skipping broadcast (game may have ended)", gameId);
+            return;
+        }
+        java.util.Set<UUID> seatedUserIds = userPlayerMap.get().keySet();
+        int delivered = 0;
+        for (WebSocketCallbackHandler h : handlersBySessionId.values()) {
+            UUID handlerUserId = embedded.managerFactory().userManager()
+                    .getUserByName(h.username())
+                    .map(mage.server.User::getId)
+                    .orElse(null);
+            if (handlerUserId == null || !seatedUserIds.contains(handlerUserId)) {
+                continue;
+            }
+            try {
+                h.appendAndBroadcastSyntheticDialogClear(gameId, leaverPlayerId, reason);
+                delivered++;
+            } catch (RuntimeException ex) {
+                LOG.debug("broadcastDialogClearToGame: handler for user={} threw "
+                        + "while emitting dialogClear: {}", h.username(), ex.toString());
+            }
+        }
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("broadcastDialogClearToGame: game={}, leaver={}, reason={}, "
+                    + "handlersDelivered={}", gameId, leaverPlayerId, reason, delivered);
+        }
+    }
+
+    /**
+     * Slice 70-H.5 — read {@code XMAGE_DISCONNECT_TIMEOUT_SEC} env
+     * with soft-fail semantics (per critic N10). Returns the default
+     * 60s on unset / blank / unparseable / out-of-bounds; logs WARN
+     * for the unparseable / out-of-bounds branches so an operator
+     * misconfig surfaces. Bounds [30, 180] match reasonable network-
+     * blip tolerance (30s lower; 180s upper caps the stuck-game
+     * window).
+     */
+    private static int readDisconnectTimeoutSeconds() {
+        final int defaultSeconds = 60;
+        final int minSeconds = 30;
+        final int maxSeconds = 180;
+        String env = System.getenv("XMAGE_DISCONNECT_TIMEOUT_SEC");
+        if (env == null || env.isBlank()) {
+            return defaultSeconds;
+        }
+        int parsed;
+        try {
+            parsed = Integer.parseInt(env.trim());
+        } catch (NumberFormatException ex) {
+            LOG.warn("XMAGE_DISCONNECT_TIMEOUT_SEC unparseable ('{}') — falling back "
+                    + "to {}s", env, defaultSeconds);
+            return defaultSeconds;
+        }
+        if (parsed < minSeconds || parsed > maxSeconds) {
+            LOG.warn("XMAGE_DISCONNECT_TIMEOUT_SEC out of bounds ({}, must be in "
+                    + "[{}, {}]) — falling back to {}s",
+                    parsed, minSeconds, maxSeconds, defaultSeconds);
+            return defaultSeconds;
+        }
+        return parsed;
     }
 
     // ---------- internals ----------
@@ -383,8 +529,16 @@ public final class AuthService implements AutoCloseable {
         // connectionState wire field. AuthService → handler → AuthService
         // is a non-circular reference (AuthService is fully constructed
         // before any handler is registered).
+        //
+        // Slice 70-H.5 — pass {@code upstreamSessionId} so the
+        // disconnect-timer fire body can route auto-pass dispatch
+        // through {@code MageServerImpl.sendPlayerXxx} (which all
+        // require sessionId to identify the responding player). The
+        // handler doesn't otherwise need its sessionId; it's a
+        // single-use hint for the auto-pass code path.
         WebSocketCallbackHandler handler =
-                new WebSocketCallbackHandler(username, embedded, this);
+                new WebSocketCallbackHandler(
+                        username, embedded, this, upstreamSessionId);
         handlersBySessionId.put(upstreamSessionId, handler);
         sessionManager().createSession(upstreamSessionId, handler);
     }

@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import type { WebPlayerView } from '../api/schemas';
 import { KEEP_ELIMINATED } from '../featureFlags';
 
@@ -66,6 +67,109 @@ export function formatEliminationAnnouncement(
     'Eliminated: ' +
     leavers.map((p) => p.name || 'unknown').join(', ')
   );
+}
+
+/**
+ * Slice 70-H.5 (per slice 70-H critic UX-I3) — diff hook returning the
+ * latest connection-state transition announcement for the aria-live
+ * region. The PlayerFrame's role="group" aria-label includes
+ * "disconnected" but most screen readers (NVDA, VoiceOver) don't
+ * announce attribute changes on a group element — they announce the
+ * label only on focus-enter. For real-time SR notification of
+ * "your opponent just dropped" / "they're back," a dedicated
+ * aria-live="polite" region is required.
+ *
+ * <p>Tracks {@code connectionState} per playerId across renders via a
+ * {@link useRef}; emits a transient announcement string when a
+ * non-eliminated player flips connected ↔ disconnected. The string
+ * clears after 1500ms so a subsequent identical transition (the same
+ * player drops + reconnects + drops again) re-fires the announcement
+ * — most SR engines re-announce only when the live region's text
+ * value changes, so flipping back to "" and then to the same string
+ * is the canonical pattern.
+ *
+ * <p>Eliminated players are excluded — their {@code hasLeft=true}
+ * already takes precedence in the visual treatment + aria-label
+ * composition; layering "alice disconnected" on top of "alice
+ * eliminated" is SR spam.
+ */
+export function useConnectionStateAnnouncements(
+  players: WebPlayerView[],
+): string {
+  // The codebase pattern for "track prior render's state without
+  // running into react-hooks/set-state-in-effect or refs-in-render"
+  // is the {@code SideboardModal.tsx:109-116} precedent: store the
+  // diff source in {@code useState}, conditionally call
+  // {@code setState} during render when the prop has changed.
+  // React schedules the re-render before commit; the rule is
+  // satisfied because the setState is gated on a prop-vs-state diff
+  // (not on every render).
+  //
+  // {@code playersFingerprint} is a stable string of every player's
+  // (id, connectionState, hasLeft) — diffing this string vs the
+  // stored fingerprint detects every meaningful change without a
+  // deep Map equality check.
+  const playersFingerprint = players
+    .map((p) => `${p.playerId}:${p.connectionState}:${p.hasLeft}`)
+    .sort()
+    .join('|');
+  const [prevFingerprint, setPrevFingerprint] = useState<string>(
+    playersFingerprint,
+  );
+  const [prevStateMap, setPrevStateMap] = useState<Map<string, string>>(
+    () => new Map(players.map((p) => [p.playerId, p.connectionState])),
+  );
+  const [announcement, setAnnouncement] = useState<string>('');
+
+  if (prevFingerprint !== playersFingerprint) {
+    // Compute transitions against the stored prior-state map.
+    const transitions: string[] = [];
+    const next = new Map<string, string>();
+    for (const p of players) {
+      next.set(p.playerId, p.connectionState);
+      const prev = prevStateMap.get(p.playerId);
+      if (prev === undefined) {
+        // First observation of this player — no transition.
+        continue;
+      }
+      if (prev === p.connectionState) {
+        continue;
+      }
+      if (p.hasLeft) {
+        // Terminal state takes precedence; suppress disconnect /
+        // reconnect announcement (the elimination announcer or
+        // the PlayerFrame slash-overlay aria-label conveys the
+        // signal).
+        continue;
+      }
+      const name = p.name || 'A player';
+      if (p.connectionState === 'disconnected') {
+        transitions.push(`${name} disconnected`);
+      } else if (prev === 'disconnected') {
+        transitions.push(`${name} reconnected`);
+      }
+    }
+    setPrevFingerprint(playersFingerprint);
+    setPrevStateMap(next);
+    if (transitions.length > 0) {
+      setAnnouncement(transitions.join('. '));
+    }
+  }
+
+  // Clear-out timer fires 1.5s after the announcement updates so a
+  // subsequent identical transition (same player drops + reconnects
+  // + drops) re-fires the announcement. {@code setTimeout} callbacks
+  // are exempt from {@code react-hooks/set-state-in-effect} because
+  // they're not running synchronously in the effect body.
+  useEffect(() => {
+    if (!announcement) {
+      return;
+    }
+    const timer = setTimeout(() => setAnnouncement(''), 1500);
+    return () => clearTimeout(timer);
+  }, [announcement]);
+
+  return announcement;
 }
 
 /**
