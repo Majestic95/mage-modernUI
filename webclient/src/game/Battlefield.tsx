@@ -179,6 +179,13 @@ export function Battlefield({
               <PlayerArea
                 player={p}
                 perspective="opponent"
+                // Slice 70-K — pod position drives the redesigned
+                // PlayerArea's flex direction (vertical for top,
+                // horizontal for left/right). gridAreaForOpponent
+                // returns 'top' | 'left' | 'right'; PlayerAreaPosition
+                // accepts those plus 'bottom' (used by the self pod
+                // below).
+                position={area}
                 canAct={canAct}
                 onObjectClick={onObjectClick}
                 targetable={eligibleTargetIds.has(p.playerId)}
@@ -220,6 +227,7 @@ export function Battlefield({
             <PlayerArea
               player={me}
               perspective="self"
+              position="bottom"
               canAct={canAct}
               onObjectClick={onObjectClick}
               targetable={eligibleTargetIds.has(me.playerId)}

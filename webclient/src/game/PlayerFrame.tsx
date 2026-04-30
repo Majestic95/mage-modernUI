@@ -1,9 +1,11 @@
 import { useMemo, type CSSProperties } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import type { WebPlayerView } from '../api/schemas';
+import { REDESIGN } from '../featureFlags';
 import { computeHaloBackground } from './halo';
 import { LifeCounter } from './LifeCounter';
 import { ManaPool } from './ManaPool';
+import { PlayerPortrait } from './PlayerPortrait';
 import { PriorityTag } from './PriorityTag';
 import { ZoneIcon } from './ZoneIcon';
 import { slow } from '../animation/debug';
@@ -58,6 +60,16 @@ interface Props {
   /** Used by the modal targetable-name affordance and SR labels. */
   perspective: 'self' | 'opponent';
   /**
+   * Slice 70-K — pod position in the 4-pod grid. Drives the
+   * REDESIGN branch's portrait sizing (large for self, medium for
+   * opponents) and label-stack orientation (vertical for top/bottom,
+   * may differ for left/right in 70-Z polish). Defaults to
+   * 'bottom' so legacy tests don't need updating; in legacy mode
+   * the prop is ignored entirely (the strip layout is
+   * position-independent).
+   */
+  position?: 'top' | 'left' | 'right' | 'bottom';
+  /**
    * Click-handler for the player's name when {@code targetable}.
    * Dispatches the player's UUID as a target response (slice 15).
    */
@@ -72,9 +84,27 @@ interface Props {
 export function PlayerFrame({
   player,
   perspective,
+  position = 'bottom',
   onPlayerClick,
   targetable,
 }: Props) {
+  // Slice 70-K — REDESIGN branch dispatches before any legacy
+  // computation. The two paths are mutually exclusive at render
+  // time but share the player view-object; everything heavy-weight
+  // (HaloRing, slash overlay, disconnected pill) only runs in the
+  // legacy branch below.
+  if (REDESIGN) {
+    return (
+      <PlayerFrameRedesigned
+        player={player}
+        perspective={perspective}
+        position={position}
+        onPlayerClick={onPlayerClick}
+        targetable={targetable}
+      />
+    );
+  }
+
   const eliminated = player.hasLeft;
   // Slice 70-H — recoverable disconnected state. Suppress when
   // eliminated since hasLeft is the terminal state and takes
@@ -473,4 +503,259 @@ function HaloRing({
 // Slice 70-J — computeHaloBackground + manaTokenForCode extracted
 // to ./halo.ts for reuse by PlayerPortrait's circular halo. Imports
 // happen at the top of the file. Slice 70-K will delete the
-// HaloRing component above when PlayerPortrait owns the halo.
+// HaloRing component above when PlayerPortrait owns the halo —
+// today the legacy branch still consumes HaloRing.
+
+/* ============================================================
+ * Slice 70-K (redesign branch) — picture-catalog §2 anatomy
+ *
+ * Vertical stack:
+ *   - PlayerPortrait (size depends on perspective)
+ *   - Life numeral overlaid INSIDE the portrait at lower-portion
+ *   - Player name (semibold, body size)
+ *   - Commander name (caption, secondary color)
+ *
+ * State composition:
+ *   - PriorityTag floats above the portrait (when player has priority)
+ *   - Disconnected pill in top-right of frame (when disconnected)
+ *   - Eliminated state desaturates the entire frame + slash
+ *     overlay (slash position is portrait-area-only here, polished
+ *     to whole-pod coverage in 70-Z)
+ *
+ * What's NOT in the redesigned PlayerFrame:
+ *   - ACTIVE pill (replaced by halo pulse on the portrait)
+ *   - Inline mana pool (relocated to top-right of hand region in 70-P)
+ *   - Inline ZoneIcons (relocated to a small cluster adjacent in 70-P)
+ *   - Inline LifeCounter (life is now overlaid on the portrait)
+ *   - The bordered/padded panel chrome (PlayerArea drops it too)
+ * ============================================================ */
+function PlayerFrameRedesigned({
+  player,
+  perspective,
+  position,
+  onPlayerClick,
+  targetable,
+}: {
+  player: WebPlayerView;
+  perspective: 'self' | 'opponent';
+  position: 'top' | 'left' | 'right' | 'bottom';
+  onPlayerClick: (id: string) => void;
+  targetable: boolean;
+}) {
+  const eliminated = player.hasLeft;
+  const disconnected =
+    !eliminated && player.connectionState === 'disconnected';
+
+  // Picture-catalog §2.D — local pod uses 'large' (96px), opponent
+  // pods use 'medium' (80px). Position prop is reserved for further
+  // per-position tuning in slice 70-Z polish (e.g., portrait scale
+  // for left/right pods that share horizontal real estate with
+  // their battlefield rows).
+  void position;
+  const portraitSize = perspective === 'self' ? 'large' : 'medium';
+
+  // Aria-label preserved verbatim from the legacy branch — same
+  // composition rules per slice 70-D + 70-H critic UX-I3 / I1.
+  const ariaLabel = [
+    player.name || 'Unknown player',
+    `${player.life} life`,
+    perspective === 'self' ? 'your seat' : null,
+    player.isActive ? 'active turn' : null,
+    player.hasPriority ? 'has priority' : null,
+    eliminated ? 'eliminated' : null,
+    disconnected ? 'disconnected' : null,
+    formatColorIdentity(player.colorIdentity),
+  ]
+    .filter(Boolean)
+    .join(', ');
+
+  // Find the first commander entry for the displayed commander name
+  // beneath the player name. Partner pairings show only the first
+  // commander's name; slice 70-Z may revisit if the partner is
+  // load-bearing visually (e.g., "Tymna / Thrasios" combined).
+  const commander = useMemo(
+    () =>
+      player.commandList.find((co) => co.kind === 'commander') ?? null,
+    [player.commandList],
+  );
+
+  // Targetable name → button (clickable to dispatch as target).
+  // Same rules as legacy: only when targetable AND not eliminated.
+  // Inlined into the JSX below to satisfy
+  // react-hooks/static-components — declaring a sub-component
+  // inside the render function is treated as "created during
+  // render" and would defeat React's component identity tracking.
+  const nameIsTargetable = targetable && !eliminated;
+
+  return (
+    <div
+      data-testid={`player-frame-${perspective}`}
+      data-redesign="true"
+      data-perspective={perspective}
+      data-eliminated={eliminated || undefined}
+      data-disconnected={disconnected || undefined}
+      role="group"
+      aria-label={ariaLabel}
+      className={
+        'relative flex flex-col items-center gap-1 transition-[opacity,filter] duration-700 ease-in ' +
+        (eliminated
+          ? 'opacity-[0.45] [filter:grayscale(1)]'
+          : disconnected
+            ? 'opacity-[0.7] [filter:grayscale(0.6)]'
+            : 'opacity-100 [filter:grayscale(0)]')
+      }
+    >
+      {/* Portrait + life overlay. The portrait wrapper is the
+          positioning context for both the life numeral (overlay
+          inside the circle, lower-portion per picture-catalog
+          §2.0) and the PriorityTag (floats above-right per spec
+          §Player states / picture-catalog §2.4). */}
+      <div className="relative" data-testid="player-portrait-wrapper">
+        <PlayerPortrait
+          player={player}
+          size={portraitSize}
+          haloVariant="circular"
+        />
+        {/* Life numeral overlaid on the portrait. Picture-catalog
+            §2.0: large bold numerals, white with subtle text-shadow
+            for legibility against varied art. Positioned at lower-
+            portion of the circle. Larger font for the local player
+            (large portrait gets a larger numeral). */}
+        <span
+          data-testid={`life-numeral-${perspective}`}
+          aria-hidden="true"
+          className={
+            'absolute left-1/2 -translate-x-1/2 font-bold text-white drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)] tabular-nums leading-none ' +
+            (perspective === 'self'
+              ? 'bottom-1 text-2xl'
+              : 'bottom-1 text-xl')
+          }
+        >
+          {player.life}
+        </span>
+        {/* Priority tag floats above the portrait so it doesn't
+            obscure the commander art or compete with the life
+            numeral. Same component as legacy; only the position
+            anchor changes. */}
+        <AnimatePresence>
+          {player.hasPriority && (
+            <span
+              key="priority"
+              className="absolute -top-2 left-1/2 -translate-x-1/2"
+            >
+              <PriorityTag />
+            </span>
+          )}
+        </AnimatePresence>
+        {/* Disconnected pill — top-right corner of the frame, NOT
+            of the portrait, so it stays visible alongside the
+            commander art. Picture-catalog §2.4 (recoverable state). */}
+        <AnimatePresence>
+          {disconnected && (
+            <motion.div
+              key="disconnected-pill"
+              data-testid={`disconnected-pill-${perspective}`}
+              data-essential-motion="true"
+              aria-hidden="true"
+              className="pointer-events-none absolute -right-1 -top-1"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.25, ease: 'easeIn' }}
+            >
+              <span
+                className="rounded px-1.5 py-0.5 text-[0.6rem] font-medium uppercase tracking-wider whitespace-nowrap"
+                style={{
+                  backgroundColor: 'var(--color-bg-overlay)',
+                  color: 'var(--color-text-primary)',
+                  border: '1px solid var(--color-text-muted)',
+                }}
+              >
+                Disconnected
+              </span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      {/* Name + commander stack. Picture-catalog §2.0:
+          Player name in --font-weight-semibold, --font-size-heading-sm
+          (14px). Commander name in --font-size-caption (12px),
+          --color-text-secondary. Center-aligned for top/bottom pods. */}
+      <div
+        className="flex flex-col items-center gap-0.5 max-w-full px-1"
+        data-testid="player-name-stack"
+      >
+        {nameIsTargetable ? (
+          <button
+            type="button"
+            data-testid={`target-player-${perspective}`}
+            onClick={() => onPlayerClick(player.playerId)}
+            className="font-medium text-fuchsia-300 hover:text-fuchsia-200 underline underline-offset-2 truncate max-w-full"
+            title="Click to target this player"
+          >
+            {player.name || '<unknown>'}
+          </button>
+        ) : (
+          <span
+            className="font-medium text-zinc-100 truncate max-w-full"
+            title={
+              eliminated && targetable
+                ? 'Eliminated — cannot be targeted'
+                : undefined
+            }
+          >
+            {player.name || '<unknown>'}
+          </span>
+        )}
+        {commander && (
+          <span
+            data-testid="commander-name-label"
+            className="text-xs text-zinc-400 truncate max-w-full"
+            title={commander.name}
+          >
+            {commander.name}
+          </span>
+        )}
+      </div>
+
+      {/* Eliminated slash overlay — picture-catalog §2.4. Today
+          covers the PlayerFrame area only (portrait + name stack);
+          slice 70-Z polish moves this to the whole-pod coverage
+          per spec §Player states. Same SVG geometry as legacy. */}
+      <AnimatePresence>
+        {eliminated && (
+          <motion.svg
+            key="elimination-slash"
+            data-testid={`elimination-slash-${perspective}`}
+            data-essential-motion="true"
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 h-full w-full"
+            viewBox="0 0 100 100"
+            preserveAspectRatio="xMidYMid meet"
+            initial={{ opacity: 0, scale: 1.05 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0 }}
+            transition={slow(ELIMINATION_SLASH)}
+            style={{ transformOrigin: '50% 50%' }}
+          >
+            <line
+              x1="5" y1="95" x2="95" y2="5"
+              stroke="var(--color-eliminated-slash-outline)"
+              strokeWidth="8"
+              strokeLinecap="round"
+              vectorEffect="non-scaling-stroke"
+            />
+            <line
+              x1="5" y1="95" x2="95" y2="5"
+              stroke="var(--color-eliminated-slash)"
+              strokeWidth="3"
+              strokeLinecap="round"
+              vectorEffect="non-scaling-stroke"
+            />
+          </motion.svg>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}

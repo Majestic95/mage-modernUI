@@ -3,10 +3,23 @@ import type { WebPlayerView } from '../api/schemas';
 import { CommandZone } from './CommandZone';
 import { PlayerFrame } from './PlayerFrame';
 import { BattlefieldRowGroup } from './BattlefieldRowGroup';
+import { REDESIGN } from '../featureFlags';
+
+/**
+ * Slice 70-K — pod position within the 4-pod grid. Drives both the
+ * REDESIGN-mode flex direction (vertical for top/bottom, horizontal
+ * for left/right) and the portrait sizing inside PlayerFrame.
+ *
+ * <p>Defaults to {@code 'bottom'} when the caller omits the prop —
+ * preserves legacy behavior for existing tests that don't pass
+ * the new prop.
+ */
+export type PlayerAreaPosition = 'top' | 'left' | 'right' | 'bottom';
 
 export function PlayerArea({
   player,
   perspective,
+  position = 'bottom',
   canAct,
   onObjectClick,
   targetable,
@@ -18,6 +31,14 @@ export function PlayerArea({
 }: {
   player: WebPlayerView;
   perspective: 'self' | 'opponent';
+  /**
+   * Slice 70-K — pod position in the 4-pod grid. Battlefield passes
+   * the result of {@link gridAreaForOpponent} for opponents and
+   * {@code 'bottom'} for the local player. Used by the REDESIGN
+   * branch to choose flex-row vs flex-col layout. Defaults to
+   * {@code 'bottom'} so legacy tests don't need to be updated.
+   */
+  position?: PlayerAreaPosition;
   canAct: boolean;
   onObjectClick: (id: string) => void;
   /**
@@ -89,6 +110,92 @@ export function PlayerArea({
   // explicit label; SR users now traverse PlayerFrame's group label
   // → battlefield contents (self-describing via permanent chips).
 
+  // Slice 70-K — battlefield rows, factored out for shared use across
+  // both the legacy strip layout and the redesigned position-aware
+  // layout below. Rendering logic is unchanged from slice 53 + slice
+  // 52c — the layoutId machinery for cross-zone glide animations is
+  // preserved verbatim regardless of which surrounding layout the
+  // rows mount into.
+  const battlefieldRows = (
+    <div className="flex flex-col gap-1.5">
+      {battlefield.length === 0 ? (
+        <span className="text-xs text-zinc-600 italic">
+          No permanents yet.
+        </span>
+      ) : (
+        orderedRows.map((row) => {
+          const items = rows[row];
+          if (items.length === 0) return null;
+          return (
+            <BattlefieldRowGroup
+              key={row}
+              row={row}
+              permanents={items}
+              canAct={canAct}
+              onObjectClick={onObjectClick}
+              eligibleCombatIds={eligibleCombatIds}
+              combatRoles={combatRoles}
+            />
+          );
+        })
+      )}
+    </div>
+  );
+
+  // Slice 70-K — REDESIGN branch. Per picture-catalog §2.1:
+  //   - top / bottom pods: rows ABOVE the portrait (vertical stack,
+  //     rows render first then frame).
+  //   - left pod: portrait on left, rows on right (horizontal,
+  //     frame first then rows).
+  //   - right pod: portrait on right, rows on left (horizontal,
+  //     row-reverse so frame renders right but DOM order is
+  //     [frame, rows]).
+  //
+  // Pod chrome dropped per picture-catalog §6.3 — pods float on the
+  // battlefield without a panel container in the redesigned layout.
+  // CommandZone strip dropped because the commander identity is now
+  // shown via the portrait itself in PlayerFrame's redesign branch.
+  if (REDESIGN) {
+    const isVertical = position === 'top' || position === 'bottom';
+    const flexClass = isVertical
+      ? 'flex flex-col gap-3'
+      : position === 'right'
+        ? 'flex flex-row-reverse gap-3'
+        : 'flex flex-row gap-3';
+    // Drop-target ring stays as the only visible chrome on the pod
+    // wrapper — it's a transient interaction state, not background
+    // chrome, so it doesn't violate the "pods float" principle.
+    return (
+      <div
+        data-testid={`player-area-${perspective}`}
+        data-position={position}
+        data-droppable="board"
+        data-drop-target={isDropTarget || undefined}
+        data-active={player.isActive || undefined}
+        data-priority={player.hasPriority || undefined}
+        tabIndex={player.hasLeft ? undefined : tabIndex}
+        onPointerUp={onBoardDrop}
+        className={
+          flexClass +
+          ' transition-colors ' +
+          (isDropTarget
+            ? 'rounded ring-2 ring-fuchsia-500/40 outline outline-dashed outline-fuchsia-500'
+            : '')
+        }
+      >
+        <PlayerFrame
+          player={player}
+          perspective={perspective}
+          position={position}
+          onPlayerClick={onObjectClick}
+          targetable={targetable}
+        />
+        {battlefieldRows}
+      </div>
+    );
+  }
+
+  // Legacy branch — unchanged from slice 70-H.5.
   return (
     <div
       data-testid={`player-area-${perspective}`}
@@ -125,53 +232,7 @@ export function PlayerArea({
         onPlayerClick={onObjectClick}
         targetable={targetable}
       />
-      <div className="flex flex-col gap-1.5">
-        {battlefield.length === 0 ? (
-          <span className="text-xs text-zinc-600 italic">
-            No permanents yet.
-          </span>
-        ) : (
-          // Slice 50 â€” ETB animation. Slides up from below + scales
-          // so the eye reads "spell resolves into permanent" as one
-          // motion.
-          //
-          // Slice 52c â€” pairs with the StackZone {@code layoutId} so
-          // a resolving creature spell glides from its stack tile to
-          // its battlefield tile (same {@code cardId}). LayoutGroup
-          // at the Game root bridges the two AnimatePresences so
-          // Framer can match the IDs across zones. The
-          // {@code initial}/{@code exit} y+scale springs above keep
-          // working alongside layoutId â€” layout-driven motion uses
-          // the {@code transition.layout} spring (LAYOUT_GLIDE, baked
-          // into BATTLEFIELD_ENTER_EXIT), and the regular
-          // {@code initial}/{@code exit} keys use the default spring
-          // on this transition.
-          //
-          // Slice 53 â€” split into three type-grouped rows. Each row
-          // owns its own AnimatePresence so a permanent leaving its
-          // row triggers its exit animation independently. The row
-          // container itself is plain DOM (no motion wrapper), so an
-          // empty row that disappears doesn't orphan any animation.
-          // LayoutGroup at the Game root still bridges layoutIds
-          // across rows (and zones) for cross-row glides like an
-          // animated land flipping into the creatures row.
-          orderedRows.map((row) => {
-            const items = rows[row];
-            if (items.length === 0) return null;
-            return (
-              <BattlefieldRowGroup
-                key={row}
-                row={row}
-                permanents={items}
-                canAct={canAct}
-                onObjectClick={onObjectClick}
-                eligibleCombatIds={eligibleCombatIds}
-                combatRoles={combatRoles}
-              />
-            );
-          })
-        )}
-      </div>
+      {battlefieldRows}
       <CommandZone entries={player.commandList} />
     </div>
   );

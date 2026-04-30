@@ -1,7 +1,29 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { PlayerFrame } from './PlayerFrame';
 import { webPlayerViewSchema, type WebPlayerView } from '../api/schemas';
+
+// Slice 70-K — flag-mock at the file level so existing legacy
+// tests run against REDESIGN=false (production default) AND the
+// new redesign-branch describe block can flip it on per test.
+// Mirrors the {@code battlefieldLayout.test.ts} hoisted-flag
+// pattern (vi.hoisted state + getter on the mocked module).
+const flagState = vi.hoisted(() => ({
+  redesign: false,
+  keepEliminated: true,
+}));
+vi.mock('../featureFlags', () => ({
+  get REDESIGN() {
+    return flagState.redesign;
+  },
+  get KEEP_ELIMINATED() {
+    return flagState.keepEliminated;
+  },
+}));
+
+// Component import MUST come after the vi.mock — Vitest hoists
+// vi.mock above imports automatically, but imports below the mock
+// declaration read more clearly per the maintainer convention.
+import { PlayerFrame } from './PlayerFrame';
 
 function makePlayer(overrides: Partial<WebPlayerView> = {}): WebPlayerView {
   return webPlayerViewSchema.parse({
@@ -488,5 +510,255 @@ describe('PlayerFrame', () => {
       );
       expect(screen.queryByTestId('target-player-opponent')).toBeNull();
     });
+  });
+});
+
+// Slice 70-K — REDESIGN-flag-on test suite. Anatomy is per
+// docs/design/picture-catalog.md §2: portrait + name + commander
+// stack with life numeral overlaid on the portrait, no horizontal
+// strip, no inline mana pool / zone icons, no ACTIVE pill. Each
+// test toggles flagState.redesign=true at the start and afterEach
+// resets to false so legacy tests above keep running cleanly.
+describe('PlayerFrame — REDESIGN flag on (slice 70-K)', () => {
+  afterEach(() => {
+    flagState.redesign = false;
+  });
+
+  it('renders the portrait-stacked anatomy (PlayerPortrait + name + commander)', () => {
+    flagState.redesign = true;
+    render(
+      <PlayerFrame
+        player={makePlayer({
+          name: 'alice',
+          life: 40,
+          commandList: [
+            {
+              id: 'cmdr-1',
+              kind: 'commander',
+              name: 'Atraxa, Praetors\' Voice',
+              expansionSetCode: 'C16',
+              imageFileName: 'atraxa.jpg',
+              imageNumber: 28,
+              rules: [],
+            },
+          ],
+          colorIdentity: ['W', 'U', 'B', 'G'],
+        })}
+        perspective="self"
+        onPlayerClick={() => {}}
+        targetable={false}
+      />,
+    );
+    expect(screen.getByTestId('player-portrait')).toBeInTheDocument();
+    expect(screen.getByTestId('player-name-stack')).toBeInTheDocument();
+    expect(
+      screen.getByTestId('commander-name-label'),
+    ).toHaveTextContent("Atraxa, Praetors' Voice");
+    // Picture-catalog §2.0 — life numeral overlaid on the portrait
+    expect(screen.getByTestId('life-numeral-self')).toHaveTextContent(
+      '40',
+    );
+    // data-redesign attribute lets style overrides / tests target
+    // only the redesigned frame
+    expect(screen.getByTestId('player-frame-self')).toHaveAttribute(
+      'data-redesign',
+      'true',
+    );
+  });
+
+  it('does NOT render the legacy ACTIVE pill', () => {
+    // Picture-catalog §2.4: active state is signaled by the halo
+    // pulse on the portrait, not a text pill.
+    flagState.redesign = true;
+    render(
+      <PlayerFrame
+        player={makePlayer({ isActive: true })}
+        perspective="self"
+        onPlayerClick={() => {}}
+        targetable={false}
+      />,
+    );
+    // Legacy ACTIVE pill is a span with the literal text "ACTIVE";
+    // queryByText catches it. Halo pulse is on the portrait halo
+    // via PlayerPortrait (already tested in PlayerPortrait.test).
+    expect(screen.queryByText('ACTIVE')).toBeNull();
+  });
+
+  it('does NOT render the inline mana pool / zone icons / library count', () => {
+    // Picture-catalog §6 (removed elements): mana pool relocates
+    // to top-right of hand region in slice 70-P; zone icons
+    // become a small adjacent cluster in 70-P. PlayerFrame's
+    // redesign branch shouldn't render any of them.
+    flagState.redesign = true;
+    render(
+      <PlayerFrame
+        player={makePlayer({
+          libraryCount: 47,
+          handCount: 6,
+          manaPool: {
+            red: 1,
+            green: 0,
+            blue: 0,
+            white: 0,
+            black: 0,
+            colorless: 2,
+          },
+        })}
+        perspective="self"
+        onPlayerClick={() => {}}
+        targetable={false}
+      />,
+    );
+    // Library count "47" should NOT appear (legacy strip rendered
+    // it via ZoneIcon zone="library").
+    expect(screen.queryByText('47')).toBeNull();
+    // "Hand" label should NOT appear (legacy showed handCount with
+    // a "Hand" prefix).
+    expect(screen.queryByText('Hand')).toBeNull();
+    // No ZoneIcon testids should be present — inline zone icons
+    // are not part of the redesigned PlayerFrame.
+    expect(
+      screen.queryByTestId('zone-count-library'),
+    ).toBeNull();
+  });
+
+  it('opponent perspective uses medium portrait (80px)', () => {
+    flagState.redesign = true;
+    render(
+      <PlayerFrame
+        player={makePlayer({ name: 'bob' })}
+        perspective="opponent"
+        position="top"
+        onPlayerClick={() => {}}
+        targetable={false}
+      />,
+    );
+    const portrait = screen.getByTestId('player-portrait');
+    expect(portrait).toHaveAttribute('data-size', 'medium');
+    expect(portrait.style.width).toBe('80px');
+  });
+
+  it('self perspective uses large portrait (96px)', () => {
+    flagState.redesign = true;
+    render(
+      <PlayerFrame
+        player={makePlayer({ name: 'alice' })}
+        perspective="self"
+        position="bottom"
+        onPlayerClick={() => {}}
+        targetable={false}
+      />,
+    );
+    const portrait = screen.getByTestId('player-portrait');
+    expect(portrait).toHaveAttribute('data-size', 'large');
+    expect(portrait.style.width).toBe('96px');
+  });
+
+  it('eliminated state preserves the slash overlay + desaturation', () => {
+    // The slash + opacity-0.45 + grayscale(1) chrome carries over
+    // from legacy, applied to the redesigned vertical stack
+    // instead of the horizontal strip.
+    flagState.redesign = true;
+    render(
+      <PlayerFrame
+        player={makePlayer({ hasLeft: true })}
+        perspective="opponent"
+        onPlayerClick={() => {}}
+        targetable={false}
+      />,
+    );
+    expect(
+      screen.getByTestId('elimination-slash-opponent'),
+    ).toBeInTheDocument();
+    const frame = screen.getByTestId('player-frame-opponent');
+    expect(frame).toHaveAttribute('data-eliminated', 'true');
+  });
+
+  it('disconnected state shows the pill (not eliminated wins precedence)', () => {
+    flagState.redesign = true;
+    render(
+      <PlayerFrame
+        player={makePlayer({
+          name: 'bob',
+          hasLeft: false,
+          connectionState: 'disconnected',
+        })}
+        perspective="opponent"
+        onPlayerClick={() => {}}
+        targetable={false}
+      />,
+    );
+    expect(
+      screen.getByTestId('disconnected-pill-opponent'),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('player-frame-opponent')).toHaveAttribute(
+      'data-disconnected',
+      'true',
+    );
+  });
+
+  it('targetable name renders as a button just like legacy', () => {
+    flagState.redesign = true;
+    const onClick = vi.fn();
+    render(
+      <PlayerFrame
+        player={makePlayer({
+          playerId: 'opp-uuid',
+          name: 'bob',
+        })}
+        perspective="opponent"
+        onPlayerClick={onClick}
+        targetable
+      />,
+    );
+    const btn = screen.getByTestId('target-player-opponent');
+    expect(btn).toHaveTextContent('bob');
+    btn.click();
+    expect(onClick).toHaveBeenCalledWith('opp-uuid');
+  });
+
+  it('priority tag renders above the portrait (not in the strip)', () => {
+    // Legacy: PriorityTag rendered inline next to the name in the
+    // header strip. Redesign: PriorityTag floats above the portrait
+    // (positioned absolutely via the portrait wrapper).
+    flagState.redesign = true;
+    render(
+      <PlayerFrame
+        player={makePlayer({ hasPriority: true })}
+        perspective="self"
+        onPlayerClick={() => {}}
+        targetable={false}
+      />,
+    );
+    // PriorityTag testid is locked by PriorityTag.test.tsx — find
+    // it inside the portrait wrapper, not as a sibling of the
+    // name stack.
+    expect(
+      screen.getByTestId('player-portrait-wrapper'),
+    ).toBeInTheDocument();
+    // Existence of the priority tag (testid set by PriorityTag itself)
+    expect(screen.getByText('PRIORITY')).toBeInTheDocument();
+  });
+
+  it('aria-label preserves the slice-70-D / 70-H composition rules', () => {
+    flagState.redesign = true;
+    render(
+      <PlayerFrame
+        player={makePlayer({
+          name: 'alice',
+          life: 35,
+          isActive: true,
+          hasPriority: true,
+          colorIdentity: ['W', 'U'],
+        })}
+        perspective="self"
+        onPlayerClick={() => {}}
+        targetable={false}
+      />,
+    );
+    const frame = screen.getByTestId('player-frame-self');
+    expect(frame).toHaveAccessibleName(
+      'alice, 35 life, your seat, active turn, has priority, white, blue',
+    );
   });
 });
