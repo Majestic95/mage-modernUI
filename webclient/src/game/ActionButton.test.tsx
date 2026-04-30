@@ -252,12 +252,12 @@ describe('ActionButton — ellipsis menu', () => {
     expect(screen.getByTestId('action-menu-UNDO')).toHaveTextContent(
       'Undo',
     );
-    expect(
-      screen.getByTestId('action-menu-CONCEDE'),
-    ).toHaveTextContent('Concede game');
+    // Slice 70-O — Concede relocated to SettingsModal (header gear
+    // icon). Menu has no destructive items.
+    expect(screen.queryByTestId('action-menu-CONCEDE')).toBeNull();
   });
 
-  it('multi-pass item dispatches immediately without confirmation', async () => {
+  it('multi-pass item dispatches immediately', async () => {
     setGame();
     authState.session = { username: 'alice' };
     const stream = makeStream();
@@ -271,30 +271,6 @@ describe('ActionButton — ellipsis menu', () => {
     );
     // Menu closes after dispatch
     expect(screen.queryByTestId('action-button-menu')).toBeNull();
-  });
-
-  it('Concede opens confirmation modal (no immediate dispatch)', async () => {
-    setGame();
-    authState.session = { username: 'alice' };
-    const stream = makeStream();
-    render(<ActionButton stream={stream} />);
-    await userEvent.click(screen.getByTestId('action-button-ellipsis'));
-    await userEvent.click(screen.getByTestId('action-menu-CONCEDE'));
-    expect(stream.sendPlayerAction).not.toHaveBeenCalled();
-    expect(
-      screen.getByTestId('concede-confirm'),
-    ).toBeInTheDocument();
-  });
-
-  it('Concede confirmation modal "Yes" dispatches CONCEDE', async () => {
-    setGame();
-    authState.session = { username: 'alice' };
-    const stream = makeStream();
-    render(<ActionButton stream={stream} />);
-    await userEvent.click(screen.getByTestId('action-button-ellipsis'));
-    await userEvent.click(screen.getByTestId('action-menu-CONCEDE'));
-    await userEvent.click(screen.getByTestId('concede-confirm-yes'));
-    expect(stream.sendPlayerAction).toHaveBeenCalledWith('CONCEDE');
   });
 
   it('clicking the backdrop closes the menu', async () => {
@@ -403,8 +379,7 @@ describe('ActionButton — hotkeys', () => {
     document.body.removeChild(input);
   });
 
-  it('Concede has no hotkey binding (defense in depth)', () => {
-    // No key fires CONCEDE — the only path is the menu + confirmation.
+  it('Concede has no hotkey binding (Concede only fires from SettingsModal — slice 70-O)', () => {
     setGame();
     authState.session = { username: 'alice' };
     const stream = makeStream();

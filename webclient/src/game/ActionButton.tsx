@@ -23,10 +23,11 @@
  * never see the menu; new users discover them via the ellipsis.
  *
  * <p><b>Concede placement:</b> picture-catalog §5.C / picture-catalog
- * §1.3 puts Concede in the settings modal (header gear icon). Settings
- * modal lands in slice 70-O. For 70-M, Concede lives at the bottom of
- * the ellipsis menu — less prominent than always-visible (preventing
- * misclick during gameplay) but still reachable.
+ * §1.3 puts Concede in the settings modal (header gear icon). Slice
+ * 70-O delivers the settings modal and removes Concede from this
+ * menu — the morphing action button + ellipsis are now exclusively
+ * priority/skip/undo controls. Destructive actions (Concede, Leave)
+ * live behind the gear icon with a confirmation gesture.
  *
  * <p><b>Action morph rules</b> (picture-catalog §5.C "Morph rules"):
  * the LABEL changes per state but the underlying dispatch is uniformly
@@ -55,12 +56,6 @@ interface MenuItem {
   hotkey?: string;
   /** Modifier required for the hotkey (Ctrl/Cmd). */
   ctrl?: boolean;
-  /**
-   * Whether to require the player to confirm via a modal before
-   * dispatching. Concede uses this; everything else fires
-   * immediately (the slice-29 hotkey behavior).
-   */
-  requiresConfirmation?: boolean;
   /** Optional title text for the menu item button. */
   title?: string;
 }
@@ -99,12 +94,11 @@ const MENU_ITEMS: MenuItem[] = [
     ctrl: true,
     title: 'Take back your last action this priority window',
   },
-  {
-    label: 'Concede game',
-    action: 'CONCEDE',
-    requiresConfirmation: true,
-    title: 'Concede the current game (irreversible)',
-  },
+  // Slice 70-O — Concede relocated to the SettingsModal (header
+  // gear icon). Picture-catalog §5.C menu items are exclusively
+  // priority/skip/undo actions; §1.3 specifies Concede + Leave
+  // both live in the settings modal. Removed from the menu here
+  // so there's a single canonical destructive-action surface.
 ];
 
 /**
@@ -166,7 +160,6 @@ export function ActionButton({ stream }: Props) {
   const session = useAuthStore((s) => s.session);
   const gv = useGameStore((s) => s.gameView);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [confirmConcede, setConfirmConcede] = useState(false);
 
   // Slice 70-M — global hotkey listener mirrors the slice-29 binding
   // verbatim so power users keep their existing muscle memory. Keys
@@ -218,10 +211,6 @@ export function ActionButton({ stream }: Props) {
       });
       if (!match) return;
       ev.preventDefault();
-      // Concede via hotkey would be too dangerous — never fires on
-      // hotkey, only via menu click. (No hotkey is bound to Concede
-      // in MENU_ITEMS anyway, so this is defense-in-depth.)
-      if (match.requiresConfirmation) return;
       stream.sendPlayerAction(match.action);
     };
     document.addEventListener('keydown', handler);
@@ -267,11 +256,6 @@ export function ActionButton({ stream }: Props) {
   };
 
   const dispatchMenuItem = (item: MenuItem) => {
-    if (item.requiresConfirmation) {
-      setConfirmConcede(true);
-      setMenuOpen(false);
-      return;
-    }
     setMenuOpen(false);
     if (!stream) return;
     stream.sendPlayerAction(item.action);
@@ -371,7 +355,7 @@ export function ActionButton({ stream }: Props) {
                 'shadow-xl py-1'
               }
             >
-              {MENU_ITEMS.map((item, idx) => (
+              {MENU_ITEMS.map((item) => (
                 <li key={item.action} role="none">
                   <button
                     type="button"
@@ -379,13 +363,11 @@ export function ActionButton({ stream }: Props) {
                     data-testid={`action-menu-${item.action}`}
                     onClick={() => dispatchMenuItem(item)}
                     title={item.title}
-                    className={
-                      'w-full text-left px-3 py-1.5 text-xs ' +
-                      'transition-colors flex items-center justify-between gap-2 ' +
-                      (item.requiresConfirmation
-                        ? 'text-red-300 hover:bg-red-900/40'
-                        : 'text-zinc-200 hover:bg-zinc-800')
-                    }
+                    className="
+                      w-full text-left px-3 py-1.5 text-xs transition-colors
+                      flex items-center justify-between gap-2
+                      text-zinc-200 hover:bg-zinc-800
+                    "
                   >
                     <span>{item.label}</span>
                     {item.hotkey && (
@@ -394,14 +376,6 @@ export function ActionButton({ stream }: Props) {
                       </span>
                     )}
                   </button>
-                  {idx === MENU_ITEMS.length - 2 && (
-                    // Visual separator before the destructive
-                    // Concede item.
-                    <hr
-                      role="separator"
-                      className="my-1 border-zinc-800"
-                    />
-                  )}
                 </li>
               ))}
             </ul>
@@ -426,91 +400,6 @@ export function ActionButton({ stream }: Props) {
         </div>
       </div>
 
-      {/* Concede confirmation modal — same shape as the slice-37
-          ActionPanel modal, kept for misclick safety. Lives here
-          because Concede is in the ellipsis menu rather than
-          always-visible. Slice 70-O moves Concede into the settings
-          modal (header gear icon) and this confirmation can move
-          with it. */}
-      {confirmConcede && (
-        <ConfirmConcedeModal
-          onCancel={() => setConfirmConcede(false)}
-          onConfirm={() => {
-            stream?.sendPlayerAction('CONCEDE');
-            setConfirmConcede(false);
-          }}
-        />
-      )}
     </section>
-  );
-}
-
-/**
- * Slice 70-M — Concede confirmation modal. Identical to the
- * slice-37 ActionPanel modal in shape; copied here so the
- * ActionButton component is self-contained. Slice 70-O folds the
- * settings modal in and this can be deduplicated.
- */
-function ConfirmConcedeModal({
-  onCancel,
-  onConfirm,
-}: {
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
-  useEffect(() => {
-    const onKey = (ev: KeyboardEvent) => {
-      if (ev.key === 'Escape') {
-        ev.stopImmediatePropagation();
-        ev.preventDefault();
-        onCancel();
-      }
-    };
-    document.addEventListener('keydown', onKey, { capture: true });
-    return () => {
-      document.removeEventListener('keydown', onKey, { capture: true });
-    };
-  }, [onCancel]);
-  return (
-    <div
-      data-testid="concede-confirm"
-      className="fixed inset-0 z-50 flex items-center justify-center"
-    >
-      <div
-        data-testid="concede-confirm-backdrop"
-        className="absolute inset-0 bg-black/60"
-        onClick={onCancel}
-      />
-      <div
-        role="dialog"
-        aria-label="Confirm concede"
-        className="relative bg-zinc-900 border border-zinc-700 rounded-lg shadow-2xl p-5 w-[min(90vw,360px)] space-y-4"
-      >
-        <h2 className="text-sm font-semibold text-zinc-100">
-          Concede game?
-        </h2>
-        <p className="text-sm text-zinc-400">
-          This ends the current game immediately. The match continues
-          if more games remain.
-        </p>
-        <div className="flex justify-end gap-2 pt-1">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="px-3 py-1 rounded text-xs border bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border-zinc-700"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            data-testid="concede-confirm-yes"
-            onClick={onConfirm}
-            className="px-3 py-1 rounded text-xs bg-red-700 hover:bg-red-600 text-white border border-red-800"
-          >
-            Yes, concede
-          </button>
-        </div>
-      </div>
-    </div>
   );
 }

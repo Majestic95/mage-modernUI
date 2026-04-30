@@ -188,6 +188,18 @@ interface GameState {
   gameOverPending: boolean;
 
   /**
+   * Slice 70-O — UI-only state: whether the side panel is collapsed.
+   * Toggled by the header's layout/zoom icon (picture-catalog §1.3).
+   * When true, GameTable renders the battlefield + hand at full
+   * viewport width; the side panel column is removed from the grid.
+   * Default false (panel visible). Persists across the session
+   * (until reset / page refresh) — short-term preference, not
+   * a long-term setting in localStorage. A future polish slice may
+   * persist if user feedback warrants it.
+   */
+  sidePanelCollapsed: boolean;
+
+  /**
    * Pending {@code sideboard} frame. Set when upstream fires
    * {@code User.ccSideboard} (between games of a sideboarded match,
    * or at the start of a draft constructing window). The webclient
@@ -196,6 +208,18 @@ interface GameState {
    * advances past the sideboarding window.
    */
   pendingSideboard: WebSideboardInfo | null;
+
+  /**
+   * Slice 70-O — toggle side-panel collapse. Header icon click handler
+   * dispatches this; GameTable subscribes via selector to re-render
+   * the grid template when the value flips.
+   */
+  toggleSidePanel: () => void;
+  /**
+   * Slice 70-O — explicit setter (for tests + programmatic restoration
+   * if a future slice persists collapse state across sessions).
+   */
+  setSidePanelCollapsed: (collapsed: boolean) => void;
 
   /** Connection lifecycle setters (called by GameStream). */
   setConnection: (s: ConnectionState, reason?: string) => void;
@@ -230,6 +254,7 @@ const INITIAL: Pick<
   | 'pendingSideboard'
   | 'gameLog'
   | 'gameOverPending'
+  | 'sidePanelCollapsed'
 > = {
   connection: 'idle',
   closeReason: '',
@@ -244,10 +269,16 @@ const INITIAL: Pick<
   pendingSideboard: null,
   gameLog: [],
   gameOverPending: false,
+  sidePanelCollapsed: false,
 };
 
 export const useGameStore = create<GameState>()((set, get) => ({
   ...INITIAL,
+
+  toggleSidePanel: () =>
+    set((state) => ({ sidePanelCollapsed: !state.sidePanelCollapsed })),
+  setSidePanelCollapsed: (collapsed) =>
+    set({ sidePanelCollapsed: collapsed }),
 
   setConnection: (s, reason) =>
     set({

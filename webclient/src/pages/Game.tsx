@@ -146,6 +146,7 @@ export function Game({ gameId, onLeave }: Props) {
             closeReason={closeReason}
             gameView={gameView}
             onLeave={onLeave}
+            stream={stream}
           />
           {protocolError && (
             <div role="alert" className="bg-red-900/40 border-b border-red-800 px-6 py-2 text-sm text-red-200">

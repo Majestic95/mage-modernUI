@@ -119,6 +119,11 @@ export function GameTable({ gameId, gameView, stream }: Props) {
   // opponents) internally — those are cheap and don't need lifting.
   const pendingDialog = useGameStore((s) => s.pendingDialog);
   const clearDialog = useGameStore((s) => s.clearDialog);
+  // Slice 70-O — header layout/zoom icon toggles this; when true the
+  // side panel column is removed from the grid template, freeing the
+  // space for battlefield + hand. Reads from the store; flips on
+  // header click (REDESIGN only).
+  const sidePanelCollapsed = useGameStore((s) => s.sidePanelCollapsed);
   const me = useMemo(
     () => gameView.players.find((p) => p.playerId === gameView.myPlayerId) ?? null,
     [gameView.players, gameView.myPlayerId],
@@ -175,7 +180,9 @@ export function GameTable({ gameId, gameView, stream }: Props) {
       // bottom-right shells to sit LEFT of the panel rather than
       // overlap it (technical critic I1).
       style={{
-        ['--side-panel-width' as string]: SIDE_PANEL_WIDTH,
+        ['--side-panel-width' as string]: sidePanelCollapsed
+          ? '0px'
+          : SIDE_PANEL_WIDTH,
         // Slice 70-F — added a `hand` row between battlefield and
         // action so MyHand sits in its own region per spec §4. The
         // side panel still spans every body row on the right.
@@ -185,18 +192,41 @@ export function GameTable({ gameId, gameView, stream }: Props) {
         // ActionButton lives at the bottom of the side panel
         // (catalog §5.C). Side panel grows to fill the freed
         // vertical space.
+        //
+        // Slice 70-O (picture-catalog §1.3) — REDESIGN header
+        // layout/zoom icon toggles `sidePanelCollapsed`. When true,
+        // the grid drops the sidepanel column entirely (single-
+        // column 1fr) so battlefield + hand expand to full width.
+        // The side <aside> is still mounted (preserves React tree +
+        // store subscriptions) but {@code display: none} hides it
+        // visually — re-expanding restores its prior scroll
+        // position cheaply.
+        // Slice 70-O critic Tech-CRITICAL-1/-2 fix — REDESIGN no
+        // longer reserves a `header` grid row. The redesigned
+        // GameHeader is rendered as a SIBLING of GameTable in
+        // Game.tsx (catalog §1.1 "Header sits OUTSIDE the side
+        // panel"), so the in-grid empty placeholder + its 1px
+        // border-bottom were dead chrome that violated §1.1's
+        // "no border, blends into the canvas" clause. Legacy
+        // !REDESIGN keeps the header row because the legacy
+        // GameHeader is identical-but-bordered.
         gridTemplateAreas: REDESIGN
-          ? '"header header" ' +
-            '"battlefield sidepanel" ' +
-            '"hand sidepanel"'
+          ? sidePanelCollapsed
+            ? '"battlefield" ' +
+              '"hand"'
+            : '"battlefield sidepanel" ' +
+              '"hand sidepanel"'
           : '"header header" ' +
             '"battlefield sidepanel" ' +
             '"hand sidepanel" ' +
             '"action sidepanel"',
         gridTemplateRows: REDESIGN
-          ? 'auto 1fr auto'
+          ? '1fr auto'
           : 'auto 1fr auto auto',
-        gridTemplateColumns: `minmax(0, 1fr) ${SIDE_PANEL_WIDTH}`,
+        gridTemplateColumns:
+          REDESIGN && sidePanelCollapsed
+            ? 'minmax(0, 1fr)'
+            : `minmax(0, 1fr) ${SIDE_PANEL_WIDTH}`,
       }}
     >
       {/*
@@ -233,17 +263,17 @@ export function GameTable({ gameId, gameView, stream }: Props) {
         {connectionStateText}
       </div>
 
-      <header
-        data-testid="game-table-header"
-        className="[grid-area:header] border-b border-zinc-800"
-      >
-        {/* GameHeader is mounted by the parent Game.tsx — slot via
-          children would couple GameTable to the header internals.
-          Today's shell renders as a header bar + the existing
-          PhaseTimeline ribbon below; slice 70-E moves PhaseTimeline
-          into the side panel instead. The actual header content is
-          rendered by Game.tsx as a sibling of GameTable. */}
-      </header>
+      {/* Slice 70-O — REDESIGN drops the in-grid header slot. The
+          actual GameHeader is rendered as a sibling of GameTable
+          by Game.tsx (catalog §1.1 "Header sits OUTSIDE the side
+          panel"). Legacy !REDESIGN still uses the placeholder
+          below because its visual treatment includes a border-b. */}
+      {!REDESIGN && (
+        <header
+          data-testid="game-table-header"
+          className="[grid-area:header] border-b border-zinc-800"
+        />
+      )}
 
       <main
         data-testid="game-table-battlefield"
@@ -297,17 +327,20 @@ export function GameTable({ gameId, gameView, stream }: Props) {
 
       <aside
         data-testid="game-table-sidepanel"
+        data-collapsed={sidePanelCollapsed || undefined}
+        // Slice 70-O — when collapsed by the header layout/zoom
+        // icon, hide via display:none rather than unmounting. The
+        // grid template above already drops the sidepanel column,
+        // but the React tree (and any subscriptions / scroll
+        // positions inside GameLog) stays intact for cheap re-
+        // expand.
+        hidden={REDESIGN && sidePanelCollapsed}
         className={
           // Slice 70-M critic CARRY-OVER-1 fix — picture-catalog
           // §5.0 specifies --color-bg-elevated (#152229) for the
           // panel background. The legacy `bg-zinc-900/40` was a
           // slice 70-E carryover that the catalog (added
-          // 2026-04-29) invalidated. Slice 70-M is the first
-          // panel-touching slice after the catalog landed; the
-          // checklist process flagged it. Applies to BOTH legacy
-          // and REDESIGN paths since the panel container itself
-          // is shared and the catalog token is a generic dark-
-          // teal that reads correctly under either layout.
+          // 2026-04-29) invalidated.
           '[grid-area:sidepanel] flex flex-col ' +
           'border-l border-zinc-800 bg-bg-elevated min-h-0'
         }
@@ -342,9 +375,34 @@ export function GameTable({ gameId, gameView, stream }: Props) {
             ActionButton at the bottom of the side panel under the
             commander damage tracker. REDESIGN-only; legacy keeps
             the multi-button ActionPanel in the action footer
-            below. */}
-        {REDESIGN && <ActionButton stream={stream} />}
+            below.
+            Slice 70-O — when the side panel is collapsed via the
+            header layout/zoom icon, the button moves to a floating
+            bottom-right dock (rendered as a sibling below) so the
+            primary action affordance is always reachable. */}
+        {REDESIGN && !sidePanelCollapsed && <ActionButton stream={stream} />}
       </aside>
+
+      {/* Slice 70-O critic UI/UX-C1 fix — floating ActionButton
+          dock when the side panel is collapsed. Without this,
+          collapsing the panel hid the only visible primary-action
+          surface; new users without F2 hotkey muscle memory would
+          have no way to advance phases. The dock sits at the
+          bottom-right of the viewport (where the side-panel
+          ActionButton normally lives), pinned via fixed positioning
+          so battlefield content can scroll behind it. Mutually
+          exclusive with the in-panel mount above so menu / hotkey
+          state stays single-source. */}
+      {REDESIGN && sidePanelCollapsed && (
+        <div
+          data-testid="game-table-action-floating-dock"
+          className="fixed bottom-3 right-3 z-30 w-[clamp(220px,18vw,320px)]
+            rounded-lg bg-bg-elevated/95 backdrop-blur-sm
+            border border-zinc-800 shadow-xl p-2"
+        >
+          <ActionButton stream={stream} />
+        </div>
+      )}
 
       {/* Slice 70-M (picture-catalog §6.1) — REDESIGN drops the
           action footer entirely. The morphing button + ellipsis

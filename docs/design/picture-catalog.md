@@ -100,8 +100,8 @@ A critic report that doesn't cite catalog clauses is incomplete and gets re-disp
 - **Position:** Right-aligned, vertically centered in header, `--space-5` right padding.
 - **Icon order (left to right):**
   1. **Chat** — speech-bubble outline. Click toggles slide-out chat panel below the game log (see §5.D — deferred).
-  2. **Layout/zoom** — square brackets `[ ]` or two arrows facing in. Click collapses/expands the side panel (battlefield grows / shrinks).
-  3. **Fullscreen** — four corner brackets `⌜ ⌝ ⌞ ⌟`. Click toggles browser fullscreen via `document.documentElement.requestFullscreen()`.
+  2. **Layout/zoom** — square brackets `[ ]` or two arrows facing in. Click collapses/expands the side panel (battlefield grows / shrinks). **When the side panel is collapsed, the ActionButton (catalog §5.C) MUST remain reachable** — slice 70-O floats it as a fixed bottom-right dock so the player never loses access to "End Step / Pass Priority / Next Phase." The hotkey set (F2 / F4 / F6 / F8 / Esc / Ctrl+Z) is preserved at the document level and works regardless of the panel state, but the visible button must also persist.
+  3. **Fullscreen** — four corner brackets `⌜ ⌝ ⌞ ⌟`. Click toggles browser fullscreen via `document.documentElement.requestFullscreen()`. When already fullscreen, click calls `document.exitFullscreen()` to leave (slice 70-O extension; the implementation must support both directions, not just enter).
   4. **Settings** — gear icon. Click opens settings modal (Concede lives here per the user's preference; "Leave game" too).
 
 ### 1.4 What's NOT in this header
