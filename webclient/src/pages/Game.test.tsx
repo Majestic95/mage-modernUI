@@ -1725,7 +1725,7 @@ describe('Game page', () => {
       });
     });
     const totals = screen
-      .getAllByTestId('life-total')
+      .getAllByTestId('life-counter-value')
       .map((el) => el.textContent);
     // alice = 18, AI = 20 (per buildGameView).
     expect(totals).toEqual(expect.arrayContaining(['18', '20']));
@@ -1754,7 +1754,9 @@ describe('Game page', () => {
     // Loss → rose-tinted delta showing -3.
     const loss = deltas.find((el) => el.textContent === '-3');
     expect(loss).toBeDefined();
-    expect(loss).toHaveClass('text-rose-400');
+    // Slice 70-C — LifeCounter migrated from text-rose-400 to the
+    // status-danger token. Token resolves to a similar red.
+    expect(loss).toHaveClass('text-status-danger');
   });
 
   it('floats a positive delta with emerald tint when life increases', () => {
@@ -1775,7 +1777,9 @@ describe('Game page', () => {
     const deltas = screen.getAllByTestId('life-delta');
     const gain = deltas.find((el) => el.textContent === '+4');
     expect(gain).toBeDefined();
-    expect(gain).toHaveClass('text-emerald-300');
+    // Slice 70-C — LifeCounter migrated from text-emerald-300 to
+    // the status-success token.
+    expect(gain).toHaveClass('text-status-success');
   });
 
   /* ---------- slice 52c: cross-zone Framer Motion layoutId ---------- */

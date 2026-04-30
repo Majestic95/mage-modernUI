@@ -166,7 +166,7 @@ export function CardFace(props: CardFaceProps): JSX.Element {
   const role = isBattlefield ? (combatRole ?? null) : null;
 
   // Slice 59 — transient flash state for damage and counter increases.
-  // Pattern mirrors LifeTotal in Game.tsx: useRef tracks prev value,
+  // Pattern mirrors LifeCounter (slice 70-C, was LifeTotal): useRef tracks prev value,
   // useEffect detects an INCREASE (not decrease — heal/counter-removal
   // shouldn't fire), useState bumps a key counter to force a fresh
   // motion.div remount. The damage flash self-unmounts via

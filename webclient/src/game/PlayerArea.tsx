@@ -1,9 +1,11 @@
+import { AnimatePresence } from 'framer-motion';
 import { bucketBattlefield, rowOrder } from './battlefieldRows';
 import type { WebPlayerView } from '../api/schemas';
 import { CommandZone } from './CommandZone';
-import { LifeTotal } from './LifeTotal';
+import { LifeCounter } from './LifeCounter';
 import { ManaPool } from './ManaPool';
-import { ZoneCounter } from './ZoneBrowser';
+import { PriorityTag } from './PriorityTag';
+import { ZoneIcon } from './ZoneIcon';
 import { BattlefieldRowGroup } from './BattlefieldRowGroup';
 
 export function PlayerArea({
@@ -139,34 +141,58 @@ export function PlayerArea({
             <span className="font-medium">{player.name || '<unknown>'}</span>
           )}
           {player.isActive && (
-            <span className="text-xs bg-fuchsia-500/20 text-fuchsia-300 px-1.5 py-0.5 rounded">
+            // Slice 70-C critic UI-#2 — migrated off legacy
+            // bg-fuchsia-500/20 text-fuchsia-300 to align visually
+            // with the sibling PriorityTag (which uses
+            // bg-accent-primary). The ACTIVE pill is a slice-70-C
+            // temp affordance — slice 70-D's PlayerFrame will route
+            // active-player signaling through the frame halo per
+            // design-system §7.3, so this whole pill goes away then.
+            <span
+              className="text-xs px-1.5 py-0.5 rounded font-medium"
+              style={{
+                backgroundColor: 'var(--color-team-active-glow)',
+                color: 'var(--color-text-on-accent)',
+              }}
+            >
               ACTIVE
             </span>
           )}
-          {player.hasPriority && (
-            <span className="text-xs bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded">
-              PRIORITY
-            </span>
-          )}
+          {/*
+            Slice 70-C — extracted into <PriorityTag>. Wrapped in
+            AnimatePresence so the fade-in/fade-out (PRIORITY_TAG_FADE)
+            runs on enter AND exit. The atom itself owns the motion;
+            this parent owns the conditional render.
+
+            Critic Tech-I1 — direct children of AnimatePresence MUST
+            carry a stable key for exit animations to fire reliably
+            (Framer's documented contract). Without the key the toggle
+            from element → false sometimes works but is technically
+            undefined behavior.
+          */}
+          <AnimatePresence>
+            {player.hasPriority && <PriorityTag key="priority" />}
+          </AnimatePresence>
         </div>
         <div className="flex items-baseline gap-4 text-sm text-zinc-400">
-          <LifeTotal value={player.life} />
+          <LifeCounter value={player.life} />
 
+          <ZoneIcon
+            zone="library"
+            count={player.libraryCount}
+            playerName={player.name}
+          />
           <span>
-            <span className="text-zinc-500">Lib</span>{' '}
-            <span className="font-mono">{player.libraryCount}</span>
-          </span>
-          <span>
-            <span className="text-zinc-500">Hand</span>{' '}
+            <span className="text-text-secondary">Hand</span>{' '}
             <span className="font-mono">{player.handCount}</span>
           </span>
-          <ZoneCounter
+          <ZoneIcon
             label="Grave"
             zone="graveyard"
             playerName={player.name}
             cards={player.graveyard}
           />
-          <ZoneCounter
+          <ZoneIcon
             label="Exile"
             zone="exile"
             playerName={player.name}
