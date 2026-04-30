@@ -1,11 +1,7 @@
-import { AnimatePresence } from 'framer-motion';
 import { bucketBattlefield, rowOrder } from './battlefieldRows';
 import type { WebPlayerView } from '../api/schemas';
 import { CommandZone } from './CommandZone';
-import { LifeCounter } from './LifeCounter';
-import { ManaPool } from './ManaPool';
-import { PriorityTag } from './PriorityTag';
-import { ZoneIcon } from './ZoneIcon';
+import { PlayerFrame } from './PlayerFrame';
 import { BattlefieldRowGroup } from './BattlefieldRowGroup';
 
 export function PlayerArea({
@@ -88,23 +84,10 @@ export function PlayerArea({
         .filter(Boolean)
         .join(', ') || undefined;
 
-  // Slice 69b (ADR 0010 v2 D13) â€” aria-label on the focusable
-  // container. With tabIndex set (D13 keyboard-nav contract), screen
-  // readers will announce the seat when it gains focus; without an
-  // explicit label the announcement is "group" or the entire
-  // concatenated text content of the seat (life total, mana, every
-  // permanent name) â€” unusable. Synthesizes the seat's persona
-  // (name + life + status flags) into one short announcement.
-  const ariaLabel = [
-    player.name || 'Unknown player',
-    `${player.life} life`,
-    perspective === 'self' ? 'your seat' : null,
-    player.isActive ? 'active turn' : null,
-    player.hasPriority ? 'has priority' : null,
-    player.hasLeft ? 'eliminated' : null,
-  ]
-    .filter(Boolean)
-    .join(', ');
+  // Slice 70-D — aria-label synthesis moved to PlayerFrame (which
+  // owns the persona signals). The outer container drops its
+  // explicit label; SR users now traverse PlayerFrame's group label
+  // → battlefield contents (self-describing via permanent chips).
 
   return (
     <div
@@ -114,8 +97,12 @@ export function PlayerArea({
       data-active={player.isActive || undefined}
       data-priority={player.hasPriority || undefined}
       tabIndex={tabIndex}
-      role="group"
-      aria-label={ariaLabel}
+      // Slice 70-D critic UX-C1 — no role="region" without an
+      // aria-label (ARIA spec: an unlabeled region is dropped from
+      // the landmark list). The inner PlayerFrame's labeled
+      // role="group" is the sole nameable container; the outer is
+      // now a plain div so SR users hit one labeled landmark per
+      // seat instead of two awkwardly nested ones.
       onPointerUp={onBoardDrop}
       style={statusBoxShadow ? { boxShadow: statusBoxShadow } : undefined}
       className={
@@ -125,82 +112,12 @@ export function PlayerArea({
           : 'border-zinc-800')
       }
     >
-      <header className="flex items-baseline justify-between mb-2">
-        <div className="flex items-baseline gap-3">
-          {targetable ? (
-            <button
-              type="button"
-              data-testid={`target-player-${perspective}`}
-              onClick={() => onObjectClick(player.playerId)}
-              className="font-medium text-fuchsia-300 hover:text-fuchsia-200 underline underline-offset-2"
-              title="Click to target this player"
-            >
-              {player.name || '<unknown>'}
-            </button>
-          ) : (
-            <span className="font-medium">{player.name || '<unknown>'}</span>
-          )}
-          {player.isActive && (
-            // Slice 70-C critic UI-#2 — migrated off legacy
-            // bg-fuchsia-500/20 text-fuchsia-300 to align visually
-            // with the sibling PriorityTag (which uses
-            // bg-accent-primary). The ACTIVE pill is a slice-70-C
-            // temp affordance — slice 70-D's PlayerFrame will route
-            // active-player signaling through the frame halo per
-            // design-system §7.3, so this whole pill goes away then.
-            <span
-              className="text-xs px-1.5 py-0.5 rounded font-medium"
-              style={{
-                backgroundColor: 'var(--color-team-active-glow)',
-                color: 'var(--color-text-on-accent)',
-              }}
-            >
-              ACTIVE
-            </span>
-          )}
-          {/*
-            Slice 70-C — extracted into <PriorityTag>. Wrapped in
-            AnimatePresence so the fade-in/fade-out (PRIORITY_TAG_FADE)
-            runs on enter AND exit. The atom itself owns the motion;
-            this parent owns the conditional render.
-
-            Critic Tech-I1 — direct children of AnimatePresence MUST
-            carry a stable key for exit animations to fire reliably
-            (Framer's documented contract). Without the key the toggle
-            from element → false sometimes works but is technically
-            undefined behavior.
-          */}
-          <AnimatePresence>
-            {player.hasPriority && <PriorityTag key="priority" />}
-          </AnimatePresence>
-        </div>
-        <div className="flex items-baseline gap-4 text-sm text-zinc-400">
-          <LifeCounter value={player.life} />
-
-          <ZoneIcon
-            zone="library"
-            count={player.libraryCount}
-            playerName={player.name}
-          />
-          <span>
-            <span className="text-text-secondary">Hand</span>{' '}
-            <span className="font-mono">{player.handCount}</span>
-          </span>
-          <ZoneIcon
-            label="Grave"
-            zone="graveyard"
-            playerName={player.name}
-            cards={player.graveyard}
-          />
-          <ZoneIcon
-            label="Exile"
-            zone="exile"
-            playerName={player.name}
-            cards={player.exile}
-          />
-          <ManaPool player={player} />
-        </div>
-      </header>
+      <PlayerFrame
+        player={player}
+        perspective={perspective}
+        onPlayerClick={onObjectClick}
+        targetable={targetable}
+      />
       <div className="flex flex-col gap-1.5">
         {battlefield.length === 0 ? (
           <span className="text-xs text-zinc-600 italic">

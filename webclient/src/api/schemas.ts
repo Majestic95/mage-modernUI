@@ -537,6 +537,15 @@ export const webPlayerViewSchema = z.object({
   // (and any 1.19 server still running) parse cleanly. Populated from
   // MatchType.getPlayersPerTeam() + seat-index in slice 69b.
   teamId: z.string().nullable().default(null),
+  // Schema 1.22 (ADR 0011 D5, slice 70-D) — single-character MTG
+  // color codes (W/U/B/R/G) representing the union color identity of
+  // the player's commander(s). Empty list for non-commander formats.
+  // Drives the PlayerFrame halo (single = solid ring, multi =
+  // alternating bands, empty = neutral team-ring). Default to []
+  // so older 1.21 servers (no field) parse cleanly. The default
+  // fires only on a missing key, not on a literal null — server-side
+  // mapper emits List.of() never null.
+  colorIdentity: z.array(z.string()).default([]),
 });
 export type WebPlayerView = z.infer<typeof webPlayerViewSchema>;
 

@@ -98,8 +98,9 @@ class GameViewMapperTest {
     }
 
     @Test
-    void playerView_jsonShape_locksTwentyTwoFields_schema120() throws Exception {
+    void playerView_jsonShape_locksTwentyThreeFields_schema122() throws Exception {
         // Schema 1.20 (slice 69a, ADR 0010 v2 D3a) added teamId.
+        // Schema 1.22 (slice 70-D, ADR 0011 D5) added colorIdentity.
         // Lock the wire shape so any future field add/remove fails here
         // first instead of leaking into the webclient.
         mage.webapi.dto.stream.WebPlayerView dto =
@@ -109,22 +110,28 @@ class GameViewMapperTest {
                         Map.of(), Map.of(), Map.of(), Map.of(),
                         new WebManaPoolView(0, 0, 0, 0, 0, 0),
                         true, true, true, true, false, false, false,
-                        List.of(), List.of(), null);
+                        List.of(), List.of(), null, List.of());
         JsonNode node = JSON.valueToTree(dto);
-        assertEquals(22, node.size(),
-                "WebPlayerView must have exactly 22 fields; got: " + node);
+        assertEquals(23, node.size(),
+                "WebPlayerView must have exactly 23 fields; got: " + node);
         for (String field : List.of(
                 "playerId", "name", "life", "wins", "winsNeeded",
                 "libraryCount", "handCount", "graveyard", "exile",
                 "sideboard", "battlefield", "manaPool", "controlled",
                 "isHuman", "isActive", "hasPriority", "hasLeft",
                 "monarch", "initiative", "designationNames",
-                "commandList", "teamId")) {
+                "commandList", "teamId", "colorIdentity")) {
             assertTrue(node.has(field), "missing field: " + field);
         }
         assertTrue(node.get("teamId").isNull(),
                 "Slice 69a ships teamId=null; slice 69b populates from "
                         + "MatchType.getPlayersPerTeam() + seat-index.");
+        assertTrue(node.get("colorIdentity").isArray()
+                        && node.get("colorIdentity").isEmpty(),
+                "Slice 70-D — colorIdentity defaults to [] for the "
+                        + "non-Commander player fixture; mapper must emit "
+                        + "List.of() not null per N9 (Zod default fires "
+                        + "only on missing key, not null value).");
     }
 
     @Test
@@ -503,5 +510,84 @@ class GameViewMapperTest {
                 "won", "wins", "winsNeeded", "players")) {
             assertTrue(node.has(f), "missing field: " + f);
         }
+    }
+
+    /* ---------- slice 70-D: colorIdentity union helper ---------- */
+
+    @Test
+    void unionColorIdentity_emptyInput_returnsEmptyList() {
+        // Non-commander format — no CommanderView entries → empty
+        // commanderIdentities → empty union. Critic N9: must return
+        // List.of() not null.
+        assertEquals(List.of(), GameViewMapper.unionColorIdentity(List.of()));
+        assertEquals(List.of(), GameViewMapper.unionColorIdentity(null));
+    }
+
+    @Test
+    void unionColorIdentity_allEmptyStrings_returnsEmptyList() {
+        // Colorless commanders (Karn, Eldrazi) → empty identity string
+        // → empty union. Drives the neutral-grey halo per spec §7.3.
+        assertEquals(List.of(),
+                GameViewMapper.unionColorIdentity(List.of("", "")));
+    }
+
+    @Test
+    void unionColorIdentity_singleMonoCommander_returnsOneColor() {
+        assertEquals(List.of("R"),
+                GameViewMapper.unionColorIdentity(List.of("R")));
+        assertEquals(List.of("U"),
+                GameViewMapper.unionColorIdentity(List.of("U")));
+    }
+
+    @Test
+    void unionColorIdentity_singleMulticolorCommander_sortedWUBRG() {
+        // Atraxa is WUBG. Must come back sorted in WUBRG order
+        // regardless of input character order.
+        assertEquals(List.of("W", "U", "B", "G"),
+                GameViewMapper.unionColorIdentity(List.of("WUBG")));
+        // Same colors arrived in different order from upstream → same
+        // wire shape (stability across renders).
+        assertEquals(List.of("W", "U", "B", "G"),
+                GameViewMapper.unionColorIdentity(List.of("BGWU")));
+    }
+
+    @Test
+    void unionColorIdentity_partnerPair_unionsBothIdentities() {
+        // Partner / background pairings — TWO CommanderView entries.
+        // Critic C1: spec §7.3 says union; mono-only logic would be
+        // wrong for ~5% of Commander games.
+        assertEquals(List.of("W", "U", "B", "G"),
+                GameViewMapper.unionColorIdentity(List.of("WU", "BG")));
+        // Overlap dedupes — partners with WU + UB share blue, output
+        // is W,U,B (not W,U,U,B).
+        assertEquals(List.of("W", "U", "B"),
+                GameViewMapper.unionColorIdentity(List.of("WU", "UB")));
+    }
+
+    @Test
+    void unionColorIdentity_partnerWithColorlessAndMono_returnsMono() {
+        // Edge case: one partner is colorless (empty string), the
+        // other is mono. Union is just the mono color — colorless
+        // contributes nothing.
+        assertEquals(List.of("R"),
+                GameViewMapper.unionColorIdentity(List.of("", "R")));
+    }
+
+    @Test
+    void unionColorIdentity_fiveColor_returnsAllSorted() {
+        // 5-color commander (Sliver Overlord, Cromat) drives the full
+        // WUBRG band rendering on the halo.
+        assertEquals(List.of("W", "U", "B", "R", "G"),
+                GameViewMapper.unionColorIdentity(List.of("WUBRG")));
+    }
+
+    @Test
+    void unionColorIdentity_resultIsImmutable() {
+        // The mapper passes this list into a record; defensive
+        // immutability prevents downstream mutation from surprising
+        // the wire format.
+        List<String> result = GameViewMapper.unionColorIdentity(List.of("WU"));
+        assertThrows(UnsupportedOperationException.class,
+                () -> result.add("X"));
     }
 }

@@ -1724,8 +1724,11 @@ describe('Game page', () => {
         gameView: buildGameView(),
       });
     });
+    // Slice 70-D — LifeCounter testids are per-perspective so the
+    // CommanderDamageTracker (slice 70-F) can host multiple counters
+    // without collisions. Match all variants via regex.
     const totals = screen
-      .getAllByTestId('life-counter-value')
+      .getAllByTestId(/^life-counter-value/)
       .map((el) => el.textContent);
     // alice = 18, AI = 20 (per buildGameView).
     expect(totals).toEqual(expect.arrayContaining(['18', '20']));

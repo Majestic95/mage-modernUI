@@ -19,6 +19,45 @@ minor mismatches.
 
 ---
 
+## 1.22 — 2026-04-29 — Player colorIdentity for halo rendering (slice 70-D)
+
+Adds one additive field — `WebPlayerView.colorIdentity: string[]` —
+to drive the PlayerFrame halo per design-system §7.3 / ADR 0011 D5.
+Default-safe: older clients ignore the field; older 1.21 servers
+omit it and the client falls back to `[]` (neutral team-ring via
+`--color-team-neutral`).
+
+ADR 0011 originally targeted schema 1.21 for this field, but slice
+72-A (deck-legality wire surface) shipped 1.21 first. The bump is
+1.21 → 1.22; the additive contract is unchanged.
+
+### `WebPlayerView` — added `colorIdentity` field
+
+```diff
+   "teamId":        null,
++  "colorIdentity": ["W", "U", "B"]
+ }
+```
+
+List of single-character MTG color codes (`W` / `U` / `B` / `R` /
+`G`) representing the union color identity of the player's
+commander(s). Empty list for non-commander formats. For partner /
+background pairings the list is the union of both commanders'
+identities. Order is WUBRG (standard MTG color-pie traversal) so
+the wire shape is stable across renders.
+
+### Forward-compat note
+
+A 1.21 client receiving a 1.22 payload ignores `colorIdentity`
+silently — the existing PlayerArea has no halo today and will not
+notice the extra field. A 1.22 client receiving a 1.21 payload
+defaults the field to `[]` via `z.array(z.string()).default([])`,
+which renders as the neutral team-ring rather than a wrong color.
+No schema-version-mismatch error fires (additive change, minor
+bump).
+
+---
+
 ## 1.21 — 2026-04-29 — Deck-legality surface (slice 72-A)
 
 Adds the structured deck-validator surface: a new pre-flight endpoint,

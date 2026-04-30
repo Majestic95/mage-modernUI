@@ -1,10 +1,23 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { webPlayerViewSchema, type WebPlayerView } from '../api/schemas';
+
+// Slice 70-D — feature-flag mock. Hoisted state so tests can flip
+// the flag between describe blocks without rebuilding the module.
+// The mock returns a getter so each call to KEEP_ELIMINATED re-reads
+// the flag's current value.
+const flagState = vi.hoisted(() => ({ keepEliminated: false }));
+
+vi.mock('../featureFlags', () => ({
+  get KEEP_ELIMINATED() {
+    return flagState.keepEliminated;
+  },
+}));
+
 import {
   formatEliminationAnnouncement,
   opponentRowClassname,
   selectOpponents,
 } from './battlefieldLayout';
-import { webPlayerViewSchema, type WebPlayerView } from '../api/schemas';
 
 function basePlayer(overrides: Partial<WebPlayerView>): WebPlayerView {
   return webPlayerViewSchema.parse({
@@ -106,10 +119,12 @@ describe('Battlefield selectOpponents (slice 69b D11a)', () => {
     expect(result[0]?.playerId).toBe(A);
   });
 
-  it('drops eliminated opponents (4p FFA, one player has left)', () => {
-    // ADR D11a — eliminated player's seat collapses out of the
-    // opponents row entirely in v2. The collapsed-stub variant is
-    // tracked for slice 69d polish.
+  it('flag-off (legacy): drops eliminated opponents (4p FFA)', () => {
+    // ADR 0010 D11a — flag-off keeps the legacy collapse: an
+    // eliminated player's seat disappears from the opponents row.
+    // Slice 70-E flips KEEP_ELIMINATED to true; until then this
+    // path is the production behavior.
+    flagState.keepEliminated = false;
     const players = [
       basePlayer({ playerId: ME, name: 'me' }),
       basePlayer({ playerId: A, name: 'alice' }),
@@ -119,6 +134,25 @@ describe('Battlefield selectOpponents (slice 69b D11a)', () => {
     const result = selectOpponents(players, ME);
     expect(result).toHaveLength(2);
     expect(result.map((p) => p.playerId)).toEqual([A, C]);
+  });
+
+  // Slice 70-D (ADR 0011 D2 amended) — flag-on companion. Both
+  // tests pin behavior; per critic I6 the legacy test is NOT
+  // inverted (would silently lose the flag-off lock).
+  it('flag-on: KEEPS eliminated opponents in the layout for slash overlay', () => {
+    flagState.keepEliminated = true;
+    const players = [
+      basePlayer({ playerId: ME, name: 'me' }),
+      basePlayer({ playerId: A, name: 'alice' }),
+      basePlayer({ playerId: B, name: 'bob', hasLeft: true }),
+      basePlayer({ playerId: C, name: 'carol' }),
+    ];
+    const result = selectOpponents(players, ME);
+    expect(result).toHaveLength(3);
+    expect(result.map((p) => p.playerId)).toEqual([A, B, C]);
+    // Bob's hasLeft signal is preserved on the kept entry —
+    // PlayerFrame branches on it to render the slash overlay.
+    expect(result.find((p) => p.playerId === B)?.hasLeft).toBe(true);
   });
 
   it('drops the local player even if they have left (degenerate)', () => {
@@ -150,6 +184,12 @@ describe('Battlefield selectOpponents (slice 69b D11a)', () => {
   it('returns empty when local player is alone (spectator-style edge case)', () => {
     const result = selectOpponents([basePlayer({ playerId: ME })], ME);
     expect(result).toEqual([]);
+  });
+
+  // Reset flag between describe blocks so cross-file test ordering
+  // doesn't leak the flag-on state into unrelated assertions.
+  afterEach(() => {
+    flagState.keepEliminated = false;
   });
 });
 
@@ -242,5 +282,30 @@ describe('Battlefield formatEliminationAnnouncement (slice 69d D11a + D13)', () 
       }),
     ];
     expect(formatEliminationAnnouncement(players)).toBe('');
+  });
+
+  // Slice 70-D (ADR 0011 D2 amended) — flag-on path silences the
+  // announcer. The kept seat's PlayerFrame aria-label conveys the
+  // same signal once at the seat level; the slash overlay carries
+  // the visual cue. Critic I8 — double-firing produces SR spam.
+  it('flag-on: returns empty even when players have left (PlayerFrame aria-label takes over)', () => {
+    flagState.keepEliminated = true;
+    const players = [
+      basePlayer({
+        playerId: '11111111-1111-1111-1111-111111111111',
+        name: 'alice',
+        hasLeft: true,
+      }),
+      basePlayer({
+        playerId: '22222222-2222-2222-2222-222222222222',
+        name: 'bob',
+        hasLeft: true,
+      }),
+    ];
+    expect(formatEliminationAnnouncement(players)).toBe('');
+  });
+
+  afterEach(() => {
+    flagState.keepEliminated = false;
   });
 });

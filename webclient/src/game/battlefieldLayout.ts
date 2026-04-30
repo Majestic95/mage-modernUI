@@ -1,40 +1,63 @@
 import type { WebPlayerView } from '../api/schemas';
+import { KEEP_ELIMINATED } from '../featureFlags';
 
 /**
- * Slice 69b (ADR 0010 v2 D11a) — pick the opponent seats to render in
- * the opponents row. Drops the local player AND any eliminated
- * (`hasLeft`) opponent. v2 keeps this simple: an eliminated seat
- * disappears from layout entirely. The collapsed-stub variant
- * (name + final state, no glow, retained chat history) is tracked
- * for slice 69d polish — until then, the layout collapse is the
- * unambiguous visual signal of "this player is out."
+ * Slice 69b (ADR 0010 v2 D11a) → 70-D (ADR 0011 D2, **amended**) —
+ * pick the opponent seats to render. Drops the local player; the
+ * {@code hasLeft} (eliminated) filter is now feature-flagged.
  *
- * Order is preserved (turn order from upstream).
+ * <p>When {@link KEEP_ELIMINATED} is {@code false} (default — slice
+ * 70-D ships behind the flag, slice 70-E flips it):
+ * legacy behavior — eliminated opponents are dropped from the
+ * layout. The {@code formatEliminationAnnouncement} aria-live
+ * announcer below still fires so blind users get the signal that
+ * was otherwise lost to layout collapse.
+ *
+ * <p>When {@link KEEP_ELIMINATED} is {@code true}: eliminated
+ * opponents are KEPT in the layout. {@code PlayerFrame} renders the
+ * elimination slash + permanent fade overlay against the kept seat
+ * (per design-system §7.3 / spec screenshot precedent). The
+ * announcer is silenced (the slash + persona aria-label convey the
+ * same signal visually + via SR) — see
+ * {@link #formatEliminationAnnouncement} below.
+ *
+ * <p>Order is preserved (turn order from upstream).
  */
 export function selectOpponents(
   players: WebPlayerView[],
   myPlayerId: string,
 ): WebPlayerView[] {
+  if (KEEP_ELIMINATED) {
+    return players.filter((p) => p.playerId !== myPlayerId);
+  }
   return players.filter((p) => p.playerId !== myPlayerId && !p.hasLeft);
 }
 
 /**
- * Slice 69d (ADR 0010 v2 D11a + D13) — elimination announcement text
- * for the Battlefield's secondary ARIA-live region. Returns the
- * empty string when no player has left (so the live region's
- * aria-atomic boundary doesn't fire). Returns "Eliminated: <names>"
- * when one or more players have `hasLeft=true`. Names use the
- * player's display name; missing names fall back to "unknown" rather
- * than crashing the announcement.
+ * Slice 69d (ADR 0010 v2 D11a + D13) → 70-D (ADR 0011 D2 amended) —
+ * aria-live announcement for eliminated players. Returns the empty
+ * string under either of these conditions:
  *
- * <p>The visual surface (slice 69b's `selectOpponents` filter) drops
- * eliminated PlayerAreas from the layout entirely. Blind users would
- * otherwise have no cue that the game changed shape — this announcer
- * fills that gap.
+ * <ul>
+ *   <li>No player has {@code hasLeft=true}</li>
+ *   <li>{@link KEEP_ELIMINATED} is on — the kept seat's
+ *       {@code PlayerFrame} aria-label ("alice, 0 life, eliminated")
+ *       conveys the same signal once at the seat level, and the
+ *       slash overlay carries the visual cue. Double-firing produces
+ *       SR spam.</li>
+ * </ul>
+ *
+ * <p>Returns {@code "Eliminated: <names>"} when the legacy
+ * layout-drop is in effect (flag off) AND one or more players have
+ * left — that's the only path where the layout collapse leaves
+ * blind users with no cue.
  */
 export function formatEliminationAnnouncement(
   players: WebPlayerView[],
 ): string {
+  if (KEEP_ELIMINATED) {
+    return '';
+  }
   const leavers = players.filter((p) => p.hasLeft);
   if (leavers.length === 0) {
     return '';

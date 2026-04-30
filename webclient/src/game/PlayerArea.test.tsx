@@ -168,11 +168,13 @@ describe('PlayerArea tabIndex (slice 69b D13)', () => {
   });
 });
 
-describe('PlayerArea aria-label (slice 69b D13)', () => {
-  // D13 — focusable seats need a label that summarizes the persona,
-  // not the entire concatenated text content of the cell. The label
-  // string is the screen-reader announcement on focus, so its shape
-  // is a real user-facing contract.
+describe('PlayerArea aria-label (slice 70-D — synthesis owned by PlayerFrame)', () => {
+  // Slice 70-D — aria-label synthesis migrated from PlayerArea to
+  // PlayerFrame (critic N11). PlayerArea is now role="region" with
+  // no label; the persona signals (name + life + active + priority +
+  // eliminated) are owned by the inner PlayerFrame's role="group"
+  // aria-label. SR users traverse PlayerArea (region) → PlayerFrame
+  // (group with persona label) → battlefield contents.
 
   it('idle opponent: name + life only', () => {
     render(
@@ -181,9 +183,15 @@ describe('PlayerArea aria-label (slice 69b D13)', () => {
         {...PASSTHROUGH_PROPS}
       />,
     );
+    const frame = screen.getByTestId('player-frame-opponent');
+    expect(frame.getAttribute('aria-label')).toBe('alice, 18 life');
+    expect(frame.getAttribute('role')).toBe('group');
+    // Slice 70-D critic UX-C1 — PlayerArea is a plain div (no
+    // role="region", no aria-label). The inner PlayerFrame's
+    // labeled group is the sole nameable container.
     const area = screen.getByTestId('player-area-opponent');
-    expect(area.getAttribute('aria-label')).toBe('alice, 18 life');
-    expect(area.getAttribute('role')).toBe('group');
+    expect(area.getAttribute('role')).toBeNull();
+    expect(area.getAttribute('aria-label')).toBeNull();
   });
 
   it('self perspective announces "your seat"', () => {
@@ -194,8 +202,8 @@ describe('PlayerArea aria-label (slice 69b D13)', () => {
         perspective="self"
       />,
     );
-    const area = screen.getByTestId('player-area-self');
-    expect(area.getAttribute('aria-label')).toBe(
+    const frame = screen.getByTestId('player-frame-self');
+    expect(frame.getAttribute('aria-label')).toBe(
       'alice, 20 life, your seat',
     );
   });
@@ -212,17 +220,13 @@ describe('PlayerArea aria-label (slice 69b D13)', () => {
         {...PASSTHROUGH_PROPS}
       />,
     );
-    const area = screen.getByTestId('player-area-opponent');
-    expect(area.getAttribute('aria-label')).toBe(
+    const frame = screen.getByTestId('player-frame-opponent');
+    expect(frame.getAttribute('aria-label')).toBe(
       'bob, 12 life, active turn, has priority',
     );
   });
 
   it('eliminated opponent surfaces "eliminated"', () => {
-    // In Battlefield, eliminated opponents are filtered out of the
-    // opponents row entirely (D11a). But PlayerArea is also reused
-    // by the future ELIMINATED stub (slice 69d) and any spectator
-    // / debug surface — so the label still needs to handle it.
     render(
       <PlayerArea
         player={basePlayer({
@@ -233,23 +237,21 @@ describe('PlayerArea aria-label (slice 69b D13)', () => {
         {...PASSTHROUGH_PROPS}
       />,
     );
-    const area = screen.getByTestId('player-area-opponent');
-    expect(area.getAttribute('aria-label')).toBe(
+    const frame = screen.getByTestId('player-frame-opponent');
+    expect(frame.getAttribute('aria-label')).toBe(
       'carol, 0 life, eliminated',
     );
   });
 
   it('falls back to "Unknown player" when name missing', () => {
-    // Defensive — upstream always populates name, but a malformed
-    // fixture or partial GameView in transit shouldn't crash a11y.
     render(
       <PlayerArea
         player={basePlayer({ name: '', life: 20 })}
         {...PASSTHROUGH_PROPS}
       />,
     );
-    const area = screen.getByTestId('player-area-opponent');
-    expect(area.getAttribute('aria-label')).toBe(
+    const frame = screen.getByTestId('player-frame-opponent');
+    expect(frame.getAttribute('aria-label')).toBe(
       'Unknown player, 20 life',
     );
   });

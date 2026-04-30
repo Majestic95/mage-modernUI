@@ -249,8 +249,77 @@ public final class GameViewMapper {
                 // teamId — null per ADR R1 (slice 69c finding). No
                 // shipped match type produces team-grouped state in
                 // upstream xmage. Forward-compat wire shape only.
-                null
+                null,
+                // Slice 70-D (ADR 0011 D5) — colorIdentity drives the
+                // PlayerFrame halo. Empty list for non-commander
+                // formats; for commander formats the union of every
+                // commander's color identity (handles partner /
+                // background pairings).
+                deriveColorIdentity(pv.getCommandObjectList())
         );
+    }
+
+    /**
+     * Slice 70-D — extract the union color identity from the player's
+     * command zone. Iterates {@link CommanderView} entries (skipping
+     * emblems, dungeons, planes) and unions their
+     * {@code getOriginalColorIdentity()} strings.
+     *
+     * <p>Non-commander formats produce {@link List#of()} (no
+     * {@code CommanderView} entries → empty union). Critic N9 — emit
+     * {@code List.of()} not {@code null}; the client's Zod default
+     * fires only on a missing JSON key, not on a literal {@code null}.
+     */
+    static List<String> deriveColorIdentity(List<CommandObjectView> commandList) {
+        if (commandList == null || commandList.isEmpty()) {
+            return List.of();
+        }
+        List<String> commanderIdentities = new ArrayList<>();
+        for (CommandObjectView co : commandList) {
+            if (co instanceof CommanderView cv) {
+                commanderIdentities.add(cv.getOriginalColorIdentity());
+            }
+        }
+        return unionColorIdentity(commanderIdentities);
+    }
+
+    /**
+     * Slice 70-D — pure string-processing helper. Takes a list of
+     * upstream-format color-identity strings (e.g. {@code "WU"},
+     * {@code "BG"}, {@code ""}) and returns the deduped sorted union
+     * as single-character entries in WUBRG order (the standard MTG
+     * color-pie traversal). Stable across renders.
+     *
+     * <p>Partners / background pairings exercise the union path
+     * (e.g. {@code ["WU", "BG"]} → {@code ["W","U","B","G"]}). Empty
+     * input or all-empty / null entries → {@link List#of()}.
+     *
+     * <p>Package-private + visible for unit testing without needing
+     * to construct upstream {@code CommanderView} fixtures (which
+     * require a heavy {@code Commander} + {@code Card} + {@code Game}
+     * constructor chain).
+     */
+    static List<String> unionColorIdentity(List<String> identityStrings) {
+        if (identityStrings == null || identityStrings.isEmpty()) {
+            return List.of();
+        }
+        java.util.Set<Character> seen = new java.util.LinkedHashSet<>();
+        for (char color : "WUBRG".toCharArray()) {
+            for (String identity : identityStrings) {
+                if (identity != null && identity.indexOf(color) >= 0) {
+                    seen.add(color);
+                    break;
+                }
+            }
+        }
+        if (seen.isEmpty()) {
+            return List.of();
+        }
+        List<String> out = new ArrayList<>(seen.size());
+        for (Character c : seen) {
+            out.add(String.valueOf(c));
+        }
+        return List.copyOf(out);
     }
 
     /**

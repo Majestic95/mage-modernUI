@@ -57,6 +57,15 @@ import java.util.Map;
  *     wire shape; population from {@code MatchType.getPlayersPerTeam()}
  *     + seat-index lands in slice 69b alongside the live-game-access
  *     plumbing.
+ * @param colorIdentity   list of MTG colors ({@code "W"}, {@code "U"},
+ *     {@code "B"}, {@code "R"}, {@code "G"}) representing the union
+ *     color identity of the player's commander(s). Empty list for
+ *     non-commander formats. Drives the player-frame halo per
+ *     design-system §7.3 — single colors render as a solid ring,
+ *     multicolor renders as alternating bands, empty falls back to
+ *     {@code --color-team-neutral}. For partner / background commander
+ *     pairings the list is the union of both identities. Added in
+ *     schema 1.22 (ADR 0011 D5).
  */
 public record WebPlayerView(
         String playerId,
@@ -80,6 +89,7 @@ public record WebPlayerView(
         boolean initiative,
         List<String> designationNames,
         List<WebCommandObjectView> commandList,
-        String teamId
+        String teamId,
+        List<String> colorIdentity
 ) {
 }
