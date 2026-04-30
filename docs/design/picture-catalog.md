@@ -210,13 +210,13 @@ Remove from the current implementation:
 
 ### 3.1 Stack mode (default when stack non-empty)
 
-- **Topmost stack item:** Rendered at `--card-size-focal` (~150% of `--card-size-medium`, so ~125×175). Centered geometrically in the middle of the four pods.
+- **Topmost stack item:** Rendered at `--card-size-focal` = **170px × 238px** (5:7 portrait, ~210% of `--card-size-medium`). Sized to be visually dominant — the focal card is the primary "what's happening right now" anchor on the screen. Centered geometrically in the middle of the four pods. (User decision 2026-04-30: the focal card should read as **big and dominant**, not subtle. The slice 70-I token at 170px stays; the earlier ~125×175 estimate in this catalog was a rough back-of-envelope figure superseded by the live test.)
 - **Card render:** Full `<CardFace>` — Scryfall art, mana cost top-right, name banner middle, type line, rules text, P/T bottom-right.
-- **Glow:** Color-identity glow around the card edges. Single color → solid glow. Multicolor → alternating bands. Colorless → silver glow. The picture shows The Locust God with cyan glow (its U color identity).
-- **Glow animation:** Continuous pulse at 1.5s period (`stack-glow-pulse` keyframe — already in the registry).
-- **Glow color:** Uses `--color-mana-{color}-glow` tokens (already defined for all 6 colors).
-- **Lower stack items (positions 2-6):** Fanned BEHIND/BELOW the topmost at progressively smaller sizes (~85% of `focal` for position 2, ~70% for position 3, etc.). Fanned at slight angles (~5-8° per position to give a layered look).
-- **6+ items:** Collapse to "+N more" indicator on the topmost.
+- **Glow:** Color-identity halo ring **around the card edges** with colored bands matching the spell's mana colors. Single color → solid color halo in that color's mana token. Multicolor → conic-gradient with alternating bands, one band per color, **rotating at 12s/rev** via `animate-halo-rotate` (mirrors the PlayerPortrait halo mechanism so the focal-card and player-portrait visual languages match). Colorless → neutral team-ring color. The halo extends ~8px past the card edges and is feathered with a CSS `filter: blur(...)` so the edge transitions soft, not hard.
+- **Glow animation:** Continuous opacity pulse at 1.5s period (`stack-glow-pulse` keyframe — already in the registry). For multicolor cards the pulse composes with the 12s halo rotation.
+- **Glow color:** Uses the same `computeHaloBackground` helper as PlayerPortrait — `--color-mana-{color}` tokens via `manaTokenForCode` for the band colors, plus a `box-shadow` with `--color-mana-multicolor-glow` for the outer feather.
+- **Lower stack items (positions 2-5):** Fanned BEHIND the topmost via the **same `--card-size-focal` CardFace** (NOT a smaller stack-variant tile) at progressively smaller scale-transform values: 85% / 70% / 55% / 40% (15% step). Fanned at slight angles ~5-8° per position alternating sign (deck-of-spells silhouette).
+- **5+ items past the topmost:** Collapse to "+N more" indicator on the topmost (shown in the top-LEFT corner of the focal card so it doesn't compete with the mana cost overlay in top-right).
 - **Triggered/activated abilities on the stack:** Render as card-shaped tiles with the source card's art (small) and the ability's rule text overlaid. Same focal-size container.
 
 ### 3.2 Combat mode
@@ -494,7 +494,7 @@ These are tuning targets for the slice 70-Z polish pass — measure each shipped
 | Commander damage 2×2 | 70-L | Reuse PlayerPortrait at 32-40px |
 | ActionButton single morphing | 70-M | New `<ActionButton>` component |
 | Side panel reorder + ActionButton placement | 70-M | Depends on 70-K, drops `[grid-area:action]` |
-| Focal stack at 1.5× | 70-N | Depends on 70-I (`--card-size-focal`) |
+| Focal stack at 170×238 (dominant) | 70-N | Depends on 70-I (`--card-size-focal`) |
 | Combat-mode arrows in focal | 70-N | Reuse `<TargetingArrow>` |
 | Header purple all-caps + icons | 70-O | New header component |
 | Drop the gameId / connection / leave from header | 70-O | Cleanup |
