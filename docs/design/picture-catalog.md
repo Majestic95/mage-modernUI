@@ -124,9 +124,9 @@ Four pods total. Each has the same anatomy with size/orientation variations per 
 
 - **Portrait:** Circular `border-radius: 50%`, default ~80px diameter for opponents, ~96px for local.
 - **Portrait fill:** Scryfall art-crop URL of the player's commander (resolved via existing `scryfall.ts`). Object-fit: cover.
-- **Halo ring:** 2-3px ring around the circular portrait. Color = player's color identity (multicolor = alternating bands rotating at 12s/rev). Renders OUTSIDE the portrait via box-shadow OR a separate concentric ring element.
+- **Halo ring:** 2-3px ring around the circular portrait. Color = player's color identity (multicolor = alternating bands rotating at 12s/rev). Renders OUTSIDE the portrait via box-shadow OR a separate concentric ring element. **MUST also radiate an outer glow per the universal halo-glow rule (§Universal halo glow below).**
 - **Halo states (composes additively):**
-  - Default: static glow ring in color identity colors
+  - Default: static glow ring in color identity colors **+ outer radiating glow in the same color(s)**
   - Active player: ring brightens + pulses at 1.9s period (`animate-player-active-halo` already shipped)
   - Multicolor + active: rotating bands AND pulse compose (slice 70-G)
   - Disconnected: ring desaturates, "Disconnected" pill overlay (slice 70-H — keep)
@@ -212,9 +212,9 @@ Remove from the current implementation:
 
 - **Topmost stack item:** Rendered at `--card-size-focal` = **170px × 238px** (5:7 portrait, ~210% of `--card-size-medium`). Sized to be visually dominant — the focal card is the primary "what's happening right now" anchor on the screen. Centered geometrically in the middle of the four pods. (User decision 2026-04-30: the focal card should read as **big and dominant**, not subtle. The slice 70-I token at 170px stays; the earlier ~125×175 estimate in this catalog was a rough back-of-envelope figure superseded by the live test.)
 - **Card render:** Full `<CardFace>` — Scryfall art, mana cost top-right, name banner middle, type line, rules text, P/T bottom-right.
-- **Glow:** Color-identity halo ring **around the card edges** with colored bands matching the spell's mana colors. Single color → solid color halo in that color's mana token. Multicolor → conic-gradient with alternating bands, one band per color, **rotating at 12s/rev** via `animate-halo-rotate` (mirrors the PlayerPortrait halo mechanism so the focal-card and player-portrait visual languages match). Colorless → neutral team-ring color. The halo extends ~8px past the card edges and is feathered with a CSS `filter: blur(...)` so the edge transitions soft, not hard.
+- **Glow:** Color-identity halo ring **around the card edges** with colored bands matching the spell's mana colors. Single color → solid color halo. Multicolor → conic-gradient with alternating bands, one band per color, **rotating at 12s/rev** via `animate-halo-rotate`. Colorless → neutral team-ring color. The inner ring is feathered via CSS `filter: blur(...)` so the edge reads soft. **MUST also radiate an outer glow per the universal halo-glow rule (§Universal halo glow):** `computeHaloGlow(colors, false, 32)` returns a `box-shadow` with one feathered shadow per color sourced from the `--color-mana-X-glow` tokens, so the focal card visibly emits its color outward, not just sits with a flat colored ring.
 - **Glow animation:** Continuous opacity pulse at 1.5s period (`stack-glow-pulse` keyframe — already in the registry). For multicolor cards the pulse composes with the 12s halo rotation.
-- **Glow color:** Uses the same `computeHaloBackground` helper as PlayerPortrait — `--color-mana-{color}` tokens via `manaTokenForCode` for the band colors, plus a `box-shadow` with `--color-mana-multicolor-glow` for the outer feather.
+- **Glow color:** Inner ring via `computeHaloBackground`, outer radiating glow via `computeHaloGlow`. Both helpers live in `halo.ts` and are the canonical source for any halo surface (player portrait, focal card, future surfaces).
 - **Lower stack items (positions 2-5):** Fanned BEHIND the topmost via the **same `--card-size-focal` CardFace** (NOT a smaller stack-variant tile) at progressively smaller scale-transform values: 85% / 70% / 55% / 40% (15% step). Fanned at slight angles ~5-8° per position alternating sign (deck-of-spells silhouette).
 - **5+ items past the topmost:** Collapse to "+N more" indicator on the topmost (shown in the top-LEFT corner of the focal card so it doesn't compete with the mana cost overlay in top-right).
 - **Triggered/activated abilities on the stack:** Render as card-shaped tiles with the source card's art (small) and the ability's rule text overlaid. Same focal-size container.
@@ -440,6 +440,40 @@ The following EXIST in the current code but should be **removed or relocated**:
 - **Current:** Horizontal text-chip strip below the battlefield rows for each player (`PlayerArea.tsx:175`).
 - **Target:** **REMOVE the chip strip.** The commander's identity is shown via the player's portrait (the avatar IS the commander art). Emblems / dungeons / planes need a different rendering — TBD when a game uses them; not in the picture so don't design for it now.
 - **Migration:** Drop `<CommandZone>` from `PlayerArea`. The player portrait now carries the commander identity. Emblems / dungeons / planes get a follow-up slice when a game needs them.
+
+---
+
+## Universal halo glow (load-bearing rule)
+
+> **User directive 2026-04-30, slice 70-N.1:**
+> *"In every instance of colored halo bands around a card or player portrait, the color needs to have a glow effect that radiates from the color. This glow effect is universal and should be implemented everywhere a halo is."*
+
+Every halo surface in the redesign — current and future — composes **two** color layers:
+
+1. **Inner ring / bands** — solid color (single) or `conic-gradient` of `--color-mana-X` tokens (multicolor) or neutral team color (colorless / eliminated). Renders the spell or player's color identity as a visible band around the host element. Animations: `animate-halo-rotate` (12s/rev for multicolor), `animate-stack-glow-pulse` or `animate-player-active-halo` for opacity pulse.
+2. **Outer radiating glow** — `box-shadow` in the SAME color(s) as the inner ring, **0 spread, large blur**. Sourced from `computeHaloGlow(colorIdentity, eliminated, radiusPx)` in `webclient/src/game/halo.ts`:
+   - Single color → one shadow in that color's `--color-mana-X-glow` token
+   - Multicolor → one shadow per color, all stacked at the same blur radius (composites additively at the inner edge, tints outward toward each color at the outer edge)
+   - Colorless / eliminated → one shadow in `--color-mana-colorless-glow`
+
+The outer glow MUST be present. A halo that is only a colored ring (no radiating glow) is a catalog violation regardless of which surface it lives on. Critics flag this as a CRITICAL finding and the slice doesn't ship.
+
+**Glow radius scaling:** the `radiusPx` parameter to `computeHaloGlow` lets each consumer pick a glow extent appropriate to its element size:
+
+| Surface | Element size | Glow radius |
+|---|---|---|
+| GameLog avatar (PlayerPortrait `size="small"`) | 32px | 8px |
+| Opponent pod (PlayerPortrait `size="medium"`) | 80px | 14px |
+| Local pod (PlayerPortrait `size="large"`) | 96px | 18px |
+| Focal stack card | 170×238 | 32px |
+
+**Helpers:**
+- `computeHaloBackground(colorIdentity, eliminated)` — returns the inner ring/band CSS background.
+- `computeHaloGlow(colorIdentity, eliminated, radiusPx)` — returns the outer-glow CSS `box-shadow`.
+- `manaTokenForCode(code)` — single-character mana code → solid color token.
+- `manaGlowTokenForCode(code)` — single-character mana code → glow alpha token.
+
+**Current surfaces that consume both helpers (slice 70-N.1):** `PlayerPortrait` (CircularHalo) and `StackZone` FocalCard. New halo surfaces that ship later (e.g. CommanderDamage threshold cell, focal triggered ability tile) MUST use `computeHaloGlow`; do not invent per-surface glow logic.
 
 ---
 

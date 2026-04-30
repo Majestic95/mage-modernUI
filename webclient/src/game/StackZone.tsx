@@ -18,7 +18,7 @@ import {
 import { CardFace } from './CardFace';
 import { HoverCardDetail } from './HoverCardDetail';
 import { REDESIGN } from '../featureFlags';
-import { computeHaloBackground } from './halo';
+import { computeHaloBackground, computeHaloGlow } from './halo';
 import { TargetingArrow } from './TargetingArrow';
 
 /**
@@ -228,6 +228,12 @@ function StackFan({ entries }: { entries: readonly WebCardView[] }) {
   const overflow = Math.max(0, entries.length - 1 - FAN_CAP);
 
   const topmostHalo = computeHaloBackground(topmost.colors, false);
+  // Slice 70-N.1 — outer radiating glow sourced from the SAME color
+  // identity as the inner halo bands. User directive 2026-04-30:
+  // every halo must radiate its color. 32px glow radius reads as
+  // "soft halo" on the 170×238 focal card without spilling into the
+  // pod regions.
+  const topmostGlow = computeHaloGlow(topmost.colors, false, 32);
 
   return (
     <section
@@ -253,6 +259,7 @@ function StackFan({ entries }: { entries: readonly WebCardView[] }) {
           key={topmost.id}
           card={topmost}
           haloBackground={topmostHalo}
+          haloGlow={topmostGlow}
           haloIsMulticolor={topmost.colors.length > 1}
           overflow={overflow}
         />
@@ -359,6 +366,7 @@ function FanCard({
 function FocalCard({
   card,
   haloBackground,
+  haloGlow,
   haloIsMulticolor,
   overflow,
 }: {
@@ -368,6 +376,15 @@ function FocalCard({
    * gradient (multicolor), or the team-neutral fallback.
    */
   haloBackground: string;
+  /**
+   * Slice 70-N.1 — CSS box-shadow value for the outer radiating
+   * glow. Sourced from {@code computeHaloGlow} so the glow color
+   * matches the card's color identity (single = that color's -glow
+   * token; multicolor = layered shadows, one per color; colorless =
+   * silver). Required for the "every halo radiates from its color"
+   * universal rule.
+   */
+  haloGlow: string;
   /**
    * Whether the halo background is a multicolor conic-gradient.
    * Drives whether {@code animate-halo-rotate} animates the
@@ -388,18 +405,16 @@ function FocalCard({
   // resolution where a fan tile promotes to focal.
   const layoutId = card.cardId ? card.cardId : undefined;
 
-  // Slice 70-N — halo style. Background carries the color (solid or
-  // conic-gradient), filter blurs the edges into the catalog's
-  // "soft halo" treatment, and box-shadow with NO spread (Graphical
-  // critic IMP-1) adds the outer feather.
+  // Slice 70-N.1 — halo style. Background carries the inner color
+  // (solid or conic-gradient bands), filter softens the band edges
+  // into the catalog's "soft halo" treatment, and box-shadow
+  // radiates outward in the SAME color identity per
+  // computeHaloGlow (user directive 2026-04-30: every halo must
+  // glow in its color, not flat gold).
   const haloStyle: CSSProperties = {
     background: haloBackground,
     filter: 'blur(10px)',
-    // Glow extension past the card via box-shadow with 0 spread —
-    // catalog says "Box-shadows with feathered edges (large blur
-    // radius, low alpha)." 28px blur reads as "feathered glow"
-    // without the hard-ring artifact 8px spread produces.
-    boxShadow: '0 0 28px 0 var(--color-mana-multicolor-glow)',
+    boxShadow: haloGlow,
   };
 
   return (
@@ -409,6 +424,7 @@ function FocalCard({
       key={card.id}
       data-testid="stack-focal-card"
       data-stack-glow={haloBackground}
+      data-halo-outer-glow={haloGlow}
       data-halo-multicolor={haloIsMulticolor || undefined}
       data-layout-id={layoutId}
       initial={{ opacity: 0, y: -24, scale: 0.85 }}

@@ -235,6 +235,75 @@ describe('PlayerPortrait — halo variants', () => {
       screen.getByTestId('player-portrait-halo'),
     ).not.toHaveAttribute('data-rotating');
   });
+
+  it('radiates an outer box-shadow glow in the single-color mana-glow token (universal halo-glow rule)', () => {
+    // Slice 70-N.1 user directive 2026-04-30: every halo (player
+    // portrait + focal stack card + any future surface) MUST have
+    // an outer glow that radiates in its color, not just sit as a
+    // flat ring. Single-color portrait → one box-shadow layer.
+    render(
+      <PlayerPortrait
+        player={makePlayer({ colorIdentity: ['G'] })}
+        size="medium"
+      />,
+    );
+    const halo = screen.getByTestId('player-portrait-halo');
+    expect(halo.dataset['haloGlow']).toBe(
+      '0 0 14px 0 var(--color-mana-green-glow)',
+    );
+  });
+
+  it('layers one box-shadow per color for multicolor halos (universal halo-glow rule)', () => {
+    render(
+      <PlayerPortrait
+        player={makePlayer({ colorIdentity: ['W', 'U', 'B', 'G'] })}
+        size="medium"
+      />,
+    );
+    const halo = screen.getByTestId('player-portrait-halo');
+    // Four colors → four layered shadows, additive composition.
+    expect(halo.dataset['haloGlow']).toBe(
+      '0 0 14px 0 var(--color-mana-white-glow), 0 0 14px 0 var(--color-mana-blue-glow), 0 0 14px 0 var(--color-mana-black-glow), 0 0 14px 0 var(--color-mana-green-glow)',
+    );
+  });
+
+  it('uses colorless-glow for empty colorIdentity', () => {
+    render(
+      <PlayerPortrait
+        player={makePlayer({ colorIdentity: [] })}
+        size="medium"
+      />,
+    );
+    const halo = screen.getByTestId('player-portrait-halo');
+    expect(halo.dataset['haloGlow']).toBe(
+      '0 0 14px 0 var(--color-mana-colorless-glow)',
+    );
+  });
+
+  it('scales glow radius with portrait size (small=8px, medium=14px, large=18px)', () => {
+    // Smaller portraits get tighter glows so the radiated halo
+    // doesn't dwarf the avatar; larger pods get a wider glow that
+    // balances the bigger circle.
+    const { rerender } = render(
+      <PlayerPortrait
+        player={makePlayer({ colorIdentity: ['R'] })}
+        size="small"
+      />,
+    );
+    expect(
+      screen.getByTestId('player-portrait-halo').dataset['haloGlow'],
+    ).toBe('0 0 8px 0 var(--color-mana-red-glow)');
+
+    rerender(
+      <PlayerPortrait
+        player={makePlayer({ colorIdentity: ['R'] })}
+        size="large"
+      />,
+    );
+    expect(
+      screen.getByTestId('player-portrait-halo').dataset['haloGlow'],
+    ).toBe('0 0 18px 0 var(--color-mana-red-glow)');
+  });
 });
 
 describe('PlayerPortrait — state composition', () => {

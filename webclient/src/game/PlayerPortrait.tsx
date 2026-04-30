@@ -46,7 +46,7 @@
  */
 import { type CSSProperties, useMemo } from 'react';
 import type { WebPlayerView } from '../api/schemas';
-import { computeHaloBackground, manaTokenForCode } from './halo';
+import { computeHaloBackground, computeHaloGlow, manaTokenForCode } from './halo';
 import { scryfallCommanderImageUrl } from './scryfall';
 
 export type PlayerPortraitSize = 'small' | 'medium' | 'large';
@@ -313,8 +313,23 @@ function CircularHalo({
     [colorIdentity, eliminated],
   );
 
+  // Slice 70-N.1 — outer radiating glow (user directive 2026-04-30:
+  // every halo must "have a glow effect that radiates from the
+  // color"). Uses computeHaloGlow so the box-shadow color is
+  // sourced from the SAME color identity as the inner ring/bands.
+  // Glow radius scales with the portrait size — wider glows on
+  // bigger portraits feel proportional. Box-shadow is unaffected by
+  // the mask-composite carve-out below; it renders outside the
+  // element's bounds.
+  const glowRadius = paddingPx <= 1.5 ? 8 : paddingPx <= 2 ? 14 : 18;
+  const haloGlow = useMemo(
+    () => computeHaloGlow(colorIdentity, eliminated, glowRadius),
+    [colorIdentity, eliminated, glowRadius],
+  );
+
   const ringStyle: CSSProperties = {
     background: haloBackground,
+    boxShadow: haloGlow,
     padding: `${paddingPx}px`,
     WebkitMask:
       'linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)',
@@ -340,6 +355,7 @@ function CircularHalo({
     <div
       data-testid="player-portrait-halo"
       data-color-count={colorIdentity.length}
+      data-halo-glow={haloGlow}
       data-eliminated={eliminated || undefined}
       data-active={isActive || undefined}
       data-rotating={rotates || undefined}

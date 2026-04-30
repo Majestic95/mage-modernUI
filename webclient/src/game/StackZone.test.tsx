@@ -206,6 +206,51 @@ describe('StackZone — REDESIGN focal mode (picture-catalog §3.1)', () => {
     expect(halo.className).toMatch(/animate-stack-glow-pulse/);
   });
 
+  it('radiates outer glow in the single-color mana glow token (universal halo-glow rule)', () => {
+    // Slice 70-N.1 user directive — every halo must radiate its
+    // color outward via box-shadow, not just sit as a flat ring.
+    const card = makeCard({
+      id: 'spell-1',
+      cardId: 'spell-1',
+      colors: ['R'],
+    });
+    render(<StackZone stack={makeStack([card])} combat={[]} />);
+    const focal = screen.getByTestId('stack-focal-card');
+    // Single color → one box-shadow layer in that color's -glow token.
+    expect(focal.dataset['haloOuterGlow']).toBe(
+      '0 0 32px 0 var(--color-mana-red-glow)',
+    );
+  });
+
+  it('layers one outer-glow box-shadow per color for multicolor (universal halo-glow rule)', () => {
+    const card = makeCard({
+      id: 'spell-1',
+      cardId: 'spell-1',
+      colors: ['W', 'U', 'B'],
+    });
+    render(<StackZone stack={makeStack([card])} combat={[]} />);
+    const focal = screen.getByTestId('stack-focal-card');
+    // Three colors → three layered box-shadows, each in that
+    // color's -glow token. Composes additively at the inner edge,
+    // tinted toward each color at the outer edge.
+    expect(focal.dataset['haloOuterGlow']).toBe(
+      '0 0 32px 0 var(--color-mana-white-glow), 0 0 32px 0 var(--color-mana-blue-glow), 0 0 32px 0 var(--color-mana-black-glow)',
+    );
+  });
+
+  it('falls back to colorless-glow outer glow when colors is empty', () => {
+    const card = makeCard({
+      id: 'spell-1',
+      cardId: 'spell-1',
+      colors: [],
+    });
+    render(<StackZone stack={makeStack([card])} combat={[]} />);
+    const focal = screen.getByTestId('stack-focal-card');
+    expect(focal.dataset['haloOuterGlow']).toBe(
+      '0 0 32px 0 var(--color-mana-colorless-glow)',
+    );
+  });
+
   it('adds animate-halo-rotate only when the topmost is multicolor', () => {
     const single = makeCard({
       id: 'spell-1',
