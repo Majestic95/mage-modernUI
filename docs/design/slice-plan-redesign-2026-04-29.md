@@ -444,13 +444,14 @@ After 70-P signs off, before flipping the flag in production.
 A slice ships ONLY when:
 
 1. ✅ Implementation matches the catalog entry for the affected region.
-2. ✅ Server tests + client tests pass (no regressions).
-3. ✅ Lint clean for files I modified (pre-existing lint debt allowed).
-4. ✅ Local dev server screenshot at 1920×1080 captured.
-5. ✅ Vercel preview deployed and URL shared with user.
-6. ✅ User signs off on the preview.
-7. ✅ Critic-pass log row added (per CLAUDE.md cadence reform).
-8. ✅ Commit lands on `main` with the slice 70-X message format.
+2. ✅ **Critic dispatch used the [redesign critic checklist](../decisions/critic-checklist-redesign.md)** — required from slice 70-K.1 onward. Critic report explicitly cites the picture-catalog clauses checked, including a "Carry-over violations" section that scans for visual code preserved from earlier slices that contradicts the catalog. A critic report that doesn't reference catalog clauses is incomplete; re-dispatch.
+3. ✅ Server tests + client tests pass (no regressions).
+4. ✅ Lint clean for files I modified (pre-existing lint debt allowed).
+5. ✅ Local dev server screenshot at 1920×1080 captured.
+6. ✅ Vercel preview deployed and URL shared with user.
+7. ✅ User signs off on the preview.
+8. ✅ Critic-pass log row added (per CLAUDE.md cadence reform).
+9. ✅ Commit lands on `main` with the slice 70-X message format.
 
 ---
 

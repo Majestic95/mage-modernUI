@@ -28,6 +28,18 @@ When writing or reviewing any visual code change for the game-table screen:
 3. **If something is ambiguous or under-specified here**, treat the screenshot as authoritative and ask the user for clarification rather than improvising.
 4. **If existing tokens/components aren't mentioned**, that's a hint that they should not be in this picture's UI — reconcile by deletion or relocation, not by leaving stale.
 
+## How critics use this document
+
+**Required load-bearing reference for every critic dispatched on a redesign-push slice (70-I through 70-Z + future visual work).** The dispatch template is canonical at [`docs/decisions/critic-checklist-redesign.md`](../decisions/critic-checklist-redesign.md). Every redesign critic:
+
+1. Loads this picture-catalog before reviewing the slice.
+2. Identifies which catalog regions/clauses the slice's changes touch.
+3. Quotes the relevant clauses verbatim in their findings.
+4. Flags **carry-over violations** — visual code preserved from earlier slices that contradicts the catalog (the canonical example is the slice 70-K row-stretch bug; see the lessons log in the checklist doc).
+5. Returns findings in the prescribed `## Catalog clauses checked` / `## CRITICAL` / `## IMPORTANT` / `## NICE-TO-HAVE` / `## Carry-over violations` format.
+
+A critic report that doesn't cite catalog clauses is incomplete and gets re-dispatched.
+
 ---
 
 ## Region map
