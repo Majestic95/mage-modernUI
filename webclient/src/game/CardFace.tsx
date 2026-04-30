@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type JSX } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type JSX } from 'react';
 import { motion } from 'framer-motion';
 import type { WebCardView, WebPermanentView } from '../api/schemas';
 import { ManaCost } from './ManaCost';
@@ -12,8 +12,8 @@ import {
 
 /**
  * Slice 52e — shared card-face renderer used by hand, stack, and
- * battlefield zones. Three sizes share the same skeleton (Scryfall
- * art with image-fail fallback, mana cost overlay top-right, name
+ * battlefield zones. Sizes share the same skeleton (Scryfall art
+ * with image-fail fallback, mana cost overlay top-right, name
  * banner bottom, P/T or loyalty bottom-right) but differ on
  * dimensions, type-scale, and which extras render.
  *
@@ -26,8 +26,21 @@ import {
  * <p>The wrapper around the face (button, hover ring, hover card
  * detail dialog) stays at the call site — CardFace owns the visual
  * face only, not the click target.
+ *
+ * <p>Slice 70-I (redesign push) — width + height read from the
+ * {@code --card-size-*} tokens defined in {@code tokens.css}. The
+ * size constants used to be Tailwind arbitrary classes ({@code
+ * w-[100px]}); they're now applied via inline style so the CSS-
+ * variable indirection is observable in DevTools and a future
+ * theme override can re-target them at runtime. Pixel values are
+ * unchanged for the existing 'hand' / 'stack' / 'battlefield'
+ * variants — non-redesign mode looks identical.
+ *
+ * <p>Slice 70-I — added 'focal' size variant for the central focal
+ * zone topmost stack item (consumed by slice 70-N's StackZone
+ * rewrite).
  */
-export type CardFaceSize = 'hand' | 'stack' | 'battlefield';
+export type CardFaceSize = 'hand' | 'stack' | 'battlefield' | 'focal';
 
 interface CardFaceProps {
   card: WebCardView;
@@ -54,8 +67,22 @@ interface CardFaceProps {
 }
 
 interface SizeSpec {
+  /**
+   * Slice 70-I — CSS value for the face width. Either a
+   * {@code var(--card-size-X)} reference or an explicit pixel value.
+   * Applied via inline style on the wrapper {@code <motion.div>}.
+   * The corresponding height is {@code width × 7/5} computed inline.
+   */
   width: string;
-  height: string;
+  /**
+   * Optional explicit height override. When omitted the wrapper
+   * computes {@code calc(<width> * 7 / 5)} for the 5:7 portrait
+   * aspect ratio. Used by 'stack' (which keeps its hand-tuned
+   * 60×84 ratio = 7:5 inverted… er, 60 × 7/5 = 84, matches; so
+   * 'stack' could also use the calc, but explicit pixels here
+   * preserve the slice-52e visual contract verbatim).
+   */
+  height?: string;
   rounded: string;
   border: string;
   shadow: string;
@@ -80,8 +107,9 @@ interface SizeSpec {
 
 const SIZE_SPECS: Record<CardFaceSize, SizeSpec> = {
   hand: {
-    width: 'w-[100px]',
-    height: 'h-[140px]',
+    // Slice 70-I — was w-[100px] h-[140px]; now reads --card-size-large
+    // = 100px (preserves pixel value).
+    width: 'var(--card-size-large)',
     rounded: 'rounded-lg',
     border: 'border-zinc-700',
     shadow: 'shadow-lg shadow-black/50',
@@ -100,8 +128,12 @@ const SIZE_SPECS: Record<CardFaceSize, SizeSpec> = {
     bannerLeading: '',
   },
   stack: {
-    width: 'w-[60px]',
-    height: 'h-[84px]',
+    // Slice 70-I — stack stays at hand-tuned 60×84 (not migrated to a
+    // token because stack zone is rewritten in slice 70-N to consume
+    // 'focal' size instead; this entry is preserved for the pre-70-N
+    // layout's continuing visual contract).
+    width: '60px',
+    height: '84px',
     rounded: 'rounded',
     border: 'border-zinc-700',
     shadow: 'shadow',
@@ -120,8 +152,9 @@ const SIZE_SPECS: Record<CardFaceSize, SizeSpec> = {
     bannerLeading: 'leading-tight',
   },
   battlefield: {
-    width: 'w-[80px]',
-    height: 'h-[112px]',
+    // Slice 70-I — was w-[80px] h-[112px]; now reads --card-size-medium
+    // = 80px (preserves pixel value).
+    width: 'var(--card-size-medium)',
     rounded: 'rounded-lg',
     border: 'border-zinc-700',
     shadow: 'shadow-md shadow-black/50',
@@ -137,6 +170,31 @@ const SIZE_SPECS: Record<CardFaceSize, SizeSpec> = {
     manaSize: 'sm',
     testid: 'battlefield-tile-face',
     manaBg: 'bg-zinc-950/80',
+    bannerLeading: '',
+  },
+  // Slice 70-I — central focal zone topmost stack item. Consumed by
+  // slice 70-N's StackZone rewrite. Renders at --card-size-focal
+  // (170px width, 238px height) with feature-size visual treatment:
+  // larger banner text, bigger mana cost, prominent name. P/T renders
+  // (focal cards may be creature spells just like hand cards). Test
+  // ID matches the picture-catalog §3.1 entry.
+  focal: {
+    width: 'var(--card-size-focal)',
+    rounded: 'rounded-lg',
+    border: 'border-zinc-700',
+    shadow: 'shadow-xl shadow-black/60',
+    imageVersion: 'normal',
+    fallbackTextSize: 'text-sm',
+    fallbackPadding: 'px-3',
+    manaPos: 'top-2 right-2',
+    manaPad: 'px-1.5 py-0.5',
+    banner: 'px-2 py-1',
+    bannerText: 'text-sm',
+    ptBottom: 'bottom-7 right-2',
+    ptText: 'text-sm text-zinc-100',
+    manaSize: 'normal',
+    testid: 'focal-card-face',
+    manaBg: 'bg-zinc-950/85',
     bannerLeading: '',
   },
 };
@@ -207,14 +265,26 @@ export function CardFace(props: CardFaceProps): JSX.Element {
     ? slow({ ...MANA_TAP_ROTATE, delay: rotateDelay ?? 0 })
     : undefined;
 
-  // Fallback gradient — hand + battlefield use the three-stop variant
-  // with the via-zinc-850 mid-tone; stack uses the simpler two-stop
-  // because at 60×84 the extra stop is invisible. Preserves the
-  // exact pre-extraction visuals.
+  // Fallback gradient — hand / battlefield / focal use the three-stop
+  // variant with the via-zinc-850 mid-tone; stack uses the simpler
+  // two-stop because at 60×84 the extra stop is invisible. Preserves
+  // the exact pre-extraction visuals. Slice 70-I — focal joins the
+  // three-stop set since it's a feature-size card and benefits from
+  // the same mid-tone depth as hand/battlefield.
   const fallbackGradient =
     size === 'stack'
       ? 'bg-gradient-to-b from-zinc-800 to-zinc-900'
       : 'bg-gradient-to-b from-zinc-800 via-zinc-850 to-zinc-900';
+
+  // Slice 70-I — inline style for width + height. spec.width is
+  // either a pixel value ('60px') or a CSS-var reference
+  // ('var(--card-size-large)'). Height defaults to width × 7/5
+  // (5:7 portrait aspect ratio) unless the spec explicitly sets it
+  // (only 'stack' overrides today, preserving its 60×84 ratio).
+  const sizeStyle: CSSProperties = {
+    width: spec.width,
+    height: spec.height ?? `calc(${spec.width} * 7 / 5)`,
+  };
 
   return (
     <motion.div
@@ -222,10 +292,6 @@ export function CardFace(props: CardFaceProps): JSX.Element {
       data-card-face-size={size}
       className={
         'relative ' +
-        spec.width +
-        ' ' +
-        spec.height +
-        ' ' +
         spec.rounded +
         ' overflow-hidden border ' +
         sickBorder +
@@ -234,6 +300,7 @@ export function CardFace(props: CardFaceProps): JSX.Element {
         (combatRing ? ' ' + combatRing : '') +
         (tapClass ? ' ' + tapClass : '')
       }
+      style={sizeStyle}
       initial={{ rotate: rotateInitial }}
       animate={{ rotate: rotateAnimate }}
       transition={rotateTransition}
