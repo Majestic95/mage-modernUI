@@ -1,5 +1,19 @@
 # Screen: Commander 4-Player Free-for-All Game Table
 
+> **Precedence note (added 2026-04-29):** This document is **lower
+> precedence** than [`picture-catalog.md`](picture-catalog.md), which
+> is the canonical source of truth for the visual identity of this
+> screen in v2. The catalog supersedes:
+>
+> - The 6-region layout description here (regions are reorganized in the catalog)
+> - The PhaseIndicator placement (catalog defers; spec puts it at top of side panel — keep current for v1)
+> - The ActionPanel anatomy (catalog: single morphing button; spec is similar but explicit)
+> - The Mana payment UI (catalog defers to slice 70-Q; spec calls for floating orbs)
+>
+> Use this document for engine-level interaction contracts (what
+> happens when a card is drawn / cast / resolves) and for the deferred
+> /  optional-widget specs. For visual decisions: catalog wins.
+
 ## Purpose
 
 The primary game-play screen for 4-player Commander Free-for-All. Renders the battlefield, players, stack, hand, command zones, and the side panel for game log and tracking widgets. This screen is the most complex in the application and exercises the largest portion of the design system.

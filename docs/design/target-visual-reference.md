@@ -1,5 +1,15 @@
 # Target Visual Reference — Commander 4-Player Game Table
 
+> **Superseded by [`picture-catalog.md`](picture-catalog.md) (2026-04-29).**
+> The picture-catalog is the canonical source of truth for the visual
+> identity of v2. This document is preserved for **historical decision
+> context** — the four "Locked decisions" in §"Locked decisions (from
+> spec reconciliation, this push)" remain authoritative for those
+> specific reconciliation choices. Use this document to understand
+> WHY the catalog made certain calls (e.g. KEEP-WITH-SLASH eliminated
+> overlay, ADR-wins disconnect behavior). Use the catalog for HOW
+> elements should look.
+
 This document captures the canonical visual target for the Commander game-table redesign and the decisions reached during reconciliation between the design spec and locked v2 architecture (ADR 0010 v2). It is the single point of reference that future implementation slices, design iterations, and reviewer agents should ground in.
 
 The reference screenshot itself is not committed (the user provided it inline during the design-spec push); this document preserves the load-bearing visual details verbatim so anyone implementing without the screenshot can still match intent.

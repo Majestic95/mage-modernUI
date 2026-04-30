@@ -1,5 +1,13 @@
 # Design System
 
+> **Precedence note (added 2026-04-29):** This document defines tokens,
+> motion, and component anatomy. It is **lower precedence** than
+> [`picture-catalog.md`](picture-catalog.md), which is the canonical
+> source of truth for how the game-table screen LOOKS in v2. When this
+> document and the picture-catalog disagree, the catalog wins.
+> Component anatomies described here (especially §7.3 PlayerFrame) were
+> superseded by the picture-catalog's portrait-stacked anatomy.
+
 ## Purpose
 
 This document is the single source of truth for visual and motion design across the XMage modernized web client. Every screen-specific spec references tokens, components, and motion primitives defined here. Screen specs do not redefine colors, spacing, typography, or component internals — they reference them by name.

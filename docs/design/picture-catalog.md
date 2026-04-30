@@ -1,0 +1,502 @@
+# Picture Catalog — Canonical Visual Source of Truth
+
+> **Status:** This catalog is the **single source of truth** for how the
+> game-table screen should LOOK. Every implementation decision references
+> this document. When this catalog disagrees with the earlier design-system
+> spec or the commander-screen spec, **this catalog wins.**
+>
+> **Reference image:** the 4-player FFA Commander screenshot the user
+> provided in this push (described in detail below — image not committed
+> to repo per copyright; this catalog preserves the load-bearing visual
+> details verbatim).
+>
+> **Updated:** 2026-04-29
+> **Related:**
+> - [design-system.md](design-system.md) — tokens + component anatomy (lower precedence)
+> - [screens-game-table-commander-4p.md](screens-game-table-commander-4p.md) — screen spec (lower precedence)
+> - [target-visual-reference.md](target-visual-reference.md) — earlier prose description of the same image (kept for historical decision context)
+> - [gap-inventory-2026-04-29.md](gap-inventory-2026-04-29.md) — current-state vs target verdicts
+
+---
+
+## How to use this document
+
+When writing or reviewing any visual code change for the game-table screen:
+
+1. **Find the affected element** in this catalog (region → element).
+2. **Match the element's "Look" specification** in your implementation.
+3. **If something is ambiguous or under-specified here**, treat the screenshot as authoritative and ask the user for clarification rather than improvising.
+4. **If existing tokens/components aren't mentioned**, that's a hint that they should not be in this picture's UI — reconcile by deletion or relocation, not by leaving stale.
+
+---
+
+## Region map
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│ HEADER STRIP (1)                                               │
+├────────────────────────────────────────────────────────────────┤
+│                                                ┌──────────────┐│
+│              ┌── Korvold (top) ──┐             │ GAME LOG     ││
+│              │   PORTRAIT (2.A)  │             │ (5.A)        ││
+│              │   battlefield     │             │              ││
+│              └───────────────────┘             │              ││
+│                                                ├──────────────┤│
+│  ┌─Atraxa┐         ┌─FOCAL─┐   ┌─Meren─┐      │ COMMANDER    ││
+│  │(2.B)  │         │ ZONE  │   │(2.C)  │      │ DAMAGE (5.B) ││
+│  │       │         │ (3)   │   │       │      │              ││
+│  └───────┘         └───────┘   └───────┘      ├──────────────┤│
+│                                                │ TURN 8       ││
+│              ┌── Locust God ─────┐             │ END STEP     ││
+│              │   PORTRAIT (2.D)  │             │   (5.C)      ││
+│              │   battlefield     │             │              ││
+│              └───────────────────┘             └──────────────┘│
+├────────────────────────────────────────────────────────────────┤
+│ HAND FAN (4)                                                   │
+└────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Region 1 — Header strip
+
+### 1.1 Header bar (entire strip)
+
+- **Look:** Thin horizontal bar across the top, ~36px tall.
+- **Background:** Same very-dark-teal-black as the battlefield body — no separate fill, no border. The strip blends into the canvas.
+- **Position:** Fixed at top, full viewport width.
+- **Implementation:** Header sits OUTSIDE the side panel (it spans the full width including over the side-panel column).
+- **Tokens used:** `--color-bg-base` (no separate header bg), `--space-3` for vertical padding.
+
+### 1.2 Lobby name (left-aligned)
+
+- **Look:** "**COMMANDER — 4 PLAYER FREE-FOR-ALL**"
+- **Style:** All-caps, soft purple (`--color-accent-primary` family — lighter variant ≈ `#A78BFA`), letter-spacing wide (`tracking-widest` ~0.1em), font-weight medium (500), small font (~14px / `--font-size-body`).
+- **Position:** Left-aligned, vertically centered in the header strip, with `--space-5` (24px) left padding.
+- **Content:** Synthesized from `gameView` — for v1 hardcode the format string from `gameView.players.length` + presence of `commandList[].kind === 'commander'`. (Wiring an actual lobby name through the wire is out of scope; this is "good enough" until that lands.)
+- **Game-state variations:**
+  - 4 players + commander format → "COMMANDER — 4 PLAYER FREE-FOR-ALL"
+  - 3 players + commander → "COMMANDER — 3 PLAYER FREE-FOR-ALL"
+  - 2 players + commander → "COMMANDER — 1V1"
+  - Non-commander → "FREE-FOR-ALL" / "1V1" without the "COMMANDER —" prefix
+
+### 1.3 Top-right icon row
+
+- **Look:** Four icons in a horizontal row, ~16px each, spaced ~16-20px apart.
+- **Style:** Outline-style SVG icons, `--color-text-secondary` fill (light grey, ~50% alpha against bg), no chrome.
+- **Hover state:** fill brightens to `--color-text-primary`, no background change.
+- **Position:** Right-aligned, vertically centered in header, `--space-5` right padding.
+- **Icon order (left to right):**
+  1. **Chat** — speech-bubble outline. Click toggles slide-out chat panel below the game log (see §5.D — deferred).
+  2. **Layout/zoom** — square brackets `[ ]` or two arrows facing in. Click collapses/expands the side panel (battlefield grows / shrinks).
+  3. **Fullscreen** — four corner brackets `⌜ ⌝ ⌞ ⌟`. Click toggles browser fullscreen via `document.documentElement.requestFullscreen()`.
+  4. **Settings** — gear icon. Click opens settings modal (Concede lives here per the user's preference; "Leave game" too).
+
+### 1.4 What's NOT in this header
+
+The current implementation has these in the header — **remove them**:
+- gameId UUID display
+- Slowmo debug badge
+- Connection-state colored dot (per-player DISCONNECTED overlay handles this signal already)
+- "Your turn / Opponent's turn" pill (per-pod halo handles this)
+- "Your priority / Waiting for opponent" subtext (PriorityTag handles this)
+- "Leave" text button (move to settings modal)
+
+---
+
+## Region 2 — Player pods
+
+Four pods total. Each has the same anatomy with size/orientation variations per position.
+
+### 2.0 Common pod anatomy (all four positions)
+
+- **Portrait:** Circular `border-radius: 50%`, default ~80px diameter for opponents, ~96px for local.
+- **Portrait fill:** Scryfall art-crop URL of the player's commander (resolved via existing `scryfall.ts`). Object-fit: cover.
+- **Halo ring:** 2-3px ring around the circular portrait. Color = player's color identity (multicolor = alternating bands rotating at 12s/rev). Renders OUTSIDE the portrait via box-shadow OR a separate concentric ring element.
+- **Halo states (composes additively):**
+  - Default: static glow ring in color identity colors
+  - Active player: ring brightens + pulses at 1.9s period (`animate-player-active-halo` already shipped)
+  - Multicolor + active: rotating bands AND pulse compose (slice 70-G)
+  - Disconnected: ring desaturates, "Disconnected" pill overlay (slice 70-H — keep)
+  - Eliminated: ring greys, slash overlay across entire pod (slice 70-D — keep)
+- **Life total:** Large bold numerals overlaid INSIDE the portrait area (or just below — to-resolve at implementation; the picture shows it overlaid at lower-portion). Font size ~`--font-size-heading-lg` (24px) for opponents, larger for local. White (`--color-text-primary`) with subtle text-shadow for legibility against varied art.
+- **Player name:** White, semibold (`--font-weight-semibold`), `--font-size-heading-sm` (14px), positioned BELOW the portrait. Single line.
+- **Commander name:** Light grey (`--color-text-secondary`), regular weight, `--font-size-caption` (12px), positioned below the player name. Single line. Typography slightly smaller than the player name.
+
+### 2.1 Position-specific layouts
+
+#### 2.A — Top opponent (Korvold position in the picture)
+
+- **Portrait position:** Centered horizontally near the top of the battlefield region.
+- **Battlefield rows:** **ABOVE** the portrait (a horizontal row of ~6 cards directly above the portrait, with optional smaller token row above that). The picture shows cards facing the local player (oriented as if the top opponent's cards are "approaching" the center).
+- **Card size:** `--card-size-small` (~80×112 portrait per slice 70-I tokens).
+- **Player name + commander name:** below the portrait.
+- **Battlefield orientation:** rows flow left-to-right, no curving for v1 (defer to polish).
+- **In picture:** Korvold has 6 face-down or back-side cards above his portrait + a row of horizontal "Treasure-token-style" smaller cards above that. Implementation note: face-down cards still render at `BattlefieldTile` size — the rendering of "back side" is a separate concern (slice TBD if needed).
+
+#### 2.B — Left opponent (Atraxa position)
+
+- **Portrait position:** Vertically centered along the left edge of the battlefield region.
+- **Battlefield rows:** **TO THE RIGHT** of the portrait (cards stack vertically along the left edge, lands closer to the screen edge / outside, creatures inward). 2 columns visible in picture.
+- **Card size:** `--card-size-small`.
+- **Player name + commander name:** to the RIGHT of the portrait (since vertical real-estate above/below is constrained).
+- **In picture:** Atraxa has 2 columns of cards stacked vertically along the left edge with what appears to be 4-5 cards per column.
+
+#### 2.C — Right opponent (Meren position)
+
+- **Mirror of 2.B.** Portrait on the right edge, rows to the left of the portrait, name/commander to the LEFT of the portrait.
+- **Card size:** `--card-size-small`.
+
+#### 2.D — Bottom local (Locust God position)
+
+- **Portrait position:** Centered horizontally near the bottom of the battlefield region (above the hand fan).
+- **Portrait diameter:** ~96px (slightly larger than opponents' 80px to emphasize the local player).
+- **Battlefield rows:** **ABOVE** the portrait, expanding upward toward the focal zone. The picture shows ~10 permanents in a single row with full readability.
+- **Card size:** `--card-size-medium` (larger than opponents' small — local player gets ~125% the opponent's tile size for readability).
+- **Player name + commander name:** below the portrait but above the hand fan.
+- **In picture:** "The Locust God" + "God of the Swarm" labels visible. Halo glows blue-cyan with a soft pulse (Locust God's color identity = U).
+
+### 2.2 ZoneIcons (graveyard / exile / library) — placement
+
+- **Visual:** Small square icons (~16-20px) with a count badge.
+- **Position:** Adjacent to the portrait — a small horizontal cluster near the player frame, NOT attached to the portrait stack. The picture doesn't show these prominently for opponents (subtle); for the local player they're slightly more visible but still understated.
+- **Per zone:**
+  - **Graveyard:** `🪦` or simple `G` glyph + count.
+  - **Exile:** `❌` or simple `E` glyph + count.
+  - **Library:** Just a number (no icon — libraries are face-down per spec §7.9).
+- **Click:** Local-player graveyard/exile open the existing `ZoneBrowser` modal. Opponent graveyard/exile show on hover (tooltip — public information per MTG rules). Library is display-only.
+- **In picture:** Not prominently visible — they're tucked near the player frame, low-priority chrome. Don't overdesign these.
+
+### 2.3 Mana pool — placement
+
+- **Visual:** Cluster of `ManaOrb`s (one per non-zero color) with count if >1.
+- **Position for local player:** **TOP-RIGHT of the hand region** (per spec §4 floating mana). Glow halo on each orb.
+- **Position for opponents:** Small cluster adjacent to their player frame. Visible but smaller.
+- **Empty pool:** Don't render anything (no zero-orb or "empty" placeholder).
+- **In picture:** Not visible (no floating mana for any player at the depicted moment — pool is empty for everyone).
+
+### 2.4 Active / Priority / Disconnected / Eliminated state composition
+
+These compose ON TOP OF the base portrait + halo:
+
+- **Active turn:** Halo brightens + pulses (no extra chrome — replaces the current ACTIVE text pill). The pulse IS the signal.
+- **Has priority:** Floating "PRIORITY" pill (`PriorityTag`, slice 70-G) appears NEAR the portrait on the side opposite the side panel (so it doesn't get obscured). Fades in/out per `PRIORITY_TAG_FADE`.
+- **Disconnected:** Halo desaturates + "Disconnected — waiting for reconnect" pill in top-right of pod (slice 70-H — keep).
+- **Eliminated:** Slash overlay across entire pod + permanents fade to 45% opacity (slice 70-D — keep).
+
+### 2.5 What's NOT in PlayerFrame
+
+Remove from the current implementation:
+- The horizontal `<header>` text strip (entire current PlayerFrame layout)
+- The "ACTIVE" text pill (replaced by halo pulse)
+- Inline LifeCounter as small text (becomes the dominant numeral inside the portrait)
+- The flat row of zone icons + hand count + mana pool ALL on one line (split: zone icons → small cluster, mana pool → top-right of hand)
+
+---
+
+## Region 3 — Central focal zone
+
+### 3.1 Stack mode (default when stack non-empty)
+
+- **Topmost stack item:** Rendered at `--card-size-focal` (~150% of `--card-size-medium`, so ~125×175). Centered geometrically in the middle of the four pods.
+- **Card render:** Full `<CardFace>` — Scryfall art, mana cost top-right, name banner middle, type line, rules text, P/T bottom-right.
+- **Glow:** Color-identity glow around the card edges. Single color → solid glow. Multicolor → alternating bands. Colorless → silver glow. The picture shows The Locust God with cyan glow (its U color identity).
+- **Glow animation:** Continuous pulse at 1.5s period (`stack-glow-pulse` keyframe — already in the registry).
+- **Glow color:** Uses `--color-mana-{color}-glow` tokens (already defined for all 6 colors).
+- **Lower stack items (positions 2-6):** Fanned BEHIND/BELOW the topmost at progressively smaller sizes (~85% of `focal` for position 2, ~70% for position 3, etc.). Fanned at slight angles (~5-8° per position to give a layered look).
+- **6+ items:** Collapse to "+N more" indicator on the topmost.
+- **Triggered/activated abilities on the stack:** Render as card-shaped tiles with the source card's art (small) and the ability's rule text overlaid. Same focal-size container.
+
+### 3.2 Combat mode
+
+- **Trigger:** `gameView.combat.length > 0` AND no stack entries.
+- **Render:** Replace stack content with attack/block arrows (re-use `<TargetingArrow>` SVG geometry).
+- **Arrow source:** the attacker's BattlefieldTile DOM node.
+- **Arrow target:** the defending player's portrait OR the blocking creature's BattlefieldTile.
+- **Combat trick caveat:** If a spell is cast during combat, switch BACK to stack mode for the duration of that spell on the stack, then return to combat mode.
+
+### 3.3 Empty state
+
+- **Render:** Nothing in the focal zone container.
+- **Background:** The particle-drift backdrop (already shipped, slice 70-F) shows through. Don't overlay any UI chrome.
+- **Transition out:** When a stack item arrives, fade in the focal card via `STACK_ENTER_EXIT` motion (already wired).
+
+### 3.4 What's NOT in the central focal zone
+
+- The current `<StackZone>` text strip "Stack (N) — top resolves first" header (drop)
+- The "TOP" badge overlay (drop — the topmost being LARGER is the visual signal)
+- The flex-wrap row of small uniform stack tiles (replace with focal + fan)
+- Border / background panel chrome (the focal card stands alone on the battlefield)
+
+---
+
+## Region 4 — Hand area
+
+### 4.1 Hand fan layout
+
+- **Position:** Bottom strip of the viewport, full-width below the local-player pod (region 2.D). The hand sits ABOVE the bottom edge of the viewport with no margin / no decorative tray (per target).
+- **Height:** ~180-200px (enough for `--card-size-large` cards + room for hover-lift overflow).
+- **Background:** Transparent (no panel fill, no border). The hand floats over the battlefield's bottom edge.
+- **Card layout:** Slight arc fan, NOT Hearthstone-steep. Max angle ~12° per outermost card. Subtle downward droop (lower-y for outermost cards).
+- **Card size:** `--card-size-large` (default ~110×155 — to be confirmed when tokens land in slice 70-I).
+- **Squeezing:** When hand size > 5, cards squeeze tighter (smaller spread, more overlap). Leftmost and rightmost never go off-screen.
+- **Hover lift:** Hovered card scales to 1.10, translates up by `--space-3` (12px), un-rotates to 0°. `card-hover-lift` motion (150ms ease-out) — already shipped.
+- **Already correct in current code:** `MyHand.tsx` slice 44 layout matches this. Only the section header "Your hand (N)" needs to drop, and the surrounding panel chrome (border, padding, background tile) needs to remove.
+
+### 4.2 Hand state hints
+
+- **"Your hand (N)" header:** **Drop.** The hand is self-evident. Card count is unnecessary chrome.
+- **"Waiting for opponent" hint when not your priority:** Move to a less-prominent position (perhaps as a faint pill near the End Step button OR drop entirely; the End Step button being disabled IS the signal).
+
+### 4.3 Interaction
+
+- **Click-to-cast** (existing).
+- **Drag-to-play** (existing — slice 36).
+- **Visual on cast:** Card animates from hand position to the focal zone via `card-cast` motion. Existing.
+
+### 4.4 Cards visible in the picture (for reference)
+
+The picture shows 6 cards in the local hand:
+1. Cathartic Reunion
+2. Damnation
+3. Commencement Splatter (or similar)
+4. Aletheia Study
+5. Sol Ring
+6. (rightmost — illegible at the resolution)
+
+These are reference data only — actual hand contents at runtime come from `gameView.myHand`.
+
+---
+
+## Region 5 — Side panel
+
+### 5.0 Panel container
+
+- **Width:** `clamp(280px, 22vw, 360px)` (already in code).
+- **Background:** `--color-bg-elevated` (#152229) — slightly raised from the battlefield base.
+- **Border:** Single 1px left border in `--color-border-subtle` (or zinc-800 equivalent).
+- **Position:** Right side of the viewport, full height below the header.
+- **Vertical layout:** 3 stacked sections (game log → commander damage → turn/action), each with a horizontal divider between them.
+
+### 5.A — GAME LOG (top section, ~50% of panel height)
+
+#### Section header
+
+- **Text:** "GAME LOG" all-caps, `--color-text-secondary`, `--font-size-caption` (12px), `tracking-widest` (0.1em letter-spacing), `--font-weight-medium`.
+- **Padding:** `--space-3` horizontal, `--space-2` vertical.
+- **Border-bottom:** 1px in subtle border color, separating header from entries.
+
+#### Entry list
+
+- **Direction:** Latest at bottom, scrolls down (newest entries push older up). Auto-scroll-to-bottom on new entry (existing behavior).
+- **Entry density:** ~12px vertical padding per entry, no separator between entries.
+
+#### Per-entry layout
+
+- **Left column:** Small circular portrait avatar (~32px diameter) of the actor. Uses the same `<PlayerPortrait>` component as the main pods, sized smaller. Halo ring is suppressed (just the art-crop circle — no glow on log entries).
+- **Right column:** Two lines of text:
+  - **Line 1:** Player name in white, `--font-weight-semibold`, `--font-size-body` (14px). Single line.
+  - **Line 2:** Action text in `--color-text-primary`, regular weight, `--font-size-caption` (12px). Card name references are highlighted (color shift to a soft purple/cyan and possibly underlined). Hover on a card name → `<HoverCardDetail>` popover.
+
+#### Card name highlighting
+
+- **Detection:** Parse engine gameInform text for card-name patterns (`played <Name>`, `cast <Name>`, `returned <Name>`, etc.). Engine emits `<font color="...">CardName</font>` HTML in some flows — strip and re-render with our own styling.
+- **Style:** `--color-accent-primary` (purple) text, optional underline-offset 2px on hover.
+- **Click:** Optional — open the card in a focal preview (defer to post-launch).
+
+#### Game log entries shown in the picture
+
+For visual reference (entries from oldest to newest):
+1. **Korvold played Blood Crypt** — Korvold portrait, "Korvold" name, "played" action, "Blood Crypt" highlighted card name
+2. **Atraxa cast Toxic Deluge** — Atraxa portrait, "Atraxa" name, "cast" action, "Toxic Deluge" highlighted
+3. **Meren returned Sakara-Trib Elder to hand** — Meren portrait, "Meren" name, "returned ... to hand" action, "Sakara-Trib Elder" highlighted
+4. **You cast The Locust God** — local-player portrait, "You" name (NOT the commander name — when the actor is the local player, the name reads "You"), "cast" action, "The Locust God" highlighted
+
+### 5.B — COMMANDER DAMAGE (middle section)
+
+#### Section header
+
+- **Text:** "COMMANDER DAMAGE" — same styling as GAME LOG header.
+- **Border-top:** 1px subtle border separating from game log.
+
+#### Layout
+
+- **2×2 grid** of cells.
+- **Cell content per cell:**
+  - Small circular portrait of the OPPONENT (or their commander).
+  - Damage number to the right of the portrait, in a feature size — `--font-size-heading-md` (18px), `--font-weight-bold`, `--color-text-primary`.
+- **Cell sizing:** Each cell ~half panel width × ~80-100px tall.
+- **Spacing:** Tight grid — no extra padding between cells beyond a thin divider line.
+
+#### Per-cell variants
+
+- **0 damage cell:** Shows the portrait + "0" or just no number. Picture suggests just the number even at 0.
+- **At threshold (21):** The cell highlights — text turns red, optional pulse. Engine doesn't enforce this; client-side flash.
+- **Manual entry:** Click cell → reveals -/+ buttons in place (or hover). Existing `LifeCounter` interactive mode.
+
+#### Picture content for reference
+
+The picture shows:
+- Top-left cell: Atraxa portrait, "7"
+- Top-right cell: (Korvold? or empty), "5"
+- Bottom-left cell: (Meren), "6"
+- Bottom-right cell: (the local player — but tracking damage TO yourself doesn't make sense; this might be a quirk of the reference image OR the 4th cell is reserved for displaying YOUR damage dealt to others, summed)
+
+For implementation: **3 cells (one per opponent), 4th cell empty or used for a different stat** (TBD — the picture is ambiguous; default to showing 3 cells in a 2×2 grid with the 4th left blank).
+
+### 5.C — TURN + ACTION (bottom section)
+
+#### Layout
+
+- **Content:**
+  1. Small grey label "TURN N" at the top of the section, `--color-text-secondary`, `--font-size-caption`.
+  2. Below the label: large purple action button.
+  3. To the right of the button: small ellipsis (`⋯`) icon for multi-pass menu.
+- **Padding:** `--space-3` all around.
+
+#### TURN counter
+
+- **Text:** "TURN 8" (number from `gameView.turn`).
+- **Style:** Caption-sized, secondary color, all-caps, tracking-wide.
+
+#### Action button
+
+- **Default label:** "End Step" (at end of phase) — but morphs based on the engine's required action.
+- **Morph rules:**
+  - In a phase end → "End Step"
+  - Holding priority during opponent's stack → "Pass Priority"
+  - Targeting prompt → "Confirm Targets"
+  - Mana cost prompt → "Pay Mana"
+  - Combat declaration → "Attack" / "Block"
+  - Default fallback → "Done"
+- **Style:**
+  - Background: `--color-accent-primary` (purple #8B5CF6)
+  - Hover: `--color-accent-primary-hover` (#A78BFA)
+  - Active/pressed: `--color-accent-primary-active` (#7C3AED)
+  - Text: `--color-text-on-accent` (white #E8EDF0)
+  - Border: none, or a subtle inner highlight
+  - Border-radius: `--radius-md` (8px)
+  - Padding: ~`--space-3` × `--space-4` (12×16px)
+  - Width: full-width within the panel section (minus the ellipsis to the right)
+  - Height: ~40-44px
+  - Font: `--font-weight-semibold`, `--font-size-body`
+- **Disabled state:** Lower opacity, `cursor: not-allowed`, no hover.
+- **Animation:** Subtle scale on press (~0.97 for 80ms), no other motion.
+
+#### Ellipsis (`⋯`) menu
+
+- **Visual:** Three vertical dots OR three horizontal dots, ~20px square button next to the action button.
+- **Click → opens dropdown with:**
+  - "Pass to Next Turn" → `PASS_PRIORITY_UNTIL_NEXT_TURN`
+  - "Pass to Your Turn" → `PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE`
+  - "Resolve Stack" → `PASS_PRIORITY_UNTIL_STACK_RESOLVED`
+  - "Stop Skipping" → `PASS_PRIORITY_CANCEL_ALL_ACTIONS`
+  - "Undo" → `UNDO`
+- **Hotkeys preserved:** F2/F4/F6/F8/Esc/Ctrl+Z still work (invisible UX for power users).
+
+### 5.D — Chat slide-out (deferred)
+
+- **Trigger:** Header chat icon (1.3).
+- **Behavior:** Slides out below the game log section when active.
+- **Status:** Defer to slice 70-R (post-redesign). Don't build for v1.
+
+### 5.E — Optional widgets (future)
+
+- Per spec §5: poison counters, energy, experience, monarch token, day/night, dungeon progress.
+- **Status:** Render only when relevant. Most games hide these. Defer until a real game needs them.
+
+---
+
+## Region 6 — Removed from the layout
+
+The following EXIST in the current code but should be **removed or relocated**:
+
+### 6.1 Action footer
+
+- **Current:** `<footer data-testid="game-table-action">` in `GameTable.tsx:317-322` renders the multi-button ActionPanel at the bottom of the screen.
+- **Target:** REMOVED. The ActionButton + ellipsis menu live in §5.C.
+- **Migration:** Delete the `[grid-area:action]` row from `GameTable`'s grid template. Side panel grows to fill that vertical space.
+
+### 6.2 PhaseTimeline (relocate)
+
+- **Current:** Renders at the TOP of the side panel (`GameTable.tsx:292`).
+- **Target:** **Relocate or DROP.** The picture doesn't show a phase indicator prominently. The current rich timeline (per-phase color + Combat sub-steps) is informative but visually dominant; the picture shows a much subtler treatment.
+- **Decision:** **Defer relocation.** Keep PhaseTimeline at top of side panel for v1 of the redesign — it's already styled well, and the picture is ambiguous about whether/where a phase indicator lives. Re-evaluate after live test.
+
+### 6.3 CommandZone strip (replace)
+
+- **Current:** Horizontal text-chip strip below the battlefield rows for each player (`PlayerArea.tsx:175`).
+- **Target:** **REMOVE the chip strip.** The commander's identity is shown via the player's portrait (the avatar IS the commander art). Emblems / dungeons / planes need a different rendering — TBD when a game uses them; not in the picture so don't design for it now.
+- **Migration:** Drop `<CommandZone>` from `PlayerArea`. The player portrait now carries the commander identity. Emblems / dungeons / planes get a follow-up slice when a game needs them.
+
+---
+
+## Color & motion impressions (from picture)
+
+### Palette anchors
+
+- **Battlefield background:** `--color-bg-base` #0E1A20 (existing)
+- **Side panel background:** `--color-bg-elevated` #152229 (existing)
+- **Body text:** `--color-text-primary` #E8EDF0 (existing)
+- **Secondary text:** `--color-text-secondary` #9BA8B0 (existing)
+- **Purple accent (header + ActionButton):** `--color-accent-primary` #8B5CF6 (existing)
+- **Card-name highlight in log:** `--color-accent-primary` family or `--color-mana-blue` light variant — pick at implementation
+- **Halo glows:** `--color-mana-{color}-glow` tokens (existing, all 6 colors + multicolor)
+
+### Motion anchors
+
+All already shipped (slice 70-A through 70-H.5):
+- `animate-halo-rotate` (12s/rev for multicolor)
+- `animate-player-active-halo` (1.9s pulse)
+- `stack-glow-pulse` (1.5s focal-card pulse)
+- `card-hover-lift` (150ms hand interaction)
+- `LIFE_FLASH_POP` (life-tick flash)
+- `DELTA_FLOAT_UP` (floating ±N number)
+- `PRIORITY_TAG_FADE` (priority pill in/out)
+- `ELIMINATION_SLASH` (slash overlay)
+- `LAYOUT_GLIDE` (cross-zone card movement via layoutId)
+- `particle-drift` (ambient backdrop)
+
+### What feels "MTGA-grade"
+
+The picture's polish comes from:
+1. **Every glowing element is a soft halo, not a hard ring.** Box-shadows with feathered edges (large blur radius, low alpha) — not crisp 1px borders.
+2. **Card art is the dominant element** in every pod. Player frames are about the COMMANDER, not about labels.
+3. **Empty space is intentional.** The center focal zone is mostly empty when the stack is empty (just the particle drift).
+4. **Type hierarchy is restrained.** Most labels are caption-sized; only the life numerals and the focal card are feature-sized.
+5. **No bevels, no chrome, no skeuomorphism.** Flat surfaces with glow accents.
+
+These are tuning targets for the slice 70-Z polish pass — measure each shipped slice against these qualitative anchors.
+
+---
+
+## Implementation cross-reference
+
+| Element in picture | Slice that lands it | Token / component dependency |
+|---|---|---|
+| Card-size tokens | 70-I | `--card-size-{micro,small,medium,large,focal}` |
+| Circular commander portrait | 70-J | New `<PlayerPortrait>` |
+| Portrait halo (circular geometry) | 70-J | Reuse mask-composite from current HaloRing |
+| New PlayerFrame anatomy | 70-K | Depends on 70-J |
+| Game log avatars | 70-L | Reuse PlayerPortrait at 32px |
+| Commander damage 2×2 | 70-L | Reuse PlayerPortrait at 32-40px |
+| ActionButton single morphing | 70-M | New `<ActionButton>` component |
+| Side panel reorder + ActionButton placement | 70-M | Depends on 70-K, drops `[grid-area:action]` |
+| Focal stack at 1.5× | 70-N | Depends on 70-I (`--card-size-focal`) |
+| Combat-mode arrows in focal | 70-N | Reuse `<TargetingArrow>` |
+| Header purple all-caps + icons | 70-O | New header component |
+| Drop the gameId / connection / leave from header | 70-O | Cleanup |
+| Mana pool floats top-right of hand | 70-P | Reuse ManaPool, relocate |
+| Polish sweep (glow tuning, spacing) | 70-Z | Token tuning, no new components |
+
+---
+
+## Sign-off rule
+
+For every slice in this push, the slice's "definition of done" must include:
+
+1. **Local dev server screenshot of the affected region** at standard 1920×1080 resolution.
+2. **Side-by-side comparison** with the catalog entry for the corresponding region.
+3. **Vercel preview URL** for the user to sign off on before the next slice begins.
+
+Without these, a slice doesn't ship — even if tests pass and lint is clean. The whole point of this catalog is to prevent the slice 70-A→70-G pattern of shipping infrastructure without verifying the assembled view.
