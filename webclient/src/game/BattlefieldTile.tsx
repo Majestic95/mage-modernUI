@@ -56,10 +56,36 @@ export function BattlefieldTile({
 }) {
   const tapped = perm.tapped;
   return (
-    // Fixed 112Ã—112 slot â€” the tile (80Ã—112 portrait) and its tapped
-    // state (112Ã—80 landscape) both fit. flex centering keeps the
-    // tile aligned regardless of orientation.
-    <div className="w-[112px] h-[112px] flex items-center justify-center">
+    // Slice 70-K.1 (picture-catalog §2.1 + design-system §7.1
+    // "Card sizing under board complexity") — slot is now
+    // RESPONSIVE rather than fixed 112×112. The outer
+    // BattlefieldRowGroup gives this tile a flex-shrink-able
+    // container with `flex: 1 1 0` + max-width 112px; this slot
+    // fills 100% of that allocation and stays square via
+    // aspect-ratio: 1. Tapped rotation still fits because the
+    // slot is square at any size — a (5/7 S) × S portrait card
+    // and its tapped (S × 5/7 S) landscape both fit in S × S.
+    //
+    // CardFace's 'battlefield' variant (slice 70-I tokens) was
+    // updated in lockstep to use `height: 100%, aspect-ratio:
+    // 5/7, width: auto` so it fills the slot's height and
+    // computes its width via aspect-ratio. With the slot as
+    // S×S, card width = S × 5/7. At S=112 that's 80 — matches
+    // the original pre-70-K.1 pixel sizes.
+    //
+    // The maxWidth: 112px on the OUTER motion.div in
+    // BattlefieldRowGroup caps the per-tile growth so a row
+    // with few cards doesn't blow them up to weird sizes.
+    // Slice 70-K.1 critic CRITICAL-1 fix — `items-stretch` (not
+    // `items-center`) so the inline-flex span inside HoverCardDetail
+    // takes the slot's full cross-axis height. With `items-center`,
+    // the span was content-sized (height: auto) and CardFace's
+    // `height: 100%` resolved to 0 against the indefinite parent —
+    // cards would render 0×0 in real browsers despite jsdom tests
+    // passing. `items-stretch` is the flex default, but we need to
+    // also keep `justify-center` to horizontally center the
+    // narrower-than-slot portrait (5/7 of the slot width).
+    <div className="aspect-square w-full flex items-stretch justify-center">
       <HoverCardDetail card={perm.card}>
         <button
           type="button"
@@ -71,11 +97,11 @@ export function BattlefieldTile({
           onClick={() => onClick(perm.card.id)}
           title={
             canAct
-              ? `${perm.card.name} â€” click to tap/activate`
+              ? `${perm.card.name} — click to tap/activate`
               : perm.card.typeLine
           }
           className={
-            'select-none rounded-lg ' +
+            'select-none rounded-lg block h-full ' +
             (canAct
               ? 'cursor-pointer hover:ring-1 hover:ring-fuchsia-500'
               : 'cursor-default')

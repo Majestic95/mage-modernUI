@@ -69,20 +69,32 @@ interface CardFaceProps {
 interface SizeSpec {
   /**
    * Slice 70-I — CSS value for the face width. Either a
-   * {@code var(--card-size-X)} reference or an explicit pixel value.
+   * {@code var(--card-size-X)} reference, an explicit pixel value,
+   * or {@code 'auto'} to let aspect-ratio compute width from height.
    * Applied via inline style on the wrapper {@code <motion.div>}.
-   * The corresponding height is {@code width × 7/5} computed inline.
+   * The corresponding height is {@code width × 7/5} computed inline
+   * unless {@link #height} is set explicitly.
    */
   width: string;
   /**
    * Optional explicit height override. When omitted the wrapper
    * computes {@code calc(<width> * 7 / 5)} for the 5:7 portrait
-   * aspect ratio. Used by 'stack' (which keeps its hand-tuned
-   * 60×84 ratio = 7:5 inverted… er, 60 × 7/5 = 84, matches; so
-   * 'stack' could also use the calc, but explicit pixels here
-   * preserve the slice-52e visual contract verbatim).
+   * aspect ratio. Used by 'stack' (60×84 explicit pixels) and
+   * 'battlefield' (since 70-K.1: {@code height: '100%'} so the card
+   * fills its parent slot which is sized by BattlefieldRowGroup's
+   * flex-shrink mechanism per picture-catalog §2.1's rows-fixed-
+   * cards-shrink contract).
    */
   height?: string;
+  /**
+   * Slice 70-K.1 — optional CSS aspect-ratio (e.g. {@code '5 / 7'}).
+   * Used by the fluid 'battlefield' variant: with
+   * {@code width: 'auto', height: '100%', aspectRatio: '5 / 7'},
+   * the card sizes from its parent's height and the width
+   * auto-computes via the aspect ratio. Other variants leave this
+   * undefined and rely on explicit width + computed height.
+   */
+  aspectRatio?: string;
   rounded: string;
   border: string;
   shadow: string;
@@ -152,9 +164,24 @@ const SIZE_SPECS: Record<CardFaceSize, SizeSpec> = {
     bannerLeading: 'leading-tight',
   },
   battlefield: {
-    // Slice 70-I — was w-[80px] h-[112px]; now reads --card-size-medium
-    // = 80px (preserves pixel value).
-    width: 'var(--card-size-medium)',
+    // Slice 70-K.1 (picture-catalog §2.1 "rows fixed, cards
+    // shrink") — fluid sizing. The card fills its parent slot
+    // (BattlefieldTile's outer div, sized by BattlefieldRowGroup's
+    // flex-shrink mechanism with max-width 112px). Width is
+    // auto-computed from height via aspect-ratio: 5/7. At full
+    // size (slot = 112×112), card = 80×112 — preserves the pre-
+    // 70-K.1 pixel values. At constrained sizes (slot < 112),
+    // card scales uniformly. The slot is square so tap rotation
+    // still fits at any size.
+    //
+    // Slice 70-I shipped this variant as fixed
+    // `width: var(--card-size-medium)` (80px) — the token still
+    // exists and applies to non-redesign code paths if any. The
+    // 70-K.1 fluid mode supersedes the token-based path for the
+    // BattlefieldTile rendering chain.
+    width: 'auto',
+    height: '100%',
+    aspectRatio: '5 / 7',
     rounded: 'rounded-lg',
     border: 'border-zinc-700',
     shadow: 'shadow-md shadow-black/50',
@@ -277,13 +304,19 @@ export function CardFace(props: CardFaceProps): JSX.Element {
       : 'bg-gradient-to-b from-zinc-800 via-zinc-850 to-zinc-900';
 
   // Slice 70-I — inline style for width + height. spec.width is
-  // either a pixel value ('60px') or a CSS-var reference
-  // ('var(--card-size-large)'). Height defaults to width × 7/5
-  // (5:7 portrait aspect ratio) unless the spec explicitly sets it
-  // (only 'stack' overrides today, preserving its 60×84 ratio).
+  // either a pixel value ('60px'), a CSS-var reference
+  // ('var(--card-size-large)'), or 'auto' (slice 70-K.1 fluid
+  // mode for 'battlefield' — width auto-computes from height via
+  // aspect-ratio). Height defaults to width × 7/5 (5:7 portrait
+  // aspect ratio) unless the spec explicitly sets it.
   const sizeStyle: CSSProperties = {
     width: spec.width,
-    height: spec.height ?? `calc(${spec.width} * 7 / 5)`,
+    height:
+      spec.height ??
+      (spec.width === 'auto'
+        ? undefined
+        : `calc(${spec.width} * 7 / 5)`),
+    aspectRatio: spec.aspectRatio,
   };
 
   return (

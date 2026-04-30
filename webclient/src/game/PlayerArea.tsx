@@ -116,6 +116,11 @@ export function PlayerArea({
   // 52c — the layoutId machinery for cross-zone glide animations is
   // preserved verbatim regardless of which surrounding layout the
   // rows mount into.
+  //
+  // Slice 70-K.1 critic IMPORTANT-1 — perspective is now threaded
+  // to BattlefieldRowGroup so opponent pods get the smaller
+  // --card-size-small (72/100) slot vs local's --card-size-medium
+  // (80/112). Picture-catalog §2.A/B/C/D contract.
   const battlefieldRows = (
     <div className="flex flex-col gap-1.5">
       {battlefield.length === 0 ? (
@@ -131,6 +136,7 @@ export function PlayerArea({
               key={row}
               row={row}
               permanents={items}
+              perspective={perspective}
               canAct={canAct}
               onObjectClick={onObjectClick}
               eligibleCombatIds={eligibleCombatIds}
@@ -142,19 +148,37 @@ export function PlayerArea({
     </div>
   );
 
-  // Slice 70-K — REDESIGN branch. Per picture-catalog §2.1:
-  //   - top / bottom pods: rows ABOVE the portrait (vertical stack,
-  //     rows render first then frame).
-  //   - left pod: portrait on left, rows on right (horizontal,
-  //     frame first then rows).
-  //   - right pod: portrait on right, rows on left (horizontal,
-  //     row-reverse so frame renders right but DOM order is
-  //     [frame, rows]).
+  // Slice 70-K — REDESIGN branch. Per picture-catalog §2.1 +
+  // §2.A/§2.D, JSX order varies by position:
+  //
+  //   - top opponent (§2.A): portrait near TOP edge of pod region
+  //     (closer to screen top), rows in DOM AFTER portrait so
+  //     they paint visually below the portrait toward the focal
+  //     zone. From the top opponent's POV this reads as "rows
+  //     above the portrait" (their cards approach the center).
+  //     DOM: [PlayerFrame, battlefieldRows]
+  //
+  //   - bottom local (§2.D): rows ABOVE the portrait (DOM order
+  //     [battlefieldRows, PlayerFrame]) so portrait sits at the
+  //     bottom of the pod region (just above the hand fan) and
+  //     rows expand upward toward the central focal zone — the
+  //     standard MTG self-row layout.
+  //
+  //   - left opponent (§2.B): portrait pinned to left edge, rows
+  //     to the right (flex-row, DOM [PlayerFrame, battlefieldRows]).
+  //
+  //   - right opponent (§2.C): mirror of left (flex-row-reverse so
+  //     visual is rows-on-left + frame-on-right while DOM stays
+  //     [PlayerFrame, battlefieldRows]).
+  //
+  // Slice 70-K shipped with [PlayerFrame, battlefieldRows] for ALL
+  // positions; that matched §2.A but VIOLATED §2.D (bottom pod
+  // had portrait above rows). Slice 70-K.1 critic IMPORTANT-3
+  // caught it — fixed below by branching the bottom case.
   //
   // Pod chrome dropped per picture-catalog §6.3 — pods float on the
-  // battlefield without a panel container in the redesigned layout.
-  // CommandZone strip dropped because the commander identity is now
-  // shown via the portrait itself in PlayerFrame's redesign branch.
+  // battlefield without a panel container. CommandZone strip
+  // dropped because the commander identity is shown via portrait.
   if (REDESIGN) {
     const isVertical = position === 'top' || position === 'bottom';
     const flexClass = isVertical
@@ -165,6 +189,15 @@ export function PlayerArea({
     // Drop-target ring stays as the only visible chrome on the pod
     // wrapper — it's a transient interaction state, not background
     // chrome, so it doesn't violate the "pods float" principle.
+    const playerFrame = (
+      <PlayerFrame
+        player={player}
+        perspective={perspective}
+        position={position}
+        onPlayerClick={onObjectClick}
+        targetable={targetable}
+      />
+    );
     return (
       <div
         data-testid={`player-area-${perspective}`}
@@ -183,14 +216,17 @@ export function PlayerArea({
             : '')
         }
       >
-        <PlayerFrame
-          player={player}
-          perspective={perspective}
-          position={position}
-          onPlayerClick={onObjectClick}
-          targetable={targetable}
-        />
-        {battlefieldRows}
+        {position === 'bottom' ? (
+          <>
+            {battlefieldRows}
+            {playerFrame}
+          </>
+        ) : (
+          <>
+            {playerFrame}
+            {battlefieldRows}
+          </>
+        )}
       </div>
     );
   }
