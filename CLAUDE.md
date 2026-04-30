@@ -228,13 +228,22 @@ Tests catch correctness regressions; audits catch scope, layout, and architectur
 ### Per-slice cadence (the standard loop)
 
 Every non-trivial slice runs through:
-1. **Recon agent (Explore subagent)** — read-only investigation, file:line citations, scope map.
-2. **Builder (general-purpose agent)** — implements per the recon's findings; stages but does not commit.
-3. **Critic (general-purpose agent)** — read-only review of the staged diff; numbered findings with severity.
-4. **Fixer** — apply blockers/notables; queue nits as follow-up slices.
+1. **Recon** — read-only investigation, file:line citations. Output is a **scope brief**: 1 paragraph stating intent + listing the files in scope + flagging risks. The brief is the artifact the builder AND critics consume — they do NOT re-read the full surface; they read the brief + the touched files. Eliminates the recon-builder-critic re-read overhead.
+2. **Builder** — implements per the scope brief; stages but does not commit. **Dispatch the technical critic in parallel with the builder** when the slice touches wire contracts, races, or architectural boundaries — the technical critic only needs the scope brief + file paths, both of which exist when builder starts. Findings land before fixer phase.
+3. **Critics (parallel)** — read-only review against the scope brief. Specialist matrix is **risk-tiered**, not fixed (see table below).
+4. **Fixer** — apply blockers/notables from all critics in one pass; queue nits as follow-up slices.
 5. **Tests + commit + (server bounce if Java changed).**
 
-Trivial slices (≤50 LOC, single file, no architectural impact) can skip the recon and run builder→critic only. Truly mechanical fixes (the critic's own findings, lockfile bumps, doc typos) can be applied inline.
+#### Specialist matrix by slice tier
+
+| Slice character | Matrix | Examples |
+|---|---|---|
+| **Mechanical** — rename, extract, doc reconciliation, lockfile bump, ≤50 LOC single-file | builder + 1 critic (technical) | "rename ZoneCounter → ZoneIcon", "stale comment cleanup" |
+| **Standard** — single-surface feature, contained component, no wire change | builder + 2 critics (technical + one of UI/UX) | "atom extraction with new prop", "client API helper" |
+| **Architectural** — wire contract change, race-condition surface, structural rewrite, cross-slice dependencies, schema bump | builder + full 3-specialist (technical + UI + UX) or per-domain (e.g. technical + graphical for motion-only) | slice 70-B (motion registry + reduced-motion), slice 72-A (schema bump + race), slice 70-D (PlayerFrame + schema bump) |
+| **Trivial** — applying critic's own findings, doc typos, single-line fix | builder only, no critic | "fix the typo critic flagged" |
+
+Pick the tier at recon; document it in the scope brief. Don't escalate to a higher tier "to be safe" — that's the redundancy the cadence is meant to avoid.
 
 ### Periodic sweeps (don't wait for symptoms)
 
