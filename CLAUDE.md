@@ -245,6 +245,10 @@ Every non-trivial slice runs through:
 
 Pick the tier at recon; document it in the scope brief. Don't escalate to a higher tier "to be safe" — that's the redundancy the cadence is meant to avoid.
 
+#### Critic-pass log
+
+Per-slice record of which specialists ran + which were skipped + why lives at [`docs/decisions/critic-pass-log.md`](docs/decisions/critic-pass-log.md). Add a row at commit time so coverage gaps stay traceable. Tag rationales with the short categories at the bottom of that file (`no UI surface`, `no motion`, `covered by X`, `foundation slice`, `spec-locked`, `over-applied`).
+
 ### Periodic sweeps (don't wait for symptoms)
 
 - **UX audit — every 5-10 slices** that affect layout, visuals, animation, or `Game.tsx` / `ActionPanel.tsx`. Read-only audit agent looks for: viewport overflow, z-index ladder, scrolling clip, click accessibility, narrow-viewport behavior. Catches what "live testing on one screen" doesn't.
