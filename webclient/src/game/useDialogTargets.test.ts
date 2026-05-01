@@ -189,11 +189,50 @@ describe('useDialogTargets', () => {
 
   it('returns inactive when cardsView1 cards are NOT in any visible zone (library search)', () => {
     // Demonic Tutor: cardsView1 carries library cards which aren't in
-    // myHand / graveyard / exile / battlefield. Modal stays the right
-    // shape because there's no zone to pulse.
+    // myHand / battlefield. Modal stays the right shape because
+    // there's no clickable surface to pulse.
     const d = dialog('gameTarget', { [LIBRARY_CARD_ID]: LIBRARY_CARD });
     useGameStore.setState({
       gameView: gvWithHand(),
+      pendingDialog: { method: d.method, messageId: d.messageId, data: d.data } as never,
+    });
+    const { result } = renderHook(() => useDialogTargets(fakeStream()));
+    expect(result.current.active).toBe(false);
+  });
+
+  it('returns inactive for graveyard / exile picks (slice 70-Y.5 narrowing)', () => {
+    // Pre-slice 70-Y.5 the visible-zone set included graveyard +
+    // exile, so a "return card from graveyard" prompt would activate
+    // the banner — but graveyard cards aren't rendered as clickable
+    // card faces (they live behind a ZoneBrowser modal). User would
+    // be stranded with the banner active and no clickable target.
+    // Now: those zones drop out of the visible-zone set; the dialog
+    // falls through to the modal CardChooserList grid which renders
+    // graveyard cards as a proper card grid.
+    const graveyardCardId = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+    const graveyardCard = { ...HAND_CARD, id: graveyardCardId, name: 'Reanimate target' };
+    // gameView with the card in player's graveyard, NOT in hand
+    const me = webPlayerViewSchema.parse({
+      playerId: '11111111-1111-1111-1111-111111111111',
+      name: 'alice',
+      life: 20, wins: 0, winsNeeded: 1, libraryCount: 53, handCount: 0,
+      graveyard: { [graveyardCardId]: graveyardCard },
+      exile: {}, sideboard: {}, battlefield: {},
+      manaPool: { red: 0, green: 0, blue: 0, white: 0, black: 0, colorless: 0 },
+      controlled: true, isHuman: true, isActive: true, hasPriority: true,
+      hasLeft: false, monarch: false, initiative: false, designationNames: [],
+    });
+    const gv = webGameViewSchema.parse({
+      turn: 1, phase: 'PRECOMBAT_MAIN', step: 'PRECOMBAT_MAIN',
+      activePlayerName: 'alice', priorityPlayerName: 'alice',
+      special: false, rollbackTurnsAllowed: false,
+      totalErrorsCount: 0, totalEffectsCount: 0, gameCycle: 0,
+      myPlayerId: me.playerId, myHand: {}, stack: {}, combat: [],
+      players: [me],
+    });
+    const d = dialog('gameTarget', { [graveyardCardId]: graveyardCard });
+    useGameStore.setState({
+      gameView: gv,
       pendingDialog: { method: d.method, messageId: d.messageId, data: d.data } as never,
     });
     const { result } = renderHook(() => useDialogTargets(fakeStream()));

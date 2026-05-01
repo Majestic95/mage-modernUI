@@ -52,24 +52,32 @@ const INACTIVE: DialogTargetState = {
 };
 
 /**
- * Compute the set of card UUIDs visible in the current gameView's
- * "click-able" zones — hand, graveyard, exile, battlefield permanents
- * (across all players). When a dialog's cardsView1 is a subset of
- * this, the dialog can render via click-to-resolve. When it isn't
- * (library cards after a tutor; cards from the top of an opponent's
- * library), the modal is the only sensible UI.
+ * Compute the set of card UUIDs that are CLICKABLE on the current
+ * board surface — hand cards (rendered as the fan) and battlefield
+ * permanents (rendered as tiles). When a dialog's cardsView1 is a
+ * subset of this, click-to-resolve works because the user can
+ * actually click the cards in their existing position.
  *
- * <p>Note: own-hand-only zones (mine to discard) are also included
- * because gameSelect over my hand always lists my hand IDs, which
- * are in {@code gv.myHand}.
+ * <p><b>Slice 70-Y.5 narrowing (2026-05-01):</b> graveyard, exile,
+ * and sideboard ARE on the wire (each is a {@code CardsView} in
+ * {@link WebPlayerView}) but they are NOT rendered as clickable
+ * card faces — they live behind a chip+ZoneBrowser modal. Activating
+ * the click-resolution banner for a "return creature from graveyard"
+ * prompt would strand the user with nothing to click. Drop those
+ * zones from the visible set; the dialog falls through to the
+ * existing modal CardChooserList grid (TargetDialog), which renders
+ * the graveyard cards as a card grid the user CAN click.
+ *
+ * <p>Future enhancement (deferred): auto-open the ZoneBrowser with
+ * pulse highlights when the dialog targets graveyard/exile, then
+ * click in the browser resolves. Until then, modal grid is the
+ * better UX vs an inactive banner over an unreachable target.
  */
 function visibleZoneCardIds(gv: WebGameView | null): Set<string> {
   const ids = new Set<string>();
   if (!gv) return ids;
   for (const id of Object.keys(gv.myHand)) ids.add(id);
   for (const p of gv.players) {
-    for (const id of Object.keys(p.graveyard)) ids.add(id);
-    for (const id of Object.keys(p.exile)) ids.add(id);
     for (const id of Object.keys(p.battlefield)) ids.add(id);
   }
   return ids;
