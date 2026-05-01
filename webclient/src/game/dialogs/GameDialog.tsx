@@ -12,6 +12,7 @@ import { AbilityPickerDialog } from './AbilityPickerDialog';
 import { InformDialog } from './InformDialog';
 import { CombatPanel } from './CombatPanel';
 import { ManaPayPanel } from './ManaPayPanel';
+import { ManaPayBanner } from './ManaPayBanner';
 import { isMulliganDialog } from '../MulliganModal';
 import { PilePickerDialog } from './PilePickerDialog';
 import { MultiAmountDialog } from './MultiAmountDialog';
@@ -107,12 +108,54 @@ export function GameDialog({ stream }: Props) {
     return null;
   }
 
-  // gameTarget renders as a non-blocking side panel — the
-  // Battlefield wires click-on-board to dispatch the target
-  // response, so the user can pick by clicking either a card/
-  // permanent on the board OR a row in the picker. A full-screen
-  // backdrop would prevent the board interaction.
+  // gameTarget — three sub-cases at slice 70-X.13 onwards:
+  //   1. cardsView1 cards in VISIBLE zones (hand discard, graveyard
+  //      pick) → handled at the top by the useDialogTargets active
+  //      branch above (DialogBanner + pulse cards in zone).
+  //   2. cardsView1 cards in HIDDEN zones (Demonic Tutor library
+  //      search) → modal with CardChooserList grid (TargetDialog).
+  //      Cards aren't on the board — modal is the only sensible UI.
+  //   3. cardsView1 EMPTY (board-target: player or permanent on
+  //      board) → slice 70-Y.2 (2026-05-01) renders as a bottom-
+  //      center banner (DialogBanner). User clicks targets ON THE
+  //      BOARD via clickRouter target mode; banner only shows the
+  //      message text + Skip button (when optional).
   if (dialog.method === 'gameTarget') {
+    const targetData =
+      'cardsView1' in dialog.data ? dialog.data : null;
+    const cardCount = targetData
+      ? Object.keys(targetData.cardsView1).length
+      : 0;
+    // Case 3 — board target with no cardsView1 → banner.
+    if (CLICK_RESOLUTION && targetData && cardCount === 0) {
+      const skipTarget = !targetData.flag
+        ? () => {
+            stream?.sendPlayerResponse(
+              dialog.messageId,
+              'uuid',
+              '00000000-0000-0000-0000-000000000000',
+            );
+            clearDialog();
+          }
+        : null;
+      return (
+        <DialogBanner
+          message={targetData.message ?? 'Choose target'}
+          pickedCount={0}
+          min={1}
+          max={1}
+          onDone={() => {
+            // No-op; user clicks on board (clickRouter target mode
+            // dispatches sendPlayerResponse). DialogBanner hides the
+            // Done button when min=max=1, so this is unreachable in
+            // practice — defensive fallback only.
+          }}
+          onCancel={skipTarget}
+        />
+      );
+    }
+    // Case 2 — modal with card grid (Demonic Tutor etc.) OR legacy
+    // path when CLICK_RESOLUTION off.
     return (
       <div
         role="dialog"
@@ -126,12 +169,17 @@ export function GameDialog({ stream }: Props) {
     );
   }
 
-  // gamePlayMana / gamePlayXMana — slice 21 (B2). The user pays
-  // mana by clicking lands / mana sources on the battlefield;
-  // slice 16's clickRouter dispatches manaPay-mode clicks via
-  // sendObjectClick. A full-screen modal would block those clicks,
-  // so render the panel as a non-blocking side strip instead.
+  // gamePlayMana / gamePlayXMana — slice 21 (B2) → slice 70-Y.3
+  // (2026-05-01). The user pays mana by clicking lands / mana
+  // sources on the battlefield + mana orbs in the pool. With
+  // CLICK_RESOLUTION on, render as a bottom-center banner
+  // (ManaPayBanner) instead of the bottom-right side panel.
+  // Banner adds the "Special" button (Convoke / Improvise / Delve)
+  // that the legacy panel lacked entirely.
   if (dialog.method === 'gamePlayMana' || dialog.method === 'gamePlayXMana') {
+    if (CLICK_RESOLUTION) {
+      return <ManaPayBanner stream={stream} />;
+    }
     return (
       <div
         role="dialog"
