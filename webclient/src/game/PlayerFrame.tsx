@@ -8,6 +8,7 @@ import { LifeCounter } from './LifeCounter';
 import { ManaPool } from './ManaPool';
 import { hasAnyMana } from './manaPoolUtil';
 import { PlayerPortrait } from './PlayerPortrait';
+import { usePlayerCommanders } from './usePlayerCommanders';
 import { PriorityTag } from './PriorityTag';
 import { ZoneIcon } from './ZoneIcon';
 import { slow } from '../animation/debug';
@@ -571,15 +572,13 @@ function PlayerFrameRedesigned({
     .filter(Boolean)
     .join(', ');
 
-  // Find the first commander entry for the displayed commander name
-  // beneath the player name. Partner pairings show only the first
-  // commander's name; slice 70-Z may revisit if the partner is
-  // load-bearing visually (e.g., "Tymna / Thrasios" combined).
-  const commander = useMemo(
-    () =>
-      player.commandList.find((co) => co.kind === 'commander') ?? null,
-    [player.commandList],
-  );
+  // Slice 70-X.14 (Bug 4) — read from the store's commander snapshot
+  // so the displayed commander name survives cast → leaves-command-zone.
+  // Partner pairings show only the first commander's name; slice 70-Z
+  // may revisit if the partner is load-bearing visually (e.g.,
+  // "Tymna / Thrasios" combined).
+  const commanders = usePlayerCommanders(player);
+  const commander = commanders[0] ?? null;
 
   // Targetable name → button (clickable to dispatch as target).
   // Same rules as legacy: only when targetable AND not eliminated.

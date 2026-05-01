@@ -817,4 +817,151 @@ describe('useGameStore', () => {
     useGameStore.getState().reset();
     expect(useGameStore.getState().pendingSideboard).toBeNull();
   });
+
+  /* ---------- Slice 70-X.14 (Bug 4): commander snapshot ---------- */
+
+  function buildGameViewWithCommanders(
+    playerId: string,
+    commanderNames: string[],
+  ) {
+    const player = webPlayerViewSchema.parse({
+      playerId,
+      name: 'alice',
+      life: 40, wins: 0, winsNeeded: 1, libraryCount: 99, handCount: 7,
+      graveyard: {}, exile: {}, sideboard: {}, battlefield: {},
+      manaPool: { red: 0, green: 0, blue: 0, white: 0, black: 0, colorless: 0 },
+      controlled: true, isHuman: true, isActive: true, hasPriority: true,
+      hasLeft: false, monarch: false, initiative: false, designationNames: [],
+      commandList: commanderNames.map((name) => ({
+        id: `id-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+        kind: 'commander',
+        name,
+        expansionSetCode: 'CMR',
+        imageFileName: '',
+        imageNumber: 0,
+        cardNumber: '281',
+        rules: [],
+      })),
+    });
+    return webGameViewSchema.parse({
+      turn: 1,
+      phase: 'PRECOMBAT_MAIN',
+      step: 'PRECOMBAT_MAIN',
+      activePlayerName: 'alice',
+      priorityPlayerName: 'alice',
+      special: false,
+      rollbackTurnsAllowed: false,
+      totalErrorsCount: 0,
+      totalEffectsCount: 0,
+      gameCycle: 0,
+      myPlayerId: playerId,
+      myHand: {},
+      stack: {},
+      combat: [],
+      players: [player],
+    });
+  }
+
+  it('gameInit seeds commanderSnapshots from initial commandList', () => {
+    const pid = '22222222-2222-2222-2222-222222222222';
+    const gv = buildGameViewWithCommanders(pid, ['Atraxa, Praetors\' Voice']);
+    useGameStore.getState().applyFrame(frame('gameInit', gv, 1), gv);
+    const snap = useGameStore.getState().commanderSnapshots[pid];
+    expect(snap).toBeDefined();
+    expect(snap.length).toBe(1);
+    expect(snap[0].name).toBe('Atraxa, Praetors\' Voice');
+  });
+
+  it('gameUpdate retains commander when commandList becomes empty (cast)', () => {
+    const pid = '22222222-2222-2222-2222-222222222222';
+    const initial = buildGameViewWithCommanders(pid, ['Atraxa, Praetors\' Voice']);
+    useGameStore.getState().applyFrame(frame('gameInit', initial, 1), initial);
+    // Commander cast — commandList is now empty
+    const empty = buildGameViewWithCommanders(pid, []);
+    useGameStore.getState().applyFrame(frame('gameUpdate', empty, 2), empty);
+    const snap = useGameStore.getState().commanderSnapshots[pid];
+    expect(snap).toBeDefined();
+    expect(snap.length).toBe(1);
+    expect(snap[0].name).toBe('Atraxa, Praetors\' Voice');
+  });
+
+  it('Partner: snapshot accumulates both commanders and retains them through casts', () => {
+    const pid = '22222222-2222-2222-2222-222222222222';
+    const both = buildGameViewWithCommanders(pid, [
+      'Tymna the Weaver',
+      'Thrasios, Triton Hero',
+    ]);
+    useGameStore.getState().applyFrame(frame('gameInit', both, 1), both);
+    // Cast Tymna — only Thrasios remains in command zone
+    const onlyThrasios = buildGameViewWithCommanders(pid, [
+      'Thrasios, Triton Hero',
+    ]);
+    useGameStore.getState().applyFrame(
+      frame('gameUpdate', onlyThrasios, 2),
+      onlyThrasios,
+    );
+    // Cast Thrasios — neither in command zone
+    const empty = buildGameViewWithCommanders(pid, []);
+    useGameStore.getState().applyFrame(frame('gameUpdate', empty, 3), empty);
+    const snap = useGameStore.getState().commanderSnapshots[pid];
+    expect(snap).toBeDefined();
+    expect(snap.length).toBe(2);
+    expect(snap.map((c) => c.name).sort()).toEqual([
+      'Thrasios, Triton Hero',
+      'Tymna the Weaver',
+    ]);
+  });
+
+  it('non-commander entries (emblem, dungeon) are not snapshotted', () => {
+    const pid = '22222222-2222-2222-2222-222222222222';
+    const player = webPlayerViewSchema.parse({
+      playerId: pid,
+      name: 'alice',
+      life: 40, wins: 0, winsNeeded: 1, libraryCount: 99, handCount: 7,
+      graveyard: {}, exile: {}, sideboard: {}, battlefield: {},
+      manaPool: { red: 0, green: 0, blue: 0, white: 0, black: 0, colorless: 0 },
+      controlled: true, isHuman: true, isActive: true, hasPriority: true,
+      hasLeft: false, monarch: false, initiative: false, designationNames: [],
+      commandList: [
+        {
+          id: 'id-emblem-elspeth',
+          kind: 'emblem',
+          name: 'Elspeth, Sun\'s Champion emblem',
+          expansionSetCode: '',
+          imageFileName: '',
+          imageNumber: 1,
+          cardNumber: '',
+          rules: [],
+        },
+      ],
+    });
+    const gv = webGameViewSchema.parse({
+      turn: 5,
+      phase: 'PRECOMBAT_MAIN',
+      step: 'PRECOMBAT_MAIN',
+      activePlayerName: 'alice',
+      priorityPlayerName: 'alice',
+      special: false,
+      rollbackTurnsAllowed: false,
+      totalErrorsCount: 0,
+      totalEffectsCount: 0,
+      gameCycle: 0,
+      myPlayerId: pid,
+      myHand: {},
+      stack: {},
+      combat: [],
+      players: [player],
+    });
+    useGameStore.getState().applyFrame(frame('gameInit', gv, 1), gv);
+    expect(useGameStore.getState().commanderSnapshots[pid] ?? []).toEqual([]);
+  });
+
+  it('reset wipes commanderSnapshots', () => {
+    const pid = '22222222-2222-2222-2222-222222222222';
+    const gv = buildGameViewWithCommanders(pid, ['Atraxa, Praetors\' Voice']);
+    useGameStore.getState().applyFrame(frame('gameInit', gv, 1), gv);
+    expect(useGameStore.getState().commanderSnapshots[pid]).toBeDefined();
+    useGameStore.getState().reset();
+    expect(useGameStore.getState().commanderSnapshots).toEqual({});
+  });
 });

@@ -48,6 +48,7 @@ import { type CSSProperties, useMemo } from 'react';
 import type { WebPlayerView } from '../api/schemas';
 import { computeHaloBackground, manaTokenForCode } from './halo';
 import { scryfallCommanderImageUrl } from './scryfall';
+import { usePlayerCommanders } from './usePlayerCommanders';
 
 export type PlayerPortraitSize = 'small' | 'medium' | 'large';
 
@@ -112,11 +113,13 @@ export function PlayerPortrait({
   ariaLabel,
 }: Props) {
   const sizePx = SIZE_PX[size];
-  const commander = useMemo(
-    () =>
-      player.commandList.find((co) => co.kind === 'commander') ?? null,
-    [player.commandList],
-  );
+  // Slice 70-X.14 (Bug 4) — read from the store's commander snapshot
+  // so the portrait survives the cast → leaves-command-zone flow.
+  // First commander wins for portrait rendering; Partner/Background
+  // pairings show only the first commander's art (matching slice 70-Z's
+  // single-portrait-per-seat picture-catalog spec).
+  const commanders = usePlayerCommanders(player);
+  const commander = commanders[0] ?? null;
   const imageUrl = commander
     ? scryfallCommanderImageUrl(commander, 'art_crop')
     : null;

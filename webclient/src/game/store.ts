@@ -11,6 +11,7 @@ import { create } from 'zustand';
 import type {
   WebAbilityPickerView,
   WebChatMessage,
+  WebCommandObjectView,
   WebDialogClear,
   WebGameClientMessage,
   WebGameEndView,
@@ -188,6 +189,25 @@ interface GameState {
   gameOverPending: boolean;
 
   /**
+   * Slice 70-X.14 (Wave A item 4 — Bug 4) — per-player commander
+   * identity snapshot that SURVIVES zone changes. Pre-Wave-A,
+   * PlayerPortrait + PlayerFrame read commander from
+   * {@code player.commandList.find(...)} which empties when the
+   * commander is cast and leaves the command zone — the portrait
+   * went blank.
+   *
+   * <p>The store accumulates UNIQUE commanders by name across every
+   * gameView frame. Once a commander has been observed in any
+   * frame's commandList for a player, it stays in the snapshot for
+   * the rest of the game (cleared only by {@link reset}). Partner /
+   * Background commanders accumulate naturally — each gets its own
+   * entry keyed by name.
+   *
+   * <p>Keyed by {@code playerId}.
+   */
+  commanderSnapshots: Record<string, WebCommandObjectView[]>;
+
+  /**
    * Slice 70-O — UI-only state: whether the side panel is collapsed.
    * Toggled by the header's layout/zoom icon (picture-catalog §1.3).
    * When true, GameTable renders the battlefield + hand at full
@@ -255,6 +275,7 @@ const INITIAL: Pick<
   | 'gameLog'
   | 'gameOverPending'
   | 'sidePanelCollapsed'
+  | 'commanderSnapshots'
 > = {
   connection: 'idle',
   closeReason: '',
@@ -270,7 +291,42 @@ const INITIAL: Pick<
   gameLog: [],
   gameOverPending: false,
   sidePanelCollapsed: false,
+  commanderSnapshots: {},
 };
+
+/**
+ * Slice 70-X.14 (Bug 4) — accumulate per-player commanders into the
+ * snapshot. Adds any commander entry seen in {@code gameView.players[].commandList}
+ * to the per-player list (keyed by name dedupe). Returns the new map
+ * if anything changed, or the existing reference if no-op (so React
+ * subscribers don't re-render when nothing's new).
+ */
+function accumulateCommanderSnapshots(
+  prev: Record<string, WebCommandObjectView[]>,
+  gv: WebGameView,
+): Record<string, WebCommandObjectView[]> {
+  let changed = false;
+  const next: Record<string, WebCommandObjectView[]> = { ...prev };
+  for (const p of gv.players) {
+    const playerId = p.playerId;
+    if (!playerId) continue;
+    const seen = next[playerId] ?? [];
+    const seenNames = new Set(seen.map((c) => c.name));
+    let merged = seen;
+    for (const co of p.commandList) {
+      if (co.kind !== 'commander') continue;
+      if (seenNames.has(co.name)) continue;
+      if (merged === seen) merged = [...seen];
+      merged.push(co);
+      seenNames.add(co.name);
+      changed = true;
+    }
+    if (merged !== seen) {
+      next[playerId] = merged;
+    }
+  }
+  return changed ? next : prev;
+}
 
 /**
  * Slice 70-X.13 (Wave 4) — extracted reducers for the two
@@ -439,34 +495,53 @@ export const useGameStore = create<GameState>()((set, get) => ({
         return true;
       }
 
-      case 'gameInit':
+      case 'gameInit': {
+        const gv = validatedData as WebGameView;
+        // Slice 70-X.14 — gameInit is a fresh game OR a reconnect
+        // catch-up. For fresh games, snapshots will start empty
+        // (cleared on reset()) and gameInit's commandList seeds them.
+        // For reconnects mid-game, the engine ships whatever's
+        // currently in the command zone; if commanders have been cast
+        // pre-reconnect, commandList may be empty and the snapshot
+        // stays empty until the next time those commanders return to
+        // the command zone (or until they appear again somewhere).
+        // The reconnect-without-snapshot edge is rare in playtest;
+        // documented as a limitation, addressed by W-A future server
+        // field if needed.
         set({
-          gameView: validatedData as WebGameView,
-          // gameInit means a fresh game (or a reconnect's catch-up).
-          // Wipe any stale dialog state.
+          gameView: gv,
           protocolError: null,
           pendingDialog: null,
-          // Slice 19: clear the inter-game banner — next game has
-          // started.
           gameOverPending: false,
+          commanderSnapshots: accumulateCommanderSnapshots(
+            get().commanderSnapshots,
+            gv,
+          ),
         });
         return true;
+      }
 
-      case 'gameUpdate':
+      case 'gameUpdate': {
+        const gv = validatedData as WebGameView;
+        // Slice 16: do NOT clear pendingDialog on gameUpdate. The
+        // engine fires gameUpdate frames mid-prompt during combat
+        // (after each declare-attackers toggle, between blocker
+        // assignments, etc.). Clearing the dialog on update would
+        // wipe the "Select attackers" prompt and the user would
+        // lose their combat-mode signal. The next gameSelect /
+        // gameTarget that arrives will replace the dialog if the
+        // prompt has changed; if not, the same prompt persists.
+        // The user explicitly clears via clearDialog() on commit.
         set({
-          gameView: validatedData as WebGameView,
-          // Slice 16: do NOT clear pendingDialog on gameUpdate. The
-          // engine fires gameUpdate frames mid-prompt during combat
-          // (after each declare-attackers toggle, between blocker
-          // assignments, etc.). Clearing the dialog on update would
-          // wipe the "Select attackers" prompt and the user would
-          // lose their combat-mode signal. The next gameSelect /
-          // gameTarget that arrives will replace the dialog if the
-          // prompt has changed; if not, the same prompt persists.
-          // The user explicitly clears via clearDialog() on commit.
+          gameView: gv,
           protocolError: null,
+          commanderSnapshots: accumulateCommanderSnapshots(
+            get().commanderSnapshots,
+            gv,
+          ),
         });
         return true;
+      }
 
       case 'gameInform':
       case 'gameOver':
