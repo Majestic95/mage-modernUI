@@ -177,3 +177,107 @@ export function groupWithAttachments(
   }
   return out;
 }
+
+/**
+ * Slice 70-Y / Issue (2026-05-01) — collapse functionally identical
+ * permanents into a single visual stack to save board real estate.
+ *
+ * <p>Use cases (per playtest 2026-05-01):
+ * <ul>
+ *   <li>Multiple basic lands of the same name (5 Forests).</li>
+ *   <li>Multiple identical tokens (3 1/1 Goblin tokens).</li>
+ * </ul>
+ *
+ * <p>Stack key = name + set + cardNumber + tapped state. Permanents
+ * with state-divergent properties never stack:
+ * <ul>
+ *   <li>has attachments (auras / equipment) → renders with its
+ *     own attachment fan, not stackable</li>
+ *   <li>is itself attached → already rendered under its host</li>
+ *   <li>damage marked > 0</li>
+ *   <li>any non-zero counter</li>
+ *   <li>goading state (any goading player)</li>
+ *   <li>summoning sickness differs</li>
+ * </ul>
+ *
+ * <p>Returns null stack-key for any non-stackable perm; the caller
+ * treats those as singletons. For stackable perms, the FIRST perm
+ * with a given key becomes the "front" of the stack and accumulates
+ * the others as {@code stackedDuplicates}.
+ *
+ * <p>This is a DEFENSIVE CONSERVATIVE rule. When in doubt, don't
+ * stack — board state ambiguity is worse than wasted space.
+ */
+export interface StackedGroup {
+  /** The "front" permanent of the visual stack (top of z-axis). */
+  readonly host: WebPermanentView;
+  /** Other identical perms behind the front. Empty for singletons. */
+  readonly stackedDuplicates: readonly WebPermanentView[];
+  /** Auras / equipment from groupWithAttachments. Empty if none. */
+  readonly attachments: readonly WebPermanentView[];
+}
+
+function stackKey(perm: WebPermanentView): string | null {
+  if (perm.attachedTo) return null;
+  if (perm.attachments && perm.attachments.length > 0) return null;
+  if (perm.damage > 0) return null;
+  const counterTotals = Object.values(perm.card.counters ?? {});
+  if (counterTotals.some((n) => n > 0)) return null;
+  if ((perm.goadingPlayerIds ?? []).length > 0) return null;
+  return [
+    perm.card.name,
+    perm.card.expansionSetCode,
+    perm.card.cardNumber,
+    perm.tapped ? 'T' : 'U',
+    perm.summoningSickness ? 'S' : 'N',
+  ].join('|');
+}
+
+/**
+ * Combine attachment grouping + identical-perm stacking. Pipes:
+ * {@code groupWithAttachments → stackIdenticalGroups}.
+ *
+ * <p>An AttachmentGroup whose host is stackable AND has no
+ * attachments can merge with sibling groups sharing the same
+ * stackKey. Groups WITH attachments stay as singletons regardless
+ * (they're visually distinct already).
+ */
+export function groupWithAttachmentsAndStacks(
+  perms: readonly WebPermanentView[],
+): StackedGroup[] {
+  const groups = groupWithAttachments(perms);
+  const out: StackedGroup[] = [];
+  // Map keys → index into `out` so subsequent identical perms append
+  // to the existing entry's stackedDuplicates.
+  const keyToIdx = new Map<string, number>();
+  for (const g of groups) {
+    if (g.attachments.length > 0) {
+      // Has attachments → never stacks; render alone.
+      out.push({
+        host: g.host,
+        stackedDuplicates: [],
+        attachments: g.attachments,
+      });
+      continue;
+    }
+    const key = stackKey(g.host);
+    if (key === null) {
+      out.push({ host: g.host, stackedDuplicates: [], attachments: [] });
+      continue;
+    }
+    const existingIdx = keyToIdx.get(key);
+    if (existingIdx === undefined) {
+      const idx = out.length;
+      keyToIdx.set(key, idx);
+      out.push({ host: g.host, stackedDuplicates: [], attachments: [] });
+    } else {
+      const existing = out[existingIdx];
+      out[existingIdx] = {
+        host: existing.host,
+        stackedDuplicates: [...existing.stackedDuplicates, g.host],
+        attachments: existing.attachments,
+      };
+    }
+  }
+  return out;
+}

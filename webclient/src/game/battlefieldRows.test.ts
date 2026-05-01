@@ -3,6 +3,7 @@ import {
   bucketBattlefield,
   classifyPermanent,
   groupWithAttachments,
+  groupWithAttachmentsAndStacks,
   rowOrder,
 } from './battlefieldRows';
 import type { WebPermanentView } from '../api/schemas';
@@ -263,5 +264,144 @@ describe('groupWithAttachments', () => {
     expect(groups[0].attachments.map((a) => a.card.id)).toEqual(['a1']);
     expect(groups[1].host.card.id).toBe('h2');
     expect(groups[1].attachments.map((a) => a.card.id)).toEqual(['a2']);
+  });
+});
+
+/* ---------- Slice 70-Y / Issue 1: identical-permanent stacking ---------- */
+
+function permWithName(
+  id: string,
+  name: string,
+  types: string[] = ['LAND'],
+): WebPermanentView {
+  const p = permWithTypes(types);
+  p.card = {
+    ...p.card,
+    id,
+    cardId: id,
+    name,
+    expansionSetCode: 'LEA',
+    cardNumber: '253',
+  };
+  return p;
+}
+
+describe('groupWithAttachmentsAndStacks — identical-permanent stacking', () => {
+  it('stacks identical untouched basic lands (5 Forests → 1 group)', () => {
+    const f1 = permWithName('f1', 'Forest');
+    const f2 = permWithName('f2', 'Forest');
+    const f3 = permWithName('f3', 'Forest');
+    const f4 = permWithName('f4', 'Forest');
+    const f5 = permWithName('f5', 'Forest');
+    const groups = groupWithAttachmentsAndStacks([f1, f2, f3, f4, f5]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].host.card.id).toBe('f1');
+    expect(groups[0].stackedDuplicates.map((p) => p.card.id)).toEqual([
+      'f2',
+      'f3',
+      'f4',
+      'f5',
+    ]);
+  });
+
+  it('does not stack different-name lands (Forest + Plains → 2 groups)', () => {
+    const f = permWithName('f1', 'Forest');
+    const p = permWithName('p1', 'Plains');
+    const groups = groupWithAttachmentsAndStacks([f, p]);
+    expect(groups).toHaveLength(2);
+  });
+
+  it('does not stack a tapped Forest with an untapped Forest', () => {
+    const f1 = permWithName('f1', 'Forest');
+    const f2 = permWithName('f2', 'Forest');
+    f2.tapped = true;
+    const groups = groupWithAttachmentsAndStacks([f1, f2]);
+    expect(groups).toHaveLength(2);
+  });
+
+  it('does not stack a Forest with damage taken', () => {
+    // Animated Forest that took 2 damage from combat — visually
+    // distinct from fresh Forests.
+    const f1 = permWithName('f1', 'Forest', ['LAND', 'CREATURE']);
+    const f2 = permWithName('f2', 'Forest', ['LAND', 'CREATURE']);
+    f2.damage = 2;
+    const groups = groupWithAttachmentsAndStacks([f1, f2]);
+    expect(groups).toHaveLength(2);
+  });
+
+  it('does not stack a Forest carrying a +1/+1 counter', () => {
+    const f1 = permWithName('f1', 'Forest');
+    const f2 = permWithName('f2', 'Forest');
+    f2.card = { ...f2.card, counters: { '+1/+1': 1 } };
+    const groups = groupWithAttachmentsAndStacks([f1, f2]);
+    expect(groups).toHaveLength(2);
+  });
+
+  it('does not stack a Forest that has an aura attached to it', () => {
+    const f1 = permWithName('f1', 'Forest');
+    const f2 = permWithName('f2', 'Forest');
+    const aura = permWithName('aura1', 'Aura', ['ENCHANTMENT']);
+    aura.attachedTo = 'f2';
+    const groups = groupWithAttachmentsAndStacks([f1, f2, aura]);
+    // f1 is one group (unstackable f2 is a separate AttachmentGroup
+    // because it has an attachment).
+    expect(groups).toHaveLength(2);
+    const f1Group = groups.find((g) => g.host.card.id === 'f1')!;
+    const f2Group = groups.find((g) => g.host.card.id === 'f2')!;
+    expect(f1Group.stackedDuplicates).toEqual([]);
+    expect(f1Group.attachments).toEqual([]);
+    expect(f2Group.attachments.map((a) => a.card.id)).toEqual(['aura1']);
+    expect(f2Group.stackedDuplicates).toEqual([]);
+  });
+
+  it('stacks identical Goblin tokens (3 1/1 Goblins → 1 group with count 3)', () => {
+    const t1 = permWithName('t1', 'Goblin', ['CREATURE']);
+    const t2 = permWithName('t2', 'Goblin', ['CREATURE']);
+    const t3 = permWithName('t3', 'Goblin', ['CREATURE']);
+    const groups = groupWithAttachmentsAndStacks([t1, t2, t3]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].host.card.id).toBe('t1');
+    expect(groups[0].stackedDuplicates.length).toBe(2);
+  });
+
+  it('does not stack tokens of different sources (different cardNumber)', () => {
+    // Two "Goblin" tokens but from different printings — visually
+    // distinct art. Don't merge.
+    const t1 = permWithName('t1', 'Goblin', ['CREATURE']);
+    const t2 = permWithName('t2', 'Goblin', ['CREATURE']);
+    t2.card = { ...t2.card, cardNumber: '999' };
+    const groups = groupWithAttachmentsAndStacks([t1, t2]);
+    expect(groups).toHaveLength(2);
+  });
+
+  it('preserves order: standalone perms appear in input order', () => {
+    const f = permWithName('f1', 'Forest');
+    const p = permWithName('p1', 'Plains');
+    const m = permWithName('m1', 'Mountain');
+    const groups = groupWithAttachmentsAndStacks([f, p, m]);
+    expect(groups.map((g) => g.host.card.id)).toEqual(['f1', 'p1', 'm1']);
+  });
+
+  it('handles a mix: 3 stacking Forests + 1 attached aura on one of them + 2 islands', () => {
+    const f1 = permWithName('f1', 'Forest');
+    const f2 = permWithName('f2', 'Forest');
+    const f3 = permWithName('f3', 'Forest');
+    const aura = permWithName('aura1', 'Aura', ['ENCHANTMENT']);
+    aura.attachedTo = 'f2';
+    const i1 = permWithName('i1', 'Island');
+    const i2 = permWithName('i2', 'Island');
+    // f2 has aura → unstackable, separate group with attachment
+    // f1 + f3 stack (2 untouched Forests)
+    // i1 + i2 stack
+    const groups = groupWithAttachmentsAndStacks([f1, f2, f3, aura, i1, i2]);
+    // Groups in insertion order: f1 (with f3 stacked), f2 (with aura), i1 (with i2)
+    expect(groups).toHaveLength(3);
+    expect(groups[0].host.card.id).toBe('f1');
+    expect(groups[0].stackedDuplicates.map((p) => p.card.id)).toEqual(['f3']);
+    expect(groups[1].host.card.id).toBe('f2');
+    expect(groups[1].attachments.map((a) => a.card.id)).toEqual(['aura1']);
+    expect(groups[1].stackedDuplicates).toEqual([]);
+    expect(groups[2].host.card.id).toBe('i1');
+    expect(groups[2].stackedDuplicates.map((p) => p.card.id)).toEqual(['i2']);
   });
 });

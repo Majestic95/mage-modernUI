@@ -40,9 +40,23 @@ export function nextPhaseAction(step: string): string | null {
       // Beginning → Main 1
       return 'PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE';
     case 'PRECOMBAT_MAIN':
-      // Main 1 → Combat (lands on Declare Attackers under default
-      // stopOnDeclareAttackers; close enough to "next phase").
-      return 'PASS_PRIORITY_UNTIL_TURN_END_STEP';
+      // Slice 70-Y / Issue 3 fix (2026-05-01) — was
+      // PASS_PRIORITY_UNTIL_TURN_END_STEP, which sets
+      // passedUntilEndOfTurn=true. Per HumanPlayer.java:1265-1287
+      // that flag short-circuits priority on EVERY step except
+      // END_TURN — bypassing main2 + combat + everything. User
+      // playtest 2026-05-01: "game is rushing past main phase 1
+      // and main phase 2." Root cause confirmed by MTG rules expert
+      // + code investigation agents: F2 from main1 was firing the
+      // turn-end skip.
+      //
+      // PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE correctly stops at main2
+      // via the skippedAtLeastOnce check (PlayerImpl.java:2683-2688).
+      // From main1: skips remainder of main1 + combat → stops at
+      // main2. From main2 (next case below): doesn't apply, falls
+      // through to PASS_PRIORITY_UNTIL_TURN_END_STEP which is correct
+      // for ending the turn from main2.
+      return 'PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE';
     case 'BEGIN_COMBAT':
     case 'DECLARE_ATTACKERS':
     case 'DECLARE_BLOCKERS':

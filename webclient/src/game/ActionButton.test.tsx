@@ -195,7 +195,7 @@ describe('ActionButton — primary dispatch', () => {
     render(<ActionButton stream={stream} />);
     await userEvent.click(screen.getByTestId('action-button-primary'));
     expect(stream.sendPlayerAction).toHaveBeenCalledWith(
-      'PASS_PRIORITY_UNTIL_TURN_END_STEP',
+      'PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE',
     );
   });
 
@@ -293,7 +293,7 @@ describe('ActionButton — hotkeys', () => {
     render(<ActionButton stream={stream} />);
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F2' }));
     expect(stream.sendPlayerAction).toHaveBeenCalledWith(
-      'PASS_PRIORITY_UNTIL_TURN_END_STEP',
+      'PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE',
     );
   });
 

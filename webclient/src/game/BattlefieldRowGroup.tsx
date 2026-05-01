@@ -7,8 +7,8 @@ import {
 } from '../animation/transitions';
 import { BattlefieldTile } from './BattlefieldTile';
 import {
-  groupWithAttachments,
-  type AttachmentGroup,
+  groupWithAttachmentsAndStacks,
+  type StackedGroup,
   type BattlefieldRow,
 } from './battlefieldRows';
 
@@ -83,7 +83,7 @@ export function BattlefieldRowGroup({
   // Pure derivation from the row's perms. Empty attachments arrays
   // for non-host perms don't change render shape vs the legacy
   // flat-row mode.
-  const groups = groupWithAttachments(permanents);
+  const groups = groupWithAttachmentsAndStacks(permanents);
   // Slice 70-X.9 — fixed tile size, NOT flex-1-1-0 with shrink.
   // The previous `flex: 1 1 0; min-(w|h): 56px; max-(w|h): tileMaxSize`
   // pattern caused tiles to shrink to fit the container, which made
@@ -169,7 +169,7 @@ function AttachmentGroupSlot({
   combatRoles,
   rotateDelay,
 }: {
-  group: AttachmentGroup;
+  group: StackedGroup;
   tileSize: string;
   canAct: boolean;
   onObjectClick: (id: string) => void;
@@ -177,21 +177,38 @@ function AttachmentGroupSlot({
   combatRoles: Map<string, 'attacker' | 'blocker'>;
   rotateDelay: number;
 }) {
-  const { host, attachments } = group;
+  const { host, attachments, stackedDuplicates } = group;
+  // Slice 70-Y / Issue 1 (2026-05-01) — identical-permanent stacking.
+  // stackedDuplicates is non-empty when N copies of the same Forest
+  // (or identical token) share the slot. Render them BEHIND host
+  // with the same fan offset as auras. Plus a count badge on the
+  // front showing the stack depth so the player can read "5 Forests"
+  // at a glance.
   const hasAttachments = attachments.length > 0;
+  const hasDuplicates = stackedDuplicates.length > 0;
+  // Total fan-out count: duplicates + attachments. Both go right of
+  // host with 30% offset each. Order: duplicates first (closer to
+  // host), then attachments to the far right.
+  const fanCount = stackedDuplicates.length + attachments.length;
   const layoutId = host.card.cardId ? host.card.cardId : undefined;
-  // Container width grows linearly with attachment count so siblings
-  // in the row's flex layout get pushed aside (no overlap with
-  // unrelated permanents). 30% of tileSize per attachment is enough
-  // to clearly reveal the right edge of each aura.
+  // Container width grows linearly so siblings in the row's flex
+  // layout get pushed aside (no overlap with unrelated permanents).
+  // 30% of tileSize per fan layer is enough to clearly reveal the
+  // right edge of each card.
   const FAN_OFFSET = 0.3;
-  const containerWidth = hasAttachments
-    ? `calc(${tileSize} * (1 + ${attachments.length} * ${FAN_OFFSET}))`
-    : tileSize;
-  // Z-base: host sits at attachments.length + 1; each successive aura
-  // sits one z below, so attachment[0] is just behind host (its right
-  // strip visible), attachment[1] is behind attachment[0], etc.
-  const hostZ = attachments.length + 1;
+  const containerWidth =
+    fanCount > 0
+      ? `calc(${tileSize} * (1 + ${fanCount} * ${FAN_OFFSET}))`
+      : tileSize;
+  // Z-base: host on top; each fan layer one z below the previous so
+  // each layer's right strip peeks out from under the previous.
+  const hostZ = fanCount + 1;
+  // Combine duplicates + attachments in render order (duplicates
+  // first since they sit closer to host visually).
+  const fanLayers = [...stackedDuplicates, ...attachments];
+  // Stack count badge — only visible when 2+ identical perms (i.e.
+  // duplicates >= 1, total >= 2). "×N" reads the full stack depth.
+  const stackCount = stackedDuplicates.length + 1;
   return (
     <motion.div
       key={host.card.id}
@@ -201,6 +218,7 @@ function AttachmentGroupSlot({
       data-card-id={host.card.cardId || undefined}
       data-attachment-host={hasAttachments || undefined}
       data-attachment-count={hasAttachments ? attachments.length : undefined}
+      data-stack-count={hasDuplicates ? stackCount : undefined}
       initial={{ opacity: 0, y: 24, scale: 0.85 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: -16, scale: 0.85 }}
@@ -208,9 +226,8 @@ function AttachmentGroupSlot({
       className="relative flex-shrink-0"
       style={{ width: containerWidth, height: tileSize }}
     >
-      {/* Host: absolute-positioned at left:0 so the auras can stack
-          behind it via z-index. tileSize x tileSize same as legacy
-          flat-row layout. */}
+      {/* Host: absolute-positioned at left:0 with the highest z so the
+          duplicates / auras stack behind. */}
       <div
         className="absolute top-0 left-0"
         style={{ width: tileSize, height: tileSize, zIndex: hostZ }}
@@ -223,32 +240,44 @@ function AttachmentGroupSlot({
           combatRole={combatRoles.get(host.card.id) ?? null}
           rotateDelay={rotateDelay}
         />
+        {hasDuplicates && (
+          <span
+            data-testid="stack-count-badge"
+            aria-label={`${stackCount} copies`}
+            className="absolute top-1 right-1 z-10 px-1.5 py-0.5 rounded-full bg-zinc-900/85 border border-zinc-600 text-[11px] font-mono font-semibold text-zinc-100 pointer-events-none shadow"
+          >
+            ×{stackCount}
+          </span>
+        )}
       </div>
-      {attachments.map((att, idx) => (
+      {fanLayers.map((perm, idx) => (
         <div
-          key={att.card.id}
-          data-attachment-of={host.card.id}
-          data-card-id={att.card.cardId || undefined}
+          key={perm.card.id}
+          data-attachment-of={
+            idx >= stackedDuplicates.length ? host.card.id : undefined
+          }
+          data-stacked-with={
+            idx < stackedDuplicates.length ? host.card.id : undefined
+          }
+          data-card-id={perm.card.cardId || undefined}
           className="absolute top-0"
           style={{
-            // (idx+1) so first aura is offset 30% right of host (not
-            // overlapping flush). Each subsequent aura another 30%.
+            // (idx+1) so first layer offsets 30% right of host (not
+            // overlapping flush). Each subsequent layer another 30%.
             left: `calc(${tileSize} * ${FAN_OFFSET} * ${idx + 1})`,
             width: tileSize,
             height: tileSize,
-            // Behind host; first aura just below host, each subsequent
-            // one lower. Visible strip = the rightmost ~30% of each
-            // card peeks out from under the next one (or under host
-            // for attachment[0]).
+            // Behind host with descending z so each layer's right
+            // strip peeks out.
             zIndex: hostZ - 1 - idx,
           }}
         >
           <BattlefieldTile
-            perm={att}
+            perm={perm}
             canAct={canAct}
             onClick={onObjectClick}
-            isEligibleCombat={eligibleCombatIds.has(att.card.id)}
-            combatRole={combatRoles.get(att.card.id) ?? null}
+            isEligibleCombat={eligibleCombatIds.has(perm.card.id)}
+            combatRole={combatRoles.get(perm.card.id) ?? null}
             rotateDelay={rotateDelay}
           />
         </div>
