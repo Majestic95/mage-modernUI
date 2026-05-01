@@ -441,7 +441,7 @@ class GameViewMapperTest {
     /* ---------- slice 11: command zone ---------- */
 
     @Test
-    void commandObjectView_jsonShape_locksSevenFields() throws Exception {
+    void commandObjectView_jsonShape_locksEightFields() throws Exception {
         WebCommandObjectView dto = new WebCommandObjectView(
                 "11111111-1111-1111-1111-111111111111",
                 "commander",
@@ -449,13 +449,14 @@ class GameViewMapperTest {
                 "C16",
                 "atraxa-praetors-voice",
                 1,
+                "190",
                 List.of("Flying, vigilance, deathtouch, lifelink",
                         "At the beginning of your end step, proliferate."));
         JsonNode node = JSON.valueToTree(dto);
-        assertEquals(7, node.size(),
-                "WebCommandObjectView must have exactly 7 fields; got: " + node);
+        assertEquals(8, node.size(),
+                "WebCommandObjectView must have exactly 8 fields; got: " + node);
         for (String f : List.of("id", "kind", "name", "expansionSetCode",
-                "imageFileName", "imageNumber", "rules")) {
+                "imageFileName", "imageNumber", "cardNumber", "rules")) {
             assertTrue(node.has(f), "missing field: " + f);
         }
     }

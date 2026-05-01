@@ -31,11 +31,20 @@ export function scryfallImageUrl(
 /**
  * Slice 70-J — Scryfall image URL for a player's commander entry.
  *
- * <p>{@link WebCommandObjectView} carries the same set + number data
- * as {@link WebCardView} but under different field names
- * ({@code imageNumber: number} vs {@code cardNumber: string}). This
- * helper bridges that shape difference so {@link PlayerPortrait}
- * can resolve the commander art without manual field-juggling.
+ * <p>{@link WebCommandObjectView} carries set + collector number
+ * data; this helper builds the Scryfall URL so {@link PlayerPortrait}
+ * can resolve commander art without manual field-juggling.
+ *
+ * <p>Slice 70-X.2 — prefer {@code cardNumber} (collector-number
+ * string) over {@code imageNumber} (int). xmage's
+ * {@code MageObject.imageNumber} defaults to 0 for ordinary cards
+ * (only tokens / face-down stand-ins get explicit values), so
+ * {@code imageNumber} alone produces broken URLs like
+ * {@code /cards/woc/0} → 404. {@code cardNumber} mirrors what
+ * Scryfall expects in {@code /cards/{set}/{collector_number}}
+ * and matches the WebCardView path used elsewhere in the UI.
+ * Falls back to {@code imageNumber} when cardNumber is missing
+ * (1.23-and-earlier server compat during rolling upgrade).
  *
  * <p>Default version is {@code 'art_crop'} (just the artwork, no
  * card frame) — that's the right shape for the circular portrait
@@ -47,10 +56,11 @@ export function scryfallCommanderImageUrl(
   commander: WebCommandObjectView,
   version: ScryfallVersion = 'art_crop',
 ): string | null {
-  if (!commander.expansionSetCode || commander.imageNumber == null) {
-    return null;
-  }
+  if (!commander.expansionSetCode) return null;
+  const collectorNumber =
+    commander.cardNumber || (commander.imageNumber ? String(commander.imageNumber) : '');
+  if (!collectorNumber) return null;
   const set = commander.expansionSetCode.toLowerCase();
-  const num = encodeURIComponent(String(commander.imageNumber));
+  const num = encodeURIComponent(collectorNumber);
   return `https://api.scryfall.com/cards/${set}/${num}?format=image&version=${version}`;
 }

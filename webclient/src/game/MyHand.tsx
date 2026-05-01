@@ -444,16 +444,21 @@ function CommandZoneCard({
   ownerPlayerId: string;
 }) {
   // Synthesize a minimal WebCardView from the commandList entry so
-  // CardFace can render the standard hand-size variant. cardNumber
-  // = String(imageNumber) so scryfallImageUrl resolves to the
-  // commander's art (slice 70-Z.3 critic IMP-4 fix pattern).
+  // CardFace can render the standard hand-size variant. Slice
+  // 70-X.2 — use entry.cardNumber (collector-number string from
+  // schema 1.24) for the Scryfall lookup; fall back to imageNumber
+  // for 1.23-or-older servers during rolling upgrade. xmage's
+  // MageObject.imageNumber defaults to 0 for ordinary cards, so
+  // imageNumber alone yielded broken URLs like /cards/woc/0 → 404.
+  const collectorNumber =
+    entry.cardNumber || (entry.imageNumber ? String(entry.imageNumber) : '');
   const stub: WebCardView = {
     id: entry.id,
     cardId: entry.id,
     name: entry.name,
     displayName: entry.name,
     expansionSetCode: entry.expansionSetCode,
-    cardNumber: String(entry.imageNumber ?? ''),
+    cardNumber: collectorNumber,
     manaCost: '',
     manaValue: 0,
     typeLine: '',

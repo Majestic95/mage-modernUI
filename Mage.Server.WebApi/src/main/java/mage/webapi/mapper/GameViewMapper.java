@@ -359,8 +359,38 @@ public final class GameViewMapper {
                 nullToEmpty(co.getExpansionSetCode()),
                 nullToEmpty(co.getImageFileName()),
                 co.getImageNumber(),
+                // Slice 70-X.2 — carry the collector number (string)
+                // alongside imageNumber. xmage's MageObject.imageNumber
+                // defaults to 0 for ordinary cards (only tokens / face-
+                // down get explicit values), so the webclient's
+                // Scryfall URL builder needs cardNumber to find real
+                // commander art. The CommandObjectView interface
+                // doesn't declare getCardNumber(), but the two
+                // concrete subclasses that DO carry one (CommanderView
+                // via CardView/SimpleCardView, EmblemView directly)
+                // expose it; DungeonView + PlaneView have no
+                // collector-number concept and emit empty.
+                cardNumberFor(co),
                 co.getRules() == null ? List.of() : List.copyOf(co.getRules())
         );
+    }
+
+    /**
+     * Slice 70-X.2 — extract the collector-number string from a
+     * {@link CommandObjectView}, which doesn't declare
+     * {@code getCardNumber()} on the interface itself. Type-narrowing
+     * by concrete subclass, mirroring the dispatch in
+     * {@link #kindFor(CommandObjectView)}. Empty string when the
+     * subclass has no collector-number concept (dungeon, plane).
+     */
+    private static String cardNumberFor(CommandObjectView co) {
+        if (co instanceof CommanderView cv) {
+            return nullToEmpty(cv.getCardNumber());
+        }
+        if (co instanceof EmblemView ev) {
+            return nullToEmpty(ev.getCardNumber());
+        }
+        return "";
     }
 
     private static String kindFor(CommandObjectView co) {

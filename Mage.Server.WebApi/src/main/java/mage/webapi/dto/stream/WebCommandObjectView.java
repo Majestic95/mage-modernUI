@@ -29,7 +29,17 @@ import java.util.List;
  * @param name                display name (e.g. "Atraxa, Praetors' Voice")
  * @param expansionSetCode    set code, may be empty
  * @param imageFileName       art-lookup hint, may be empty
- * @param imageNumber         art number, 0 if unknown
+ * @param imageNumber         art-variant number from upstream
+ *     {@code MageObject.imageNumber}. ZERO for ordinary cards —
+ *     xmage only populates this for tokens / face-down stand-ins
+ *     (verified empirically). For commander art lookup, prefer
+ *     {@link #cardNumber} (the collector number string from the
+ *     card's set registration).
+ * @param cardNumber          collector number (string, may carry
+ *     non-digit suffixes like "281a"). Set from
+ *     {@code Card.getCardNumber()}; this is what xmage actually
+ *     populates for ordinary cards and what Scryfall uses in its
+ *     {@code /cards/{set}/{collector_number}} endpoint.
  * @param rules               rules text lines (empty list if upstream
  *     produced none — never null)
  */
@@ -40,6 +50,7 @@ public record WebCommandObjectView(
         String expansionSetCode,
         String imageFileName,
         int imageNumber,
+        String cardNumber,
         List<String> rules
 ) {
 }

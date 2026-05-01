@@ -513,6 +513,13 @@ export const webCommandObjectViewSchema = z.object({
   expansionSetCode: z.string(),
   imageFileName: z.string(),
   imageNumber: z.number(),
+  // Slice 70-X.2 (schema 1.24) — collector number string for
+  // Scryfall art lookup. xmage's MageObject.imageNumber defaults
+  // to 0 for ordinary cards (only tokens / face-down stand-ins
+  // get explicit values), so the URL builder needs cardNumber to
+  // resolve real commander art. Default '' for forward-compat
+  // with 1.23-and-earlier servers during a rolling upgrade.
+  cardNumber: z.string().default(''),
   rules: z.array(z.string()),
 });
 export type WebCommandObjectView = z.infer<typeof webCommandObjectViewSchema>;

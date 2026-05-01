@@ -137,9 +137,19 @@ export function CreateTableModal({ roomId, serverState, onClose, onCreated }: Pr
     // aiType, aiType]. The server's table-create handler reads this
     // array literally, so length = number of seats and each element
     // is the seat type. Matches upstream MatchOptions.seats wire shape.
-    const seats = aiAllowed && addAi
-      ? ['HUMAN', ...Array(aiSeatsToAdd).fill(aiType)]
-      : undefined;
+    //
+    // Slice 70-X.3 (multi-human FFA fix) — also send seats when AI
+    // is de-selected and the user picked >2 players. Without this,
+    // the server's MatchOptionsBuilder defaulted to ['HUMAN','HUMAN']
+    // (a 1v1 fallback) and a 3-or-4-player human-only FFA only had 2
+    // seats. The seats array is what defines the seat count; the
+    // earlier code only set it for the AI-fill case.
+    let seats: string[] | undefined;
+    if (aiAllowed && addAi) {
+      seats = ['HUMAN', ...Array(aiSeatsToAdd).fill(aiType)];
+    } else if (aiAllowed && !addAi && clampedSeats > 2) {
+      seats = Array(clampedSeats).fill('HUMAN');
+    }
     const body: Record<string, unknown> = {
       gameType,
       deckType,

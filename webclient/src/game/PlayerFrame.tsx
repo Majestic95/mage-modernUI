@@ -743,7 +743,9 @@ function PlayerFrameRedesigned({
               name: commander.name,
               displayName: commander.name,
               expansionSetCode: commander.expansionSetCode,
-              cardNumber: String(commander.imageNumber ?? ''),
+              cardNumber:
+                commander.cardNumber ||
+                (commander.imageNumber ? String(commander.imageNumber) : ''),
               manaCost: '',
               manaValue: 0,
               typeLine: '',
