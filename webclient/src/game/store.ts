@@ -214,6 +214,28 @@ interface GameState {
   commanderSnapshots: Record<string, WebCommandObjectView[]>;
 
   /**
+   * Slice 70-Y / Wave 8 (2026-05-01) — sticky yes/no answers for
+   * repetitive triggers (Smothering Tithe, Rhystic Study, Esper
+   * Sentinel — fires per-opponent-action, multiple prompts per turn
+   * cycle). User-initiated: when the player clicks Yes / No on a
+   * gameAsk dialog WITH the "remember" toggle on, store records the
+   * answer keyed by {@code method|message}. Subsequent matching
+   * prompts auto-respond and skip the modal entirely.
+   *
+   * <p>Two scopes:
+   * <ul>
+   *   <li><b>'turn'</b> — clears when {@code gameView.turn}
+   *     advances. Most stickies should be turn-scoped — preserves
+   *     player agency to revisit the answer next turn.</li>
+   *   <li><b>'game'</b> — persists until reset(). Useful for "always
+   *     pay Rhystic Study this whole game" decisions.</li>
+   * </ul>
+   *
+   * <p>Mulligan dialogs are exempt — handled by MulliganModal.
+   */
+  stickyAnswers: Record<string, { answer: boolean; scope: 'turn' | 'game' }>;
+
+  /**
    * Slice 70-O — UI-only state: whether the side panel is collapsed.
    * Toggled by the header's layout/zoom icon (picture-catalog §1.3).
    * When true, GameTable renders the battlefield + hand at full
@@ -263,6 +285,52 @@ interface GameState {
   clearSideboard: () => void;
   /** Reset back to the pre-connect state — for navigating away. */
   reset: () => void;
+
+  /**
+   * Slice 70-Y / Wave 8 — record a sticky yes/no answer.
+   * @param key  output of {@link stickyAnswerKey} for the prompt
+   * @param answer  the boolean to auto-fire on matching prompts
+   * @param scope  'turn' clears at next turn; 'game' persists
+   */
+  setStickyAnswer: (
+    key: string,
+    answer: boolean,
+    scope: 'turn' | 'game',
+  ) => void;
+  /** Drop a sticky (e.g. user wants to reconsider). */
+  clearStickyAnswer: (key: string) => void;
+}
+
+/**
+ * Slice 70-Y / Wave 8 — stable key for the sticky table. Combines
+ * dialog method + message text. Two Smothering Tithe triggers fire
+ * separate gameAsk frames but with identical message text, so they
+ * share a key. A different card with the same yes/no shape gets a
+ * different key (different message).
+ */
+export function stickyAnswerKey(method: string, message: string): string {
+  return `${method}|${message}`;
+}
+
+/**
+ * Slice 70-Y / Wave 8 — drop all 'turn'-scoped sticky answers, keeping
+ * 'game'-scoped ones. Called from the gameUpdate reducer when the turn
+ * counter advances. Returns the same reference when nothing changed so
+ * subscribers don't re-render unnecessarily.
+ */
+function dropTurnStickies(
+  prev: Record<string, { answer: boolean; scope: 'turn' | 'game' }>,
+): Record<string, { answer: boolean; scope: 'turn' | 'game' }> {
+  let changed = false;
+  const next: Record<string, { answer: boolean; scope: 'turn' | 'game' }> = {};
+  for (const [key, value] of Object.entries(prev)) {
+    if (value.scope === 'game') {
+      next[key] = value;
+    } else {
+      changed = true;
+    }
+  }
+  return changed ? next : prev;
 }
 
 const INITIAL: Pick<
@@ -282,6 +350,7 @@ const INITIAL: Pick<
   | 'gameOverPending'
   | 'sidePanelCollapsed'
   | 'commanderSnapshots'
+  | 'stickyAnswers'
 > = {
   connection: 'idle',
   closeReason: '',
@@ -298,6 +367,7 @@ const INITIAL: Pick<
   gameOverPending: false,
   sidePanelCollapsed: false,
   commanderSnapshots: {},
+  stickyAnswers: {},
 };
 
 /**
@@ -538,6 +608,16 @@ export const useGameStore = create<GameState>()((set, get) => ({
         // gameTarget that arrives will replace the dialog if the
         // prompt has changed; if not, the same prompt persists.
         // The user explicitly clears via clearDialog() on commit.
+        //
+        // Slice 70-Y / Wave 8 — turn-scoped sticky answers clear when
+        // the turn advances. Compare against the previous gameView's
+        // turn; on a strict increase, drop all 'turn'-scoped stickies.
+        // 'game'-scoped stickies survive until reset().
+        const prevTurn = get().gameView?.turn ?? 0;
+        const stickyAnswers =
+          gv.turn > prevTurn
+            ? dropTurnStickies(get().stickyAnswers)
+            : get().stickyAnswers;
         set({
           gameView: gv,
           protocolError: null,
@@ -545,6 +625,7 @@ export const useGameStore = create<GameState>()((set, get) => ({
             get().commanderSnapshots,
             gv,
           ),
+          stickyAnswers,
         });
         return true;
       }
@@ -620,4 +701,16 @@ export const useGameStore = create<GameState>()((set, get) => ({
   clearSideboard: () => set({ pendingSideboard: null }),
 
   reset: () => set(INITIAL),
+
+  setStickyAnswer: (key, answer, scope) =>
+    set((state) => ({
+      stickyAnswers: { ...state.stickyAnswers, [key]: { answer, scope } },
+    })),
+  clearStickyAnswer: (key) =>
+    set((state) => {
+      if (!(key in state.stickyAnswers)) return state;
+      const next = { ...state.stickyAnswers };
+      delete next[key];
+      return { stickyAnswers: next };
+    }),
 }));
