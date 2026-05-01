@@ -110,9 +110,7 @@ export function BattlefieldTile({
           }
           className={
             'select-none rounded-lg block h-full ' +
-            (canAct
-              ? 'cursor-pointer hover:ring-1 hover:ring-fuchsia-500'
-              : 'cursor-default')
+            (canAct ? 'cursor-pointer' : 'cursor-default')
           }
         >
           <BattlefieldTileFace
