@@ -6,9 +6,11 @@ import {
   type ContentProps,
 } from './dialogPrimitives';
 import { resolveTarget } from './targetResolver';
+import { CardChooserList } from './CardChooserList';
 
 export function TargetDialog({ dialog, stream, clearDialog }: ContentProps) {
-  const cards = Object.values(dialog.data.cardsView1);
+  const cards = dialog.data.cardsView1;
+  const hasCards = Object.keys(cards).length > 0;
   // gameTarget can ask for non-card targets and for cards from
   // sources cardsView1 doesn't include (end-of-turn discard, where
   // the eligible IDs are in targets[] but the actual card detail
@@ -22,11 +24,11 @@ export function TargetDialog({ dialog, stream, clearDialog }: ContentProps) {
   // the user can at least click it and move on.
   const targetIds = dialog.data.targets;
   const gv = dialog.data.gameView;
-  const resolvedTargets = cards.length > 0
-    ? []
-    : targetIds.map((id) => resolveTarget(id, gv));
+  const resolvedTargets = !hasCards
+    ? targetIds.map((id) => resolveTarget(id, gv))
+    : [];
 
-  const submit = (id: string) => {
+  const submitOne = (id: string) => {
     stream?.sendPlayerResponse(dialog.messageId, 'uuid', id);
     clearDialog();
   };
@@ -48,29 +50,38 @@ export function TargetDialog({ dialog, stream, clearDialog }: ContentProps) {
     <>
       <Header title="Choose target" onClose={skipTarget} />
       <Message text={dialog.data.message} />
-      {cards.length > 0 && (
-        <ul className="space-y-1 max-h-64 overflow-y-auto" data-testid="target-list">
-          {cards.map((c) => (
-            <li key={c.id}>
-              <button
-                type="button"
-                onClick={() => submit(c.id)}
-                className="w-full text-left px-3 py-2 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-100 text-sm"
-              >
-                <span className="font-medium">{c.name}</span>{' '}
-                <span className="text-zinc-500 text-xs">{c.typeLine}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
+      {/* Slice 70-X.14 — render cardsView1 as CardFace tiles via the
+          shared CardChooserList primitive. min/max from the wire let
+          single-pick (most target prompts) and multi-pick (rare in
+          gameTarget but possible for "target up to N creatures" effects)
+          share one surface. Eligibility = cardsView1 keys (already a
+          pre-filtered legal set per upstream possibleTargets). */}
+      {hasCards && (
+        <CardChooserList
+          cards={cards}
+          min={Math.max(dialog.data.min, 1)}
+          max={dialog.data.max > 0 ? dialog.data.max : 1}
+          onSubmit={(ids) => {
+            // gameTarget single-pick is the default; multi-pick falls
+            // through here as sequential one-shots like SelectDialog.
+            for (const id of ids) {
+              stream?.sendPlayerResponse(dialog.messageId, 'uuid', id);
+            }
+            clearDialog();
+          }}
+          onSkip={skipTarget}
+        />
       )}
-      {cards.length === 0 && resolvedTargets.length > 0 && (
-        <ul className="space-y-1 max-h-64 overflow-y-auto" data-testid="target-list-resolved">
+      {!hasCards && resolvedTargets.length > 0 && (
+        <ul
+          className="space-y-1 max-h-64 overflow-y-auto"
+          data-testid="target-list-resolved"
+        >
           {resolvedTargets.map((t) => (
             <li key={t.id}>
               <button
                 type="button"
-                onClick={() => submit(t.id)}
+                onClick={() => submitOne(t.id)}
                 className="w-full text-left px-3 py-2 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-100 text-sm"
               >
                 <span className="font-medium">{t.label}</span>
@@ -85,7 +96,7 @@ export function TargetDialog({ dialog, stream, clearDialog }: ContentProps) {
           ))}
         </ul>
       )}
-      {cards.length === 0 && resolvedTargets.length === 0 && (
+      {!hasCards && resolvedTargets.length === 0 && (
         <p className="text-zinc-500 italic text-sm">
           {/* Slice 70-X.12 — pick the right "where to click" hint
               from the dialog message. "from your hand" / "in your
@@ -96,14 +107,17 @@ export function TargetDialog({ dialog, stream, clearDialog }: ContentProps) {
             : 'No legal targets — pick from the battlefield directly.'}
         </p>
       )}
-      {!dialog.data.flag && (
+      {!hasCards && !dialog.data.flag && (
         <Buttons>
           <SecondaryButton
             onClick={() => {
               // gameTarget with flag=false (not required) — server
               // accepts an empty UUID as "skip" per upstream convention.
-              stream?.sendPlayerResponse(dialog.messageId, 'uuid',
-                '00000000-0000-0000-0000-000000000000');
+              stream?.sendPlayerResponse(
+                dialog.messageId,
+                'uuid',
+                '00000000-0000-0000-0000-000000000000',
+              );
               clearDialog();
             }}
           >
