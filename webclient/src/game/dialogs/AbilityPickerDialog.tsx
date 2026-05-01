@@ -4,6 +4,7 @@ import {
   Message,
   type AbilityPickerProps,
 } from './dialogPrimitives';
+import { ManaText } from '../ManaCost';
 
 /**
  * Mode-select sentinel UUIDs (slice 39). Upstream's
@@ -67,7 +68,7 @@ export function AbilityPickerDialog({
                 onClick={() => submit(abilityId)}
                 className="w-full text-left px-3 py-2 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-100 text-sm"
               >
-                {label}
+                <ManaText text={label} />
               </button>
             </li>
           ))}
