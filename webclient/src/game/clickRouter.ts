@@ -86,7 +86,15 @@ export function routeObjectClick(
       return { dispatched: false, reason: 'modal-active' };
 
     case 'target': {
-      if (!mode.eligibleIds.has(objectId)) {
+      // Slice 70-X.12 (user feedback 2026-04-30) — when eligibleIds
+      // is empty (cardsView1 + targets[] both empty on the wire),
+      // allow ANY click through. The engine validates and rejects
+      // illegal picks via gameError; dropping the click silently
+      // strands the user when the wire didn't surface specific UUIDs
+      // (verified in the wild against Fortified Village's reveal-
+      // from-hand cost — engine fires gameTarget with possibleTargets
+      // populated, but the wire map shipped empty in some flows).
+      if (mode.eligibleIds.size > 0 && !mode.eligibleIds.has(objectId)) {
         return { dispatched: false, reason: 'not-eligible-target' };
       }
       out.sendPlayerResponse(mode.messageId, 'uuid', objectId);

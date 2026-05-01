@@ -87,7 +87,13 @@ export function TargetDialog({ dialog, stream, clearDialog }: ContentProps) {
       )}
       {cards.length === 0 && resolvedTargets.length === 0 && (
         <p className="text-zinc-500 italic text-sm">
-          No legal targets — pick from the battlefield directly.
+          {/* Slice 70-X.12 — pick the right "where to click" hint
+              from the dialog message. "from your hand" / "in your
+              hand" → click a card in your hand. Otherwise default
+              to the battlefield. */}
+          {/from\s+your\s+hand|in\s+your\s+hand/i.test(dialog.data.message)
+            ? 'Click a card in your hand to choose.'
+            : 'No legal targets — pick from the battlefield directly.'}
         </p>
       )}
       {!dialog.data.flag && (

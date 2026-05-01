@@ -172,7 +172,13 @@ export function MyHand({
             the fan's pl- doesn't shift with hand size. Aligned
             with the fan baseline so it reads as part of the same
             row. */}
-        {player && <CommandZoneSlot player={player} />}
+        {player && (
+          <CommandZoneSlot
+            player={player}
+            canAct={canAct}
+            onObjectClick={onObjectClick}
+          />
+        )}
         <div className="relative h-[280px] pt-2 pl-[140px] pr-[200px]">
           {cards.length === 0 ? (
             <span className="absolute left-3 top-3 text-xs text-zinc-600 italic">
@@ -439,7 +445,15 @@ function HandCardFace({ card }: { card: WebCardView }) {
  * the commander's rules text — same affordance as opponent
  * commander labels (slice 70-Z polish for cross-pod intel).
  */
-function CommandZoneSlot({ player }: { player: WebPlayerView }) {
+function CommandZoneSlot({
+  player,
+  canAct,
+  onObjectClick,
+}: {
+  player: WebPlayerView;
+  canAct: boolean;
+  onObjectClick: (id: string) => void;
+}) {
   const commanders = player.commandList.filter((e) => e.kind === 'commander');
   if (commanders.length === 0) return null;
   return (
@@ -455,6 +469,8 @@ function CommandZoneSlot({ player }: { player: WebPlayerView }) {
           key={entry.id}
           entry={entry}
           ownerPlayerId={player.playerId}
+          canAct={canAct}
+          onObjectClick={onObjectClick}
         />
       ))}
     </div>
@@ -464,9 +480,13 @@ function CommandZoneSlot({ player }: { player: WebPlayerView }) {
 function CommandZoneCard({
   entry,
   ownerPlayerId,
+  canAct,
+  onObjectClick,
 }: {
   entry: WebPlayerView['commandList'][number];
   ownerPlayerId: string;
+  canAct: boolean;
+  onObjectClick: (id: string) => void;
 }) {
   // Synthesize a minimal WebCardView from the commandList entry so
   // CardFace can render the standard hand-size variant. Slice
@@ -503,11 +523,36 @@ function CommandZoneCard({
     secondCardFace: null,
     sourceLabel: '',
   };
+  // Slice 70-X.11 (user feedback 2026-04-30) — wire the visual
+  // command-zone slot to xmage's actual command zone. Click → dispatch
+  // sendObjectClick(commander.id) via the same click router as a
+  // hand-card cast. Engine's HumanPlayer.priorityPlay evaluates
+  // cast-from-command-zone (with auto +2 mana commander tax) and
+  // either begins the cast flow OR sends a gameError if it's not a
+  // legal moment. The "send to command zone vs graveyard on death"
+  // replacement effect is automatic upstream — fires its own
+  // gameAsk dialog when the commander would die.
   return (
     <HoverCardDetail card={stub}>
-      <div data-testid="command-zone-card" data-player-id={ownerPlayerId}>
+      <button
+        type="button"
+        data-testid="command-zone-card"
+        data-player-id={ownerPlayerId}
+        data-card-id={entry.id}
+        disabled={!canAct}
+        onClick={() => onObjectClick(entry.id)}
+        title={
+          canAct
+            ? `${entry.name} — click to cast from command zone`
+            : entry.name
+        }
+        className={
+          'block ' +
+          (canAct ? 'cursor-pointer' : 'cursor-default')
+        }
+      >
         <CardFace card={stub} size="hand" />
-      </div>
+      </button>
     </HoverCardDetail>
   );
 }
