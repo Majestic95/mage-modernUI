@@ -72,3 +72,34 @@ export const KEEP_ELIMINATED: boolean =
 export const REDESIGN: boolean =
   import.meta.env['VITE_FEATURE_REDESIGN'] === 'true' ||
   import.meta.env['VITE_FEATURE_REDESIGN'] === '1';
+
+/**
+ * Slice 70-Y / 70-X.14 (Wave A→B push, 2026-05-01) — replace dialog
+ * popups with click-to-resolve on the relevant zone (hand for
+ * discard, battlefield for target, mana sources for pay) per the
+ * picture-catalog §6 click-resolution principle.
+ *
+ * <p>When ON: gameSelect / gameTarget / gamePlayMana frames where
+ * the eligible cards are in VISIBLE zones (hand, graveyard, exile,
+ * battlefield) render a bottom-center DialogBanner + pulse the cards
+ * in their existing zone instead of a modal popup. Cards outside
+ * visible zones (Demonic Tutor library search; scry from top of
+ * library) STILL use a modal — there's no existing zone to pulse.
+ *
+ * <p>When OFF (default): all dialog frames render as the legacy
+ * modal popup via GameDialog → SelectDialog / TargetDialog. This is
+ * the production behavior at slice 70-X.14 Wave A.
+ *
+ * <p>Opt-in semantics (same as REDESIGN). Only 'true' / '1' enables.
+ *
+ * <p><b>Removal plan:</b> the flag exists during the rollout of
+ * slice 70-Y.1 (discard) + 70-Y.3 (mana pay). Once both have been
+ * live-tested for at least one playtest AND the user confirms the
+ * UX, REMOVE this flag and delete the modal-fallback branches in
+ * GameDialog.tsx. Tracked via grep "CLICK_RESOLUTION" — every read
+ * site needs cleanup. The legacy modal code becomes dead weight as
+ * soon as click-resolution is the only path.
+ */
+export const CLICK_RESOLUTION: boolean =
+  import.meta.env['VITE_FEATURE_CLICK_RESOLUTION'] === 'true' ||
+  import.meta.env['VITE_FEATURE_CLICK_RESOLUTION'] === '1';

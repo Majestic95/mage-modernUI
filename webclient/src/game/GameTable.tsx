@@ -367,6 +367,7 @@ export function GameTable({ gameId, gameView, stream }: Props) {
               onPointerDown={beginHandPress}
               draggedCardId={drag?.cardId ?? null}
               onSpendMana={onSpendMana}
+              stream={stream}
             />
           )}
         </section>
@@ -406,6 +407,7 @@ export function GameTable({ gameId, gameView, stream }: Props) {
               onPointerDown={beginHandPress}
               draggedCardId={drag?.cardId ?? null}
               onSpendMana={onSpendMana}
+              stream={stream}
             />
           </div>
         </section>

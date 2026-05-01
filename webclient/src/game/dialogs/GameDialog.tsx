@@ -13,6 +13,9 @@ import { InformDialog } from './InformDialog';
 import { CombatPanel } from './CombatPanel';
 import { ManaPayPanel } from './ManaPayPanel';
 import { isMulliganDialog } from '../MulliganModal';
+import { CLICK_RESOLUTION } from '../../featureFlags';
+import { useDialogTargets } from '../useDialogTargets';
+import { DialogBanner } from './DialogBanner';
 
 interface Props {
   stream: GameStream | null;
@@ -31,6 +34,14 @@ interface Props {
 export function GameDialog({ stream }: Props) {
   const dialog = useGameStore((s) => s.pendingDialog);
   const clearDialog = useGameStore((s) => s.clearDialog);
+  // Slice 70-Y.1 — when click-resolution is active, the relevant
+  // cards pulse in their existing zone and the banner replaces the
+  // modal. Hook returns active=false unless: flag on, dialog is a
+  // cardsView1 prompt, AND every cardsView1 id is in a visible zone
+  // (hand / graveyard / exile / battlefield). Library-search /
+  // scry / surveil cardsView1 ids aren't in visible zones — the
+  // hook returns inactive and the legacy modal still renders.
+  const dialogTargets = useDialogTargets(stream);
 
   if (!dialog) return null;
 
@@ -40,6 +51,29 @@ export function GameDialog({ stream }: Props) {
   // short-circuit here so the legacy AskDialog doesn't double-render
   // the same dispatch surface.
   if (isMulliganDialog(dialog)) return null;
+
+  // Slice 70-Y.1 — click-resolution path. When the flag is on AND the
+  // hook says the dialog can be resolved by clicking cards in their
+  // existing zones, render the bottom-center banner ONLY and let the
+  // pulsing cards drive the dispatch via clickRouter target mode.
+  // The legacy modal is suppressed for this dialog frame.
+  if (CLICK_RESOLUTION && dialogTargets.active) {
+    const pickedCount = 0; // single-pick mode; click submits per id
+    return (
+      <DialogBanner
+        message={dialogTargets.message}
+        pickedCount={pickedCount}
+        min={dialogTargets.min}
+        max={dialogTargets.max}
+        onDone={() => {
+          // No-op for single-pick — the per-card click already submits.
+          // For multi-pick (future slice 70-Y.5 zone-source select),
+          // this Done button submits the accumulated selection.
+        }}
+        onCancel={dialogTargets.cancel}
+      />
+    );
+  }
 
   // gameSelect is upstream's "free priority / combat" prompt.
   // Three sub-modes:

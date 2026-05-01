@@ -66,6 +66,20 @@ interface CardFaceProps {
    * produce a wave effect on start-of-turn untap. Defaults to 0.
    */
   rotateDelay?: number;
+  /**
+   * Slice 70-Y.1 — applies the {@code card-targeted-pulse} keyframe
+   * to indicate "the engine is asking you to click this card."
+   * Driven by {@link useDialogTargets} in click-to-resolve mode.
+   * Visually identical to the combat-targeting purple halo per the
+   * picture-catalog §6.4 signal-coherence rule (one signal = one
+   * color = one meaning: "click me now").
+   *
+   * <p>Mutually exclusive in time with {@code isEligibleCombat} —
+   * the engine is either in a combat targeting window or a dialog
+   * targeting window, never both. If both are true at once due to
+   * a race, both classes apply and the visuals stack harmlessly.
+   */
+  targetableForDialog?: boolean;
 }
 
 interface SizeSpec {
@@ -229,8 +243,16 @@ const SIZE_SPECS: Record<CardFaceSize, SizeSpec> = {
 };
 
 export function CardFace(props: CardFaceProps): JSX.Element {
-  const { card, size, perm, isEligibleCombat, combatRole, tapped, rotateDelay } =
-    props;
+  const {
+    card,
+    size,
+    perm,
+    isEligibleCombat,
+    combatRole,
+    tapped,
+    rotateDelay,
+    targetableForDialog,
+  } = props;
   const spec = SIZE_SPECS[size];
   const [imageFailed, setImageFailed] = useState(false);
   const url = scryfallImageUrl(card, spec.imageVersion);
@@ -284,6 +306,14 @@ export function CardFace(props: CardFaceProps): JSX.Element {
   const combatRing =
     isBattlefield && isEligibleCombat ? 'ring-2 ring-amber-400/60' : '';
   const tapClass = isBattlefield && tapped ? 'opacity-60' : '';
+  // Slice 70-Y.1 — purple pulse for "engine is asking you to click
+  // this card." Same color as combat targeting per picture-catalog
+  // §6.4 signal coherence; mutually exclusive in time so they don't
+  // visually conflict. Class drives the @keyframes card-targeted-pulse
+  // ramp defined at index.css.
+  const dialogPulseClass = targetableForDialog
+    ? 'animate-card-targeted-pulse'
+    : '';
   // Slice 58 — Framer Motion now drives the rotation with a spring
   // (overshoot + settle) instead of a linear CSS transition. The
   // initial value matches the current tapped state so a permanent
@@ -332,6 +362,7 @@ export function CardFace(props: CardFaceProps): JSX.Element {
       data-testid={spec.testid}
       data-card-face-size={size}
       data-commander={commanderColors ? 'true' : undefined}
+      data-targetable-for-dialog={targetableForDialog || undefined}
       className={
         'relative ' +
         spec.rounded +
@@ -340,7 +371,8 @@ export function CardFace(props: CardFaceProps): JSX.Element {
         ' bg-zinc-900 ' +
         spec.shadow +
         (combatRing ? ' ' + combatRing : '') +
-        (tapClass ? ' ' + tapClass : '')
+        (tapClass ? ' ' + tapClass : '') +
+        (dialogPulseClass ? ' ' + dialogPulseClass : '')
       }
       style={sizeStyle}
       initial={{ rotate: rotateInitial }}

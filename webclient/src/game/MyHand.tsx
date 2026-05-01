@@ -11,7 +11,9 @@ import { HoverCardDetail } from './HoverCardDetail';
 import { ManaPool } from './ManaPool';
 import type { ManaOrbColor } from './ManaOrb';
 import { hasAnyMana } from './manaPoolUtil';
-import { REDESIGN } from '../featureFlags';
+import { CLICK_RESOLUTION, REDESIGN } from '../featureFlags';
+import { useDialogTargets } from './useDialogTargets';
+import type { GameStream } from './stream';
 
 export function MyHand({
   hand,
@@ -23,6 +25,7 @@ export function MyHand({
   onPointerDown,
   draggedCardId,
   onSpendMana,
+  stream,
 }: {
   hand: Record<string, WebCardView>;
   /**
@@ -58,8 +61,22 @@ export function MyHand({
    * battlefield-source-only payment path).
    */
   onSpendMana?: (color: ManaOrbColor) => void;
+  /**
+   * Slice 70-Y.1 — passed to {@link useDialogTargets} so hand cards
+   * pulse + click-route through the dialog response channel when the
+   * engine fires a discard / hand-target prompt. Optional so legacy
+   * tests / non-game contexts still work.
+   */
+  stream?: GameStream | null;
 }) {
   const cards = Object.values(hand);
+  // Slice 70-Y.1 — when the click-resolution flag is on, derive the
+  // engine's eligible-cards set so hand cards in scope pulse and
+  // route clicks through the dialog response channel. When the flag
+  // is off OR no dialog is active, this is just an empty set and
+  // hand-card render is unchanged from the legacy behavior.
+  const dialogState = useDialogTargets(stream ?? null);
+  const dialogActive = CLICK_RESOLUTION && dialogState.active;
   // Slice 23: clearer reason when hand is disabled.
   // - !hasPriority â†’ engine isn't waiting on you
   // - hasPriority && !isMyTurn â†’ you can react with instants but
@@ -202,6 +219,10 @@ export function MyHand({
                     onObjectClick={onObjectClick}
                     onPointerDown={onPointerDown}
                     tooltip={cardTooltip(card)}
+                    targetableForDialog={
+                      dialogActive &&
+                      dialogState.eligibleCardIds.has(card.id)
+                    }
                   />
                 );
               })}
@@ -272,6 +293,10 @@ export function MyHand({
                   onObjectClick={onObjectClick}
                   onPointerDown={onPointerDown}
                   tooltip={cardTooltip(card)}
+                  targetableForDialog={
+                    dialogActive &&
+                    dialogState.eligibleCardIds.has(card.id)
+                  }
                 />
               );
             })}
@@ -328,6 +353,7 @@ function HandCardSlot({
   onObjectClick,
   onPointerDown,
   tooltip,
+  targetableForDialog,
 }: {
   card: WebCardView;
   index: number;
@@ -337,6 +363,15 @@ function HandCardSlot({
   onObjectClick: (id: string) => void;
   onPointerDown: (cardId: string, ev: React.PointerEvent) => void;
   tooltip: string;
+  /**
+   * Slice 70-Y.1 — when true, this hand card is in the engine's
+   * eligible-cards set for an active gameTarget (discard, return-from-
+   * hand, reveal). The card pulses purple via the
+   * card-targeted-pulse keyframe, and clicks during this state route
+   * through clickRouter target mode to dispatch the dialog response
+   * (not the default cast path).
+   */
+  targetableForDialog: boolean;
 }) {
   const [lifted, setLifted] = useState(false);
   const { x, y, rot } = fanGeometry(index, total);
@@ -413,7 +448,10 @@ function HandCardSlot({
             data-layout-id={layoutId}
             transition={{ layout: slow(LAYOUT_GLIDE) }}
           >
-            <HandCardFace card={card} />
+            <HandCardFace
+              card={card}
+              targetableForDialog={targetableForDialog}
+            />
           </motion.div>
         </button>
       </HoverCardDetail>
@@ -432,8 +470,20 @@ function HandCardSlot({
  * matching print (token, ad-hoc emblem, etc.) â€” same defensive
  * pattern as the slice-43 thumbnail.
  */
-function HandCardFace({ card }: { card: WebCardView }) {
-  return <CardFace card={card} size="hand" />;
+function HandCardFace({
+  card,
+  targetableForDialog,
+}: {
+  card: WebCardView;
+  targetableForDialog?: boolean;
+}) {
+  return (
+    <CardFace
+      card={card}
+      size="hand"
+      targetableForDialog={targetableForDialog}
+    />
+  );
 }
 
 /**
