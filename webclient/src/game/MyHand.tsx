@@ -9,6 +9,7 @@ import {
 import { CardFace } from './CardFace';
 import { HoverCardDetail } from './HoverCardDetail';
 import { ManaPool } from './ManaPool';
+import type { ManaOrbColor } from './ManaOrb';
 import { hasAnyMana } from './manaPoolUtil';
 import { REDESIGN } from '../featureFlags';
 
@@ -21,6 +22,7 @@ export function MyHand({
   hasPriority,
   onPointerDown,
   draggedCardId,
+  onSpendMana,
 }: {
   hand: Record<string, WebCardView>;
   /**
@@ -47,6 +49,15 @@ export function MyHand({
    * "in flight". Other chips render normally.
    */
   draggedCardId: string | null;
+  /**
+   * Slice 70-X.10 (user feedback 2026-04-30) — when the engine has
+   * a gamePlayMana / gamePlayXMana dialog active, GameTable passes
+   * a handler that dispatches the player's manaType response. The
+   * floating mana pool then renders each orb as a clickable button
+   * so the player can spend pool mana directly (vs the prior
+   * battlefield-source-only payment path).
+   */
+  onSpendMana?: (color: ManaOrbColor) => void;
 }) {
   const cards = Object.values(hand);
   // Slice 23: clearer reason when hand is disabled.
@@ -117,7 +128,12 @@ export function MyHand({
             // hand region").
             className="absolute right-2 -top-20 z-10"
           >
-            <ManaPool player={player!} size="medium" glow />
+            <ManaPool
+              player={player!}
+              size="medium"
+              glow
+              onSpend={onSpendMana}
+            />
           </div>
         )}
         {disabledHint && (

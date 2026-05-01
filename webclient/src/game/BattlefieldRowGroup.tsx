@@ -58,32 +58,33 @@ export function BattlefieldRowGroup({
   eligibleCombatIds: Set<string>;
   combatRoles: Map<string, 'attacker' | 'blocker'>;
 }) {
-  // Slice 70-Z polish round 20 (user direction 2026-04-30) — slot
-  // max-size is now derived from the --card-size-* tokens instead
-  // of the previous hardcoded 100/112px constants (which were the
-  // 72×7/5 / 80×7/5 derivations of the OLD token values). With the
-  // tokens doubled this round, 100/112 would have stayed pinned to
-  // the small-card era. Using calc keeps the slot square AND in
-  // lockstep with future card-size retunes:
-  //   slot side = card-width × 7/5 (5:7 portrait fits height = 7/5×width)
-  // perspective=opponent → --card-size-small; self → --card-size-medium.
-  const tileMaxSize =
-    perspective === 'opponent'
-      ? 'calc(var(--card-size-small) * 7 / 5)'
-      : 'calc(var(--card-size-medium) * 7 / 5)';
-  // Slice 70-X.8 (user feedback 2026-04-30) — minimum slot size
-  // floor. Without this, the previous "rows fixed, cards shrink
-  // uniformly" contract let tiles shrink to literally 0px when the
-  // container couldn't fit them all (`flex: 1 1 0; min-w-0`). User
-  // reported some lands + an enchantment rendering microscopically.
-  // 56px is roughly half a normal card slot — readable at a glance
-  // (mana cost + name banner still visible) without sacrificing the
-  // uniform-shrink behaviour for moderate counts. Cards still
-  // shrink BETWEEN tileMaxSize (full) and 56px; below that floor
-  // the row will overflow its container, but a clipped row reads
-  // better than a microscopic one (the user can scroll the pod
-  // into view via the existing pod layout).
-  const tileMinSize = '56px';
+  // Slice 70-X.9 (user feedback 2026-04-30) — uniform tile size
+  // across every pod. Previously perspective='opponent' used a
+  // smaller token than 'self'; this caused opponents' cards to
+  // render visibly smaller than the local player's cards even
+  // when both pods had identical board states. The user wants
+  // ONE size everywhere so the battlefield reads as a single
+  // shared surface, not "my cards are bigger than yours."
+  //
+  // The `perspective` prop is still accepted (other call sites
+  // may rely on it for non-sizing concerns), but we no longer
+  // branch on it for tileSize.
+  //
+  // Slot side = card-width × 7/5 (5:7 portrait card aspect, slot
+  // is square so a tap-rotated card fits within the same bounds).
+  // --card-size-medium = 80px → slot = 112px. Single source of
+  // truth for every pod regardless of perspective.
+  const tileSize = 'calc(var(--card-size-medium) * 7 / 5)';
+  // Slice 70-X.9 — fixed tile size, NOT flex-1-1-0 with shrink.
+  // The previous `flex: 1 1 0; min-(w|h): 56px; max-(w|h): tileMaxSize`
+  // pattern caused tiles to shrink to fit the container, which made
+  // pods with more cards display them smaller than pods with fewer
+  // cards. User reported the right opponent's cards were shrunk
+  // while the local pod's were full size — uneven across the pod
+  // grid. Fix: every tile is exactly tileSize, regardless of count.
+  // When a row can't fit all tiles, it overflows; the row container
+  // gains `overflow-(x|y)-auto` so the user can scroll within the
+  // pod instead of seeing micro-shrunk cards.
   const isVertical = orientation === 'vertical';
 
   // Slice 70-K.1 + 70-Z.1 (picture-catalog §2.1 "Card sizing under
@@ -108,8 +109,8 @@ export function BattlefieldRowGroup({
       data-orientation={orientation}
       className={
         isVertical
-          ? 'flex flex-col gap-2 min-h-0 min-w-[16px] h-full items-center'
-          : 'flex flex-row gap-2 min-w-0 min-h-[16px] justify-center'
+          ? 'flex flex-col gap-2 min-h-0 min-w-[16px] h-full items-center overflow-y-auto'
+          : 'flex flex-row gap-2 min-w-0 min-h-[16px] justify-center overflow-x-auto'
       }
     >
       <AnimatePresence mode="popLayout" initial={false}>
@@ -126,21 +127,16 @@ export function BattlefieldRowGroup({
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -16, scale: 0.85 }}
               transition={slow(BATTLEFIELD_ENTER_EXIT)}
-              // Slice 70-K.1 + 70-Z.1 — flex-shrink-able SQUARE slot.
-              className="aspect-square"
-              style={
-                isVertical
-                  ? {
-                      flex: '1 1 0',
-                      minHeight: tileMinSize,
-                      maxHeight: tileMaxSize,
-                    }
-                  : {
-                      flex: '1 1 0',
-                      minWidth: tileMinSize,
-                      maxWidth: tileMaxSize,
-                    }
-              }
+              // Slice 70-X.9 — fixed SQUARE slot at uniform tileSize.
+              // No flex-shrink: every tile renders at the same
+              // dimensions regardless of pod or card count. Rows
+              // overflow + scroll when too many cards (handled by
+              // the parent's overflow-(x|y)-auto).
+              className="aspect-square flex-shrink-0"
+              style={{
+                width: tileSize,
+                height: tileSize,
+              }}
             >
               <BattlefieldTile
                 perm={perm}

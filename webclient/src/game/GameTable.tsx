@@ -138,6 +138,41 @@ export function GameTable({ gameId, gameView, stream }: Props) {
   );
   const myPriority = !!me?.hasPriority;
   const canAct = isBoardClickable(mode, myPriority) && stream != null;
+
+  // Slice 70-X.10 (user feedback 2026-04-30) — when the engine has
+  // a gamePlayMana / gamePlayXMana dialog active, surface it as a
+  // clickable mana pool. Click → manaType response with the upstream
+  // enum string (per HumanPlayer.playManaHandling at HumanPlayer.java
+  // :1612-1616, "pay from own mana pool" branch).
+  //
+  // Color → enum mapping mirrors mage.constants.ManaType: WHITE/BLUE/
+  // BLACK/RED/GREEN/COLORLESS. Only emits during a mana-pay dialog
+  // so the orbs are inert during free-priority moments — clicking a
+  // floating orb when no mana cost is open would race the engine.
+  const onSpendMana = useMemo(() => {
+    if (!stream || !pendingDialog) return undefined;
+    if (
+      pendingDialog.method !== 'gamePlayMana' &&
+      pendingDialog.method !== 'gamePlayXMana'
+    ) {
+      return undefined;
+    }
+    const colorToEnum: Record<string, string> = {
+      W: 'WHITE',
+      U: 'BLUE',
+      B: 'BLACK',
+      R: 'RED',
+      G: 'GREEN',
+      C: 'COLORLESS',
+    };
+    return (color: string) => {
+      const manaType = colorToEnum[color];
+      if (!manaType) return;
+      stream.sendPlayerResponse(pendingDialog.messageId, 'manaType', {
+        manaType,
+      });
+    };
+  }, [stream, pendingDialog]);
   const out = useMemo(
     () =>
       stream
@@ -334,6 +369,7 @@ export function GameTable({ gameId, gameView, stream }: Props) {
               hasPriority={!!me.hasPriority}
               onPointerDown={beginHandPress}
               draggedCardId={drag?.cardId ?? null}
+              onSpendMana={onSpendMana}
             />
           )}
         </section>
@@ -372,6 +408,7 @@ export function GameTable({ gameId, gameView, stream }: Props) {
               hasPriority={!!me.hasPriority}
               onPointerDown={beginHandPress}
               draggedCardId={drag?.cardId ?? null}
+              onSpendMana={onSpendMana}
             />
           </div>
         </section>

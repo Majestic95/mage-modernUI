@@ -313,15 +313,13 @@ export function PlayerArea({
     // h-full / shrink-uniform logic resolves against a definite
     // dimension instead of collapsing to its content height/width.
     //
-    // Slice 70-Z polish round 20 — artifact-box across-axis size now
-    // derives from the perspective's slot dimension (single tile
-    // width = card-width × 7/5) instead of the hardcoded 100px
-    // constant (which was tied to the pre-bump --card-size-small
-    // 72×7/5 ≈ 100). Closes critic NTH-2 from slice 70-Z.1 review.
-    const artifactBoxAcrossAxis =
-      perspective === 'opponent'
-        ? 'calc(var(--card-size-small) * 7 / 5)'
-        : 'calc(var(--card-size-medium) * 7 / 5)';
+    // Slice 70-X.9 (user feedback 2026-04-30) — artifact-box width
+    // now matches BattlefieldRowGroup's uniform tileSize so the
+    // box hosts cards at the SAME size as the main rows. Previous
+    // perspective-branched sizing made opponent artifact boxes
+    // narrower than self, contributing to the "right pod cards
+    // are smaller than mine" complaint.
+    const artifactBoxAcrossAxis = 'calc(var(--card-size-medium) * 7 / 5)';
     const artifactsBoxRedesign =
       rows.artifacts.length > 0 ? (
         <div

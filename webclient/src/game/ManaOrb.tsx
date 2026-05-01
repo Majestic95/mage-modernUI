@@ -30,6 +30,15 @@ interface Props {
   glow?: boolean;
   /** Optional aria-label override; default is the color word + count. */
   ariaLabel?: string;
+  /**
+   * Slice 70-X.10 (user feedback 2026-04-30) — when set, the orb
+   * renders as a clickable button and invokes this callback on
+   * click. Used during gamePlayMana / gamePlayXMana dialogs so the
+   * player can spend mana directly from the floating pool by
+   * clicking an orb (vs the prior "click a mana source on the
+   * battlefield" path only).
+   */
+  onClick?: () => void;
 }
 
 const COLOR_TOKEN: Record<ManaOrbColor, string> = {
@@ -64,6 +73,7 @@ export function ManaOrb({
   size = 'medium',
   glow = false,
   ariaLabel,
+  onClick,
 }: Props) {
   const tokenName = COLOR_TOKEN[color];
   // Use inline CSS variables so we can compose the bg + glow without
@@ -93,17 +103,38 @@ export function ManaOrb({
       ? `${count} ${COLOR_WORD[color]} mana`
       : `1 ${COLOR_WORD[color]} mana`);
 
+  const baseClass =
+    'inline-flex items-center justify-center rounded-full font-mono ' +
+    'leading-none align-middle font-semibold ' +
+    SIZE_CLASSES[size];
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        data-testid={`mana-orb-${color}`}
+        aria-label={`Spend ${label}`}
+        title={`Click to spend ${label}`}
+        onClick={onClick}
+        style={style}
+        className={
+          baseClass +
+          ' cursor-pointer hover:brightness-125 transition-[filter] ' +
+          'focus:outline-none focus:ring-2 focus:ring-fuchsia-400'
+        }
+      >
+        {showCount ? count : ''}
+      </button>
+    );
+  }
+
   return (
     <span
       data-testid={`mana-orb-${color}`}
       role="img"
       aria-label={label}
       style={style}
-      className={
-        'inline-flex items-center justify-center rounded-full font-mono ' +
-        'leading-none align-middle font-semibold ' +
-        SIZE_CLASSES[size]
-      }
+      className={baseClass}
     >
       {showCount ? count : ''}
     </span>

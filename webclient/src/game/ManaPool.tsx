@@ -24,6 +24,7 @@ export function ManaPool({
   player,
   size = 'medium',
   glow = false,
+  onSpend,
 }: {
   player: WebPlayerView;
   /**
@@ -39,6 +40,14 @@ export function ManaPool({
    * inline mounts leave it false to keep the cluster low-key.
    */
   glow?: boolean;
+  /**
+   * Slice 70-X.10 (user feedback 2026-04-30) — when provided, each
+   * orb renders as a clickable button that invokes this callback
+   * with the clicked color. Used during gamePlayMana / gamePlayXMana
+   * to spend floating mana directly from the pool. When undefined
+   * (default), orbs are non-interactive display elements.
+   */
+  onSpend?: (color: ManaOrbColor) => void;
 }) {
   const pool = player.manaPool;
   const cells: Array<[ManaOrbColor, number]> = [
@@ -62,7 +71,13 @@ export function ManaPool({
               exit={{ scale: 0, opacity: 0, transition: slow(MANA_POOL_FADE) }}
               transition={slow(MANA_POOL_POP)}
             >
-              <ManaOrb color={color} count={n} size={size} glow={glow} />
+              <ManaOrb
+                color={color}
+                count={n}
+                size={size}
+                glow={glow}
+                onClick={onSpend ? () => onSpend(color) : undefined}
+              />
             </motion.span>
           ))}
       </AnimatePresence>
