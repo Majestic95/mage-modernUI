@@ -17,11 +17,51 @@ export interface AbilityPickerProps {
   clearDialog: () => void;
 }
 
-export function Header({ title }: { title: string }) {
+/**
+ * Slice 70-X.4 — dialog title bar with optional X close affordance
+ * at the top-right. Pass {@code onClose} when the dialog has a
+ * legitimate dismissal path (engine accepts a skip / cancel response,
+ * OR the dialog is informational). Mandatory prompts (mulligan,
+ * yes/no question, mandatory target, declare-attackers, etc.) MUST
+ * omit {@code onClose} — locally clearing the modal without
+ * dispatching the engine response would leave the game stuck waiting.
+ *
+ * <p>Each per-dialog file owns the decision because the cancel
+ * payload differs (TargetDialog sends an all-zeros UUID; ChooseChoice
+ * sends an empty string; AbilityPicker sends a sentinel UUID;
+ * ManaPay sends boolean false). The X is just a UI mirror of the
+ * existing dismiss button each dialog already exposes — same wire
+ * dispatch, second affordance.
+ */
+export function Header({
+  title,
+  onClose,
+}: {
+  title: string;
+  onClose?: () => void;
+}) {
+  if (!onClose) {
+    return (
+      <h2 className="text-lg font-semibold text-zinc-100" data-testid="dialog-title">
+        {title}
+      </h2>
+    );
+  }
   return (
-    <h2 className="text-lg font-semibold text-zinc-100" data-testid="dialog-title">
-      {title}
-    </h2>
+    <header className="flex items-baseline justify-between">
+      <h2 className="text-lg font-semibold text-zinc-100" data-testid="dialog-title">
+        {title}
+      </h2>
+      <button
+        type="button"
+        onClick={onClose}
+        data-testid="dialog-close"
+        aria-label="Close"
+        className="text-zinc-400 hover:text-zinc-100 text-2xl leading-none -mt-1 px-2 -mr-2 rounded focus:outline-none focus:ring-2 focus:ring-zinc-600"
+      >
+        ×
+      </button>
+    </header>
   );
 }
 

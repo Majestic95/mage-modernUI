@@ -14,7 +14,7 @@ export function ChoiceDialog({ dialog, stream, clearDialog }: ContentProps) {
     // the user isn't stuck on an empty modal.
     return (
       <>
-        <Header title="Choose" />
+        <Header title="Choose" onClose={clearDialog} />
         <Message text={dialog.data.message || '(no choice payload)'} />
         <Buttons>
           <SecondaryButton onClick={clearDialog}>Dismiss</SecondaryButton>
@@ -27,9 +27,18 @@ export function ChoiceDialog({ dialog, stream, clearDialog }: ContentProps) {
     clearDialog();
   };
   const entries = Object.entries(choice.choices);
+  // Slice 70-X.4 — X close mirrors the Skip button when the choice
+  // is optional. Sends empty string per upstream's "skip on
+  // string-kind responses" convention. Required choices get no X.
+  const skipChoice = !choice.required
+    ? () => {
+        stream?.sendPlayerResponse(dialog.messageId, 'string', '');
+        clearDialog();
+      }
+    : undefined;
   return (
     <>
-      <Header title="Choose one" />
+      <Header title="Choose one" onClose={skipChoice} />
       <Message text={choice.message || dialog.data.message} />
       {choice.subMessage && (
         <p className="text-xs text-zinc-500" data-testid="choice-submessage">

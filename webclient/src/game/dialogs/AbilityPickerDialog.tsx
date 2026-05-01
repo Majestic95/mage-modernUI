@@ -38,9 +38,16 @@ export function AbilityPickerDialog({
   );
   const doneLabel = dialog.data.choices[ABILITY_PICKER_DONE_ID];
   const cancelLabel = dialog.data.choices[ABILITY_PICKER_CANCEL_ID];
+  // Slice 70-X.4 — X close mirrors the Cancel button when upstream
+  // surfaced a CANCEL sentinel. Cancellation here means "don't
+  // activate any ability" — the engine accepts it and re-prompts as
+  // appropriate. When upstream forces a pick (no CANCEL sentinel),
+  // X is intentionally absent.
+  const closeViaCancel =
+    cancelLabel !== undefined ? () => submit(ABILITY_PICKER_CANCEL_ID) : undefined;
   return (
     <>
-      <Header title="Choose ability" />
+      <Header title="Choose ability" onClose={closeViaCancel} />
       <Message text={dialog.data.message} />
       {modeRows.length === 0 ? (
         <p className="text-zinc-500 italic text-sm">

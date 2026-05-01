@@ -43,9 +43,16 @@ export function ManaPayPanel({
     clearDialog();
   };
 
+  // Slice 70-X.4 — X close mirrors the Cancel button. Same wire
+  // dispatch (boolean false) — upstream rolls back any partial
+  // payment. Always available since mana payment is itself
+  // cancellable (gamePlayMana / gamePlayXMana both accept cancel).
   return (
     <>
-      <Header title={isXMana ? 'Pay X mana' : 'Pay mana'} />
+      <Header
+        title={isXMana ? 'Pay X mana' : 'Pay mana'}
+        onClose={() => send(false)}
+      />
       <Message text={dialog.data.message} />
       <p className="text-xs text-zinc-500 italic">
         Click a mana source on the battlefield to pay.

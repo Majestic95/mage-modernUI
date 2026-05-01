@@ -30,9 +30,23 @@ export function TargetDialog({ dialog, stream, clearDialog }: ContentProps) {
     stream?.sendPlayerResponse(dialog.messageId, 'uuid', id);
     clearDialog();
   };
+  // Slice 70-X.4 — X close mirrors the existing Skip button when
+  // targeting is optional (flag=false → server treats all-zeros UUID
+  // as "skip" per upstream convention). Mandatory targets
+  // (flag=true) get no X — the engine waits for a real selection.
+  const skipTarget = !dialog.data.flag
+    ? () => {
+        stream?.sendPlayerResponse(
+          dialog.messageId,
+          'uuid',
+          '00000000-0000-0000-0000-000000000000',
+        );
+        clearDialog();
+      }
+    : undefined;
   return (
     <>
-      <Header title="Choose target" />
+      <Header title="Choose target" onClose={skipTarget} />
       <Message text={dialog.data.message} />
       {cards.length > 0 && (
         <ul className="space-y-1 max-h-64 overflow-y-auto" data-testid="target-list">
