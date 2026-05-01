@@ -69,7 +69,13 @@ public final class LobbyService {
     public WebTableListing listTables(UUID roomId) {
         try {
             List<TableView> views = embedded.server().roomGetAllTables(roomId);
-            return TableMapper.listing(views == null ? List.of() : views);
+            // Slice 70-X — thread the TableManager through to the mapper
+            // so each WebSeat can carry its commander identity, derived
+            // from match.getPlayer(playerId).getDeck().getSideboard().
+            return TableMapper.listing(
+                    views == null ? List.of() : views,
+                    embedded.managerFactory().tableManager()
+            );
         } catch (MageException ex) {
             throw upstream("listing tables", ex);
         }
@@ -83,7 +89,11 @@ public final class LobbyService {
                         "Server refused to create the table.");
             }
             LOG.info("Table created: {} in room {}", view.getTableId(), roomId);
-            return TableMapper.table(view);
+            // Slice 70-X — same TableManager threading for the
+            // create-table response shape (returns the new WebTable
+            // with empty seats; commander fields naturally empty
+            // since no players have joined yet).
+            return TableMapper.table(view, embedded.managerFactory().tableManager());
         } catch (MageException ex) {
             throw upstream("creating table", ex);
         }

@@ -216,6 +216,16 @@ export const webSeatSchema = z.object({
   playerName: z.string(),
   playerType: z.string(),
   occupied: z.boolean(),
+  // Slice 70-X (user direction 2026-04-30) — commander identity
+  // surfaced on each seat so the lobby can preview "who's playing
+  // which commander" before the game starts. Server reads
+  // match.getPlayer(playerId).getDeck().getSideboard() and pulls
+  // the first card. Empty / 0 for non-Commander formats and seats
+  // with no submitted deck. {@code .default('')} / {@code .default(0)}
+  // so older 1.23 servers (no field) parse cleanly during a rolling
+  // upgrade — same forward-compat pattern as commandList.
+  commanderName: z.string().default(''),
+  commanderImageNumber: z.number().default(0),
 });
 export type WebSeat = z.infer<typeof webSeatSchema>;
 

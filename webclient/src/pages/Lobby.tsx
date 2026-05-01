@@ -250,6 +250,39 @@ export function Lobby() {
                   <p className="text-xs text-zinc-400 truncate">
                     {t.gameType} · {t.deckType} · {t.controllerName}
                   </p>
+                  {/* Slice 70-X (user direction 2026-04-30) — per-seat
+                      commander preview. Each occupied seat shows
+                      "<player> — <commander>" so friends scrolling
+                      the lobby can see what each pod is going to
+                      play before they decide to join. Empty seats
+                      render as italic "Open" placeholders so the
+                      table's seat-count + format read at a glance.
+                      Server populates commanderName via TableMapper's
+                      Match.getPlayer(playerId).getDeck().getSideboard()
+                      lookup; non-Commander formats and seats without
+                      a submitted deck render as just the player
+                      name (no commander suffix). */}
+                  {t.seats.length > 0 && (
+                    <ul className="text-[11px] text-zinc-500 space-y-0.5 pt-1">
+                      {t.seats.map((s, i) => (
+                        <li key={i} className="truncate">
+                          {s.occupied ? (
+                            <>
+                              <span className="text-zinc-300">{s.playerName}</span>
+                              {s.commanderName && (
+                                <span className="text-zinc-400">
+                                  {' — '}
+                                  {s.commanderName}
+                                </span>
+                              )}
+                            </>
+                          ) : (
+                            <span className="italic">Open seat</span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
                 <div className="flex items-center gap-3 flex-shrink-0">
                   <div className="text-right">
