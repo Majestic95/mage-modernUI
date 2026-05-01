@@ -59,6 +59,23 @@ public final class AuthService implements AutoCloseable {
     private static final int GUEST_SUFFIX_BYTES = 4; // 8 hex chars
 
     /**
+     * Slice 70-X.13 — reserved upstream username for admin sessions.
+     * Used both by {@link #loginAdmin} (passed verbatim to
+     * {@code connectAdmin}) and by {@link #validateUsername} to reject
+     * normal logins squatting the same display name. The literal must
+     * match upstream's {@code MageServerImpl.connectAdmin} hard-coded
+     * "Admin" string — keep in sync if upstream ever renames it.
+     *
+     * <p>Without this reserve, a regular {@code POST /api/session}
+     * with {@code {"username":"Admin"}} would match
+     * {@link #USERNAME_PATTERN}, call
+     * {@code revokePriorTokensForSameUsername("Admin")} (case-
+     * insensitive) which kicks the live admin offline, and squat the
+     * "Admin" upstream display name in chat / logs.
+     */
+    private static final String ADMIN_USERNAME = "Admin";
+
+    /**
      * Slice 64 — allowed user-supplied usernames: alphanumeric,
      * underscore, hyphen, 1-32 chars. Rejects spaces, control chars,
      * unicode confusables, and HTML-injection bait. Generated guest
@@ -337,7 +354,7 @@ public final class AuthService implements AutoCloseable {
      */
     public WebSession loginAdmin(String adminPassword) {
         String upstreamSessionId = UUID.randomUUID().toString();
-        registerUpstreamSession(upstreamSessionId, "Admin");
+        registerUpstreamSession(upstreamSessionId, ADMIN_USERNAME);
 
         boolean ok;
         try {
@@ -359,9 +376,9 @@ public final class AuthService implements AutoCloseable {
                     "Wrong admin password.");
         }
 
-        revokePriorTokensForSameUsername("Admin");
+        revokePriorTokensForSameUsername(ADMIN_USERNAME);
 
-        SessionEntry entry = newEntry(upstreamSessionId, "Admin", false, true);
+        SessionEntry entry = newEntry(upstreamSessionId, ADMIN_USERNAME, false, true);
         store.put(entry);
         LOG.info("WebApi admin session created: token={}", maskToken(entry.token()));
         return toDto(entry);
@@ -542,6 +559,14 @@ public final class AuthService implements AutoCloseable {
             throw new WebApiException(400, "RESERVED_PREFIX",
                     "Username prefix '" + GUEST_PREFIX + "' is reserved for "
                     + "anonymous sessions.");
+        }
+        // Slice 70-X.13 — reject "admin" / "ADMIN" / "Admin" etc. so a
+        // normal login can't squat the upstream admin display name and
+        // its case-insensitive revoke path can't kick the live admin
+        // offline.
+        if (username.equalsIgnoreCase(ADMIN_USERNAME)) {
+            throw new WebApiException(400, "RESERVED_USERNAME",
+                    "Username '" + ADMIN_USERNAME + "' is reserved.");
         }
     }
 

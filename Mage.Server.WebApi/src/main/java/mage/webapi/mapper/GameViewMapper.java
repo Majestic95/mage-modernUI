@@ -433,10 +433,34 @@ public final class GameViewMapper {
     }
 
     public static WebGameClientMessage toClientMessage(GameClientMessage gcm) {
+        return toClientMessage(gcm, Map.of(), MultiplayerFrameContext.EMPTY, null);
+    }
+
+    /**
+     * Slice 70-X.13 — RoI-aware overload for dialog frames.
+     * <p>
+     * Without this threading, {@code mapClientMessage} (gameInform /
+     * gameAsk / gameTarget / gameSelect / gameInformPersonal / etc.)
+     * would route the embedded {@link GameView} through the no-arg
+     * {@code toDto} and bypass the slice-69c per-recipient
+     * range-of-influence filter — leaking the full player roster +
+     * connection state outside the recipient's RoI in 3+ player games.
+     * Pass the same {@code stackHint}, {@code mpCtx},
+     * {@code playersInRange} resolved by
+     * {@code WebSocketCallbackHandler.mapGameView} so dialog frames
+     * carry the same per-recipient view the engine intended.
+     */
+    public static WebGameClientMessage toClientMessage(
+            GameClientMessage gcm,
+            Map<UUID, UUID> stackCardIdHint,
+            MultiplayerFrameContext mpCtx,
+            Set<UUID> playersInRange) {
         if (gcm == null) {
             throw new IllegalArgumentException("GameClientMessage must not be null");
         }
-        WebGameView wrapped = gcm.getGameView() == null ? null : toDto(gcm.getGameView());
+        WebGameView wrapped = gcm.getGameView() == null
+                ? null
+                : toDto(gcm.getGameView(), stackCardIdHint, mpCtx, playersInRange);
         List<String> targets;
         if (gcm.getTargets() == null || gcm.getTargets().isEmpty()) {
             targets = List.of();

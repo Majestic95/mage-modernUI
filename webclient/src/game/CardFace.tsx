@@ -4,7 +4,7 @@ import type { WebCardView, WebPermanentView } from '../api/schemas';
 import { ManaCost } from './ManaCost';
 import { scryfallImageUrl, type ScryfallVersion } from './scryfall';
 import { computeHaloBackground } from './halo';
-import { commanderColorsForCard } from './useCommanderColors';
+import { useCommanderColorsForCard } from './useCommanderColors';
 import { slow } from '../animation/debug';
 import {
   COUNTER_POP,
@@ -325,8 +325,8 @@ export function CardFace(props: CardFaceProps): JSX.Element {
   // commander card is rendered, paint a color-identity halo bloom
   // behind the card. Same blurred-gradient pattern PlayerPortrait
   // and StackZone FocalCard use; cardId-name match against
-  // commandList in commanderColorsForCard.
-  const commanderColors = commanderColorsForCard(card);
+  // commandList in useCommanderColorsForCard.
+  const commanderColors = useCommanderColorsForCard(card);
   const cardFace = (
     <motion.div
       data-testid={spec.testid}

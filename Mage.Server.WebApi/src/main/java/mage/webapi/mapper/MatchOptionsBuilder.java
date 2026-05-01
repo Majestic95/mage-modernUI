@@ -22,6 +22,18 @@ import mage.webapi.dto.WebCreateTableRequest;
  */
 public final class MatchOptionsBuilder {
 
+    /**
+     * Slice 70-X.13 — defensive cap on seat count. Upstream's
+     * {@code TableManager.createTable} probably rejects oversized
+     * tables eventually, but without an explicit cap here a request
+     * for {@code seats: ["HUMAN"] * 10000} would build a 10k-element
+     * {@code List<PlayerType>} (and the same-size mirrors in
+     * upstream's table state) before the rejection lands. 20 is well
+     * above any real game size (4-8 player FFA is the practical
+     * ceiling).
+     */
+    public static final int MAX_SEATS = 20;
+
     private MatchOptionsBuilder() {
     }
 
@@ -61,22 +73,46 @@ public final class MatchOptionsBuilder {
         // upfront, e.g. ["HUMAN", "COMPUTER_MONTE_CARLO"], because
         // upstream's getNextAvailableSeat(playerType) filters by the
         // declared type. AI seats then fill via POST /tables/{id}/ai.
-        java.util.List<String> seatTypes = (req.seats() == null || req.seats().isEmpty())
+        //
+        // Slice 70-X.13 — cap seat count and parse seats into a local
+        // list BEFORE touching upstream's internal collection. The
+        // earlier shape called {@code options.getPlayerTypes().add(...)}
+        // directly, which is load-bearing on two upstream contracts:
+        // (a) {@link MatchOptions} ships an empty mutable list (true
+        //     today: {@code playerTypes = new ArrayList<>()});
+        // (b) {@code getPlayerTypes()} returns the live internal list,
+        //     not an unmodifiable view.
+        // If either changes upstream — pre-seeded list, defensive copy,
+        // or {@code Collections.unmodifiableList} — seats silently break
+        // or throw {@code UnsupportedOperationException}. We can't
+        // {@code setPlayerTypes(local)} (no setter exists), so we
+        // {@code clear()} the live list first to neutralize (a). If
+        // upstream ever wraps the getter in an immutable view, the
+        // {@code clear()} fails fast with a useful stack trace at the
+        // boundary instead of confused downstream seat-mismatch bugs.
+        java.util.List<String> rawSeats = (req.seats() == null || req.seats().isEmpty())
                 ? java.util.List.of("HUMAN", "HUMAN")
                 : req.seats();
-        for (int i = 0; i < seatTypes.size(); i++) {
-            String raw = seatTypes.get(i);
+        if (rawSeats.size() > MAX_SEATS) {
+            throw new WebApiException(400, "BAD_REQUEST",
+                    "seats[] exceeds maximum of " + MAX_SEATS);
+        }
+        java.util.List<PlayerType> resolved = new java.util.ArrayList<>(rawSeats.size());
+        for (int i = 0; i < rawSeats.size(); i++) {
+            String raw = rawSeats.get(i);
             if (raw == null || raw.isBlank()) {
                 throw new WebApiException(400, "BAD_REQUEST",
                         "seats[" + i + "] is required");
             }
             try {
-                options.getPlayerTypes().add(Enum.valueOf(PlayerType.class, raw.trim()));
+                resolved.add(Enum.valueOf(PlayerType.class, raw.trim()));
             } catch (IllegalArgumentException ex) {
                 throw new WebApiException(400, "BAD_REQUEST",
                         "Unknown seats[" + i + "] PlayerType: " + raw);
             }
         }
+        options.getPlayerTypes().clear();
+        options.getPlayerTypes().addAll(resolved);
 
         return options;
     }

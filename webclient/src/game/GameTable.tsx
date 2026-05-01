@@ -24,6 +24,7 @@ import {
 import { isBoardClickable, routeObjectClick } from './clickRouter';
 import { useDragState } from './useDragState';
 import { useGameStore } from './store';
+import { CommanderColorsProvider } from './useCommanderColors';
 
 /**
  * Slice 70-E (ADR 0011 D5) — 6-region CSS Grid shell per
@@ -204,6 +205,7 @@ export function GameTable({ gameId, gameView, stream }: Props) {
   }, [drag, gameView.myHand]);
 
   return (
+    <CommanderColorsProvider gameView={gameView}>
     <div
       data-testid="game-table"
       className="h-full grid bg-zinc-950 text-zinc-100 overflow-hidden"
@@ -545,5 +547,6 @@ export function GameTable({ gameId, gameView, stream }: Props) {
         </div>
       )}
     </div>
+    </CommanderColorsProvider>
   );
 }

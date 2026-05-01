@@ -1510,21 +1510,29 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
         );
     }
 
-    private WebStreamFrame mapGameView(ClientCallback cc, String wireMethod) {
-        Object data = cc.getData();
-        if (!(data instanceof GameView upstream)) {
-            LOG.warn("{} callback with unexpected data type: {}",
-                    cc.getMethod(),
-                    data == null ? "null" : data.getClass().getName());
-            return null;
-        }
+    /**
+     * Slice 70-X.13 — RoI/stack-hint/mp-context bundle resolved once per
+     * frame, shared between {@link #mapGameView} (gameInit/gameUpdate)
+     * and {@link #mapClientMessage} (dialog frames). Resolves all four
+     * inputs the mapper needs to produce a per-recipient view: the
+     * stack-cardId hint, the multiplayer goading context (with the
+     * connection tracker bound), the recipient's playerId, and the
+     * range-of-influence filter set.
+     */
+    private record FrameContext(
+            UUID gameId,
+            Map<UUID, UUID> stackHint,
+            MultiplayerFrameContext mpCtx,
+            Set<UUID> playersInRange) {
+    }
+
+    private FrameContext resolveFrameContext(UUID gameId) {
         // Slice 69c — resolve the live Game once per frame and share
         // it across the stack-hint, multiplayer-context, and RoI-
         // filter computations. Per slice-69c recon: this method runs
         // inside the engine's synchronized GameController.updateGame()
         // block, so reads are thread-safe and consistent with the
         // GameView snapshot we received from cc.getData().
-        UUID gameId = cc.getObjectId();
         Game liveGame = resolveLiveGame(gameId);
         Map<UUID, UUID> stackHint = liveGame == null
                 ? Map.of()
@@ -1540,27 +1548,7 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
         // populate WebPlayerView.connectionState. EMPTY is the
         // tracker-less fallback used in tests / when authService is
         // absent (every player reads as connected — wire shape
-        // preserved, no DISCONNECTED overlay surfaces). Per critic
-        // C3: the lookup must filter by ATTR_ROUTE_KIND==ROUTE_PLAYER
-        // so a player with a healthy lobby socket but a dead game
-        // socket reads as disconnected, not connected.
-        //
-        // Slice 70-H critic UX-C2/N3 fix — defensive short-circuit
-        // for the recipient's own playerId. The handler IS the
-        // recipient and is currently sending this very frame, so
-        // its socket count is by construction ≥1 on the player
-        // route. But there's a structural race window between WS
-        // socket close + reopen + `register()` re-registration
-        // where the AuthService snapshot could observe 0 sockets,
-        // producing a frame that paints alice's OWN PlayerFrame as
-        // disconnected on alice's screen. Reading `connectionState`
-        // for the recipient through a "you're always connected on
-        // your own screen" guard eliminates the race entirely. The
-        // recipient cannot meaningfully observe themselves as
-        // disconnected — by the time a frame reaches them, they
-        // are connected. Off-by-one frames at reconnect-replay are
-        // also covered because the recipient's handler doesn't
-        // append frames during its own offline window.
+        // preserved, no DISCONNECTED overlay surfaces).
         if (gameId != null && authService != null) {
             final UUID frameGameId = gameId;
             final UUID self = recipientPlayerId;
@@ -1576,12 +1564,24 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
         Set<UUID> playersInRange = liveGame == null
                 ? null
                 : MultiplayerFrameContext.playersInRange(liveGame, recipientPlayerId);
+        return new FrameContext(gameId, stackHint, mpCtx, playersInRange);
+    }
+
+    private WebStreamFrame mapGameView(ClientCallback cc, String wireMethod) {
+        Object data = cc.getData();
+        if (!(data instanceof GameView upstream)) {
+            LOG.warn("{} callback with unexpected data type: {}",
+                    cc.getMethod(),
+                    data == null ? "null" : data.getClass().getName());
+            return null;
+        }
+        FrameContext ctx = resolveFrameContext(cc.getObjectId());
         return new WebStreamFrame(
                 SchemaVersion.CURRENT,
                 wireMethod,
                 cc.getMessageId(),
-                gameId == null ? null : gameId.toString(),
-                GameViewMapper.toDto(upstream, stackHint, mpCtx, playersInRange)
+                ctx.gameId() == null ? null : ctx.gameId().toString(),
+                GameViewMapper.toDto(upstream, ctx.stackHint(), ctx.mpCtx(), ctx.playersInRange())
         );
     }
 
@@ -1673,12 +1673,22 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
                     data == null ? "null" : data.getClass().getName());
             return null;
         }
+        // Slice 70-X.13 — thread the same RoI / mp-context / stack-hint
+        // bundle that gameInit/gameUpdate use, so the embedded GameView
+        // on dialog frames is filtered per-recipient. Without this, the
+        // slice-69c RoI filter is bypassed on every gameInform / gameAsk
+        // / gameTarget / gameSelect / gameInformPersonal / etc. frame in
+        // 3+ player games (information disclosure: full roster +
+        // connection state leaks outside the recipient's range of
+        // influence).
+        FrameContext ctx = resolveFrameContext(cc.getObjectId());
         return new WebStreamFrame(
                 SchemaVersion.CURRENT,
                 wireMethod,
                 cc.getMessageId(),
-                cc.getObjectId() == null ? null : cc.getObjectId().toString(),
-                GameViewMapper.toClientMessage(upstream)
+                ctx.gameId() == null ? null : ctx.gameId().toString(),
+                GameViewMapper.toClientMessage(
+                        upstream, ctx.stackHint(), ctx.mpCtx(), ctx.playersInRange())
         );
     }
 
