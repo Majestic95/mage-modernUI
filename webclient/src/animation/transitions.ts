@@ -346,3 +346,24 @@ export const BOARD_WIPE_STAGGER_MS = 80;
  * comfortable under jank threshold for 4-pod commander tables.
  */
 export const MAX_CONCURRENT_DISINTEGRATES = 4;
+
+/**
+ * Slice 70-Z.4 follow-up — ground-crack on cinematic-tier ETB.
+ * When a commander / planeswalker / CMC≥7 permanent resolves
+ * stack→battlefield, the layoutId glide settles into its slot,
+ * then ground cracks spider OUTWARD from the tile's edges (gold +
+ * white, matching the focal-card spotlight palette).
+ *
+ * <p>User direction round 2: half speed (700→1400ms), 50% larger
+ * spread, edge-anchored not center-anchored, gold/white tone.
+ * Lines draw 0-30% of duration; opacity fades 40-100%.
+ */
+export const GROUND_CRACK_DURATION_MS = 1400;
+
+/**
+ * Delay before the ground-crack fires. Matches the LAYOUT_GLIDE
+ * spring's settle time so the crack visibly fires AS the creature
+ * lands, not while it's still mid-glide. ~400ms covers the 280-
+ * stiffness / 26-damping spring's perceived stop.
+ */
+export const GROUND_CRACK_LANDING_DELAY_MS = 400;

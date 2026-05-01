@@ -10,6 +10,7 @@ import { RibbonTrail } from './RibbonTrail';
 import { CommanderReturnGlide } from './CommanderReturnGlide';
 import { BoardWipeRipple } from './BoardWipeRipple';
 import { ImpactOverlay } from './ImpactOverlay';
+import { GroundCrackOverlay } from './GroundCrackOverlay';
 import {
   resolveCastSourceCenter,
   resolveCommanderReturnTarget,
@@ -19,6 +20,7 @@ import {
 } from './sourceResolvers';
 import {
   BOARD_WIPE_STAGGER_MS,
+  GROUND_CRACK_LANDING_DELAY_MS,
   MAX_CONCURRENT_DISINTEGRATES,
 } from './transitions';
 import { useGameStore } from '../game/store';
@@ -93,6 +95,9 @@ export function CardAnimationLayer(): React.JSX.Element {
   >(() => new Map());
   const [activeImpacts, setActiveImpacts] = useState<
     Map<string, ActiveImpact>
+  >(() => new Map());
+  const [activeCracks, setActiveCracks] = useState<
+    Map<string, { bbox: { left: number; top: number; width: number; height: number } }>
   >(() => new Map());
 
   // Cast subscription — when a cinematic cast fires, capture the
@@ -248,6 +253,70 @@ export function CardAnimationLayer(): React.JSX.Element {
     });
   }, []);
 
+  // resolve_to_board subscription — fires the ground-crack ETB
+  // animation for cinematic-tier landings (round 2 user direction:
+  // commanders, planeswalkers, manaValue ≥ 7). Tokens are excluded
+  // (typeLine prefix "Token") even if they meet the type/CMC
+  // criteria. Mirrors the cinematic-A cast threshold.
+  //
+  // Timing: the card just resolved stack → battlefield; LAYOUT_GLIDE
+  // settles the tile into its slot over ~400ms. We wait that long
+  // via setTimeout so the crack fires AS the creature lands (not
+  // while still mid-glide), then resolve the now-mounted tile's
+  // bbox via [data-card-id] and mount the GroundCrackOverlay.
+  useEffect(() => {
+    return on('resolve_to_board', (evt) => {
+      if (prefersReducedMotion()) return;
+      const gv = useGameStore.getState().gameView;
+      if (!gv) return;
+      const player = gv.players[evt.ownerSeat];
+      if (!player) return;
+      // Battlefield Record key is card.id (== card.cardId for
+      // non-stack zones).
+      const perm = player.battlefield[evt.cardId];
+      if (!perm) return;
+      const card = perm.card;
+      // Token exclusion — typeLine carries "Token Creature — ..."
+      // for engine-created tokens. A 7-mana actual creature card
+      // never has "Token" in its typeLine.
+      if (card.typeLine.toLowerCase().startsWith('token')) return;
+      // Cinematic-tier gate: commander OR planeswalker OR CMC ≥ 7.
+      const isCommander = gv.players.some((p) =>
+        p.commandList.some(
+          (e) => e.kind === 'commander' && e.name === card.name,
+        ),
+      );
+      const isPlaneswalker = card.types.includes('PLANESWALKER');
+      const isBigCmc = card.manaValue >= 7;
+      if (!isCommander && !isPlaneswalker && !isBigCmc) return;
+      // Defer bbox capture until the LAYOUT_GLIDE has settled. On
+      // race conditions (e.g. the user resolves DURING a cinematic
+      // hold, which briefly produces a layoutId collision), the
+      // tile's bbox may not be valid at +400ms — width/height
+      // could be 0 if Framer hasn't mounted it cleanly. Retry up
+      // to 3 times via rAF so we get a stable bbox.
+      const tryCapture = (attempt: number) => {
+        const bbox = resolveTileBBox(evt.cardId);
+        if (bbox && bbox.width > 0 && bbox.height > 0) {
+          setActiveCracks((prev) => {
+            const next = new Map(prev);
+            next.set(evt.cardId, { bbox });
+            return next;
+          });
+          return;
+        }
+        if (attempt < 3) {
+          requestAnimationFrame(() => tryCapture(attempt + 1));
+        }
+      };
+      const t = setTimeout(
+        () => tryCapture(0),
+        GROUND_CRACK_LANDING_DELAY_MS,
+      );
+      void t;
+    });
+  }, []);
+
   // commander_returned subscription — resolve the destination
   // portrait bbox at event-handler time and stash a stub card.
   // Reduced motion: skipped so the commander silently disappears
@@ -355,6 +424,21 @@ export function CardAnimationLayer(): React.JSX.Element {
           staggerMs={entry.staggerMs}
           onComplete={() => {
             setActiveImpacts((prev) => {
+              if (!prev.has(cardId)) return prev;
+              const next = new Map(prev);
+              next.delete(cardId);
+              return next;
+            });
+          }}
+        />
+      ))}
+      {Array.from(activeCracks.entries()).map(([cardId, entry]) => (
+        <GroundCrackOverlay
+          key={`crack-${cardId}`}
+          cardId={cardId}
+          bbox={entry.bbox}
+          onComplete={() => {
+            setActiveCracks((prev) => {
               if (!prev.has(cardId)) return prev;
               const next = new Map(prev);
               next.delete(cardId);

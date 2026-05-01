@@ -288,6 +288,32 @@ body {
 }
 
 /*
+ * Slice 70-Z.4 follow-up — ground-crack on creature ETB. Each crack
+ * line draws via stroke-dashoffset 0-30% of duration, then opacity
+ * fades 40-100%. Lines use stroke-dasharray = path-length (set
+ * inline by GroundCrackOverlay), so dashoffset = full-length means
+ * the dash starts off-canvas; dashoffset = 0 means the whole line
+ * is drawn.
+ */
+@keyframes ground-crack-draw {
+  0% {
+    stroke-dashoffset: 100;
+    opacity: 1;
+  }
+  30% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  40% {
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+}
+
+/*
  * Slice 70-G (critic UX-3) — brief flash on a CommanderDamage row
  * when its value changes. The wrapper animates a 1.0 → 1.06 → 1.0
  * scale + a subtle bg-tint flash, providing per-click feedback

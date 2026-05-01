@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import type { WebPlayerView } from '../api/schemas';
 import { REDESIGN } from '../featureFlags';
 import { computeHaloBackground } from './halo';
+import { HoverCardDetail } from './HoverCardDetail';
 import { LifeCounter } from './LifeCounter';
 import { ManaPool } from './ManaPool';
 import { hasAnyMana } from './manaPoolUtil';
@@ -735,16 +736,49 @@ function PlayerFrameRedesigned({
           </span>
         )}
         {commander && (
-          <span
-            data-testid="commander-name-label"
-            // Slice 70-Z polish round 21 (user direction 2026-04-30) —
-            // commander label bumped text-xs (12px) → text-sm (14px)
-            // for legibility on the corner-mount local frame.
-            className="text-sm text-zinc-400 truncate max-w-full"
-            title={commander.name}
+          <HoverCardDetail
+            card={{
+              id: commander.id,
+              cardId: commander.id,
+              name: commander.name,
+              displayName: commander.name,
+              expansionSetCode: commander.expansionSetCode,
+              cardNumber: String(commander.imageNumber ?? ''),
+              manaCost: '',
+              manaValue: 0,
+              typeLine: '',
+              supertypes: [],
+              types: ['CREATURE'],
+              subtypes: [],
+              colors: [],
+              rarity: '',
+              power: '',
+              toughness: '',
+              startingLoyalty: '',
+              rules: [...commander.rules],
+              faceDown: false,
+              counters: {},
+              transformable: false,
+              transformed: false,
+              secondCardFace: null,
+              sourceLabel: '',
+            }}
           >
-            {commander.name}
-          </span>
+            <span
+              data-testid="commander-name-label"
+              // Slice 70-Z polish round 21 — text-sm (14px) for
+              // legibility. Round 24 (user direction 2026-04-30):
+              // wrapped in HoverCardDetail so any player can hover
+              // an opponent's commander label and see the card art
+              // + rules text. Cursor-help signals it's interactive.
+              className="text-sm text-zinc-400 truncate max-w-full
+                cursor-help underline-offset-2
+                hover:text-zinc-200 hover:underline decoration-dotted"
+              title={`Hover to inspect ${commander.name}`}
+            >
+              {commander.name}
+            </span>
+          </HoverCardDetail>
         )}
       </div>
 

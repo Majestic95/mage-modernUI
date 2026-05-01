@@ -3,6 +3,8 @@ import { motion } from 'framer-motion';
 import type { WebCardView, WebPermanentView } from '../api/schemas';
 import { ManaCost } from './ManaCost';
 import { scryfallImageUrl, type ScryfallVersion } from './scryfall';
+import { computeHaloBackground } from './halo';
+import { commanderColorsForCard } from './useCommanderColors';
 import { slow } from '../animation/debug';
 import {
   COUNTER_POP,
@@ -319,10 +321,17 @@ export function CardFace(props: CardFaceProps): JSX.Element {
     aspectRatio: spec.aspectRatio,
   };
 
-  return (
+  // Slice 70-Z polish (user direction 2026-04-30) — wherever a
+  // commander card is rendered, paint a color-identity halo bloom
+  // behind the card. Same blurred-gradient pattern PlayerPortrait
+  // and StackZone FocalCard use; cardId-name match against
+  // commandList in commanderColorsForCard.
+  const commanderColors = commanderColorsForCard(card);
+  const cardFace = (
     <motion.div
       data-testid={spec.testid}
       data-card-face-size={size}
+      data-commander={commanderColors ? 'true' : undefined}
       className={
         'relative ' +
         spec.rounded +
@@ -500,5 +509,27 @@ export function CardFace(props: CardFaceProps): JSX.Element {
         />
       )}
     </motion.div>
+  );
+
+  if (!commanderColors || commanderColors.length === 0) return cardFace;
+
+  return (
+    <div
+      className="relative inline-block"
+      style={{ ...sizeStyle, isolation: 'isolate' }}
+    >
+      <div
+        data-testid="commander-halo"
+        aria-hidden="true"
+        className="absolute -inset-[7px] rounded-xl pointer-events-none"
+        style={{
+          background: computeHaloBackground(commanderColors, false),
+          filter: 'blur(8px)',
+          opacity: 0.85,
+          zIndex: -1,
+        }}
+      />
+      {cardFace}
+    </div>
   );
 }

@@ -143,7 +143,21 @@ export function MyHand({
             --card-size-large) plus hover-lift headroom. The
             container itself is fixed at viewport bottom (mounted
             by GameTable). */}
-        <div className="relative h-[280px] pt-2 pr-[200px]">
+        {/* Slice 70-Z polish (user direction 2026-04-30) — local
+            command zone. The player's commander card sits to the
+            LEFT of the hand fan, persistently visible at hand-card
+            size. Wherever the commander appears (here, on the
+            stack, on the battlefield, in graveyard/exile, mid-
+            return-glide), CardFace's commanderColorsForCard hook
+            paints a color-identity halo bloom behind it
+            automatically.
+
+            Anchored absolute bottom-left of the hand region so
+            the fan's pl- doesn't shift with hand size. Aligned
+            with the fan baseline so it reads as part of the same
+            row. */}
+        {player && <CommandZoneSlot player={player} />}
+        <div className="relative h-[280px] pt-2 pl-[140px] pr-[200px]">
           {cards.length === 0 ? (
             <span className="absolute left-3 top-3 text-xs text-zinc-600 italic">
               Empty hand.
@@ -385,4 +399,85 @@ function HandCardSlot({
  */
 function HandCardFace({ card }: { card: WebCardView }) {
   return <CardFace card={card} size="hand" />;
+}
+
+/**
+ * Slice 70-Z polish (user direction 2026-04-30) — local command
+ * zone. Renders the local player's commander to the LEFT of the
+ * hand fan at the same baseline, persistent regardless of zone.
+ * The commander art comes from a stub WebCardView synthesized from
+ * the player's commandList entry; CardFace's universal commander
+ * halo (commanderColorsForCard hook) paints the color-identity
+ * bloom behind it automatically.
+ *
+ * <p>Wraps in HoverCardDetail so the player can hover and inspect
+ * the commander's rules text — same affordance as opponent
+ * commander labels (slice 70-Z polish for cross-pod intel).
+ */
+function CommandZoneSlot({ player }: { player: WebPlayerView }) {
+  const commanders = player.commandList.filter((e) => e.kind === 'commander');
+  if (commanders.length === 0) return null;
+  return (
+    <div
+      data-testid="local-command-zone"
+      // Anchored to MyHand's bottom-left. The hand-fan container
+      // above already has pl-[140px] reserved on its inner row so
+      // the fan doesn't overlap this slot.
+      className="absolute left-3 bottom-0 z-10 flex gap-2 items-end pointer-events-auto"
+    >
+      {commanders.map((entry) => (
+        <CommandZoneCard
+          key={entry.id}
+          entry={entry}
+          ownerPlayerId={player.playerId}
+        />
+      ))}
+    </div>
+  );
+}
+
+function CommandZoneCard({
+  entry,
+  ownerPlayerId,
+}: {
+  entry: WebPlayerView['commandList'][number];
+  ownerPlayerId: string;
+}) {
+  // Synthesize a minimal WebCardView from the commandList entry so
+  // CardFace can render the standard hand-size variant. cardNumber
+  // = String(imageNumber) so scryfallImageUrl resolves to the
+  // commander's art (slice 70-Z.3 critic IMP-4 fix pattern).
+  const stub: WebCardView = {
+    id: entry.id,
+    cardId: entry.id,
+    name: entry.name,
+    displayName: entry.name,
+    expansionSetCode: entry.expansionSetCode,
+    cardNumber: String(entry.imageNumber ?? ''),
+    manaCost: '',
+    manaValue: 0,
+    typeLine: '',
+    supertypes: [],
+    types: ['CREATURE'],
+    subtypes: [],
+    colors: [],
+    rarity: '',
+    power: '',
+    toughness: '',
+    startingLoyalty: '',
+    rules: [...entry.rules],
+    faceDown: false,
+    counters: {},
+    transformable: false,
+    transformed: false,
+    secondCardFace: null,
+    sourceLabel: '',
+  };
+  return (
+    <HoverCardDetail card={stub}>
+      <div data-testid="command-zone-card" data-player-id={ownerPlayerId}>
+        <CardFace card={stub} size="hand" />
+      </div>
+    </HoverCardDetail>
+  );
 }
