@@ -71,6 +71,19 @@ export function BattlefieldRowGroup({
     perspective === 'opponent'
       ? 'calc(var(--card-size-small) * 7 / 5)'
       : 'calc(var(--card-size-medium) * 7 / 5)';
+  // Slice 70-X.8 (user feedback 2026-04-30) — minimum slot size
+  // floor. Without this, the previous "rows fixed, cards shrink
+  // uniformly" contract let tiles shrink to literally 0px when the
+  // container couldn't fit them all (`flex: 1 1 0; min-w-0`). User
+  // reported some lands + an enchantment rendering microscopically.
+  // 56px is roughly half a normal card slot — readable at a glance
+  // (mana cost + name banner still visible) without sacrificing the
+  // uniform-shrink behaviour for moderate counts. Cards still
+  // shrink BETWEEN tileMaxSize (full) and 56px; below that floor
+  // the row will overflow its container, but a clipped row reads
+  // better than a microscopic one (the user can scroll the pod
+  // into view via the existing pod layout).
+  const tileMinSize = '56px';
   const isVertical = orientation === 'vertical';
 
   // Slice 70-K.1 + 70-Z.1 (picture-catalog §2.1 "Card sizing under
@@ -117,8 +130,16 @@ export function BattlefieldRowGroup({
               className="aspect-square"
               style={
                 isVertical
-                  ? { flex: '1 1 0', minHeight: 0, maxHeight: tileMaxSize }
-                  : { flex: '1 1 0', minWidth: 0, maxWidth: tileMaxSize }
+                  ? {
+                      flex: '1 1 0',
+                      minHeight: tileMinSize,
+                      maxHeight: tileMaxSize,
+                    }
+                  : {
+                      flex: '1 1 0',
+                      minWidth: tileMinSize,
+                      maxWidth: tileMaxSize,
+                    }
               }
             >
               <BattlefieldTile

@@ -1,6 +1,7 @@
 package mage.webapi.auth;
 
 import mage.MageException;
+import mage.players.net.UserData;
 import mage.server.DisconnectReason;
 import mage.server.Main;
 import mage.server.managers.SessionManager;
@@ -289,6 +290,34 @@ public final class AuthService implements AutoCloseable {
             silentDisconnect(upstreamSessionId);
             throw new WebApiException(401, "INVALID_CREDENTIALS",
                     "Login failed. Check username and password.");
+        }
+
+        // Slice 70-X.7 — push default UserData so HumanPlayer's
+        // checkPassStep() can read UserSkipPrioritySteps and auto-pass
+        // through phases the player has nothing to do in (otherwise
+        // every player must manually click "End turn" / "Next phase"
+        // at every step, including the opponent's end-of-turn step
+        // — verified failure mode reported by user).
+        //
+        // upstream HumanPlayer.checkPassStep at HumanPlayer.java:1427
+        // returns false when UserData is null, which makes the engine
+        // STOP at every priority window. UserData.getDefaultUserDataView()
+        // ships sensible defaults: stop at main1/main2/declare-attackers/
+        // declare-blockers, auto-pass through everything else.
+        try {
+            embedded.server().connectSetUserData(
+                    resolvedUsername,
+                    upstreamSessionId,
+                    UserData.getDefaultUserDataView(),
+                    "",
+                    ""
+            );
+        } catch (MageException ex) {
+            // Non-fatal — login still succeeds; engine falls back to
+            // null-UserData behavior (stop-at-every-step). Log so the
+            // operator sees the regression but don't fail the login.
+            LOG.warn("connectSetUserData failed for user={}: {}",
+                    resolvedUsername, ex.getMessage());
         }
 
         revokePriorTokensForSameUsername(resolvedUsername);

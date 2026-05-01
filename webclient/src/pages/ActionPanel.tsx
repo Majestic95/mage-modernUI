@@ -169,23 +169,30 @@ export function ActionPanel({ stream }: Props) {
         {myPriority ? 'Your priority' : 'Waiting…'}
       </span>
 
-      {/* Group 1 — Primary action (fuchsia). Phase-aware dispatch. */}
+      {/* Group 1 — Primary action (fuchsia). Phase-aware dispatch.
+          Slice 70-X.6 (user feedback 2026-04-30) — Next Phase is
+          disabled when the player lacks priority. The previous code
+          only checked nextPhase (phase mappable); the engine would
+          accept the click but silently no-op until priority returned,
+          which read as "the button doesn't work" to the user. */}
       <button
         type="button"
         data-testid="next-phase-button"
         data-action={nextPhase ?? ''}
         onClick={() => {
-          if (nextPhase) send(nextPhase);
+          if (nextPhase && myPriority) send(nextPhase);
         }}
-        disabled={!nextPhase}
+        disabled={!nextPhase || !myPriority}
         title={
-          nextPhase
-            ? 'Advance to the next phase on the timeline above (F2)'
-            : 'Disabled — no active phase'
+          !nextPhase
+            ? 'Disabled — no active phase'
+            : !myPriority
+              ? 'Disabled — waiting for opponent'
+              : 'Advance to the next phase on the timeline above (F2)'
         }
         className={
           'px-3 py-1 rounded text-xs border font-semibold ' +
-          (nextPhase
+          (nextPhase && myPriority
             ? 'bg-fuchsia-700 hover:bg-fuchsia-600 text-white border-fuchsia-800'
             : 'bg-fuchsia-950/40 text-fuchsia-300/40 border-fuchsia-900/40 cursor-not-allowed')
         }
@@ -196,12 +203,17 @@ export function ActionPanel({ stream }: Props) {
       {/* Visual divider between groups. */}
       <span aria-hidden="true" className="w-px h-5 bg-zinc-800 mx-1" />
 
-      {/* Group 2 — Skip-ahead. */}
+      {/* Group 2 — Skip-ahead. Slice 70-X.6 — gated on myPriority
+          via `disabled` (not just visual `active`). Without priority,
+          dispatching does nothing useful; surfacing the buttons as
+          clickable was misleading. */}
       <PassButton
         label="End turn"
         action="PASS_PRIORITY_UNTIL_NEXT_TURN"
         send={send}
         active={myPriority}
+        disabled={!myPriority}
+        disabledTitle="Disabled — waiting for opponent"
         title="Skip everything until your next untap (F4)"
       />
       <PassButton
@@ -209,8 +221,10 @@ export function ActionPanel({ stream }: Props) {
         action="PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE"
         send={send}
         active={myPriority}
-        disabled={!inCombatOrBeginning}
-        disabledTitle="Disabled — not in combat"
+        disabled={!myPriority || !inCombatOrBeginning}
+        disabledTitle={
+          !myPriority ? 'Disabled — waiting for opponent' : 'Disabled — not in combat'
+        }
         title="Skip the rest of combat to the next main phase (F6)"
       />
       <PassButton
@@ -218,8 +232,10 @@ export function ActionPanel({ stream }: Props) {
         action="PASS_PRIORITY_UNTIL_STACK_RESOLVED"
         send={send}
         active={myPriority}
-        disabled={stackEmpty}
-        disabledTitle="Disabled — no stack to resolve"
+        disabled={!myPriority || stackEmpty}
+        disabledTitle={
+          !myPriority ? 'Disabled — waiting for opponent' : 'Disabled — no stack to resolve'
+        }
         title="Pass through every priority window until the stack empties (F8)"
       />
 
