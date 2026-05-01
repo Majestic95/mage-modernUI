@@ -367,9 +367,18 @@ function HandCardSlot({
           title={tooltip}
           className={
             'select-none ' +
+            // Slice 70-X.5 (user feedback 2026-04-30) — hand cards
+            // stay fully opaque even when !canAct. The cursor change
+            // (grab → default) + the tooltip ("Waiting for opponent"
+            // / "Wait for your turn") already convey the disabled
+            // state; the prior opacity-70 made the entire hand look
+            // washed-out / see-through during opponents' turns,
+            // which obscured card art and read as a rendering bug.
+            // Drag opacity-30 stays — that state is "card lifted
+            // off, in flight" and benefits from translucency.
             (canAct
               ? 'cursor-grab active:cursor-grabbing'
-              : 'cursor-default opacity-70') +
+              : 'cursor-default') +
             (isDragging ? ' opacity-30' : '')
           }
         >
