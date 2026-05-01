@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import type { WebGameView } from '../api/schemas';
 import type { GameStream } from './stream';
 import { useGameStore } from './store';
@@ -118,7 +118,7 @@ export function MulliganModal({ stream, gameView }: Props) {
       data-testid="mulligan-modal"
       className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4"
     >
-      <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-6 max-w-3xl w-full space-y-4 shadow-2xl">
+      <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-6 max-w-6xl w-full space-y-4 shadow-2xl">
         <header className="space-y-1">
           <h2 className="text-lg font-semibold text-text-primary">
             Mulligan
@@ -199,7 +199,10 @@ export function MulliganModal({ stream, gameView }: Props) {
  *
  * <p>Hand size is 7 at game start; London mulligan can leave with
  * up to 7 (with N pre-bottomed). Grid sizes for 7 across at the
- * default modal max-w-3xl.
+ * modal's max-w-6xl. The hand-card spec defaults to 180px (slice
+ * 70-Z); we scope {@code --card-size-large} to a smaller value
+ * inside the modal so all 7 cards fit without horizontal clipping
+ * on standard desktop viewports.
  */
 function HandPreview({
   gameView,
@@ -223,8 +226,9 @@ function HandPreview({
       data-testid="mulligan-hand-preview"
       className="grid gap-2"
       style={{
-        gridTemplateColumns: 'repeat(auto-fit, minmax(80px, 1fr))',
-      }}
+        gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+        ['--card-size-large' as keyof CSSProperties]: '130px',
+      } as CSSProperties}
       aria-label="Your opening hand — click any card to mulligan"
     >
       {cards.map((c) => (
