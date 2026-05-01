@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { ManaOrb } from './ManaOrb';
 
 /**
@@ -96,5 +97,49 @@ describe('ManaOrb', () => {
     render(<ManaOrb color={color as 'W' | 'U' | 'B' | 'R' | 'G' | 'C'} />);
     const orb = screen.getByTestId(`mana-orb-${color}`);
     expect(orb.style.backgroundColor).toBe(`var(--color-${tokenName})`);
+  });
+
+  // Slice 70-X.10 (Wave 2) — clickable variant pins the onClick wire-up
+  // and the visual / a11y differences from the static span variant.
+  // The whole gamePlayMana payment chain (MyHand → ManaPool.onSpend →
+  // ManaOrb.onClick → sendPlayerResponse) hangs off this prop; without
+  // these tests a regression that drops the click handler ships
+  // silently and the only payment path becomes "click a land on the
+  // battlefield."
+  describe('onClick (slice 70-X.10 spend-from-pool)', () => {
+    it('renders as a button when onClick is provided', () => {
+      render(<ManaOrb color="R" count={2} onClick={() => {}} />);
+      const orb = screen.getByTestId('mana-orb-R');
+      expect(orb.tagName).toBe('BUTTON');
+      expect(orb.getAttribute('type')).toBe('button');
+    });
+
+    it('renders as a non-button span when onClick is omitted', () => {
+      render(<ManaOrb color="R" count={2} />);
+      expect(screen.getByTestId('mana-orb-R').tagName).toBe('SPAN');
+    });
+
+    it('clicking the orb fires onClick', async () => {
+      const onClick = vi.fn();
+      const user = userEvent.setup();
+      render(<ManaOrb color="W" count={3} onClick={onClick} />);
+      await user.click(screen.getByTestId('mana-orb-W'));
+      expect(onClick).toHaveBeenCalledTimes(1);
+    });
+
+    it('clickable variant has Spend-prefixed aria-label and click-to-spend title', () => {
+      render(<ManaOrb color="U" count={1} onClick={() => {}} />);
+      expect(screen.getByLabelText(/spend.*blue mana/i)).toBeInTheDocument();
+      expect(
+        screen.getByTestId('mana-orb-U').getAttribute('title'),
+      ).toMatch(/click to spend/i);
+    });
+
+    it('static variant uses role=img and the static aria-label', () => {
+      render(<ManaOrb color="G" count={2} />);
+      const orb = screen.getByTestId('mana-orb-G');
+      expect(orb.getAttribute('role')).toBe('img');
+      expect(orb.getAttribute('aria-label')).toBe('2 green mana');
+    });
   });
 });

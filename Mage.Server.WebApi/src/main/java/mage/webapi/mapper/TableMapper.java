@@ -154,14 +154,14 @@ public final class TableMapper {
         }
     }
 
-    private static Card firstSideboardCard(Deck deck) {
+    static Card firstSideboardCard(Deck deck) {
         if (deck == null || deck.getSideboard() == null || deck.getSideboard().isEmpty()) {
             return null;
         }
         return deck.getSideboard().iterator().next();
     }
 
-    private static int parseCardNumber(String s) {
+    static int parseCardNumber(String s) {
         if (s == null || s.isBlank()) {
             return 0;
         }

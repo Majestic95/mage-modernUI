@@ -312,4 +312,39 @@ describe('MulliganModal', () => {
     render(<MulliganModal stream={null} gameView={makeGameView()} />);
     expect(screen.queryByTestId('mulligan-modal')).toBeNull();
   });
+
+  // Slice 70-X.1 lock (Wave 2) — multi-player non-active stuck-modal
+  // fix. The committed-latch had ONE reset trigger pre-slice 70-X.1
+  // (a fresh pendingDialog.messageId). That meant non-active players
+  // in multiplayer — who never get a follow-up dialog — would be
+  // stuck in "committed" mode permanently. Slice 70-X.1 added the
+  // turn>=1 reset so once the engine advances past mulligan resolution
+  // (regardless of whether THIS player got a follow-up), the modal
+  // unmounts. Drop this test and a regression that removes the
+  // turn-based path leaves multi-player playtest broken silently.
+  it('committed latch resets when gameView.turn advances to 1 (multi-player path)', async () => {
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    const baseGv = makeGameView();
+    act(() => {
+      useGameStore.setState({ pendingDialog: mulliganDialog });
+    });
+    const { rerender } = render(
+      <MulliganModal stream={stream as never} gameView={baseGv} />,
+    );
+    // Commit (Keep) — modal stays mounted on the latch, no follow-up
+    // dialog arrives because we're a non-active player in MP.
+    await user.click(screen.getByTestId('mulligan-keep'));
+    expect(screen.getByTestId('mulligan-modal')).toBeInTheDocument();
+    expect(screen.getByTestId('mulligan-keep')).toBeDisabled();
+    // pendingDialog clears (local dispatch did it) AND turn advances
+    // past 0 — this is the multi-player resolution signal.
+    act(() => {
+      useGameStore.setState({ pendingDialog: null });
+    });
+    const turnOne: WebGameView = { ...baseGv, turn: 1 };
+    rerender(<MulliganModal stream={stream as never} gameView={turnOne} />);
+    // Modal unmounts — latch reset by the turn>=1 trigger.
+    expect(screen.queryByTestId('mulligan-modal')).toBeNull();
+  });
 });

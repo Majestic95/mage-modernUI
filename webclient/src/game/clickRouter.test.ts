@@ -65,6 +65,30 @@ describe('routeObjectClick', () => {
     expect(out.calls).toEqual([]);
   });
 
+  // Slice 70-X.12 lock (Wave 2) — when the wire ships an empty
+  // eligibleIds set (Fortified Village reveal-from-hand bug, etc.),
+  // the router permits ANY click and lets the engine validate. Without
+  // this branch the user gets stuck — the engine fired gameTarget but
+  // possibleTargets didn't make it to the wire so eligibleIds came up
+  // empty, and the strict eligibility check would have dropped every
+  // click silently. Drop this test and a regression that re-tightens
+  // the check reverts the user-facing fix without any failing assertion.
+  it('target + empty eligibleIds → permissive: any click dispatches and clears', () => {
+    const out = mockOut();
+    const mode: InteractionMode = {
+      kind: 'target',
+      messageId: 9,
+      eligibleIds: new Set(),
+      optional: false,
+    };
+    const r = routeObjectClick(mode, 'whatever-id', true, out);
+    expect(r.dispatched).toBe(true);
+    expect(out.calls).toEqual([
+      { method: 'sendPlayerResponse', args: [9, 'uuid', 'whatever-id'] },
+      { method: 'clearDialog', args: [] },
+    ]);
+  });
+
   it('declareAttackers → sendObjectClick (toggle); does NOT clearDialog', () => {
     // The combat-defining property: dialog stays open across N
     // toggles. clearDialog must NOT fire on each click — only when

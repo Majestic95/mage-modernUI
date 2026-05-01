@@ -126,6 +126,89 @@ describe('ActionPanel', () => {
     expect(screen.getByText(/waiting/i)).toBeInTheDocument();
   });
 
+  // Slice 70-X.6 lock (Wave 2) — when opponent has priority, every
+  // priority-gated button MUST be disabled with title "waiting for
+  // opponent". Pre-Wave-2 only the "shows waiting indicator" string
+  // was asserted; nothing pinned the disabled state. A regression that
+  // re-enabled the buttons would let the player queue actions out of
+  // priority. Also asserts the click is a no-op (no dispatch fires)
+  // for the same reason.
+  it('priority-gated buttons are disabled when opponent has priority', () => {
+    act(() => {
+      useGameStore.setState({
+        gameView: gameViewWithPriorityOn('COMPUTER_MONTE_CARLO', {
+          step: 'BEGIN_COMBAT',
+          stack: { [STACK_CARD.id]: STACK_CARD },
+        }),
+      });
+    });
+    render(<ActionPanel stream={fakeStream()} />);
+    const buttons: Array<[string, HTMLButtonElement]> = [
+      [
+        'next-phase',
+        screen.getByTestId('next-phase-button') as HTMLButtonElement,
+      ],
+      [
+        'end-turn',
+        screen.getByRole('button', { name: /end turn/i }) as HTMLButtonElement,
+      ],
+      [
+        'skip-combat',
+        screen.getByRole('button', {
+          name: /skip combat/i,
+        }) as HTMLButtonElement,
+      ],
+      [
+        'resolve-stack',
+        screen.getByRole('button', {
+          name: /resolve stack/i,
+        }) as HTMLButtonElement,
+      ],
+    ];
+    for (const [label, btn] of buttons) {
+      expect(btn.disabled, `${label} should be disabled`).toBe(true);
+      expect(
+        btn.title.toLowerCase(),
+        `${label} title should mention waiting`,
+      ).toContain('waiting for opponent');
+    }
+  });
+
+  it('Stop-skipping and Undo remain enabled when opponent has priority', () => {
+    // Slice 70-X.6 contract — the two emergency-exit buttons MUST stay
+    // available regardless of priority so the user can interrupt a
+    // runaway pass / undo a misclick when waiting on opponent.
+    act(() => {
+      useGameStore.setState({
+        gameView: gameViewWithPriorityOn('COMPUTER_MONTE_CARLO'),
+      });
+    });
+    render(<ActionPanel stream={fakeStream()} />);
+    const stop = screen.getByRole('button', {
+      name: /stop skipping/i,
+    }) as HTMLButtonElement;
+    const undo = screen.getByTestId('undo-button') as HTMLButtonElement;
+    expect(stop.disabled).toBe(false);
+    expect(undo.disabled).toBe(false);
+  });
+
+  it('clicking a disabled priority-gated button does not dispatch', async () => {
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    act(() => {
+      useGameStore.setState({
+        gameView: gameViewWithPriorityOn('COMPUTER_MONTE_CARLO'),
+      });
+    });
+    render(<ActionPanel stream={stream} />);
+    // userEvent.click on a disabled button is a no-op in the browser
+    // and in jsdom; this asserts the disabled attribute is doing its
+    // job (vs slipping a click through via some pointerEvents bypass).
+    await user.click(screen.getByTestId('next-phase-button'));
+    await user.click(screen.getByRole('button', { name: /end turn/i }));
+    expect(stream.sendPlayerAction).not.toHaveBeenCalled();
+  });
+
   /* ---------- slice 38: Next Phase (phase-aware) ---------- */
 
   describe('nextPhaseAction helper', () => {
