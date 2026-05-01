@@ -13,6 +13,7 @@ import { InformDialog } from './InformDialog';
 import { CombatPanel } from './CombatPanel';
 import { ManaPayPanel } from './ManaPayPanel';
 import { ManaPayBanner } from './ManaPayBanner';
+import { CombatBanner } from './CombatBanner';
 import { isMulliganDialog } from '../MulliganModal';
 import { PilePickerDialog } from './PilePickerDialog';
 import { MultiAmountDialog } from './MultiAmountDialog';
@@ -87,6 +88,21 @@ export function GameDialog({ stream }: Props) {
   if (dialog.method === 'gameSelect') {
     const mode = deriveInteractionMode(dialog);
     if (mode.kind === 'declareAttackers' || mode.kind === 'declareBlockers') {
+      // Slice 70-Y.4 (2026-05-01) — combat-banner replacement of the
+      // legacy CombatPanel side panel. Banner shows the prompt +
+      // Done (+ All-attack on declare-attackers when applicable).
+      // Per MTG rules expert validation: no Cancel button (boolean
+      // false has same server effect as true; misleading). Board
+      // clicks toggle attackers/blockers via clickRouter — already
+      // wired.
+      if (CLICK_RESOLUTION) {
+        return (
+          <CombatBanner
+            stream={stream}
+            isAttackers={mode.kind === 'declareAttackers'}
+          />
+        );
+      }
       return (
         <div
           role="dialog"
