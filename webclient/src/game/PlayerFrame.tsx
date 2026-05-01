@@ -593,12 +593,22 @@ function PlayerFrameRedesigned({
       data-testid={`player-frame-${perspective}`}
       data-redesign="true"
       data-perspective={perspective}
+      data-position={position}
       data-eliminated={eliminated || undefined}
       data-disconnected={disconnected || undefined}
       role="group"
       aria-label={ariaLabel}
       className={
+        // Slice 70-Y / Issue 1 (2026-05-01) — `self-start` on side
+        // pods (left/right) keeps the frame's bbox at portrait+name
+        // height instead of stretching to match the tall cards
+        // column sibling. Without this the absolute-positioned
+        // chip strip (top-full of the frame) ends up below all the
+        // cards, getting pushed off-screen as more lands hit play.
+        // Top/bottom pods are unaffected — flex-col parents already
+        // give the frame fixed height naturally.
         'relative flex flex-col items-center gap-1 transition-[opacity,filter] duration-700 ease-in ' +
+        (position === 'left' || position === 'right' ? 'self-start ' : '') +
         (eliminated
           ? 'opacity-[0.45] [filter:grayscale(1)]'
           : disconnected

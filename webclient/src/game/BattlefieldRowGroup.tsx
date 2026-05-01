@@ -11,7 +11,6 @@ import {
   type AttachmentGroup,
   type BattlefieldRow,
 } from './battlefieldRows';
-import { useUIPrefs } from './useUIPrefs';
 
 /**
  * Slice 53 â€” one MTGA-style row of permanents. Owns its own
@@ -85,7 +84,6 @@ export function BattlefieldRowGroup({
   // for non-host perms don't change render shape vs the legacy
   // flat-row mode.
   const groups = groupWithAttachments(permanents);
-  const auraDisplayMode = useUIPrefs((s) => s.auraDisplayMode);
   // Slice 70-X.9 — fixed tile size, NOT flex-1-1-0 with shrink.
   // The previous `flex: 1 1 0; min-(w|h): 56px; max-(w|h): tileMaxSize`
   // pattern caused tiles to shrink to fit the container, which made
@@ -135,7 +133,6 @@ export function BattlefieldRowGroup({
             eligibleCombatIds={eligibleCombatIds}
             combatRoles={combatRoles}
             rotateDelay={(index * UNTAP_STAGGER_DELAY_MS) / 1000}
-            mode={auraDisplayMode}
           />
         ))}
       </AnimatePresence>
@@ -144,16 +141,24 @@ export function BattlefieldRowGroup({
 }
 
 /**
- * Slice 70-Y / Bug 3 — render one host + its attachments. Two visual
- * modes per the user-controlled {@code auraDisplayMode} preference:
+ * Slice 70-Y / Bug 3 (revised 2026-05-01) — render one host + its
+ * attachments as a horizontal fan. All cards (host + auras) render at
+ * full {@code tileSize}; each successive aura is offset 30% of card
+ * width to the right of the previous, and the host's slot expands so
+ * neighboring permanents in the same row push aside to make room.
  *
- * <ul>
- *   <li><b>'stack'</b> — attachments rendered SMALLER (60% scale),
- *     overlapping the host with a slight offset. Host face stays
- *     dominant. Attachment count visible as the stack depth.</li>
- *   <li><b>'adjacent'</b> — attachments rendered as smaller cards
- *     immediately next to the host. Each attachment fully visible.</li>
- * </ul>
+ * <p>Z-order: host on top of stack (dominant face); first aura just
+ * behind host; second aura behind first; etc. Each aura's rightmost
+ * ~30% strip peeks out from behind the previous card and is fully
+ * hoverable / clickable (the higher-z card above absorbs pointer
+ * events on the overlapping portion; the visible strip is reachable).
+ *
+ * <p>Replaces the 2026-05-01 morning's two-mode toggle (stack vs
+ * adjacent). User direction: same-size cards, horizontal offset
+ * (no diagonal), each attachment readable on hover. Per the
+ * playtest 2026-05-01: attachments were "disappearing" because the
+ * old stack mode used a tiny diagonal offset behind the host —
+ * effectively invisible.
  */
 function AttachmentGroupSlot({
   group,
@@ -163,7 +168,6 @@ function AttachmentGroupSlot({
   eligibleCombatIds,
   combatRoles,
   rotateDelay,
-  mode,
 }: {
   group: AttachmentGroup;
   tileSize: string;
@@ -172,21 +176,22 @@ function AttachmentGroupSlot({
   eligibleCombatIds: Set<string>;
   combatRoles: Map<string, 'attacker' | 'blocker'>;
   rotateDelay: number;
-  mode: 'stack' | 'adjacent';
 }) {
   const { host, attachments } = group;
   const hasAttachments = attachments.length > 0;
   const layoutId = host.card.cardId ? host.card.cardId : undefined;
-  // Stacked mode: container is host-sized (offset auras absolute-position
-  // behind the host). Adjacent mode: container is wider so auras fit
-  // beside the host without clipping.
-  const containerStyle =
-    mode === 'adjacent' && hasAttachments
-      ? {
-          width: `calc(${tileSize} * (1 + ${attachments.length} * 0.5))`,
-          height: tileSize,
-        }
-      : { width: tileSize, height: tileSize };
+  // Container width grows linearly with attachment count so siblings
+  // in the row's flex layout get pushed aside (no overlap with
+  // unrelated permanents). 30% of tileSize per attachment is enough
+  // to clearly reveal the right edge of each aura.
+  const FAN_OFFSET = 0.3;
+  const containerWidth = hasAttachments
+    ? `calc(${tileSize} * (1 + ${attachments.length} * ${FAN_OFFSET}))`
+    : tileSize;
+  // Z-base: host sits at attachments.length + 1; each successive aura
+  // sits one z below, so attachment[0] is just behind host (its right
+  // strip visible), attachment[1] is behind attachment[0], etc.
+  const hostZ = attachments.length + 1;
   return (
     <motion.div
       key={host.card.id}
@@ -195,21 +200,20 @@ function AttachmentGroupSlot({
       data-layout-id={layoutId}
       data-card-id={host.card.cardId || undefined}
       data-attachment-host={hasAttachments || undefined}
-      data-attachment-mode={hasAttachments ? mode : undefined}
       data-attachment-count={hasAttachments ? attachments.length : undefined}
       initial={{ opacity: 0, y: 24, scale: 0.85 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: -16, scale: 0.85 }}
       transition={slow(BATTLEFIELD_ENTER_EXIT)}
-      className="relative flex-shrink-0 flex items-center"
-      style={containerStyle}
+      className="relative flex-shrink-0"
+      style={{ width: containerWidth, height: tileSize }}
     >
-      {/* Host tile fills its slot. Adjacent mode: host occupies the
-          left of the wider container. Stacked mode: host fills the
-          container; auras position absolute behind it. */}
+      {/* Host: absolute-positioned at left:0 so the auras can stack
+          behind it via z-index. tileSize x tileSize same as legacy
+          flat-row layout. */}
       <div
-        className="flex-shrink-0"
-        style={{ width: tileSize, height: tileSize }}
+        className="absolute top-0 left-0"
+        style={{ width: tileSize, height: tileSize, zIndex: hostZ }}
       >
         <BattlefieldTile
           perm={host}
@@ -220,64 +224,35 @@ function AttachmentGroupSlot({
           rotateDelay={rotateDelay}
         />
       </div>
-      {hasAttachments && mode === 'adjacent' && (
-        <div className="flex flex-row gap-1 ml-1 items-center">
-          {attachments.map((att) => (
-            <div
-              key={att.card.id}
-              data-attachment-of={host.card.id}
-              data-card-id={att.card.cardId || undefined}
-              className="flex-shrink-0"
-              style={{
-                width: `calc(${tileSize} * 0.5)`,
-                height: `calc(${tileSize} * 0.7)`,
-              }}
-            >
-              <BattlefieldTile
-                perm={att}
-                canAct={canAct}
-                onClick={onObjectClick}
-                isEligibleCombat={eligibleCombatIds.has(att.card.id)}
-                combatRole={combatRoles.get(att.card.id) ?? null}
-                rotateDelay={rotateDelay}
-              />
-            </div>
-          ))}
+      {attachments.map((att, idx) => (
+        <div
+          key={att.card.id}
+          data-attachment-of={host.card.id}
+          data-card-id={att.card.cardId || undefined}
+          className="absolute top-0"
+          style={{
+            // (idx+1) so first aura is offset 30% right of host (not
+            // overlapping flush). Each subsequent aura another 30%.
+            left: `calc(${tileSize} * ${FAN_OFFSET} * ${idx + 1})`,
+            width: tileSize,
+            height: tileSize,
+            // Behind host; first aura just below host, each subsequent
+            // one lower. Visible strip = the rightmost ~30% of each
+            // card peeks out from under the next one (or under host
+            // for attachment[0]).
+            zIndex: hostZ - 1 - idx,
+          }}
+        >
+          <BattlefieldTile
+            perm={att}
+            canAct={canAct}
+            onClick={onObjectClick}
+            isEligibleCombat={eligibleCombatIds.has(att.card.id)}
+            combatRole={combatRoles.get(att.card.id) ?? null}
+            rotateDelay={rotateDelay}
+          />
         </div>
-      )}
-      {hasAttachments && mode === 'stack' && (
-        <div className="absolute inset-0 pointer-events-none">
-          {attachments.map((att, idx) => (
-            <div
-              key={att.card.id}
-              data-attachment-of={host.card.id}
-              data-card-id={att.card.cardId || undefined}
-              // Stack auras BEHIND host (lower z) with a small offset
-              // per layer so each is slightly visible at the edges.
-              // pointer-events-auto on inner tile so click-routing
-              // still works on the attachment itself (e.g. to
-              // unattach via activated ability or click-to-target).
-              className="absolute pointer-events-auto"
-              style={{
-                width: `calc(${tileSize} * 0.7)`,
-                height: `calc(${tileSize} * 0.7)`,
-                top: `calc(${tileSize} * ${0.05 + idx * 0.04})`,
-                left: `calc(${tileSize} * ${0.05 + idx * 0.04})`,
-                zIndex: -1 - idx,
-              }}
-            >
-              <BattlefieldTile
-                perm={att}
-                canAct={canAct}
-                onClick={onObjectClick}
-                isEligibleCombat={eligibleCombatIds.has(att.card.id)}
-                combatRole={combatRoles.get(att.card.id) ?? null}
-                rotateDelay={rotateDelay}
-              />
-            </div>
-          ))}
-        </div>
-      )}
+      ))}
     </motion.div>
   );
 }
