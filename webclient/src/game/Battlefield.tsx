@@ -7,6 +7,11 @@ import { gridAreaForOpponent, selectOpponents } from './battlefieldLayout';
 import type { DragState } from './useDragState';
 import { REDESIGN } from '../featureFlags';
 
+// LEGACY-BRANCH-FORK — slice 70-X.13 (Wave 4) cleanup marker.
+// Battlefield forks on REDESIGN inline (slotPart split at ~289,
+// frame/rows mount at ~321). When VITE_FEATURE_REDESIGN flips
+// default-on, follow the same mechanical-cleanup procedure as
+// GameTable.tsx (grep "REDESIGN" → unwrap each fork).
 export function Battlefield({
   gv,
   mode,

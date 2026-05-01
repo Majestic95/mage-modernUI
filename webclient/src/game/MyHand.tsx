@@ -95,6 +95,9 @@ export function MyHand({
   // Step button OR drop entirely; the End Step button being
   // disabled IS the signal." Keeping a faint inline hint preserves
   // the slice-23 affordance without the prominent label box.
+  // LEGACY-BRANCH-FORK — slice 70-X.13 (Wave 4) cleanup marker.
+  // Pairs with LEGACY-BRANCH-END below. See PlayerArea.tsx for the
+  // full mechanical-cleanup procedure when REDESIGN flips on.
   if (REDESIGN) {
     // Slice 70-P critic Tech adjacent — gate the floating-pool
     // wrapper on hasAnyMana so an empty pool produces NO DOM at
@@ -209,6 +212,7 @@ export function MyHand({
     );
   }
 
+  // LEGACY-BRANCH-END — slice 70-X.13 (Wave 4). Delete to function close.
   // Legacy branch — unchanged from slice 57.
   return (
     <div

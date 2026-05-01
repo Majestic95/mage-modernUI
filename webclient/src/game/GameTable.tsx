@@ -25,6 +25,7 @@ import { isBoardClickable, routeObjectClick } from './clickRouter';
 import { useDragState } from './useDragState';
 import { useGameStore } from './store';
 import { CommanderColorsProvider } from './useCommanderColors';
+import { buildOnSpendMana } from './manaPaymentAdapter';
 
 /**
  * Slice 70-E (ADR 0011 D5) — 6-region CSS Grid shell per
@@ -89,6 +90,23 @@ interface Props {
 // panel grow unreadably wide at 2560×1440.
 const SIDE_PANEL_WIDTH = 'clamp(280px, 22vw, 360px)';
 
+// LEGACY-BRANCH-FORK — slice 70-X.13 (Wave 4) cleanup marker.
+// GameTable forks on REDESIGN inline at multiple sites in the return
+// JSX (grid templates at ~227-247, header placeholder at ~284, hand
+// mounts at ~336+357, etc.) rather than a single if (REDESIGN)
+// branch. When VITE_FEATURE_REDESIGN flips default-on:
+//   1. grep this file for "REDESIGN" — every site is a fork.
+//   2. For ternaries ({REDESIGN ? a : b}): keep the truthy side.
+//   3. For guards ({!REDESIGN && ...}): delete the whole block.
+//   4. For guards ({REDESIGN && ...}): unwrap, keep the contents.
+//   5. Drop the `import { REDESIGN } from '../featureFlags'` once
+//      no references remain.
+// Mechanical, no behavior change. The same procedure applies to
+// PlayerArea.tsx, MyHand.tsx, and Battlefield.tsx — each carries its
+// own LEGACY-BRANCH-FORK marker. The physical-file split (a separate
+// PlayerArea.redesign.tsx etc.) is intentionally deferred until the
+// flag actually flips, so we don't maintain two physical files in
+// lockstep that will be reunified anyway.
 export function GameTable({ gameId, gameView, stream }: Props) {
   // Slice 69d (D11a + D13) — eliminated-player live region. Now at
   // GameTable root so the parent doesn't mutate when battlefield
@@ -143,37 +161,14 @@ export function GameTable({ gameId, gameView, stream }: Props) {
   // Slice 70-X.10 (user feedback 2026-04-30) — when the engine has
   // a gamePlayMana / gamePlayXMana dialog active, surface it as a
   // clickable mana pool. Click → manaType response with the upstream
-  // enum string (per HumanPlayer.playManaHandling at HumanPlayer.java
-  // :1612-1616, "pay from own mana pool" branch).
-  //
-  // Color → enum mapping mirrors mage.constants.ManaType: WHITE/BLUE/
-  // BLACK/RED/GREEN/COLORLESS. Only emits during a mana-pay dialog
-  // so the orbs are inert during free-priority moments — clicking a
-  // floating orb when no mana cost is open would race the engine.
-  const onSpendMana = useMemo(() => {
-    if (!stream || !pendingDialog) return undefined;
-    if (
-      pendingDialog.method !== 'gamePlayMana' &&
-      pendingDialog.method !== 'gamePlayXMana'
-    ) {
-      return undefined;
-    }
-    const colorToEnum: Record<string, string> = {
-      W: 'WHITE',
-      U: 'BLUE',
-      B: 'BLACK',
-      R: 'RED',
-      G: 'GREEN',
-      C: 'COLORLESS',
-    };
-    return (color: string) => {
-      const manaType = colorToEnum[color];
-      if (!manaType) return;
-      stream.sendPlayerResponse(pendingDialog.messageId, 'manaType', {
-        manaType,
-      });
-    };
-  }, [stream, pendingDialog]);
+  // enum string. Slice 70-X.13 (Wave 4) — the color→enum map and
+  // dispatch factory moved to manaPaymentAdapter.ts so this layout
+  // file isn't carrying a mapping table that should live with the
+  // wire contract.
+  const onSpendMana = useMemo(
+    () => buildOnSpendMana(stream ?? null, pendingDialog),
+    [stream, pendingDialog],
+  );
   const out = useMemo(
     () =>
       stream

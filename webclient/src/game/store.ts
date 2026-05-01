@@ -272,6 +272,91 @@ const INITIAL: Pick<
   sidePanelCollapsed: false,
 };
 
+/**
+ * Slice 70-X.13 (Wave 4) — extracted reducers for the two
+ * heaviest cases in {@code applyFrame}'s switch. The dispatcher stays
+ * a switch (right shape for a 12-case discriminated union of method
+ * names — TypeScript exhaustiveness checking + clear control flow),
+ * but each case body is a single function call so the per-method
+ * mutation logic doesn't bloat the dispatcher into a 200-line wall.
+ *
+ * <p>Pure on the inputs: receives the current state plus the frame +
+ * validated data, returns a {@code Partial<GameState>} for the store
+ * to merge. {@code null} means "no state change."
+ *
+ * <p>Did NOT extract per-method reducers wholesale (the agent
+ * reviewer's max-ambition recommendation). The switch is the right
+ * shape for this surface — it's not big enough to justify a
+ * {@code Record<Method, Reducer>} dispatch table, and TypeScript's
+ * narrowing on a literal-string discriminated union gives us
+ * exhaustiveness for free.
+ */
+type GameInformReduce = Pick<
+  GameState,
+  'lastWrapped' | 'gameView' | 'gameLog' | 'gameOverPending'
+>;
+
+function reduceGameInformOrOver(
+  state: GameState,
+  frame: WebStreamFrame,
+  wrapped: WebGameClientMessage,
+): GameInformReduce {
+  const nextGv = wrapped.gameView ?? state.gameView;
+  // Slice 18: append to the game log if there's a non-empty
+  // message. Empty-message gameInform frames (engine pushes
+  // these for state-only updates) don't add log noise.
+  let nextLog = state.gameLog;
+  if (wrapped.message && wrapped.message.length > 0) {
+    const entry: GameLogEntry = {
+      id: frame.messageId,
+      message: wrapped.message,
+      turn: nextGv?.turn ?? 0,
+      phase: nextGv?.step || nextGv?.phase || '',
+    };
+    nextLog = nextLog.length >= GAME_LOG_CAP
+      ? [...nextLog.slice(nextLog.length - GAME_LOG_CAP + 1), entry]
+      : [...nextLog, entry];
+  }
+  const isGameOver = frame.method === 'gameOver';
+  return {
+    lastWrapped: wrapped,
+    gameView: nextGv,
+    gameLog: nextLog,
+    // Slice 19: flag the gameOver-pending state so the banner
+    // renders. Cleared on the next gameInit (best-of-N next game)
+    // or on reset (user leaves).
+    gameOverPending: isGameOver || state.gameOverPending,
+    // Slice 16: do NOT clear pendingDialog on gameInform — engine
+    // fires informs mid-combat ("alice attacks with Grizzly Bears")
+    // while declare-attackers is still active. Clearing would nuke
+    // the prompt. gameOver wants the banner to overlay any stale
+    // dialog so we don't clear there either; reset() handles cleanup.
+  };
+}
+
+function reduceChatMessage(
+  state: GameState,
+  frame: WebStreamFrame,
+  msg: WebChatMessage,
+): Pick<GameState, 'chatMessages'> | null {
+  // chatId comes from the envelope's objectId (per slice 2). Server
+  // pushes the same chatId on every chat callback for a given chat.
+  // If a frame arrives without a chatId we drop it — there's no
+  // sensible bucket to file it under.
+  const chatId = frame.objectId;
+  if (!chatId) {
+    return null;
+  }
+  const buckets = state.chatMessages;
+  const prior = buckets[chatId] ?? [];
+  const next = prior.length >= CHAT_HISTORY_CAP
+    ? [...prior.slice(prior.length - CHAT_HISTORY_CAP + 1), msg]
+    : [...prior, msg];
+  return {
+    chatMessages: { ...buckets, [chatId]: next },
+  };
+}
+
 export const useGameStore = create<GameState>()((set, get) => ({
   ...INITIAL,
 
@@ -384,43 +469,9 @@ export const useGameStore = create<GameState>()((set, get) => ({
         return true;
 
       case 'gameInform':
-      case 'gameOver': {
-        const wrapped = validatedData as WebGameClientMessage;
-        const nextGv = wrapped.gameView ?? get().gameView;
-        // Slice 18: append to the game log if there's a non-empty
-        // message. Empty-message gameInform frames (engine pushes
-        // these for state-only updates) don't add log noise.
-        let nextLog = get().gameLog;
-        if (wrapped.message && wrapped.message.length > 0) {
-          const entry: GameLogEntry = {
-            id: frame.messageId,
-            message: wrapped.message,
-            turn: nextGv?.turn ?? 0,
-            phase: nextGv?.step || nextGv?.phase || '',
-          };
-          nextLog = nextLog.length >= GAME_LOG_CAP
-            ? [...nextLog.slice(nextLog.length - GAME_LOG_CAP + 1), entry]
-            : [...nextLog, entry];
-        }
-        const isGameOver = frame.method === 'gameOver';
-        set({
-          lastWrapped: wrapped,
-          gameView: nextGv,
-          gameLog: nextLog,
-          // Slice 19: flag the gameOver-pending state so the
-          // banner renders. Cleared on the next gameInit (best-of-N
-          // next game starts) or on reset (user leaves).
-          gameOverPending: isGameOver || get().gameOverPending,
-          // Slice 16: do NOT clear pendingDialog on gameInform —
-          // the engine fires informs mid-combat ("alice attacks
-          // with Grizzly Bears") while declare-attackers is still
-          // active. Clearing would nuke the prompt and the user
-          // would lose combat-mode signal. gameOver wants the
-          // banner to overlay any stale dialog so we don't clear
-          // there either; reset() handles cleanup on Leave.
-        });
+      case 'gameOver':
+        set(reduceGameInformOrOver(get(), frame, validatedData as WebGameClientMessage));
         return true;
-      }
 
       case 'endGameInfo':
         set({
@@ -465,23 +516,8 @@ export const useGameStore = create<GameState>()((set, get) => ({
       }
 
       case 'chatMessage': {
-        const msg = validatedData as WebChatMessage;
-        // chatId comes from the envelope's objectId (per slice 2).
-        // Server pushes the same chatId on every chat callback for a
-        // given chat. If a frame arrives without a chatId we drop it
-        // — there's no sensible bucket to file it under.
-        const chatId = frame.objectId;
-        if (!chatId) {
-          return true;
-        }
-        const buckets = get().chatMessages;
-        const prior = buckets[chatId] ?? [];
-        const next = prior.length >= CHAT_HISTORY_CAP
-          ? [...prior.slice(prior.length - CHAT_HISTORY_CAP + 1), msg]
-          : [...prior, msg];
-        set({
-          chatMessages: { ...buckets, [chatId]: next },
-        });
+        const next = reduceChatMessage(get(), frame, validatedData as WebChatMessage);
+        if (next) set(next);
         return true;
       }
 

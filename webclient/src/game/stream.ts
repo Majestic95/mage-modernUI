@@ -19,6 +19,8 @@ import {
   webDialogClearSchema,
   webGameClientMessageSchema,
   webGameEndViewSchema,
+  EXPECTED_SCHEMA_MAJOR,
+  parseSchemaVersion,
   webGameViewSchema,
   webSideboardInfoSchema,
   webStartGameInfoSchema,
@@ -476,6 +478,30 @@ export class GameStream {
         .getState()
         .setConnection('error', `bad frame: ${message}`);
       return;
+    }
+
+    // Slice 70-X.13 (Wave 4) — symmetry with HTTP envelope's major-
+    // version check ({@link client.ts:184}). The HTTP path refused
+    // mismatched majors; the WebSocket path silently accepted them
+    // and relied on per-method Zod {@code .default()} fall-throughs
+    // to limp along — heroic but invisible. A server with a major
+    // schema bump that still speaks our protocolVersion would slip
+    // through and produce cryptic per-frame parse errors. Now we
+    // enforce the major contract at the envelope layer (one place
+    // to keep correct) and surface a connection-level error if the
+    // server steps outside.
+    if (typeof envelope.schemaVersion === 'string') {
+      const parts = parseSchemaVersion(envelope.schemaVersion);
+      if (parts && parts.major !== EXPECTED_SCHEMA_MAJOR) {
+        useGameStore
+          .getState()
+          .setConnection(
+            'error',
+            `Wire-format major version ${parts.major} != expected `
+              + `${EXPECTED_SCHEMA_MAJOR}; refusing frames.`,
+          );
+        return;
+      }
     }
 
     let validatedData: unknown = envelope.data;

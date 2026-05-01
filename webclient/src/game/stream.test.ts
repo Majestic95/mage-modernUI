@@ -381,6 +381,38 @@ describe('GameStream', () => {
     expect(FakeWebSocket.lastUrl).toContain('since=7');
   });
 
+  // Slice 70-X.13 (Wave 4) — symmetry with HTTP envelope's major-
+  // version check. A server with a bumped major schemaVersion (still
+  // speaking our protocolVersion) would slip through silently
+  // pre-Wave-4 — per-method validators with .default() limped along
+  // but the contract semantics could drift arbitrarily. Now we refuse.
+  it('major-version mismatch on a frame surfaces connection error and drops the frame', () => {
+    const stream = new GameStream({
+      gameId: FAKE_GAME_ID,
+      token: 'tok-1',
+      webSocketCtor: FakeWebSocket as unknown as typeof WebSocket,
+    });
+    stream.open();
+    const sock = FakeWebSocket.instances[0]!;
+    sock._open();
+    // Reset to known state.
+    useGameStore.getState().setConnection('open', null);
+    // Send a frame with major-version 99 — well above EXPECTED.
+    sock._message(
+      JSON.stringify({
+        schemaVersion: '99.0',
+        method: 'gameUpdate',
+        messageId: 5,
+        objectId: FAKE_GAME_ID,
+        data: {},
+      }),
+    );
+    expect(useGameStore.getState().connection).toBe('error');
+    expect(useGameStore.getState().closeReason ?? '').toMatch(
+      /major version/i,
+    );
+  });
+
   // Slice 70-X.13 (Wave 3) — fail-closed contract. A frame whose data
   // fails per-method validation MUST be dropped (no applyFrame call,
   // no half-validated state), but lastMessageId STILL advances so

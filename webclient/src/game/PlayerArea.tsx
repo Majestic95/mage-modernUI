@@ -201,6 +201,19 @@ export function PlayerArea({
   // Pod chrome dropped per picture-catalog §6.3 — pods float on the
   // battlefield without a panel container. CommandZone strip
   // dropped because the commander identity is shown via portrait.
+  // LEGACY-BRANCH-FORK — slice 70-X.13 (Wave 4) cleanup marker. When
+  // VITE_FEATURE_REDESIGN flips default-on, search the repo for
+  // "LEGACY-BRANCH-FORK" / "LEGACY-BRANCH-END" pairs and:
+  //   1. delete the `if (!REDESIGN) return ...` legacy block at the
+  //      bottom of this function (look for LEGACY-BRANCH-END);
+  //   2. unwrap this `if (REDESIGN) { ... }` shell so the redesign
+  //      tree becomes the unconditional return;
+  //   3. remove the `import { REDESIGN } from '../featureFlags'` if
+  //      no longer used.
+  // Mechanical, no behavior change. Defer the physical-file split
+  // (`PlayerArea.redesign.tsx` etc.) until the flag actually flips —
+  // doing it now means maintaining two physical files in lockstep
+  // that will be reunified anyway.
   if (REDESIGN) {
     const isVertical = position === 'top' || position === 'bottom';
     // Slice 70-Z polish round 20 (user direction 2026-04-30) — the
@@ -460,6 +473,8 @@ export function PlayerArea({
     );
   }
 
+  // LEGACY-BRANCH-END — slice 70-X.13 (Wave 4). Delete from here to
+  // the closing `}` of the function when REDESIGN flips default-on.
   // Legacy branch — unchanged from slice 70-H.5.
   return (
     <div
