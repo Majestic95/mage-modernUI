@@ -97,8 +97,20 @@ export function routeObjectClick(
       if (mode.eligibleIds.size > 0 && !mode.eligibleIds.has(objectId)) {
         return { dispatched: false, reason: 'not-eligible-target' };
       }
+      const permissive = mode.eligibleIds.size === 0;
       out.sendPlayerResponse(mode.messageId, 'uuid', objectId);
-      out.clearDialog();
+      // Slice 70-X.13 (Wave 3) — only the strict-eligible path clears
+      // the dialog locally. In permissive mode the engine may reject
+      // (gameError fires); without the dialog the user has lost the
+      // prompt context. Strict-eligible dispatches are by-construction
+      // valid against the engine's reported possibleTargets, so the
+      // local clear is safe — but the resulting fresh gameView frame
+      // would replace pendingDialog anyway, so the difference is one
+      // frame of staleness vs UX correctness on reject. Picked
+      // correctness.
+      if (!permissive) {
+        out.clearDialog();
+      }
       return {
         dispatched: true,
         via: 'playerResponse',

@@ -118,16 +118,38 @@ public final class TableMapper {
         //     format convention; non-Commander formats land here too
         //     but with empty sideboards → empty commander fields,
         //     which is the correct "no commander to preview" state).
+        //
+        // Slice 70-X.13 (Wave 3) — defensive try/catch around the
+        // deck read. {@code MatchPlayer.getDeck()} and
+        // {@code Deck.getSideboard()} return live engine-owned
+        // collections. The lobby HTTP path iterates these from a
+        // Javalin worker thread while the engine may be mutating them
+        // (e.g. sideboarding window between games of a match). Even
+        // the {@code .iterator().next()} in firstSideboardCard can
+        // throw {@link ConcurrentModificationException} or surface a
+        // half-mutated Card. Pre-game the risk is low (deck built
+        // once); between games it's real. On any RuntimeException we
+        // fall back to the "no commander info" state — better than a
+        // 500 on the lobby listing endpoint that hangs the table list
+        // for everyone.
         String commanderName = "";
         int commanderImageNumber = 0;
         if (occupied && match != null) {
-            MatchPlayer mp = match.getPlayer(s.getPlayerId());
-            if (mp != null && mp.getDeck() != null) {
-                Card commander = firstSideboardCard(mp.getDeck());
-                if (commander != null) {
-                    commanderName = emptyIfNull(commander.getName());
-                    commanderImageNumber = parseCardNumber(commander.getCardNumber());
+            try {
+                MatchPlayer mp = match.getPlayer(s.getPlayerId());
+                if (mp != null && mp.getDeck() != null) {
+                    Card commander = firstSideboardCard(mp.getDeck());
+                    if (commander != null) {
+                        commanderName = emptyIfNull(commander.getName());
+                        commanderImageNumber =
+                                parseCardNumber(commander.getCardNumber());
+                    }
                 }
+            } catch (RuntimeException ex) {
+                // Defensive — fall back to empty commander preview;
+                // the seat itself is still rendered.
+                commanderName = "";
+                commanderImageNumber = 0;
             }
         }
         return new WebSeat(

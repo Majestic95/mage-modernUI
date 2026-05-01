@@ -319,22 +319,46 @@ describe('useGameStore', () => {
     expect(useGameStore.getState().pendingDialog).toBeNull();
   });
 
-  it('dialogClear preserves dialogs whose targets do NOT include the leaver', () => {
-    // 4p FFA: alice's open dialog is asking her to choose between
-    // bob's and dave's permanents. Carol concedes — her UUID isn't
-    // in the targets list, so alice's dialog is unaffected. The
-    // engine's vote loop / target-pick loop is independent of
-    // who else is in the game.
+  // Slice 70-X.13 (Wave 3) — server/client semantic agreement. The
+  // server's broadcastDialogClearToGame fires ONLY on player-leave,
+  // never speculatively, so the client's narrow "leaver in targets"
+  // gate was missing yes/no gameAsk dialogs (e.g. multi-player vote
+  // prompts with no targets array) where the leaver was the responder
+  // but not a target. Pre-Wave-3 those dialogs hung indefinitely.
+  // Wave-3 widens the client to clear ANY non-gameChooseAbility
+  // dialog when dialogClear arrives — the engine re-fires if a fresh
+  // prompt is needed, and a one-frame stutter beats a permanent stuck
+  // modal.
+  it('dialogClear clears any non-gameChooseAbility dialog (widened in Wave 3)', () => {
     const bob = 'aaaaaaaa-1111-1111-1111-111111111111';
     const carol = 'bbbbbbbb-2222-2222-2222-222222222222';
     const dave = 'cccccccc-3333-3333-3333-333333333333';
+    // The dialog's targets do NOT include carol — but the server-
+    // side broadcast contract is "this is a stale-prompt signal,"
+    // not "your specific targets are gone." So the client clears.
     const dialog = dialogPayloadWithTargets([bob, dave]);
     useGameStore.getState().applyFrame(frame('gameTarget', dialog, 60), dialog);
     expect(useGameStore.getState().pendingDialog).not.toBeNull();
 
     const clear = { playerId: carol, reason: 'PLAYER_LEFT' };
     useGameStore.getState().applyFrame(frame('dialogClear', clear, 61), clear);
+    expect(useGameStore.getState().pendingDialog).toBeNull();
+  });
+
+  it('dialogClear clears a yes/no gameAsk with no targets (Wave 3 vote-prompt fix)', () => {
+    // Multi-player vote: engine fires gameAsk to each surviving
+    // player simultaneously. There's no targets array — each prompt
+    // is a per-player yes/no. When ANY player leaves, the others
+    // must teardown so the engine can re-fire with the surviving
+    // player set. Pre-Wave-3 this was the canonical stuck-modal bug.
+    const carol = 'bbbbbbbb-2222-2222-2222-222222222222';
+    const dialog = dialogPayloadWithTargets([], 'Vote yes/no');
+    useGameStore.getState().applyFrame(frame('gameAsk', dialog, 80), dialog);
     expect(useGameStore.getState().pendingDialog).not.toBeNull();
+
+    const clear = { playerId: carol, reason: 'PLAYER_LEFT' };
+    useGameStore.getState().applyFrame(frame('dialogClear', clear, 81), clear);
+    expect(useGameStore.getState().pendingDialog).toBeNull();
   });
 
   it('dialogClear with no open dialog is a no-op', () => {

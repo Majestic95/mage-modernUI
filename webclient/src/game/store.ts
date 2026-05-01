@@ -431,31 +431,36 @@ export const useGameStore = create<GameState>()((set, get) => ({
 
       case 'dialogClear': {
         // Slice 69d (ADR 0010 v2 D11b) — synthetic teardown signal
-        // emitted when a player leaves. Per the ADR contract: dismiss
-        // the open dialog ONLY if the leaver is referenced in the
-        // dialog's targets list. Engine already skips leavers
+        // emitted when a player leaves. Engine already skips leavers
         // server-side (VoteHandler.doVotes etc.); this signal closes
         // the visual loop on the client so a stuck modal goes away.
         //
-        // Targeting check: WebGameClientMessage.targets carries the
-        // legal-target UUIDs the engine asked the player to pick
-        // from. If the leaver's UUID is in there, the dialog can no
-        // longer be answered (legal target gone) — clear it. The
-        // engine will re-prompt with a fresh gameAsk / gameTarget /
-        // gameSelect if it still needs a different target. Per
-        // ADR D11(b): clients do NOT chain off dialogClear.
-        //
-        // gameChooseAbility dialogs use WebAbilityPickerView (no
-        // targets array) — they can't reference the leaver as a
-        // target by construction, so we leave them alone.
+        // Slice 70-X.13 (Wave 3) — server/client semantic agreement.
+        // Pre-Wave-3 the client only cleared if the leaver was in
+        // {@code current.data.targets} — works for gameTarget /
+        // gameSelect but misses yes/no gameAsk (no targets array, e.g.
+        // multi-player vote prompts) where the leaver is the responder
+        // but isn't a "target" of the prompt. Result: the OTHER
+        // waiting players' UIs hung. Server's broadcast contract is
+        // already narrowly scoped — it only fires on a player-leave
+        // event, never speculatively. So when this signal arrives, any
+        // non-{@code gameChooseAbility} pending dialog is potentially
+        // stale; clearing unconditionally aligns the client semantics
+        // with the server's intent (close the visual loop). The
+        // engine re-fires gameAsk / gameTarget / gameSelect if a
+        // fresh prompt is needed for the surviving players — a
+        // spurious clear is a one-frame stutter; a stuck modal is a
+        // permanent stranding. {@code gameChooseAbility} uses
+        // {@link WebAbilityPickerView} (no targets array; can't
+        // reference the leaver by construction) — left alone.
         const clear = validatedData as WebDialogClear;
         const current = get().pendingDialog;
         if (current && current.method !== 'gameChooseAbility') {
-          const targets = current.data.targets ?? [];
-          if (targets.includes(clear.playerId)) {
-            set({ pendingDialog: null });
-          }
+          set({ pendingDialog: null });
         }
+        // Guard for unused-var lint when the targets-based check is
+        // pulled out — `clear` now intentionally unread.
+        void clear;
         return true;
       }
 

@@ -100,6 +100,33 @@ public final class AuthService implements AutoCloseable {
     private final ConcurrentHashMap<String, WebSocketCallbackHandler> handlersBySessionId =
             new ConcurrentHashMap<>();
     /**
+     * Slice 70-X.13 (Wave 3) — secondary index keyed by lowercase
+     * username. Atomically maintained alongside
+     * {@link #handlersBySessionId} so {@link #handlerByUsername} is
+     * O(1) AND cannot observe both an OLD revoked handler and the
+     * NEW handler simultaneously during a duplicate-login race.
+     *
+     * <p>Pre-Wave-3, {@code handlerByUsername} did a linear scan
+     * over {@code handlersBySessionId.values()} and returned the
+     * first match. Between {@code registerUpstreamSession(NEW)}
+     * (line in login flow) and {@code revokePriorTokensForSameUsername}
+     * (after login success), BOTH old and new handlers were in the
+     * primary map. Iteration could return EITHER — meaning
+     * {@code connectionStateFor} could surface a connection state
+     * for the about-to-be-killed handler, painting a stale frame.
+     *
+     * <p>Atomicity contract: every {@code put} on
+     * {@link #handlersBySessionId} also puts here (overwrite-OK,
+     * keyed by lowercase username). Every {@code remove} on the
+     * primary uses {@code remove(key, value)} on this secondary,
+     * so a pending revoke does NOT inadvertently remove a NEWER
+     * handler that overwrote in the window between the two calls.
+     * Concurrent register-new + revoke-old yield exactly one
+     * surviving entry.
+     */
+    private final ConcurrentHashMap<String, WebSocketCallbackHandler> handlersByUsername =
+            new ConcurrentHashMap<>();
+    /**
      * Slice 70-H.5 — disconnect-timeout in seconds, read from
      * {@code XMAGE_DISCONNECT_TIMEOUT_SEC} at construction time.
      * Default 60; clamped to [30, 180]. Bad values fall back to the
@@ -183,6 +210,20 @@ public final class AuthService implements AutoCloseable {
         if (username == null) {
             return Optional.empty();
         }
+        // Slice 70-X.13 (Wave 3) — O(1) lookup via the secondary
+        // index. Eliminates the duplicate-login race where the linear
+        // scan could observe an OLD doomed handler before revoke
+        // removed it.
+        WebSocketCallbackHandler indexed =
+                handlersByUsername.get(usernameKey(username));
+        if (indexed != null) {
+            return Optional.of(indexed);
+        }
+        // Fallback: defensive linear scan in case the secondary index
+        // is briefly out of sync with the primary (every put happens
+        // in registerUpstreamSession, but a future code path that
+        // forgets to update both maps would silently degrade lookup
+        // unless we keep this fallback).
         for (WebSocketCallbackHandler h : handlersBySessionId.values()) {
             if (username.equals(h.username())) {
                 return Optional.of(h);
@@ -330,11 +371,23 @@ public final class AuthService implements AutoCloseable {
                     ""
             );
         } catch (MageException ex) {
-            // Non-fatal — login still succeeds; engine falls back to
-            // null-UserData behavior (stop-at-every-step). Log so the
-            // operator sees the regression but don't fail the login.
-            LOG.warn("connectSetUserData failed for user={}: {}",
+            // Slice 70-X.13 (Wave 3) — fail fatally. Pre-Wave-3 we
+            // logged a warn and let login succeed; the user then hit
+            // the engine "stop at every priority window" failure mode
+            // this slice was specifically introduced to fix
+            // (HumanPlayer.checkPassStep returns false for null
+            // UserData → manual click required at every step incl.
+            // opponent's end-of-turn). A logged warn is invisible
+            // during a playtest; the user just experiences a broken
+            // game with no visible error. Better to fail loudly at
+            // the auth boundary so a regression in upstream's
+            // connectSetUserData contract surfaces immediately.
+            silentDisconnect(upstreamSessionId);
+            LOG.error("connectSetUserData failed for user={}: {}",
                     resolvedUsername, ex.getMessage());
+            throw new WebApiException(500, "UPSTREAM_ERROR",
+                    "Upstream server failed to apply UserData; login aborted: "
+                    + ex.getMessage());
         }
 
         revokePriorTokensForSameUsername(resolvedUsername);
@@ -594,7 +647,23 @@ public final class AuthService implements AutoCloseable {
                 new WebSocketCallbackHandler(
                         username, embedded, this, upstreamSessionId);
         handlersBySessionId.put(upstreamSessionId, handler);
+        // Slice 70-X.13 (Wave 3) — overwrite-OK on the username key.
+        // If a stale OLD handler is still indexed here under the same
+        // username (mid-revoke window), the put replaces it with NEW;
+        // the OLD revoke's conditional remove(key, value) then does
+        // not match and leaves NEW intact.
+        handlersByUsername.put(usernameKey(username), handler);
         sessionManager().createSession(upstreamSessionId, handler);
+    }
+
+    /**
+     * Slice 70-X.13 (Wave 3) — case-insensitive username key for the
+     * secondary index. Mirrors the case-insensitive contract of
+     * {@code revokePriorTokensForSameUsername} (which uses
+     * {@code WebSessionStore.removeAllByUsername} → equalsIgnoreCase).
+     */
+    private static String usernameKey(String username) {
+        return username == null ? "" : username.toLowerCase(java.util.Locale.ROOT);
     }
 
     private void silentDisconnect(String upstreamSessionId) {
@@ -608,6 +677,14 @@ public final class AuthService implements AutoCloseable {
         // Hardening fix 2026-04-26.
         WebSocketCallbackHandler handler = handlersBySessionId.remove(upstreamSessionId);
         if (handler != null) {
+            // Slice 70-X.13 (Wave 3) — conditional remove on the
+            // secondary index. If a NEWER handler under the same
+            // username already overwrote this entry (duplicate-login
+            // race), the conditional remove does NOT match and leaves
+            // the NEWER handler indexed correctly. Without this, an
+            // unconditional remove would clobber the NEW handler's
+            // index entry on every revoke of an OLD session.
+            handlersByUsername.remove(usernameKey(handler.username()), handler);
             handler.closeAllSockets(1000, "session ended: " + reason);
         }
         try {

@@ -73,7 +73,14 @@ describe('routeObjectClick', () => {
   // empty, and the strict eligibility check would have dropped every
   // click silently. Drop this test and a regression that re-tightens
   // the check reverts the user-facing fix without any failing assertion.
-  it('target + empty eligibleIds → permissive: any click dispatches and clears', () => {
+  //
+  // Slice 70-X.13 (Wave 3) — the permissive path does NOT call
+  // clearDialog. If the engine rejects the pick (gameError fires) the
+  // user keeps the prompt context to retry; on accept, the fresh
+  // gameView frame replaces pendingDialog server-side. The strict-
+  // eligible path still clearDialogs (covered by the test above —
+  // 'target + eligible id → sendPlayerResponse + clearDialog').
+  it('target + empty eligibleIds → permissive: dispatches BUT does NOT clearDialog', () => {
     const out = mockOut();
     const mode: InteractionMode = {
       kind: 'target',
@@ -85,8 +92,10 @@ describe('routeObjectClick', () => {
     expect(r.dispatched).toBe(true);
     expect(out.calls).toEqual([
       { method: 'sendPlayerResponse', args: [9, 'uuid', 'whatever-id'] },
-      { method: 'clearDialog', args: [] },
     ]);
+    expect(
+      out.calls.some((c) => c.method === 'clearDialog'),
+    ).toBe(false);
   });
 
   it('declareAttackers → sendObjectClick (toggle); does NOT clearDialog', () => {

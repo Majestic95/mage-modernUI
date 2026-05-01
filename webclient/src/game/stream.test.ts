@@ -357,22 +357,68 @@ describe('GameStream', () => {
     stream.open();
     const first = FakeWebSocket.instances[0]!;
     first._open();
-    // Simulate a few frames so lastMessageId advances. We send a
-    // streamHello (messageId 0) and a synthetic gameUpdate at id 7.
+    // Slice 70-X.13 (Wave 3) — lastMessageId still advances on
+    // validation failure (so reconnect resumes at the next frame, not
+    // re-receives the broken one). Send a malformed gameUpdate and
+    // assert the cursor advances even though the frame's data is
+    // dropped.
     first._message(
       JSON.stringify({
         schemaVersion: '1.15',
         method: 'gameUpdate',
         messageId: 7,
         objectId: FAKE_GAME_ID,
-        data: { /* gameUpdate validation may fail; ok — store still bumps id */ },
+        data: {},
       }),
     );
     expect(useGameStore.getState().lastMessageId).toBe(7);
+    // Frame was dropped (gameView is still null) but the cursor
+    // advanced for reconnect purposes.
+    expect(useGameStore.getState().gameView).toBeNull();
 
     first._close(1011, 'server crash');
     sched.fireNext();
     expect(FakeWebSocket.lastUrl).toContain('since=7');
+  });
+
+  // Slice 70-X.13 (Wave 3) — fail-closed contract. A frame whose data
+  // fails per-method validation MUST be dropped (no applyFrame call,
+  // no half-validated state), but lastMessageId STILL advances so
+  // reconnect doesn't redeliver. Pre-Wave-3 the frame was passed
+  // through with raw data → applyFrame cast `unknown` to typed shapes
+  // → downstream `dialog.data.targets` access threw at runtime.
+  it('validation failure drops the frame but advances lastMessageId', () => {
+    const stream = new GameStream({
+      gameId: FAKE_GAME_ID,
+      token: 'tok-1',
+      webSocketCtor: FakeWebSocket as unknown as typeof WebSocket,
+    });
+    stream.open();
+    const sock = FakeWebSocket.instances[0]!;
+    sock._open();
+    // Suppress the expected console.error so the suite output stays
+    // clean — the fail-closed path logs at error level by design.
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      sock._message(
+        JSON.stringify({
+          schemaVersion: '1.15',
+          method: 'gameTarget',
+          messageId: 11,
+          objectId: FAKE_GAME_ID,
+          // gameTarget data must be a WebGameClientMessage; this is not.
+          data: { totally: 'wrong-shape' },
+        }),
+      );
+      // Cursor advanced (reconnect contract).
+      expect(useGameStore.getState().lastMessageId).toBe(11);
+      // Dialog NOT applied — pendingDialog stays null.
+      expect(useGameStore.getState().pendingDialog).toBeNull();
+      // The fail-closed path logged the drop.
+      expect(errSpy).toHaveBeenCalled();
+    } finally {
+      errSpy.mockRestore();
+    }
   });
 
   it('does not retry on 4001 auth-failure close', () => {

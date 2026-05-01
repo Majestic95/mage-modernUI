@@ -484,14 +484,30 @@ export class GameStream {
       try {
         validatedData = validator(envelope.data);
       } catch (err) {
-        // Per-method data validation failure is non-fatal — log and
-        // pass the raw data through. The store can decide to ignore.
+        // Slice 70-X.13 (Wave 3) — fail closed on validation error.
+        // Pre-Wave-3 we logged + passed the raw envelope.data through;
+        // the store then cast `unknown` → typed shape (WebGameClientMessage,
+        // etc.) and any downstream `dialog.data.targets` access threw at
+        // runtime against the unvalidated payload. Skipping the frame
+        // localizes the failure: one frame is dropped, the next valid
+        // gameUpdate replaces local state, and the user sees a one-frame
+        // stutter instead of a crashed render. The error is loud
+        // (console.error not warn) so a validator regression surfaces
+        // immediately during dev / CI.
+        //
+        // Crucially, lastMessageId STILL advances — on reconnect we
+        // want ?since=<this-id> so the server doesn't re-deliver the
+        // broken frame. The data was lost; the position is not.
         if (typeof console !== 'undefined') {
-          console.warn(
-            `GameStream: data validation failed for method=${envelope.method}`,
+          console.error(
+            `GameStream: dropping frame — data validation failed for method=${envelope.method}`,
             err,
           );
         }
+        if (envelope.messageId > useGameStore.getState().lastMessageId) {
+          useGameStore.setState({ lastMessageId: envelope.messageId });
+        }
+        return;
       }
     }
 
