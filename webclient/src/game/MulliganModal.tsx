@@ -47,28 +47,33 @@ export function MulliganModal({ stream, gameView }: Props) {
   // unmounts BEFORE opponents commit. Spec §Mulligan: the modal
   // persists showing "waiting for opponents" until engine resolution.
   //
-  // Reset triggers (in order of likelihood):
+  // Reset triggers:
   //   1. A NEW pendingDialog arrives (deeper mulligan loop OR the
-  //      engine moved on to the post-mulligan priority prompt).
-  //      Detected by messageId change. Covers the common case.
-  //   2. The next mulligan dialog isn't a mulligan — handled by the
-  //      first useEffect's isMulligan branch (any new dialog
-  //      arrival is a release signal).
+  //      active player's post-mulligan priority prompt). Detected
+  //      by messageId change.
+  //   2. The game has advanced past turn 0 (mulligan only happens
+  //      pre-turn-1; once `turn >= 1` mulligan is provably over).
+  //      Slice 70-X.1 fix — the original implementation relied
+  //      solely on a follow-up dialog as the reset signal, but in
+  //      multi-player games ONLY the active player receives a
+  //      post-mulligan priority dialog. Non-active players got no
+  //      follow-up dialog and the latch stayed true forever, so
+  //      their modal kept showing "waiting for opponents" after
+  //      mulligan resolution. Watching `gameView.turn` covers
+  //      every player's exit from the mulligan phase regardless
+  //      of dialog flow.
   //
   // We do NOT reset on `pendingDialog === null` alone — the local
   // dispatch clears pendingDialog synchronously, and resetting on
-  // null would defeat the latch entirely (the original bug). The
-  // engine ALWAYS follows mulligan resolution with another dialog
-  // (priority pass for turn 1, or another gameAsk for the deeper
-  // mulligan loop), so the messageId-change path is reliable.
+  // null would defeat the latch entirely (the original bug we
+  // were fixing in slice 70-F).
   const [committedLocally, setCommittedLocally] = useState(false);
+  const turn = gameView.turn;
   useEffect(() => {
-    // Reset the latch whenever a NEW dialog arrives (any kind —
-    // the engine has moved past the prior mulligan iteration).
-    if (pendingDialog) {
+    if (pendingDialog || turn >= 1) {
       setCommittedLocally(false);
     }
-  }, [pendingDialog?.messageId, pendingDialog]);
+  }, [pendingDialog?.messageId, pendingDialog, turn]);
 
   const dispatch = useMemo(
     () =>
