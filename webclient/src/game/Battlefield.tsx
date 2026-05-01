@@ -211,7 +211,18 @@ export function Battlefield({
               key={p.playerId}
               style={{ gridArea: area }}
               className={
-                'min-w-0' + (isSidePod ? ' flex items-center' : '')
+                // Slice 70-Y / Issue 1 v2 (2026-05-01) — side pods
+                // center vertically within the available space MINUS
+                // the hand-fan area at the bottom of the viewport.
+                // The hand fan is fixed-positioned outside the grid,
+                // so without padding-bottom the geometric center of
+                // the middle row falls behind the hand fan and the
+                // side pods visually anchor to the lower half of the
+                // viewport. pb-[18vh] reserves roughly the hand fan's
+                // visible height (≈180px on 1080p) so the centering
+                // sits in the viewport's true vertical middle.
+                'min-w-0' +
+                (isSidePod ? ' flex items-center pb-[18vh]' : '')
               }
             >
               <PlayerArea
