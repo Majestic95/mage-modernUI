@@ -13,6 +13,8 @@ import { InformDialog } from './InformDialog';
 import { CombatPanel } from './CombatPanel';
 import { ManaPayPanel } from './ManaPayPanel';
 import { isMulliganDialog } from '../MulliganModal';
+import { PilePickerDialog } from './PilePickerDialog';
+import { MultiAmountDialog } from './MultiAmountDialog';
 import { CLICK_RESOLUTION } from '../../featureFlags';
 import { useDialogTargets } from '../useDialogTargets';
 import { DialogBanner } from './DialogBanner';
@@ -230,5 +232,26 @@ function DialogContent({
       return <InformDialog dialog={dialog} clearDialog={clearDialog} title="Info" />;
     case 'gameError':
       return <InformDialog dialog={dialog} clearDialog={clearDialog} title="Error" />;
+    case 'gameChoosePile':
+      return (
+        <PilePickerDialog
+          dialog={dialog}
+          stream={stream}
+          clearDialog={clearDialog}
+        />
+      );
+    case 'gameSelectMultiAmount':
+      // Re-key on messageId so first-strike → normal-damage step
+      // re-fires produce a fresh component with new defaultValues
+      // (per MTG rules expert: trample fires this twice on double-
+      // strike trample, with re-evaluated lethals each time).
+      return (
+        <MultiAmountDialog
+          key={dialog.messageId}
+          dialog={dialog}
+          stream={stream}
+          clearDialog={clearDialog}
+        />
+      );
   }
 }

@@ -23,7 +23,10 @@ import mage.webapi.dto.stream.WebCommandObjectView;
 import mage.webapi.dto.stream.WebGameClientMessage;
 import mage.webapi.dto.stream.WebGameEndView;
 import mage.webapi.dto.stream.WebGameView;
+import mage.webapi.dto.stream.WebCardView;
 import mage.webapi.dto.stream.WebManaPoolView;
+import mage.webapi.dto.stream.WebMultiAmountInfo;
+import mage.webapi.dto.stream.WebMultiAmountRow;
 import mage.webapi.dto.stream.WebPlayerView;
 import mage.webapi.dto.stream.WebStartGameInfo;
 import mage.webapi.upstream.MultiplayerFrameContext;
@@ -471,6 +474,13 @@ public final class GameViewMapper {
             }
         }
         WebChoice choice = gcm.getChoice() == null ? null : toChoiceDto(gcm.getChoice());
+        // Slice 70-X.14 Wave 3 — pile 2 + multi-amount payloads. Both
+        // are no-op for non-pile / non-multi-amount frames (cardsView2
+        // empty map; multiAmount null), but pile-pick and trample-
+        // damage callbacks now have their wire shape carried through
+        // instead of being silently dropped on the floor.
+        Map<String, WebCardView> cardsView2 = CardViewMapper.toCardMap(gcm.getCardsView2());
+        WebMultiAmountInfo multiAmount = extractMultiAmount(gcm);
         return new WebGameClientMessage(
                 wrapped,
                 nullToEmpty(gcm.getMessage()),
@@ -480,8 +490,54 @@ public final class GameViewMapper {
                 gcm.getMax(),
                 gcm.isFlag(),
                 choice,
-                extractOptions(gcm.getOptions())
+                extractOptions(gcm.getOptions()),
+                cardsView2,
+                multiAmount
         );
+    }
+
+    /**
+     * Slice 70-X.14 Wave 3 — extract the multi-amount payload from
+     * upstream's {@code GameClientMessage}. Returns {@code null} for
+     * frames that don't carry messages (i.e. anything other than
+     * {@code GAME_GET_MULTI_AMOUNT}). Wire stays compact for the
+     * common case.
+     */
+    static WebMultiAmountInfo extractMultiAmount(GameClientMessage gcm) {
+        var upstreamMessages = gcm.getMessages();
+        if (upstreamMessages == null || upstreamMessages.isEmpty()) {
+            return null;
+        }
+        List<WebMultiAmountRow> rows = new ArrayList<>(upstreamMessages.size());
+        for (mage.util.MultiAmountMessage m : upstreamMessages) {
+            if (m == null) continue;
+            rows.add(new WebMultiAmountRow(
+                    m.message == null ? "" : m.message,
+                    m.min,
+                    m.max,
+                    m.defaultValue
+            ));
+        }
+        // Title / header sourced from upstream's options map. Per the
+        // rules-expert validation pass: upstream's MultiAmountType
+        // surfaces these via the options entries with keys
+        // {@code "MULTI_AMOUNT_TITLE"} / {@code "MULTI_AMOUNT_HEADER"}.
+        // Empty strings when upstream supplied none.
+        String title = readStringOption(gcm, "MULTI_AMOUNT_TITLE");
+        String header = readStringOption(gcm, "MULTI_AMOUNT_HEADER");
+        return new WebMultiAmountInfo(
+                title,
+                header,
+                rows,
+                gcm.getMin(),
+                gcm.getMax()
+        );
+    }
+
+    private static String readStringOption(GameClientMessage gcm, String key) {
+        if (gcm.getOptions() == null) return "";
+        Object v = gcm.getOptions().get(key);
+        return v == null ? "" : v.toString();
     }
 
     /**
@@ -500,7 +556,9 @@ public final class GameViewMapper {
                 0,
                 false,
                 null,
-                WebClientMessageOptions.EMPTY
+                WebClientMessageOptions.EMPTY,
+                Map.of(),
+                null
         );
     }
 

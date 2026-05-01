@@ -231,6 +231,10 @@ export function deriveInteractionMode(
     case 'gameChooseAbility':
     case 'gameInformPersonal':
     case 'gameError':
+    // Slice 70-X.14 Wave 3 — pile-pick + multi-amount are modal-only
+    // (no card-click equivalent on the current board surface).
+    case 'gameChoosePile':
+    case 'gameSelectMultiAmount':
       return {
         kind: 'modal',
         messageId: dialog.messageId,

@@ -93,7 +93,8 @@ class RouteFilterTest {
         WebGameClientMessage gcm = new WebGameClientMessage(
                 playerGameView(), "msg", List.of(),
                 Map.of(), 0, 0, false, null,
-                mage.webapi.dto.stream.WebClientMessageOptions.EMPTY);
+                mage.webapi.dto.stream.WebClientMessageOptions.EMPTY,
+                Map.of(), null);
         WebStreamFrame f = frame("gameInform", gcm);
         assertEquals(WebSocketCallbackHandler.ROUTE_PLAYER,
                 WebSocketCallbackHandler.routeKindFor(f));
@@ -104,7 +105,8 @@ class RouteFilterTest {
         WebGameClientMessage gcm = new WebGameClientMessage(
                 spectatorGameView(), "msg", List.of(),
                 Map.of(), 0, 0, false, null,
-                mage.webapi.dto.stream.WebClientMessageOptions.EMPTY);
+                mage.webapi.dto.stream.WebClientMessageOptions.EMPTY,
+                Map.of(), null);
         WebStreamFrame f = frame("gameInform", gcm);
         assertEquals(WebSocketCallbackHandler.ROUTE_SPECTATOR,
                 WebSocketCallbackHandler.routeKindFor(f));
@@ -121,7 +123,8 @@ class RouteFilterTest {
         WebGameClientMessage errorMsg = new WebGameClientMessage(
                 null, "Invalid action", List.of(),
                 Map.of(), 0, 0, false, null,
-                mage.webapi.dto.stream.WebClientMessageOptions.EMPTY);
+                mage.webapi.dto.stream.WebClientMessageOptions.EMPTY,
+                Map.of(), null);
         WebStreamFrame f = frame("gameError", errorMsg);
         assertEquals(WebSocketCallbackHandler.ROUTE_PLAYER,
                 WebSocketCallbackHandler.routeKindFor(f),

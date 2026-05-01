@@ -63,7 +63,11 @@ export type DialogMethod =
   | 'gameChooseChoice'
   | 'gameChooseAbility'
   | 'gameInformPersonal'
-  | 'gameError';
+  | 'gameError'
+  // Slice 70-X.14 Wave 3 — pile-pick (Fact or Fiction, Steam Augury)
+  // and multi-amount allocation (trample damage, counter removal).
+  | 'gameChoosePile'
+  | 'gameSelectMultiAmount';
 
 const DIALOG_METHODS = new Set<string>([
   'gameAsk',
@@ -76,6 +80,8 @@ const DIALOG_METHODS = new Set<string>([
   'gameChooseAbility',
   'gameInformPersonal',
   'gameError',
+  'gameChoosePile',
+  'gameSelectMultiAmount',
 ]);
 
 /**

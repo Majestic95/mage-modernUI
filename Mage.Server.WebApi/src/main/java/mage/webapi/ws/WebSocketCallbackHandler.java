@@ -1487,6 +1487,15 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
             case GAME_CHOOSE_ABILITY -> mapAbilityPicker(cc);
             case GAME_INFORM_PERSONAL -> mapClientMessage(cc, "gameInformPersonal");
             case GAME_ERROR -> mapGameError(cc);
+            // Slice 70-X.14 Wave 3 (schema 1.25, ADR 0008 §1.30 / §1.37) —
+            // pile-pick (Fact or Fiction, Steam Augury) and multi-amount
+            // allocation (trample damage, counter removal, mana split)
+            // were dispatch-switch fall-throughs returning null →
+            // engine callback hung silently. Now mapped through
+            // mapClientMessage which carries cardsView2 + multiAmount
+            // payloads added in WebGameClientMessage.
+            case GAME_CHOOSE_PILE -> mapClientMessage(cc, "gameChoosePile");
+            case GAME_GET_MULTI_AMOUNT -> mapClientMessage(cc, "gameSelectMultiAmount");
             case END_GAME_INFO -> mapEndGame(cc);
             case START_GAME -> mapStartGame(cc);
             case SIDEBOARD -> mapSideboard(cc);

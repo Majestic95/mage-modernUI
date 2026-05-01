@@ -75,6 +75,24 @@ public record WebGameClientMessage(
         int max,
         boolean flag,
         WebChoice choice,
-        WebClientMessageOptions options
+        WebClientMessageOptions options,
+        /**
+         * Slice 70-X.14 Wave 3 (schema 1.25, ADR 0008 §1.30) — pile 2
+         * for {@code gameChoosePile}. Fact or Fiction style: caster
+         * reveals N cards, opponent (or caster, per card) splits into
+         * two piles via {@code chooseTarget(Outcome, Cards)} multi-pick;
+         * the chooser then picks pile-1 (boolean true) vs pile-2
+         * (boolean false). {@code cardsView1} carries pile 1; this
+         * field carries pile 2. Empty map for non-pile frames.
+         */
+        Map<String, WebCardView> cardsView2,
+        /**
+         * Slice 70-X.14 Wave 3 (schema 1.25, ADR 0008 §1.37) — multi-
+         * amount allocation payload for {@code gameSelectMultiAmount}.
+         * Distribute trample damage among blockers, distribute counter
+         * removal among permanents, distribute mana across colors,
+         * etc. {@code null} for every non-multi-amount frame.
+         */
+        WebMultiAmountInfo multiAmount
 ) {
 }

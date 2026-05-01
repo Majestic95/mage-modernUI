@@ -84,6 +84,11 @@ const DATA_VALIDATORS: Record<string, (raw: unknown) => unknown> = {
   gameChooseChoice: (raw) => webGameClientMessageSchema.parse(raw),
   gameInformPersonal: (raw) => webGameClientMessageSchema.parse(raw),
   gameError: (raw) => webGameClientMessageSchema.parse(raw),
+  // Slice 70-X.14 Wave 3 — pile-pick + multi-amount frames now wired.
+  // Both reuse WebGameClientMessage (cardsView2 + multiAmount fields
+  // added in schema 1.25).
+  gameChoosePile: (raw) => webGameClientMessageSchema.parse(raw),
+  gameSelectMultiAmount: (raw) => webGameClientMessageSchema.parse(raw),
   // Distinct shape — WebAbilityPickerView, not GameClientMessage.
   gameChooseAbility: (raw) => webAbilityPickerViewSchema.parse(raw),
   // Slice 13: post-game-1 sideboarding prompt.

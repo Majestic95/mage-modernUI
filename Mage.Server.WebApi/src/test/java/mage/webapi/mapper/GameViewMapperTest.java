@@ -268,16 +268,22 @@ class GameViewMapperTest {
     }
 
     @Test
-    void gameClientMessage_jsonShape_locksNineFields() throws Exception {
+    void gameClientMessage_jsonShape_locksElevenFields() throws Exception {
+        // Slice 70-X.14 Wave 3 (schema 1.25) — added cardsView2 (pile 2)
+        // and multiAmount (allocation payload).
         WebGameClientMessage dto = new WebGameClientMessage(
                 null, "ggwp", List.of(), Map.of(), 0, 0, false, null,
-                mage.webapi.dto.stream.WebClientMessageOptions.EMPTY);
+                mage.webapi.dto.stream.WebClientMessageOptions.EMPTY,
+                Map.of(), null);
         JsonNode node = JSON.valueToTree(dto);
-        assertEquals(9, node.size(),
-                "WebGameClientMessage must have exactly 9 fields "
-                        + "(slice 7 added choice; slice 17 added options); got: " + node);
+        assertEquals(11, node.size(),
+                "WebGameClientMessage must have exactly 11 fields "
+                        + "(slice 7 added choice; slice 17 added options; "
+                        + "slice 70-X.14 added cardsView2 + multiAmount); got: "
+                        + node);
         for (String f : List.of("gameView", "message", "targets",
-                "cardsView1", "min", "max", "flag", "choice", "options")) {
+                "cardsView1", "min", "max", "flag", "choice", "options",
+                "cardsView2", "multiAmount")) {
             assertTrue(node.has(f), "missing field: " + f);
         }
     }

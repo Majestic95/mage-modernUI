@@ -653,6 +653,35 @@ export const EMPTY_CLIENT_MESSAGE_OPTIONS: WebClientMessageOptions = {
   isTriggerOrder: false,
 };
 
+/**
+ * Slice 70-X.14 Wave 3 (schema 1.25) — multi-amount allocation row.
+ * Mirrors {@code mage.webapi.dto.stream.WebMultiAmountRow}. The
+ * {@code defaultValue} is engine-supplied per-row initial value; the
+ * UI MUST initialize each input to it (else trample-damage prompts
+ * loop because the unchanged form sums below totalMin).
+ */
+export const webMultiAmountRowSchema = z.object({
+  label: z.string().default(''),
+  min: z.number().default(0),
+  max: z.number().default(0),
+  defaultValue: z.number().default(0),
+});
+export type WebMultiAmountRow = z.infer<typeof webMultiAmountRowSchema>;
+
+/**
+ * Slice 70-X.14 Wave 3 (schema 1.25) — multi-amount payload for
+ * gameSelectMultiAmount. Distribute amount X across N labeled rows
+ * with per-row + total-sum constraints.
+ */
+export const webMultiAmountInfoSchema = z.object({
+  title: z.string().default(''),
+  header: z.string().default(''),
+  rows: z.array(webMultiAmountRowSchema).default([]),
+  totalMin: z.number().default(0),
+  totalMax: z.number().default(0),
+});
+export type WebMultiAmountInfo = z.infer<typeof webMultiAmountInfoSchema>;
+
 export const webGameClientMessageSchema = z.object({
   gameView: webGameViewSchema.nullable(),
   message: z.string(),
@@ -663,6 +692,12 @@ export const webGameClientMessageSchema = z.object({
   flag: z.boolean(),
   choice: webChoiceSchema.nullable(),
   options: webClientMessageOptionsSchema.default(EMPTY_CLIENT_MESSAGE_OPTIONS),
+  // Slice 70-X.14 Wave 3 (schema 1.25). Both default-empty so older
+  // 1.24 servers still parse cleanly during a rolling upgrade.
+  cardsView2: z
+    .record(z.string(), webCardViewSchema)
+    .default({}),
+  multiAmount: webMultiAmountInfoSchema.nullable().default(null),
 });
 export type WebGameClientMessage = z.infer<typeof webGameClientMessageSchema>;
 
