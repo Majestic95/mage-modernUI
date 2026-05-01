@@ -322,6 +322,93 @@ describe('MulliganModal', () => {
   // (regardless of whether THIS player got a follow-up), the modal
   // unmounts. Drop this test and a regression that removes the
   // turn-based path leaves multi-player playtest broken silently.
+  // Slice 70-Y.5 (2026-05-01) — click any hand card to mulligan.
+  // The Mulligan button stays as-is; this is an additive UX path.
+  it('clicking a hand card dispatches mulligan (boolean true) — same as Mulligan button', async () => {
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    // Build a gameView with a known card in hand
+    const me = webPlayerViewSchema.parse({
+      playerId: 'me-id', name: 'me',
+      life: 7, wins: 0, winsNeeded: 1, libraryCount: 53, handCount: 7,
+      graveyard: {}, exile: {}, sideboard: {}, battlefield: {},
+      manaPool: { red: 0, green: 0, blue: 0, white: 0, black: 0, colorless: 0 },
+      controlled: true, isHuman: true, isActive: true, hasPriority: true,
+      hasLeft: false, monarch: false, initiative: false, designationNames: [],
+    });
+    const card = {
+      id: 'forest-1',
+      name: 'Forest', displayName: 'Forest',
+      expansionSetCode: 'LEA', cardNumber: '253',
+      manaCost: '', manaValue: 0,
+      typeLine: 'Basic Land — Forest',
+      supertypes: ['BASIC'], types: ['LAND'], subtypes: ['FOREST'],
+      colors: [], rarity: 'COMMON',
+      power: '', toughness: '', startingLoyalty: '',
+      rules: [], faceDown: false, counters: {},
+      transformable: false, transformed: false, secondCardFace: null,
+    };
+    const gv = webGameViewSchema.parse({
+      turn: 0, phase: '', step: '',
+      activePlayerName: 'me', priorityPlayerName: 'me',
+      special: false, rollbackTurnsAllowed: false,
+      totalErrorsCount: 0, totalEffectsCount: 0, gameCycle: 0,
+      myPlayerId: me.playerId,
+      myHand: { [card.id]: card }, stack: {}, combat: [],
+      players: [me],
+    });
+    act(() => {
+      useGameStore.setState({ pendingDialog: mulliganDialog });
+    });
+    render(<MulliganModal stream={stream as never} gameView={gv} />);
+    await user.click(screen.getByTestId(`mulligan-hand-card-${card.id}`));
+    expect(stream.sendPlayerResponse).toHaveBeenCalledWith(17, 'boolean', true);
+  });
+
+  it('hand card click is disabled after committedLocally', async () => {
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    const me = webPlayerViewSchema.parse({
+      playerId: 'me-id', name: 'me',
+      life: 7, wins: 0, winsNeeded: 1, libraryCount: 53, handCount: 7,
+      graveyard: {}, exile: {}, sideboard: {}, battlefield: {},
+      manaPool: { red: 0, green: 0, blue: 0, white: 0, black: 0, colorless: 0 },
+      controlled: true, isHuman: true, isActive: true, hasPriority: true,
+      hasLeft: false, monarch: false, initiative: false, designationNames: [],
+    });
+    const card = {
+      id: 'plains-1', name: 'Plains', displayName: 'Plains',
+      expansionSetCode: 'LEA', cardNumber: '331',
+      manaCost: '', manaValue: 0,
+      typeLine: 'Basic Land — Plains',
+      supertypes: ['BASIC'], types: ['LAND'], subtypes: ['PLAINS'],
+      colors: [], rarity: 'COMMON',
+      power: '', toughness: '', startingLoyalty: '',
+      rules: [], faceDown: false, counters: {},
+      transformable: false, transformed: false, secondCardFace: null,
+    };
+    const gv = webGameViewSchema.parse({
+      turn: 0, phase: '', step: '',
+      activePlayerName: 'me', priorityPlayerName: 'me',
+      special: false, rollbackTurnsAllowed: false,
+      totalErrorsCount: 0, totalEffectsCount: 0, gameCycle: 0,
+      myPlayerId: me.playerId,
+      myHand: { [card.id]: card }, stack: {}, combat: [],
+      players: [me],
+    });
+    act(() => {
+      useGameStore.setState({ pendingDialog: mulliganDialog });
+    });
+    render(<MulliganModal stream={stream as never} gameView={gv} />);
+    // Commit via Mulligan button first
+    await user.click(screen.getByTestId('mulligan-take'));
+    // Hand-card click after commit should be a no-op (disabled)
+    const cardBtn = screen.getByTestId(`mulligan-hand-card-${card.id}`) as HTMLButtonElement;
+    expect(cardBtn).toBeDisabled();
+    // Pre-commit dispatch fired once; hand-card click should not add another
+    expect(stream.sendPlayerResponse).toHaveBeenCalledTimes(1);
+  });
+
   it('committed latch resets when gameView.turn advances to 1 (multi-player path)', async () => {
     const stream = fakeStream();
     const user = userEvent.setup();

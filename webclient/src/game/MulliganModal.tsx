@@ -3,6 +3,7 @@ import type { WebGameView } from '../api/schemas';
 import type { GameStream } from './stream';
 import { useGameStore } from './store';
 import { useModalA11y } from '../util/useModalA11y';
+import { CardFace } from './CardFace';
 
 /**
  * Slice 70-F (ADR 0011 D5) — full-mode mulligan modal per
@@ -117,7 +118,7 @@ export function MulliganModal({ stream, gameView }: Props) {
       data-testid="mulligan-modal"
       className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4"
     >
-      <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-6 max-w-2xl w-full space-y-4 shadow-2xl">
+      <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-6 max-w-3xl w-full space-y-4 shadow-2xl">
         <header className="space-y-1">
           <h2 className="text-lg font-semibold text-text-primary">
             Mulligan
@@ -125,9 +126,21 @@ export function MulliganModal({ stream, gameView }: Props) {
           <p className="text-sm text-text-secondary">
             {committedLocally
               ? 'Decision sent. Waiting for opponents to commit.'
-              : 'Keep your opening hand or take a mulligan? Mulligans resolve simultaneously when every player has decided.'}
+              : 'Click any card to take a mulligan, or click Keep to keep this hand. Mulligans resolve simultaneously when every player has decided.'}
           </p>
         </header>
+
+        {/* Slice 70-Y.5 (2026-05-01) — hand cards rendered inline
+            as a clickable grid. Per the click-resolution principle:
+            clicking any card = mulligan dispatch. Cards pulse via
+            the existing card-targeted-pulse keyframe to signal
+            clickability. Keep button below remains as the
+            "I'm satisfied" alternative. */}
+        <HandPreview
+          gameView={gameView}
+          onMulligan={() => dispatch(true)}
+          disabled={committedLocally}
+        />
 
         <PlayerStatusPanel
           gameView={gameView}
@@ -174,6 +187,68 @@ export function MulliganModal({ stream, gameView }: Props) {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Slice 70-Y.5 — hand-card preview inside the mulligan modal.
+ * Cards render as a grid of small CardFace tiles. Each tile pulses
+ * (purple) and is clickable; click → mulligan dispatch. The Keep
+ * button below the modal stays as the alternative for "I'm
+ * satisfied with this hand."
+ *
+ * <p>Hand size is 7 at game start; London mulligan can leave with
+ * up to 7 (with N pre-bottomed). Grid sizes for 7 across at the
+ * default modal max-w-3xl.
+ */
+function HandPreview({
+  gameView,
+  onMulligan,
+  disabled,
+}: {
+  gameView: WebGameView;
+  onMulligan: () => void;
+  disabled: boolean;
+}) {
+  const cards = Object.values(gameView.myHand);
+  if (cards.length === 0) {
+    return (
+      <p className="text-xs italic text-text-secondary">
+        Hand empty. Use Keep to commit.
+      </p>
+    );
+  }
+  return (
+    <ul
+      data-testid="mulligan-hand-preview"
+      className="grid gap-2"
+      style={{
+        gridTemplateColumns: 'repeat(auto-fit, minmax(80px, 1fr))',
+      }}
+      aria-label="Your opening hand — click any card to mulligan"
+    >
+      {cards.map((c) => (
+        <li key={c.id}>
+          <button
+            type="button"
+            data-testid={`mulligan-hand-card-${c.id}`}
+            onClick={onMulligan}
+            disabled={disabled}
+            aria-label={`${c.name} — click to mulligan`}
+            className={
+              'block w-full rounded transition focus:outline-none ' +
+              'focus:ring-2 focus:ring-fuchsia-400 ' +
+              (disabled
+                ? 'cursor-not-allowed opacity-50 '
+                : 'cursor-pointer hover:brightness-110 ' +
+                  'animate-card-targeted-pulse')
+            }
+          >
+            <CardFace card={c} size="hand" />
+          </button>
+        </li>
+      ))}
+    </ul>
   );
 }
 
