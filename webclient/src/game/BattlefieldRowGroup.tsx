@@ -6,7 +6,12 @@ import {
   UNTAP_STAGGER_DELAY_MS,
 } from '../animation/transitions';
 import { BattlefieldTile } from './BattlefieldTile';
-import type { BattlefieldRow } from './battlefieldRows';
+import {
+  groupWithAttachments,
+  type AttachmentGroup,
+  type BattlefieldRow,
+} from './battlefieldRows';
+import { useUIPrefs } from './useUIPrefs';
 
 /**
  * Slice 53 â€” one MTGA-style row of permanents. Owns its own
@@ -75,6 +80,12 @@ export function BattlefieldRowGroup({
   // --card-size-medium = 80px → slot = 112px. Single source of
   // truth for every pod regardless of perspective.
   const tileSize = 'calc(var(--card-size-medium) * 7 / 5)';
+  // Slice 70-Y / Bug 3 — group attachments under host before render.
+  // Pure derivation from the row's perms. Empty attachments arrays
+  // for non-host perms don't change render shape vs the legacy
+  // flat-row mode.
+  const groups = groupWithAttachments(permanents);
+  const auraDisplayMode = useUIPrefs((s) => s.auraDisplayMode);
   // Slice 70-X.9 — fixed tile size, NOT flex-1-1-0 with shrink.
   // The previous `flex: 1 1 0; min-(w|h): 56px; max-(w|h): tileMaxSize`
   // pattern caused tiles to shrink to fit the container, which made
@@ -114,42 +125,159 @@ export function BattlefieldRowGroup({
       }
     >
       <AnimatePresence mode="popLayout" initial={false}>
-        {permanents.map((perm, index) => {
-          const layoutId = perm.card.cardId ? perm.card.cardId : undefined;
-          return (
-            <motion.div
-              key={perm.card.id}
-              layout
-              layoutId={layoutId}
-              data-layout-id={layoutId}
-              data-card-id={perm.card.cardId || undefined}
-              initial={{ opacity: 0, y: 24, scale: 0.85 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -16, scale: 0.85 }}
-              transition={slow(BATTLEFIELD_ENTER_EXIT)}
-              // Slice 70-X.9 — fixed SQUARE slot at uniform tileSize.
-              // No flex-shrink: every tile renders at the same
-              // dimensions regardless of pod or card count. Rows
-              // overflow + scroll when too many cards (handled by
-              // the parent's overflow-(x|y)-auto).
-              className="aspect-square flex-shrink-0"
+        {groups.map((group, index) => (
+          <AttachmentGroupSlot
+            key={group.host.card.id}
+            group={group}
+            tileSize={tileSize}
+            canAct={canAct}
+            onObjectClick={onObjectClick}
+            eligibleCombatIds={eligibleCombatIds}
+            combatRoles={combatRoles}
+            rotateDelay={(index * UNTAP_STAGGER_DELAY_MS) / 1000}
+            mode={auraDisplayMode}
+          />
+        ))}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+/**
+ * Slice 70-Y / Bug 3 — render one host + its attachments. Two visual
+ * modes per the user-controlled {@code auraDisplayMode} preference:
+ *
+ * <ul>
+ *   <li><b>'stack'</b> — attachments rendered SMALLER (60% scale),
+ *     overlapping the host with a slight offset. Host face stays
+ *     dominant. Attachment count visible as the stack depth.</li>
+ *   <li><b>'adjacent'</b> — attachments rendered as smaller cards
+ *     immediately next to the host. Each attachment fully visible.</li>
+ * </ul>
+ */
+function AttachmentGroupSlot({
+  group,
+  tileSize,
+  canAct,
+  onObjectClick,
+  eligibleCombatIds,
+  combatRoles,
+  rotateDelay,
+  mode,
+}: {
+  group: AttachmentGroup;
+  tileSize: string;
+  canAct: boolean;
+  onObjectClick: (id: string) => void;
+  eligibleCombatIds: Set<string>;
+  combatRoles: Map<string, 'attacker' | 'blocker'>;
+  rotateDelay: number;
+  mode: 'stack' | 'adjacent';
+}) {
+  const { host, attachments } = group;
+  const hasAttachments = attachments.length > 0;
+  const layoutId = host.card.cardId ? host.card.cardId : undefined;
+  // Stacked mode: container is host-sized (offset auras absolute-position
+  // behind the host). Adjacent mode: container is wider so auras fit
+  // beside the host without clipping.
+  const containerStyle =
+    mode === 'adjacent' && hasAttachments
+      ? {
+          width: `calc(${tileSize} * (1 + ${attachments.length} * 0.5))`,
+          height: tileSize,
+        }
+      : { width: tileSize, height: tileSize };
+  return (
+    <motion.div
+      key={host.card.id}
+      layout
+      layoutId={layoutId}
+      data-layout-id={layoutId}
+      data-card-id={host.card.cardId || undefined}
+      data-attachment-host={hasAttachments || undefined}
+      data-attachment-mode={hasAttachments ? mode : undefined}
+      data-attachment-count={hasAttachments ? attachments.length : undefined}
+      initial={{ opacity: 0, y: 24, scale: 0.85 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: -16, scale: 0.85 }}
+      transition={slow(BATTLEFIELD_ENTER_EXIT)}
+      className="relative flex-shrink-0 flex items-center"
+      style={containerStyle}
+    >
+      {/* Host tile fills its slot. Adjacent mode: host occupies the
+          left of the wider container. Stacked mode: host fills the
+          container; auras position absolute behind it. */}
+      <div
+        className="flex-shrink-0"
+        style={{ width: tileSize, height: tileSize }}
+      >
+        <BattlefieldTile
+          perm={host}
+          canAct={canAct}
+          onClick={onObjectClick}
+          isEligibleCombat={eligibleCombatIds.has(host.card.id)}
+          combatRole={combatRoles.get(host.card.id) ?? null}
+          rotateDelay={rotateDelay}
+        />
+      </div>
+      {hasAttachments && mode === 'adjacent' && (
+        <div className="flex flex-row gap-1 ml-1 items-center">
+          {attachments.map((att) => (
+            <div
+              key={att.card.id}
+              data-attachment-of={host.card.id}
+              data-card-id={att.card.cardId || undefined}
+              className="flex-shrink-0"
               style={{
-                width: tileSize,
-                height: tileSize,
+                width: `calc(${tileSize} * 0.5)`,
+                height: `calc(${tileSize} * 0.7)`,
               }}
             >
               <BattlefieldTile
-                perm={perm}
+                perm={att}
                 canAct={canAct}
                 onClick={onObjectClick}
-                isEligibleCombat={eligibleCombatIds.has(perm.card.id)}
-                combatRole={combatRoles.get(perm.card.id) ?? null}
-                rotateDelay={(index * UNTAP_STAGGER_DELAY_MS) / 1000}
+                isEligibleCombat={eligibleCombatIds.has(att.card.id)}
+                combatRole={combatRoles.get(att.card.id) ?? null}
+                rotateDelay={rotateDelay}
               />
-            </motion.div>
-          );
-        })}
-      </AnimatePresence>
-    </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {hasAttachments && mode === 'stack' && (
+        <div className="absolute inset-0 pointer-events-none">
+          {attachments.map((att, idx) => (
+            <div
+              key={att.card.id}
+              data-attachment-of={host.card.id}
+              data-card-id={att.card.cardId || undefined}
+              // Stack auras BEHIND host (lower z) with a small offset
+              // per layer so each is slightly visible at the edges.
+              // pointer-events-auto on inner tile so click-routing
+              // still works on the attachment itself (e.g. to
+              // unattach via activated ability or click-to-target).
+              className="absolute pointer-events-auto"
+              style={{
+                width: `calc(${tileSize} * 0.7)`,
+                height: `calc(${tileSize} * 0.7)`,
+                top: `calc(${tileSize} * ${0.05 + idx * 0.04})`,
+                left: `calc(${tileSize} * ${0.05 + idx * 0.04})`,
+                zIndex: -1 - idx,
+              }}
+            >
+              <BattlefieldTile
+                perm={att}
+                canAct={canAct}
+                onClick={onObjectClick}
+                isEligibleCombat={eligibleCombatIds.has(att.card.id)}
+                combatRole={combatRoles.get(att.card.id) ?? null}
+                rotateDelay={rotateDelay}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+    </motion.div>
   );
 }

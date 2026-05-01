@@ -71,6 +71,15 @@ export function classifyPermanent(perm: WebPermanentView): BattlefieldRow {
  * insertion order within each row. Empty buckets stay empty arrays
  * so the caller can decide whether to render the row container or
  * skip it.
+ *
+ * <p>Slice 70-Y / Bug 3 — attachments re-locate to their host's row.
+ * An aura attached to a creature normally classifies as
+ * {@code artifacts} (enchantment), but visually it should travel
+ * with the creature on the battlefield. Pass 2 re-buckets any perm
+ * with {@code attachedTo} pointing to a host present in the same
+ * battlefield. The host's row is the destination. When the host
+ * isn't present (cross-controller / mid-resolve race / wire blip),
+ * the perm falls back to its own type-based row.
  */
 export function bucketBattlefield(
   permanents: WebPermanentView[],
@@ -80,8 +89,19 @@ export function bucketBattlefield(
     artifacts: [],
     lands: [],
   };
+  const permById = new Map<string, WebPermanentView>();
   for (const perm of permanents) {
-    buckets[classifyPermanent(perm)].push(perm);
+    permById.set(perm.card.id, perm);
+  }
+  for (const perm of permanents) {
+    let row = classifyPermanent(perm);
+    if (perm.attachedTo) {
+      const host = permById.get(perm.attachedTo);
+      if (host) {
+        row = classifyPermanent(host);
+      }
+    }
+    buckets[row].push(perm);
   }
   return buckets;
 }
@@ -105,4 +125,55 @@ export function rowOrder(
   return perspective === 'self'
     ? (['creatures', 'lands'] as const)
     : (['lands', 'creatures'] as const);
+}
+
+/**
+ * Slice 70-Y / Bug 3 — host-with-attachments grouping for a single
+ * row. Pairs each "main" permanent (not attached, OR attached to a
+ * permanent NOT in this row) with the list of permanents attached to
+ * it that ARE in this row. Caller renders each entry as a visual
+ * group (stacked-on-host or adjacent-to-host per the user setting).
+ *
+ * <p>Order: main permanents preserve their input order; each main's
+ * attachments preserve THEIR input order. Detached permanents (any
+ * with {@code attachedTo} pointing to a perm not in this row) appear
+ * as standalone entries — same as if they had no attachment.
+ *
+ * <p>Pure function. No engine logic; just a data-shape transform
+ * driven by the wire's {@code attachedTo} field.
+ */
+export interface AttachmentGroup {
+  readonly host: WebPermanentView;
+  readonly attachments: readonly WebPermanentView[];
+}
+
+export function groupWithAttachments(
+  perms: readonly WebPermanentView[],
+): AttachmentGroup[] {
+  const inRow = new Map<string, WebPermanentView>();
+  for (const p of perms) inRow.set(p.card.id, p);
+
+  // Pre-compute attachments: for each host id (in this row), list of
+  // perms (in this row) attached to it. Preserves attachment input
+  // order so multiple auras on one host stay in stable order.
+  const attachmentsByHost = new Map<string, WebPermanentView[]>();
+  const attachedIds = new Set<string>();
+  for (const p of perms) {
+    if (!p.attachedTo) continue;
+    if (!inRow.has(p.attachedTo)) continue;
+    attachedIds.add(p.card.id);
+    const list = attachmentsByHost.get(p.attachedTo) ?? [];
+    list.push(p);
+    attachmentsByHost.set(p.attachedTo, list);
+  }
+
+  const out: AttachmentGroup[] = [];
+  for (const p of perms) {
+    if (attachedIds.has(p.card.id)) continue; // rendered under its host
+    out.push({
+      host: p,
+      attachments: attachmentsByHost.get(p.card.id) ?? [],
+    });
+  }
+  return out;
 }

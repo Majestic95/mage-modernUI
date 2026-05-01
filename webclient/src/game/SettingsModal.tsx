@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { useModalA11y } from '../util/useModalA11y';
+import { useUIPrefs, type AuraDisplayMode } from './useUIPrefs';
 
 /**
  * Slice 70-O (picture-catalog §1.3) — settings modal launched from
@@ -88,11 +89,12 @@ export function SettingsModal({
           </button>
         </header>
 
-        <p className="text-xs text-text-secondary">
-          Theme, animation, and accessibility toggles will appear here
-          in a future update. For now the panel hosts game-level
-          actions.
-        </p>
+        {/* Slice 70-Y / Bug 3 (2026-05-01) — aura display mode toggle.
+            Two visual options: 'stack' (MTGA-style overlap, default)
+            or 'adjacent' (MTGO-style side-by-side). Persisted via
+            {@link useUIPrefs} → localStorage so it survives refreshes
+            and game changes. */}
+        <AuraDisplayModeRadio />
 
         <div className="border-t border-zinc-800 pt-4 space-y-3">
           {/* Concede — two-step confirm to prevent stray clicks
@@ -174,5 +176,58 @@ export function SettingsModal({
         </div>
       </div>
     </div>
+  );
+}
+
+function AuraDisplayModeRadio() {
+  const mode = useUIPrefs((s) => s.auraDisplayMode);
+  const setMode = useUIPrefs((s) => s.setAuraDisplayMode);
+  const options: ReadonlyArray<{
+    value: AuraDisplayMode;
+    label: string;
+    description: string;
+  }> = [
+    {
+      value: 'stack',
+      label: 'Stack on host (MTGA-style)',
+      description: 'Auras and equipment overlap the creature with a slight offset.',
+    },
+    {
+      value: 'adjacent',
+      label: 'Beside host (MTGO-style)',
+      description: 'Auras and equipment render as smaller cards next to the creature.',
+    },
+  ];
+  return (
+    <fieldset
+      data-testid="aura-display-mode-fieldset"
+      className="border border-zinc-800 rounded p-3 space-y-2"
+    >
+      <legend className="px-1 text-xs font-medium text-text-secondary uppercase tracking-wider">
+        Aura / equipment display
+      </legend>
+      {options.map((opt) => (
+        <label
+          key={opt.value}
+          data-testid={`aura-display-mode-${opt.value}`}
+          className="flex items-start gap-2 cursor-pointer"
+        >
+          <input
+            type="radio"
+            name="aura-display-mode"
+            value={opt.value}
+            checked={mode === opt.value}
+            onChange={() => setMode(opt.value)}
+            className="mt-1"
+          />
+          <span className="flex-1">
+            <span className="block text-sm text-text-primary">{opt.label}</span>
+            <span className="block text-xs text-text-secondary">
+              {opt.description}
+            </span>
+          </span>
+        </label>
+      ))}
+    </fieldset>
   );
 }
