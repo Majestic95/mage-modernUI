@@ -470,6 +470,27 @@ describe('GameStream', () => {
     expect(FakeWebSocket.instances).toHaveLength(1);
   });
 
+  it('does not retry on 4400 PROTOCOL_VERSION_UNSUPPORTED close', () => {
+    // ADR 0010 v2 D12 — server closes 4400 when its supported
+    // protocolVersion list doesn't include the one this client
+    // pinned. Retrying the same handshake 8× would never change the
+    // answer; surface as auth-error and stop.
+    const sched = makeFakeScheduler();
+    const stream = new GameStream({
+      gameId: FAKE_GAME_ID,
+      token: 'tok-1',
+      webSocketCtor: FakeWebSocket as unknown as typeof WebSocket,
+      scheduler: sched.scheduler,
+    });
+    stream.open();
+    FakeWebSocket.instances[0]!._open();
+    FakeWebSocket.instances[0]!._close(4400, 'PROTOCOL_VERSION_UNSUPPORTED');
+
+    expect(sched.activeReconnectQueue()).toHaveLength(0);
+    expect(useGameStore.getState().connection).toBe('error');
+    expect(FakeWebSocket.instances).toHaveLength(1);
+  });
+
   it('caller-initiated close cancels pending reconnect', () => {
     const sched = makeFakeScheduler();
     const stream = new GameStream({
