@@ -12,6 +12,10 @@ import {
   type BattlefieldRow,
 } from './battlefieldRows';
 
+/** Stable empty Set so the optional prop default doesn't recreate
+ *  on every render (would defeat downstream useMemo). */
+const EMPTY_ID_SET: Set<string> = new Set();
+
 /**
  * Slice 53 â€” one MTGA-style row of permanents. Owns its own
  * {@link AnimatePresence} so enter / exit animations fire
@@ -29,6 +33,7 @@ export function BattlefieldRowGroup({
   orientation = 'horizontal',
   canAct,
   onObjectClick,
+  eligibleTargetIds = EMPTY_ID_SET,
   eligibleCombatIds,
   combatRoles,
 }: {
@@ -59,6 +64,18 @@ export function BattlefieldRowGroup({
   orientation?: 'horizontal' | 'vertical';
   canAct: boolean;
   onObjectClick: (id: string) => void;
+  /**
+   * Slice 70-Z bug fix — UUIDs the engine reports as legal targets
+   * for the active gameTarget dialog. Each tile pulses (via
+   * CardFace's existing {@code targetableForDialog} affordance) when
+   * its id is in this set. Previously the eligibility was only used
+   * to highlight player frames; battlefield permanents got no
+   * affordance, which made opponent creatures look unclickable to
+   * the user even though the click router accepted them. Optional
+   * (defaults to an empty set) so legacy tests don't need to thread
+   * the prop explicitly.
+   */
+  eligibleTargetIds?: Set<string>;
   eligibleCombatIds: Set<string>;
   combatRoles: Map<string, 'attacker' | 'blocker'>;
 }) {
@@ -130,6 +147,7 @@ export function BattlefieldRowGroup({
             tileSize={tileSize}
             canAct={canAct}
             onObjectClick={onObjectClick}
+            eligibleTargetIds={eligibleTargetIds}
             eligibleCombatIds={eligibleCombatIds}
             combatRoles={combatRoles}
             rotateDelay={(index * UNTAP_STAGGER_DELAY_MS) / 1000}
@@ -165,6 +183,7 @@ function AttachmentGroupSlot({
   tileSize,
   canAct,
   onObjectClick,
+  eligibleTargetIds = EMPTY_ID_SET,
   eligibleCombatIds,
   combatRoles,
   rotateDelay,
@@ -173,6 +192,7 @@ function AttachmentGroupSlot({
   tileSize: string;
   canAct: boolean;
   onObjectClick: (id: string) => void;
+  eligibleTargetIds?: Set<string>;
   eligibleCombatIds: Set<string>;
   combatRoles: Map<string, 'attacker' | 'blocker'>;
   rotateDelay: number;
@@ -236,6 +256,7 @@ function AttachmentGroupSlot({
           perm={host}
           canAct={canAct}
           onClick={onObjectClick}
+          targetableForDialog={eligibleTargetIds.has(host.card.id)}
           isEligibleCombat={eligibleCombatIds.has(host.card.id)}
           combatRole={combatRoles.get(host.card.id) ?? null}
           rotateDelay={rotateDelay}
@@ -276,6 +297,7 @@ function AttachmentGroupSlot({
             perm={perm}
             canAct={canAct}
             onClick={onObjectClick}
+            targetableForDialog={eligibleTargetIds.has(perm.card.id)}
             isEligibleCombat={eligibleCombatIds.has(perm.card.id)}
             combatRole={combatRoles.get(perm.card.id) ?? null}
             rotateDelay={rotateDelay}

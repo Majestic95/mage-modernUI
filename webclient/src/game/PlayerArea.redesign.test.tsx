@@ -350,4 +350,88 @@ describe('PlayerArea — REDESIGN battlefield composition (slice 70-Z.1)', () =>
       expect(screen.queryByText(/No permanents yet/)).toBeNull();
     });
   });
+
+  // Slice 70-Z bug fix — Path to Exile / Murder / Lightning Bolt
+  // (any unrestricted "target X" spell) prompts the engine to ship
+  // the FULL legal-target UUID set in `targets[]`. The webclient
+  // accepted clicks on opponents' creatures correctly, but it never
+  // surfaced a visual affordance — opponent permanents looked
+  // unclickable, so the user perceived the engine as restricting
+  // targeting to their own creatures. Fix: thread eligibleTargetIds
+  // from interactionMode through PlayerArea → BattlefieldRowGroup →
+  // BattlefieldTile → CardFace's existing `targetableForDialog`
+  // pulse. Lock both the affordance presence (legal target → pulse)
+  // and absence (non-target ids → no pulse).
+  describe('eligibleTargetIds → tile pulse (slice 70-Z bug fix)', () => {
+    it('pulses a battlefield tile whose card.id is in eligibleTargetIds', () => {
+      const target = makePerm('Quirion Sentinel', ['CREATURE']);
+      const other = makePerm('Forest', ['LAND']);
+      render(
+        <PlayerArea
+          player={makePlayer([target, other])}
+          perspective="self"
+          position="bottom"
+          {...PASSTHROUGH}
+          eligibleTargetIds={new Set([target.card.id])}
+        />,
+      );
+      // CardFace data-targetable-for-dialog only renders when the
+      // prop is true; absent attribute means false. Cross-check
+      // via DOM query.
+      const targetTile = document.querySelector(
+        `[data-permanent-id="${target.card.id}"]`,
+      );
+      expect(targetTile).not.toBeNull();
+      const targetFace = targetTile?.querySelector(
+        '[data-targetable-for-dialog="true"]',
+      );
+      expect(targetFace).not.toBeNull();
+
+      const otherTile = document.querySelector(
+        `[data-permanent-id="${other.card.id}"]`,
+      );
+      expect(
+        otherTile?.querySelector('[data-targetable-for-dialog="true"]'),
+      ).toBeNull();
+    });
+
+    it('pulses opponent permanents the same as own permanents', () => {
+      // The bug specifically manifested as "I cannot target opponent
+      // creatures" — verify the pulse appears regardless of
+      // perspective. Lock the symmetry so a future regression that
+      // gates the pulse on perspective gets caught here.
+      const opponentCreature = makePerm("Opponent's Bear", ['CREATURE']);
+      render(
+        <PlayerArea
+          player={makePlayer([opponentCreature])}
+          perspective="opponent"
+          position="top"
+          {...PASSTHROUGH}
+          eligibleTargetIds={new Set([opponentCreature.card.id])}
+        />,
+      );
+      const tile = document.querySelector(
+        `[data-permanent-id="${opponentCreature.card.id}"]`,
+      );
+      expect(tile?.querySelector('[data-targetable-for-dialog="true"]'))
+        .not.toBeNull();
+    });
+
+    it('renders no pulse when eligibleTargetIds is empty (default)', () => {
+      const perm = makePerm('BearCub', ['CREATURE']);
+      render(
+        <PlayerArea
+          player={makePlayer([perm])}
+          perspective="self"
+          position="bottom"
+          {...PASSTHROUGH}
+        />,
+      );
+      const tile = document.querySelector(
+        `[data-permanent-id="${perm.card.id}"]`,
+      );
+      expect(tile?.querySelector('[data-targetable-for-dialog="true"]'))
+        .toBeNull();
+    });
+  });
 });

@@ -5,6 +5,10 @@ import { PlayerFrame } from './PlayerFrame';
 import { BattlefieldRowGroup } from './BattlefieldRowGroup';
 import { REDESIGN } from '../featureFlags';
 
+/** Stable empty Set so the optional prop default doesn't recreate
+ *  on every render (would defeat downstream useMemo). */
+const EMPTY_ID_SET: Set<string> = new Set();
+
 /**
  * Slice 70-K — pod position within the 4-pod grid. Drives both the
  * REDESIGN-mode flex direction (vertical for top/bottom, horizontal
@@ -23,6 +27,7 @@ export function PlayerArea({
   canAct,
   onObjectClick,
   targetable,
+  eligibleTargetIds = EMPTY_ID_SET,
   eligibleCombatIds,
   combatRoles,
   isDropTarget,
@@ -48,6 +53,18 @@ export function PlayerArea({
    * target response. Slice 15.
    */
   targetable: boolean;
+  /**
+   * Slice 70-Z bug fix — full set of UUIDs the engine considers
+   * legal targets for the active gameTarget dialog. Includes
+   * battlefield permanents (own AND opponent), players, and any
+   * other targetable object UUIDs the engine pre-filters into
+   * {@code possibleTargets}. Forwarded into BattlefieldRowGroup so
+   * each tile can pulse via CardFace's {@code targetableForDialog}
+   * when its id is in this set. Empty in any non-target mode.
+   * Defaults to an empty set so legacy tests don't need to thread
+   * it explicitly.
+   */
+  eligibleTargetIds?: Set<string>;
   /**
    * Slice 26 â€” IDs the engine considers legal attackers (during
    * declareAttackers) or legal blockers (during declareBlockers).
@@ -161,6 +178,7 @@ export function PlayerArea({
               perspective={perspective}
               canAct={canAct}
               onObjectClick={onObjectClick}
+              eligibleTargetIds={eligibleTargetIds}
               eligibleCombatIds={eligibleCombatIds}
               combatRoles={combatRoles}
             />
@@ -303,6 +321,7 @@ export function PlayerArea({
               orientation={rowsOrientation}
               canAct={canAct}
               onObjectClick={onObjectClick}
+              eligibleTargetIds={eligibleTargetIds}
               eligibleCombatIds={eligibleCombatIds}
               combatRoles={combatRoles}
             />
@@ -355,6 +374,7 @@ export function PlayerArea({
             orientation={artifactsOrientation}
             canAct={canAct}
             onObjectClick={onObjectClick}
+            eligibleTargetIds={eligibleTargetIds}
             eligibleCombatIds={eligibleCombatIds}
             combatRoles={combatRoles}
           />

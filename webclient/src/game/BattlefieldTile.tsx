@@ -29,6 +29,7 @@ export function BattlefieldTile({
   perm,
   canAct,
   onClick,
+  targetableForDialog = false,
   isEligibleCombat,
   combatRole,
   rotateDelay,
@@ -36,6 +37,15 @@ export function BattlefieldTile({
   perm: WebPermanentView;
   canAct: boolean;
   onClick: (id: string) => void;
+  /**
+   * Slice 70-Z bug fix — true when the engine reports this permanent
+   * as a legal target for the active gameTarget dialog. Drives the
+   * {@code card-targeted-pulse} keyframe on the tile's CardFace so
+   * own AND opponent creatures both show a clickable affordance
+   * during a "select target" prompt (Path to Exile, Murder, etc.).
+   * Defaults to false so existing test fixtures don't need updating.
+   */
+  targetableForDialog?: boolean;
   /**
    * Slice 26 â€” the engine has marked this permanent as a legal
    * attacker (declareAttackers) or legal blocker (declareBlockers).
@@ -116,6 +126,7 @@ export function BattlefieldTile({
           <BattlefieldTileFace
             perm={perm}
             isEligibleCombat={isEligibleCombat}
+            targetableForDialog={targetableForDialog}
             combatRole={combatRole}
             tapped={tapped}
             rotateDelay={rotateDelay}
@@ -151,12 +162,14 @@ export function BattlefieldTile({
 function BattlefieldTileFace({
   perm,
   isEligibleCombat,
+  targetableForDialog,
   combatRole,
   tapped,
   rotateDelay,
 }: {
   perm: WebPermanentView;
   isEligibleCombat: boolean;
+  targetableForDialog: boolean;
   combatRole: 'attacker' | 'blocker' | null;
   tapped: boolean;
   rotateDelay?: number;
@@ -167,6 +180,7 @@ function BattlefieldTileFace({
       size="battlefield"
       perm={perm}
       isEligibleCombat={isEligibleCombat}
+      targetableForDialog={targetableForDialog}
       combatRole={combatRole}
       tapped={tapped}
       rotateDelay={rotateDelay}

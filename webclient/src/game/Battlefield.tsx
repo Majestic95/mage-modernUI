@@ -238,6 +238,7 @@ export function Battlefield({
                 canAct={canAct}
                 onObjectClick={onObjectClick}
                 targetable={eligibleTargetIds.has(p.playerId)}
+                eligibleTargetIds={eligibleTargetIds}
                 eligibleCombatIds={eligibleCombatIds}
                 combatRoles={combatRoles}
                 isDropTarget={drag != null}
@@ -306,6 +307,7 @@ export function Battlefield({
               canAct={canAct}
               onObjectClick={onObjectClick}
               targetable={eligibleTargetIds.has(me.playerId)}
+              eligibleTargetIds={eligibleTargetIds}
               eligibleCombatIds={eligibleCombatIds}
               combatRoles={combatRoles}
               isDropTarget={drag != null}
@@ -350,6 +352,7 @@ export function Battlefield({
             canAct={canAct}
             onObjectClick={onObjectClick}
             targetable={eligibleTargetIds.has(me.playerId)}
+            eligibleTargetIds={eligibleTargetIds}
             eligibleCombatIds={eligibleCombatIds}
             combatRoles={combatRoles}
             isDropTarget={false}
