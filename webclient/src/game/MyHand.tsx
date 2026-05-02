@@ -12,7 +12,7 @@ import { HoverCardDetail } from './HoverCardDetail';
 import { ManaPool } from './ManaPool';
 import type { ManaOrbColor } from './ManaOrb';
 import { hasAnyMana } from './manaPoolUtil';
-import { CLICK_RESOLUTION, REDESIGN } from '../featureFlags';
+import { REDESIGN } from '../featureFlags';
 import { useDialogTargets } from './useDialogTargets';
 import type { GameStream } from './stream';
 
@@ -189,7 +189,7 @@ export function MyHand({
   // is off OR no dialog is active, this is just an empty set and
   // hand-card render is unchanged from the legacy behavior.
   const dialogState = useDialogTargets(stream ?? null);
-  const dialogActive = CLICK_RESOLUTION && dialogState.active;
+  const dialogActive = dialogState.active;
   // Slice 23: clearer reason when hand is disabled.
   // - !hasPriority â†’ engine isn't waiting on you
   // - hasPriority && !isMyTurn â†’ you can react with instants but

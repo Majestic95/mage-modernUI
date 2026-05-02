@@ -20,7 +20,6 @@ vi.mock('../featureFlags', () => ({
   get REDESIGN() {
     return flagState.redesign;
   },
-  CLICK_RESOLUTION: false,
 }));
 
 import { MyHand } from './MyHand';

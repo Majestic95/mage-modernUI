@@ -10,14 +10,11 @@ import { AmountDialog } from './ChooseAmountDialog';
 import { ChoiceDialog } from './ChooseChoiceDialog';
 import { AbilityPickerDialog } from './AbilityPickerDialog';
 import { InformDialog } from './InformDialog';
-import { CombatPanel } from './CombatPanel';
-import { ManaPayPanel } from './ManaPayPanel';
 import { ManaPayBanner } from './ManaPayBanner';
 import { CombatBanner } from './CombatBanner';
 import { isMulliganDialog } from '../MulliganModal';
 import { PilePickerDialog } from './PilePickerDialog';
 import { MultiAmountDialog } from './MultiAmountDialog';
-import { CLICK_RESOLUTION } from '../../featureFlags';
 import { useDialogTargets } from '../useDialogTargets';
 import { DialogBanner } from './DialogBanner';
 
@@ -56,12 +53,12 @@ export function GameDialog({ stream }: Props) {
   // the same dispatch surface.
   if (isMulliganDialog(dialog)) return null;
 
-  // Slice 70-Y.1 — click-resolution path. When the flag is on AND the
-  // hook says the dialog can be resolved by clicking cards in their
-  // existing zones, render the bottom-center banner ONLY and let the
-  // pulsing cards drive the dispatch via clickRouter target mode.
-  // The legacy modal is suppressed for this dialog frame.
-  if (CLICK_RESOLUTION && dialogTargets.active) {
+  // Click-resolution path (slice 70-Y.1, flag removed 2026-05-02).
+  // When the hook says the dialog can be resolved by clicking cards
+  // in their existing zones, render the bottom-center banner ONLY
+  // and let the pulsing cards drive the dispatch via clickRouter
+  // target mode.
+  if (dialogTargets.active) {
     const pickedCount = 0; // single-pick mode; click submits per id
     return (
       <DialogBanner
@@ -88,37 +85,18 @@ export function GameDialog({ stream }: Props) {
   if (dialog.method === 'gameSelect') {
     const mode = deriveInteractionMode(dialog);
     if (mode.kind === 'declareAttackers' || mode.kind === 'declareBlockers') {
-      // Slice 70-Y.4 (2026-05-01) — combat-banner replacement of the
-      // legacy CombatPanel side panel. Banner shows the prompt +
-      // Done (+ All-attack on declare-attackers when applicable).
-      // Per MTG rules expert validation: no Cancel button (boolean
-      // false has same server effect as true; misleading). Board
-      // clicks toggle attackers/blockers via clickRouter — already
-      // wired.
-      if (CLICK_RESOLUTION) {
-        return (
-          <CombatBanner
-            stream={stream}
-            isAttackers={mode.kind === 'declareAttackers'}
-          />
-        );
-      }
+      // Slice 70-Y.4 — combat-banner replacement of the legacy
+      // CombatPanel side panel (CLICK_RESOLUTION flag removed
+      // 2026-05-02). Banner shows the prompt + Done (+ All-attack on
+      // declare-attackers when applicable). Per MTG rules expert
+      // validation: no Cancel button (boolean false has same server
+      // effect as true; misleading). Board clicks toggle attackers/
+      // blockers via clickRouter — already wired.
       return (
-        <div
-          role="dialog"
-          aria-modal="false"
-          data-testid="game-dialog"
-          data-method={dialog.method}
-          data-combat-mode={mode.kind}
-          className="fixed bottom-4 right-[calc(var(--side-panel-width,0px)+1rem)] z-40 max-w-sm w-full bg-zinc-900 border border-zinc-700 rounded-lg p-5 space-y-3 shadow-2xl"
-        >
-          <CombatPanel
-            dialog={dialog}
-            stream={stream}
-            clearDialog={clearDialog}
-            isAttackers={mode.kind === 'declareAttackers'}
-          />
-        </div>
+        <CombatBanner
+          stream={stream}
+          isAttackers={mode.kind === 'declareAttackers'}
+        />
       );
     }
     return null;
@@ -143,7 +121,7 @@ export function GameDialog({ stream }: Props) {
       ? Object.keys(targetData.cardsView1).length
       : 0;
     // Case 3 — board target with no cardsView1 → banner.
-    if (CLICK_RESOLUTION && targetData && cardCount === 0) {
+    if (targetData && cardCount === 0) {
       const skipTarget = !targetData.flag
         ? () => {
             stream?.sendPlayerResponse(
@@ -170,8 +148,9 @@ export function GameDialog({ stream }: Props) {
         />
       );
     }
-    // Case 2 — modal with card grid (Demonic Tutor etc.) OR legacy
-    // path when CLICK_RESOLUTION off.
+    // Case 2 — modal with card grid (Demonic Tutor etc.) when the
+    // cards live in HIDDEN zones (library search). On-board target
+    // dispatch is handled by Case 3 above.
     return (
       <div
         role="dialog"
@@ -185,28 +164,13 @@ export function GameDialog({ stream }: Props) {
     );
   }
 
-  // gamePlayMana / gamePlayXMana — slice 21 (B2) → slice 70-Y.3
-  // (2026-05-01). The user pays mana by clicking lands / mana
-  // sources on the battlefield + mana orbs in the pool. With
-  // CLICK_RESOLUTION on, render as a bottom-center banner
-  // (ManaPayBanner) instead of the bottom-right side panel.
-  // Banner adds the "Special" button (Convoke / Improvise / Delve)
-  // that the legacy panel lacked entirely.
+  // gamePlayMana / gamePlayXMana — slice 21 → slice 70-Y.3
+  // (CLICK_RESOLUTION flag removed 2026-05-02). The user pays mana
+  // by clicking lands / mana sources on the battlefield + mana orbs
+  // in the pool. ManaPayBanner is the bottom-center surface; the
+  // Special button covers Convoke / Improvise / Delve.
   if (dialog.method === 'gamePlayMana' || dialog.method === 'gamePlayXMana') {
-    if (CLICK_RESOLUTION) {
-      return <ManaPayBanner stream={stream} />;
-    }
-    return (
-      <div
-        role="dialog"
-        aria-modal="false"
-        data-testid="game-dialog"
-        data-method={dialog.method}
-        className="fixed bottom-4 right-[calc(var(--side-panel-width,0px)+1rem)] z-40 max-w-sm w-full bg-zinc-900 border border-zinc-700 rounded-lg p-5 space-y-3 shadow-2xl"
-      >
-        <DialogContent dialog={dialog} stream={stream} clearDialog={clearDialog} />
-      </div>
-    );
+    return <ManaPayBanner stream={stream} />;
   }
 
   return (
@@ -250,16 +214,6 @@ function DialogContent({
   switch (dialog.method) {
     case 'gameAsk':
       return <YesNoDialog dialog={dialog} stream={stream} clearDialog={clearDialog} />;
-    case 'gamePlayMana':
-    case 'gamePlayXMana':
-      return (
-        <ManaPayPanel
-          dialog={dialog}
-          stream={stream}
-          clearDialog={clearDialog}
-          isXMana={dialog.method === 'gamePlayXMana'}
-        />
-      );
     case 'gameTarget': {
       // Slice 26 / ADR 0009: gameTarget doubles as the trigger-order
       // prompt. Branch when upstream's queryType discriminator is set.

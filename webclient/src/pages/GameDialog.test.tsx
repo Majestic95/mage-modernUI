@@ -182,7 +182,13 @@ describe('GameDialog', () => {
     };
   }
 
-  it('declareAttackers: renders combat panel with title + OK button', () => {
+  // Slice 70-Y.4 (CLICK_RESOLUTION flag removed 2026-05-02) — the
+  // declareAttackers / declareBlockers branch now renders
+  // CombatBanner directly. The shape contracts (Done button,
+  // All-attack-on-specialButton, no Cancel) live in
+  // CombatBanner.test.tsx; here we just assert GameDialog hands off
+  // to CombatBanner instead of the legacy modal.
+  it('declareAttackers: hands off to the CombatBanner (banner replaces legacy modal)', () => {
     const stream = fakeStream();
     act(() => {
       useGameStore.setState({
@@ -192,90 +198,20 @@ describe('GameDialog', () => {
       });
     });
     render(<GameDialog stream={stream} />);
-    expect(screen.getByTestId('game-dialog')).toHaveAttribute(
-      'data-combat-mode',
-      'declareAttackers',
-    );
-    expect(screen.getByTestId('dialog-title')).toHaveTextContent(/Declare attackers/i);
-    expect(screen.getByRole('button', { name: /^OK$/i })).toBeInTheDocument();
+    expect(screen.getByTestId('combat-banner')).toBeInTheDocument();
+    expect(screen.queryByTestId('game-dialog')).not.toBeInTheDocument();
   });
 
-  it('declareAttackers: OK button sends boolean=true and clears the dialog', async () => {
+  it('declareBlockers: hands off to the CombatBanner (banner replaces legacy modal)', () => {
     const stream = fakeStream();
-    const user = userEvent.setup();
-    act(() => {
-      useGameStore.setState({
-        pendingDialog: combatDialog('Select attackers'),
-      });
-    });
-    render(<GameDialog stream={stream} />);
-    await user.click(screen.getByRole('button', { name: /^OK$/i }));
-    expect(stream.sendPlayerResponse).toHaveBeenCalledWith(99, 'boolean', true);
-    expect(useGameStore.getState().pendingDialog).toBeNull();
-  });
-
-  it('declareAttackers: All-attack button renders when specialButton is set, sends string="special"', async () => {
-    const stream = fakeStream();
-    const user = userEvent.setup();
-    act(() => {
-      useGameStore.setState({
-        pendingDialog: combatDialog('Select attackers', {
-          specialButton: 'All attack',
-        }),
-      });
-    });
-    render(<GameDialog stream={stream} />);
-    const allAttack = screen.getByRole('button', { name: /^All attack$/i });
-    await user.click(allAttack);
-    expect(stream.sendPlayerResponse).toHaveBeenCalledWith(99, 'string', 'special');
-    expect(useGameStore.getState().pendingDialog).toBeNull();
-  });
-
-  it('declareAttackers: All-attack button is hidden when specialButton is empty', () => {
-    const stream = fakeStream();
-    act(() => {
-      useGameStore.setState({
-        pendingDialog: combatDialog('Select attackers'),
-      });
-    });
-    render(<GameDialog stream={stream} />);
-    expect(
-      screen.queryByRole('button', { name: /^All attack$/i }),
-    ).not.toBeInTheDocument();
-  });
-
-  it('declareBlockers: renders combat panel; no All-attack button', () => {
-    const stream = fakeStream();
-    act(() => {
-      useGameStore.setState({
-        pendingDialog: combatDialog('Select blockers', {
-          specialButton: 'All attack', // even if upstream sends it, hide
-        }),
-      });
-    });
-    render(<GameDialog stream={stream} />);
-    expect(screen.getByTestId('game-dialog')).toHaveAttribute(
-      'data-combat-mode',
-      'declareBlockers',
-    );
-    expect(screen.getByTestId('dialog-title')).toHaveTextContent(/Declare blockers/i);
-    expect(
-      screen.queryByRole('button', { name: /^All attack$/i }),
-    ).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^OK$/i })).toBeInTheDocument();
-  });
-
-  it('declareBlockers: OK sends boolean=true', async () => {
-    const stream = fakeStream();
-    const user = userEvent.setup();
     act(() => {
       useGameStore.setState({
         pendingDialog: combatDialog('Select blockers'),
       });
     });
     render(<GameDialog stream={stream} />);
-    await user.click(screen.getByRole('button', { name: /^OK$/i }));
-    expect(stream.sendPlayerResponse).toHaveBeenCalledWith(99, 'boolean', true);
+    expect(screen.getByTestId('combat-banner')).toBeInTheDocument();
+    expect(screen.queryByTestId('game-dialog')).not.toBeInTheDocument();
   });
 
   it('gameSelect free-priority message renders nothing (board is the input)', () => {
@@ -409,163 +345,15 @@ describe('GameDialog', () => {
     expect(useGameStore.getState().pendingDialog).toBeNull();
   });
 
-  it('gameTarget: with player UUIDs in targets[] renders player picker (start-of-match)', async () => {
+  // Slice 70-Y.2 (CLICK_RESOLUTION flag removed 2026-05-02) — gameTarget
+  // with empty cardsView1 (board-target: player or permanent on the
+  // board) now renders DialogBanner; the dispatch happens via
+  // clickRouter target mode on the board, NOT via per-row buttons in
+  // a modal target list. The board-click → uuid response contract is
+  // covered in clickRouter.test.ts; here we assert GameDialog hands
+  // off to the banner.
+  it('gameTarget with empty cardsView1: hands off to the DialogBanner (no legacy target-list modal)', () => {
     const stream = fakeStream();
-    const user = userEvent.setup();
-    const aliceId = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
-    const bobId = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
-    const gameView = {
-      turn: 1,
-      phase: '',
-      step: '',
-      activePlayerName: '',
-      priorityPlayerName: '',
-      special: false,
-      rollbackTurnsAllowed: false,
-      totalErrorsCount: 0,
-      totalEffectsCount: 0,
-      gameCycle: 0,
-      myPlayerId: aliceId,
-      myHand: {},
-      stack: {},
-      combat: [],
-      players: [
-        {
-          playerId: aliceId,
-          name: 'alice',
-          life: 20, wins: 0, winsNeeded: 1, libraryCount: 60, handCount: 0,
-          graveyard: {}, exile: {}, sideboard: {}, battlefield: {},
-          manaPool: { red: 0, green: 0, blue: 0, white: 0, black: 0, colorless: 0 },
-          controlled: true, isHuman: true, isActive: false, hasPriority: false,
-          hasLeft: false, monarch: false, initiative: false,
-          designationNames: [],
-          commandList: [],
-        },
-        {
-          playerId: bobId,
-          name: 'COMPUTER_MAD',
-          life: 20, wins: 0, winsNeeded: 1, libraryCount: 60, handCount: 0,
-          graveyard: {}, exile: {}, sideboard: {}, battlefield: {},
-          manaPool: { red: 0, green: 0, blue: 0, white: 0, black: 0, colorless: 0 },
-          controlled: false, isHuman: false, isActive: false, hasPriority: false,
-          hasLeft: false, monarch: false, initiative: false,
-          designationNames: [],
-          commandList: [],
-        },
-      ],
-    };
-    act(() => {
-      useGameStore.setState({
-        pendingDialog: {
-          method: 'gameTarget',
-          messageId: 4,
-          data: webGameClientMessageSchema.parse({
-            gameView,
-            message: 'Select a starting player',
-            targets: [aliceId, bobId],
-            cardsView1: {},
-            min: 0,
-            max: 0,
-            flag: true,
-            choice: null,
-          }),
-        },
-      });
-    });
-    render(<GameDialog stream={stream} />);
-
-    expect(screen.getByTestId('target-list-resolved')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /alice/ }));
-    expect(stream.sendPlayerResponse).toHaveBeenCalledWith(4, 'uuid', aliceId);
-    expect(useGameStore.getState().pendingDialog).toBeNull();
-  });
-
-  it('gameTarget: with hand-card UUIDs in targets[] resolves names from gameView.myHand (end-of-turn discard)', async () => {
-    const stream = fakeStream();
-    const user = userEvent.setup();
-    const aliceId = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
-    const card1 = {
-      id: 'cccccccc-cccc-cccc-cccc-cccccccccccc',
-      name: 'Forest',
-      displayName: 'Forest',
-      expansionSetCode: 'M21',
-      cardNumber: '281',
-      manaCost: '',
-      manaValue: 0,
-      typeLine: 'Basic Land — Forest',
-      supertypes: ['BASIC'],
-      types: ['LAND'],
-      subtypes: ['Forest'],
-      colors: [],
-      rarity: 'COMMON',
-      power: '',
-      toughness: '',
-      startingLoyalty: '',
-      rules: [],
-      faceDown: false,
-      counters: {},
-      transformable: false,
-      transformed: false,
-      secondCardFace: null,
-    };
-    const gameView = {
-      turn: 5,
-      phase: 'ENDING',
-      step: 'CLEANUP',
-      activePlayerName: 'alice',
-      priorityPlayerName: 'alice',
-      special: false,
-      rollbackTurnsAllowed: false,
-      totalErrorsCount: 0,
-      totalEffectsCount: 0,
-      gameCycle: 0,
-      myPlayerId: aliceId,
-      myHand: { [card1.id]: card1 },
-      stack: {},
-      combat: [],
-      players: [
-        {
-          playerId: aliceId,
-          name: 'alice',
-          life: 20, wins: 0, winsNeeded: 1, libraryCount: 53, handCount: 8,
-          graveyard: {}, exile: {}, sideboard: {}, battlefield: {},
-          manaPool: { red: 0, green: 0, blue: 0, white: 0, black: 0, colorless: 0 },
-          controlled: true, isHuman: true, isActive: true, hasPriority: true,
-          hasLeft: false, monarch: false, initiative: false,
-          designationNames: [],
-          commandList: [],
-        },
-      ],
-    };
-    act(() => {
-      useGameStore.setState({
-        pendingDialog: {
-          method: 'gameTarget',
-          messageId: 19,
-          data: webGameClientMessageSchema.parse({
-            gameView,
-            message: 'Discard a card',
-            targets: [card1.id],
-            cardsView1: {},
-            min: 0,
-            max: 0,
-            flag: true,
-            choice: null,
-          }),
-        },
-      });
-    });
-    render(<GameDialog stream={stream} />);
-
-    expect(screen.getByTestId('target-list-resolved')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /Forest/ }));
-    expect(stream.sendPlayerResponse).toHaveBeenCalledWith(19, 'uuid', card1.id);
-    expect(useGameStore.getState().pendingDialog).toBeNull();
-  });
-
-  it('gameTarget: unresolvable id falls back to short-id stub (always clickable)', async () => {
-    const stream = fakeStream();
-    const user = userEvent.setup();
     const orphanId = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
     act(() => {
       useGameStore.setState({
@@ -581,10 +369,8 @@ describe('GameDialog', () => {
       });
     });
     render(<GameDialog stream={stream} />);
-
-    expect(screen.getByTestId('target-list-resolved')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /ffffffff/ }));
-    expect(stream.sendPlayerResponse).toHaveBeenCalledWith(20, 'uuid', orphanId);
+    expect(screen.getByTestId('dialog-banner')).toBeInTheDocument();
+    expect(screen.queryByTestId('target-list-resolved')).not.toBeInTheDocument();
   });
 
   it('gameTarget: optional target shows Skip and sends empty UUID', async () => {
@@ -1122,9 +908,14 @@ describe('GameDialog', () => {
     expect(stream.sendPlayerResponse).not.toHaveBeenCalled();
   });
 
-  it('gamePlayMana: renders cost message + Cancel button (slice 21)', async () => {
+  // Slice 70-Y.3 (CLICK_RESOLUTION flag removed 2026-05-02) —
+  // gamePlayMana / gamePlayXMana now render ManaPayBanner (was a
+  // bottom-right side panel). Banner shape contracts (Special button
+  // for Convoke / Improvise / Delve, no Done on plain mana, etc.)
+  // live in ManaPayBanner.test.tsx; here we just assert GameDialog
+  // hands off to the banner instead of the legacy modal.
+  it('gamePlayMana: hands off to the ManaPayBanner (banner replaces legacy modal)', () => {
     const stream = fakeStream();
-    const user = userEvent.setup();
     act(() => {
       useGameStore.setState({
         pendingDialog: {
@@ -1135,24 +926,14 @@ describe('GameDialog', () => {
       });
     });
     render(<GameDialog stream={stream} />);
-    expect(screen.getByTestId('dialog-title')).toHaveTextContent(/pay mana/i);
-    expect(screen.getByText(/Pay \{R\}\?/)).toBeInTheDocument();
-    expect(
-      screen.getByText(/Click a mana source on the battlefield/i),
-    ).toBeInTheDocument();
-    // Slice 21: no Yes/No buttons — Cancel is the only modal control,
-    // because the gesture is to click a land on the board.
-    expect(screen.queryByRole('button', { name: /^Yes$/i })).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /^Cancel$/i }));
-    expect(stream.sendPlayerResponse).toHaveBeenCalledWith(33, 'boolean', false);
-    expect(useGameStore.getState().pendingDialog).toBeNull();
+    expect(screen.getByTestId('mana-pay-banner')).toBeInTheDocument();
+    expect(screen.queryByTestId('game-dialog')).not.toBeInTheDocument();
   });
 
   /* ---------- slice 7: 3 audit-tier-2 dialogs ---------- */
 
-  it('gamePlayXMana: renders cost message + Done + Cancel buttons (slice 21)', async () => {
+  it('gamePlayXMana: hands off to the ManaPayBanner (banner replaces legacy modal)', () => {
     const stream = fakeStream();
-    const user = userEvent.setup();
     act(() => {
       useGameStore.setState({
         pendingDialog: {
@@ -1163,14 +944,7 @@ describe('GameDialog', () => {
       });
     });
     render(<GameDialog stream={stream} />);
-    expect(screen.getByTestId('game-dialog')).toHaveAttribute(
-      'data-method',
-      'gamePlayXMana',
-    );
-    expect(screen.getByTestId('dialog-title')).toHaveTextContent(/Pay X mana/i);
-    // Done finalizes (boolean=false per upstream convention).
-    await user.click(screen.getByRole('button', { name: /^Done$/i }));
-    expect(stream.sendPlayerResponse).toHaveBeenCalledWith(50, 'boolean', false);
+    expect(screen.getByTestId('mana-pay-banner')).toBeInTheDocument();
   });
 
   it('gameChooseChoice: clicking a choice sends the chosen key as string', async () => {
