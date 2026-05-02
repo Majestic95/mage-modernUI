@@ -1,24 +1,24 @@
 /**
- * Slice L4 (new-lobby-window) — slim pre-lobby selector. Replaces
- * the legacy {@link CreateTableModal}'s full-form modal with the
- * minimum viable surface: format, mode, player count, optional AI
- * seats. Everything else (password, time limit, mulligan rules,
- * skill, spectators, rated, range, attack option) moves into the
- * host-only Edit Settings modal that's reachable from inside the
- * new lobby once it opens.
+ * Slice L4 (new-lobby-window) — slim pre-lobby selector. The minimum
+ * viable create-table surface: format, mode, player count, optional
+ * AI seats. Everything else (password, time limit, mulligan rules,
+ * skill, spectators, rated, range, attack option) lives in the
+ * host-only Edit Settings modal reachable from inside the new lobby
+ * once it opens.
  *
  * <p>Submit flow:
  * <ol>
  *   <li>POST /api/rooms/{roomId}/tables with the slim WebCreateTableRequest
  *       body — seats array declares HUMAN + optional COMPUTER slots</li>
  *   <li>If AI was requested, POST /ai for each declared COMPUTER seat
- *       (sequential, mirroring the legacy modal's pattern)</li>
+ *       (sequential — concurrent /ai calls race on the upstream
+ *       "next available COMPUTER seat" lookup)</li>
  *   <li>Invoke {@code onCreated(tableId)} so the parent can flip
  *       {@code activeLobbyId} and route into the new lobby</li>
  * </ol>
  *
- * <p>The legacy {@link CreateTableModal} stays in the codebase
- * untouched until slice L9 retires it, in case rollback is needed.
+ * <p>L9 retired the legacy CreateTableModal — this is the only
+ * create-table modal now.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { ApiError, request } from '../api/client';
@@ -140,9 +140,9 @@ export function PreLobbyModal({
       return;
     }
 
-    // Fill the declared COMPUTER seats sequentially. Same rationale
-    // as legacy CreateTableModal — concurrent /ai calls race on the
-    // "next available COMPUTER seat" lookup.
+    // Fill the declared COMPUTER seats sequentially. Concurrent /ai
+    // calls race on the upstream "next available COMPUTER seat"
+    // lookup, so we must serialize.
     if (fillWithAi) {
       const aiSeats = clampedCount - 1;
       for (let i = 0; i < aiSeats; i++) {

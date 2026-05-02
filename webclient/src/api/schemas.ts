@@ -267,6 +267,15 @@ export const webTableSchema = z.object({
   rated: z.boolean(),
   limited: z.boolean(),
   seats: z.array(webSeatSchema),
+  // Slice L8 review (architecture #4) — round-trip the editable
+  // MatchOptions fields so EditSettings can show the actual server
+  // state instead of static defaults. Defaults below preserve
+  // forward-compat with 1.26 servers that don't emit these.
+  matchTimeLimit: z.string().default(''),
+  freeMulligans: z.number().int().default(0),
+  mulliganType: z.string().default(''),
+  attackOption: z.string().default(''),
+  range: z.string().default(''),
 });
 export type WebTable = z.infer<typeof webTableSchema>;
 

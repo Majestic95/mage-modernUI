@@ -86,6 +86,27 @@ public final class TableMapper {
         // (which it is post-slice 70-X.13) it's a no-op.
         String hostUsername = cleanControllerName(v.getControllerName());
         UUID tableId = v.getTableId();
+        // Slice L8 — read MatchOptions for the round-trip-only fields.
+        // Null-safe: if match is null (rare race against table removal)
+        // the new fields land as defaults so EditSettings still
+        // renders without crashing.
+        String matchTimeLimit = "";
+        int freeMulligans = 0;
+        String mulliganType = "";
+        String attackOption = "";
+        String range = "";
+        if (match != null && match.getOptions() != null) {
+            var opts = match.getOptions();
+            matchTimeLimit = opts.getMatchTimeLimit() == null
+                    ? "" : opts.getMatchTimeLimit().name();
+            freeMulligans = opts.getFreeMulligans();
+            mulliganType = opts.getMulliganType() == null
+                    ? "" : opts.getMulliganType().name();
+            attackOption = opts.getAttackOption() == null
+                    ? "" : opts.getAttackOption().name();
+            range = opts.getRange() == null
+                    ? "" : opts.getRange().name();
+        }
         return new WebTable(
                 tableId.toString(),
                 emptyIfNull(v.getTableName()),
@@ -104,7 +125,12 @@ public final class TableMapper {
                         : v.getSeats().stream()
                                 .map(s -> seat(s, match, deckSizeRequired,
                                         readyTracker, tableId, hostUsername))
-                                .toList()
+                                .toList(),
+                matchTimeLimit,
+                freeMulligans,
+                mulliganType,
+                attackOption,
+                range
         );
     }
 

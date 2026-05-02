@@ -1,7 +1,8 @@
 /**
  * Slice L1 (new-lobby-window) — top-level lobby page. Replaces the
- * legacy CreateTableModal + table-list pre-game flow with a dedicated
- * full-page screen.
+ * legacy table-list pre-game flow with a dedicated full-page screen.
+ * (Slice L9 retired the legacy CreateTableModal; the lobby table
+ * list still routes joiners into this screen via onEnterLobby.)
  *
  * <p>L1 shipped static fixture data only. Slice L2 wires real
  * {@link WebTable} via polling — when {@code tableId} is a UUID, the
@@ -34,6 +35,7 @@ import { useTableStream } from './useTableStream';
 import { webTableToLobby } from './webTableToLobby';
 import type { WebDeckCardInfo } from '../api/schemas';
 import { useDecksStore } from '../decks/store';
+import { GameStream } from '../game/stream';
 
 interface EditableInitial {
   password: string;
@@ -74,12 +76,20 @@ const DEFAULT_INITIAL: EditableInitial = {
  */
 function initialFromTable(table: WebTable | null): EditableInitial {
   if (!table) return DEFAULT_INITIAL;
+  // Slice L8 review (architecture #4) — round-trip every PATCHable
+  // field. Empty-string defaults from the wire (1.26 server, or a
+  // field upstream returns null for) fall back to the client-side
+  // default rather than emitting an empty enum string downstream.
   return {
-    ...DEFAULT_INITIAL,
     password: '',
     skillLevel: table.skillLevel || DEFAULT_INITIAL.skillLevel,
+    matchTimeLimit: table.matchTimeLimit || DEFAULT_INITIAL.matchTimeLimit,
+    freeMulligans: table.freeMulligans,
+    mulliganType: table.mulliganType || DEFAULT_INITIAL.mulliganType,
     spectatorsAllowed: table.spectatorsAllowed,
     rated: table.rated,
+    attackOption: table.attackOption || DEFAULT_INITIAL.attackOption,
+    range: table.range || DEFAULT_INITIAL.range,
   };
 }
 
@@ -90,9 +100,16 @@ interface Props {
    * tableId and triggers the polling hook.
    */
   tableId: string;
+  /**
+   * Slice L8 — called when the user confirms leaving the lobby.
+   * The parent (App.tsx) clears activeLobbyId; this screen just
+   * fires the appropriate server-side teardown (host: DELETE table,
+   * guest: DELETE seat) before invoking the callback.
+   */
+  onLeave?: () => void;
 }
 
-export function NewLobbyScreen({ tableId }: Props) {
+export function NewLobbyScreen({ tableId, onLeave }: Props) {
   if (tableId === 'fixture') {
     return (
       <LobbyShell
@@ -100,13 +117,20 @@ export function NewLobbyScreen({ tableId }: Props) {
         tableId="fixture"
         roomId={null}
         editInitial={DEFAULT_INITIAL}
+        onLeave={onLeave}
       />
     );
   }
-  return <LiveLobby tableId={tableId} />;
+  return <LiveLobby tableId={tableId} onLeave={onLeave} />;
 }
 
-function LiveLobby({ tableId }: { tableId: string }) {
+function LiveLobby({
+  tableId,
+  onLeave,
+}: {
+  tableId: string;
+  onLeave?: () => void;
+}) {
   const session = useAuthStore((s) => s.session);
   const username = session?.username ?? '';
   // Slice L7 — WebSocket push replaces the 5s polling. Same return
@@ -116,11 +140,11 @@ function LiveLobby({ tableId }: { tableId: string }) {
   const [roomId, setRoomId] = useState<string | null>(null);
 
   // Slice L3 — discover the singleton main room ID once. The PATCH
-  // endpoint needs both roomId + tableId; useLobbyTable already
-  // resolves the room for its polling, but doesn't expose it. Cheap
-  // to call again here (one-shot) so the modal can render the room
-  // path. If this becomes a recurring shape, extract a useMainRoom()
-  // hook in a future slice.
+  // endpoint needs both roomId + tableId; useTableStream resolves
+  // the room internally for its WS path but doesn't expose it.
+  // Cheap to call again here (one-shot) so the modal can render
+  // the room path. If this becomes a recurring shape, extract a
+  // useMainRoom() hook in a future slice.
   useEffect(() => {
     if (!session) return;
     let cancelled = false;
@@ -140,6 +164,27 @@ function LiveLobby({ tableId }: { tableId: string }) {
     };
   }, [session]);
 
+  // Slice L8 — keep a room-WebSocket open while in the new lobby so
+  // the upstream `startGame` callback (User.ccGameStarted) flows into
+  // the game store as `pendingStartGame`. App.tsx already subscribes
+  // to that store and auto-routes into the game window when it's
+  // populated. The legacy LobbyChat owns this connection on the
+  // table-list screen, but unmounts as soon as activeLobbyId is set
+  // and NewLobbyScreen takes over — without this hook the new lobby
+  // would silently miss the start-game transition.
+  useEffect(() => {
+    if (!session || !roomId) return;
+    const stream = new GameStream({
+      gameId: roomId,
+      token: session.token,
+      endpoint: 'room',
+    });
+    stream.open();
+    return () => {
+      stream.close();
+    };
+  }, [session, roomId]);
+
   if (loading && !table) {
     return <LobbyStatus message="Loading table…" />;
   }
@@ -154,6 +199,7 @@ function LiveLobby({ tableId }: { tableId: string }) {
       roomId={roomId}
       editInitial={initialFromTable(table)}
       useLiveDecksHook
+      onLeave={onLeave}
     />
   );
 }
@@ -175,12 +221,14 @@ function LobbyShell({
   roomId,
   editInitial,
   useLiveDecksHook = false,
+  onLeave,
 }: {
   data: LobbyFixture;
   tableId: string;
   roomId: string | null;
   editInitial: EditableInitial;
   useLiveDecksHook?: boolean;
+  onLeave?: () => void;
 }) {
   const session = useAuthStore((s) => s.session);
   const [editOpen, setEditOpen] = useState(false);
@@ -193,6 +241,11 @@ function LobbyShell({
   const [deckError, setDeckError] = useState<string | null>(null);
   const [startSubmitting, setStartSubmitting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
+  // Slice L8 — back button leave/close. Host gets a confirm modal
+  // before tearing down the table; guest just leaves their seat.
+  const [leaveSubmitting, setLeaveSubmitting] = useState(false);
+  const [leaveError, setLeaveError] = useState<string | null>(null);
+  const [closeConfirmOpen, setCloseConfirmOpen] = useState(false);
   // Slice L7 polish — settings-change banner. Set by EditSettingsModal
   // on save; auto-dismisses after 4s. The wire-side mechanism (server
   // resets guest ready flags on PATCH) drives the actual state; the
@@ -287,6 +340,79 @@ function LobbyShell({
     }
   };
 
+  // Slice L8 — back-button handler. Host: open confirm modal.
+  // Guest: leave seat and route to main menu. Fixture path always
+  // routes to main menu (no wire call).
+  const onBack = () => {
+    if (tableId === 'fixture' || roomId === null) {
+      onLeave?.();
+      return;
+    }
+    if (isHost) {
+      setCloseConfirmOpen(true);
+      return;
+    }
+    void leaveAsGuest();
+  };
+
+  const leaveAsGuest = async () => {
+    if (!session || tableId === 'fixture' || roomId === null) {
+      onLeave?.();
+      return;
+    }
+    setLeaveSubmitting(true);
+    setLeaveError(null);
+    try {
+      // 422 if not seated is fine — we still want to drop the lobby
+      // screen. Swallow the error for that case.
+      await request(
+        `/api/rooms/${roomId}/tables/${tableId}/seat`,
+        null,
+        { method: 'DELETE', token: session.token },
+      );
+    } catch (err) {
+      // ApiError 422 NOT_SEATED is acceptable — leaving when not
+      // seated is a no-op server-side. Anything else surfaces.
+      if (err instanceof ApiError && err.status === 422) {
+        // ignore
+      } else {
+        setLeaveError(
+          err instanceof ApiError ? err.message : 'Failed to leave the table.',
+        );
+        setLeaveSubmitting(false);
+        return;
+      }
+    }
+    setLeaveSubmitting(false);
+    onLeave?.();
+  };
+
+  const closeAsHost = async () => {
+    if (!session || tableId === 'fixture' || roomId === null) {
+      setCloseConfirmOpen(false);
+      onLeave?.();
+      return;
+    }
+    setLeaveSubmitting(true);
+    setLeaveError(null);
+    try {
+      await request(
+        `/api/rooms/${roomId}/tables/${tableId}`,
+        null,
+        { method: 'DELETE', token: session.token },
+      );
+    } catch (err) {
+      setLeaveError(
+        err instanceof ApiError ? err.message : 'Failed to close the lobby.',
+      );
+      setLeaveSubmitting(false);
+      return;
+    }
+    setLeaveSubmitting(false);
+    setCloseConfirmOpen(false);
+    onLeave?.();
+  };
+
   // Slice L7-prep — wire the orange Start Game CTA to the existing
   // POST /tables/{t}/start endpoint. Without this the button looked
   // active but did nothing. Server-side already gates on owner; the
@@ -367,7 +493,7 @@ function LobbyShell({
           'radial-gradient(ellipse 90% 60% at 50% 35%, rgba(139, 92, 246, 0.18) 0%, rgba(76, 29, 149, 0.08) 35%, transparent 70%), radial-gradient(ellipse 60% 40% at 80% 80%, rgba(91, 192, 240, 0.10) 0%, transparent 60%), radial-gradient(ellipse 50% 30% at 15% 90%, rgba(168, 85, 247, 0.10) 0%, transparent 60%)',
       }}
     >
-      <LobbyTopBar />
+      <LobbyTopBar onBack={onBack} backDisabled={leaveSubmitting} />
 
       {/* Main fills remaining viewport height. `min-h-0` is critical:
           without it, flex children retain content-driven heights and
@@ -500,6 +626,89 @@ function LobbyShell({
             )
           }
         />
+      )}
+
+      {closeConfirmOpen && (
+        <div
+          data-testid="close-confirm-backdrop"
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ background: 'var(--color-bg-overlay)' }}
+          onClick={() => !leaveSubmitting && setCloseConfirmOpen(false)}
+          role="presentation"
+        >
+          <div
+            data-testid="close-confirm-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Close lobby"
+            className="flex w-full max-w-md flex-col gap-4 rounded-xl border p-6"
+            style={{
+              background: 'var(--color-bg-elevated)',
+              borderColor: 'var(--color-card-frame-default)',
+              boxShadow: 'var(--shadow-high)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2
+              className="text-base font-semibold uppercase text-text-primary"
+              style={{ letterSpacing: '0.12em' }}
+            >
+              Close lobby?
+            </h2>
+            <p className="text-sm text-text-secondary">
+              This removes the table for everyone. Anyone seated here
+              will be returned to the main menu.
+            </p>
+            {leaveError && (
+              <p
+                role="alert"
+                className="text-sm text-status-danger"
+              >
+                {leaveError}
+              </p>
+            )}
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                data-testid="close-confirm-cancel"
+                disabled={leaveSubmitting}
+                onClick={() => setCloseConfirmOpen(false)}
+                className="rounded-md border px-4 py-2 text-sm text-text-secondary transition-colors hover:bg-surface-card-hover hover:text-text-primary disabled:opacity-60"
+                style={{ borderColor: 'var(--color-card-frame-default)' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                data-testid="close-confirm-confirm"
+                disabled={leaveSubmitting}
+                onClick={() => void closeAsHost()}
+                className="rounded-md bg-status-danger px-4 py-2 text-sm font-medium text-text-on-accent transition-opacity hover:opacity-90 disabled:opacity-60"
+              >
+                {leaveSubmitting ? 'Closing…' : 'Close lobby'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {leaveError && !closeConfirmOpen && (
+        <div
+          data-testid="leave-error-toast"
+          role="alert"
+          className="pointer-events-none fixed inset-x-0 top-16 z-40 flex justify-center px-4"
+        >
+          <div
+            className="rounded-md border px-4 py-2 text-sm text-status-danger backdrop-blur-sm"
+            style={{
+              background: 'rgba(21, 34, 41, 0.92)',
+              borderColor: 'var(--color-status-danger)',
+              boxShadow: 'var(--shadow-medium)',
+            }}
+          >
+            {leaveError}
+          </div>
+        </div>
       )}
 
       {settingsChangedNotice && (

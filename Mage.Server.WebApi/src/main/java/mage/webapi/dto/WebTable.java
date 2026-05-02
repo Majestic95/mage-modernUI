@@ -10,6 +10,14 @@ import java.util.List;
  * <p>Hand-written translation of upstream {@code mage.view.TableView};
  * computed display strings from upstream are intentionally omitted.
  *
+ * <p>Slice L8 review (architecture #4) — added {@code matchTimeLimit},
+ * {@code freeMulligans}, {@code mulliganType}, {@code attackOption},
+ * {@code range}. These are the same fields {@link WebMatchOptionsUpdate}
+ * accepts; without them on the wire the host's Edit Settings modal
+ * fell back to {@code DEFAULT_INITIAL} for these fields, silently
+ * lying about the table's actual state. Schema stays 1.27 — additive
+ * fields are forward-compatible (1.26 clients ignore them).
+ *
  * @param tableId            UUID
  * @param tableName          user-facing label
  * @param gameType           e.g. {@code "Two Player Duel"}
@@ -27,6 +35,16 @@ import java.util.List;
  * @param limited            draft / sealed / cube format
  * @param seats              ordered seat list; same length as
  *     {@code MatchOptions.numSeats}
+ * @param matchTimeLimit     enum name ({@code "NONE"}, {@code "MIN_5"},
+ *     {@code "MIN_10"}, ..., {@code "MIN_120"})
+ * @param freeMulligans      0..5
+ * @param mulliganType       enum name ({@code "GAME_DEFAULT"},
+ *     {@code "LONDON"}, {@code "SMOOTHED_LONDON"}, {@code "VANCOUVER"},
+ *     {@code "PARIS"}, {@code "CANADIAN_HIGHLANDER"})
+ * @param attackOption       enum name ({@code "LEFT"}, {@code "RIGHT"},
+ *     {@code "MULTIPLE"})
+ * @param range              enum name ({@code "ALL"}, {@code "ONE"},
+ *     {@code "TWO"})
  */
 public record WebTable(
         String tableId,
@@ -42,6 +60,11 @@ public record WebTable(
         boolean spectatorsAllowed,
         boolean rated,
         boolean limited,
-        List<WebSeat> seats
+        List<WebSeat> seats,
+        String matchTimeLimit,
+        int freeMulligans,
+        String mulliganType,
+        String attackOption,
+        String range
 ) {
 }

@@ -334,8 +334,12 @@ class WebApiServerTest {
 
         JsonNode table = JSON.readTree(r.body());
         // Lock the 14-field shape.
-        assertEquals(14, table.size(),
-                "WebTable JSON must have exactly 14 fields; got: " + table);
+        // Slice L8 — bumped from 14 to 19 fields. Schema 1.27 added
+        // matchTimeLimit, freeMulligans, mulliganType, attackOption,
+        // range so EditSettings can round-trip the host's actual
+        // settings instead of falling back to client-side defaults.
+        assertEquals(19, table.size(),
+                "WebTable JSON must have exactly 19 fields; got: " + table);
         assertNotNull(table.get("tableId").asText());
         assertEquals("Two Player Duel", table.get("gameType").asText());
         assertEquals("Constructed - Vintage", table.get("deckType").asText());

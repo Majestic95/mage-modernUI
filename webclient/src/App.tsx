@@ -51,7 +51,14 @@ function persistGameId(id: string | null): void {
  * Slice L4 — initial activeLobbyId. URL param wins (covers fixture
  * dev-entry + paste-the-link flows); falls back to persisted state
  * so a reload while inside the lobby keeps the user there.
+ *
+ * <p>Slice L8 review fix — persisted entry is also tagged with the
+ * username it was stored under. On read, if the current session's
+ * username doesn't match, the stale entry is dropped so user A's
+ * lobby doesn't follow user B into login.
  */
+const ACTIVE_LOBBY_USER_STORAGE_KEY = 'xmage.activeLobbyId.user';
+
 function readInitialLobbyId(): string | null {
   try {
     const fromUrl = new URLSearchParams(window.location.search).get('lobby');
@@ -62,15 +69,27 @@ function readInitialLobbyId(): string | null {
   }
 }
 
-function persistLobbyId(id: string | null): void {
+function persistLobbyId(id: string | null, username?: string): void {
   try {
     if (id) {
       window.localStorage.setItem(ACTIVE_LOBBY_STORAGE_KEY, id);
+      if (username) {
+        window.localStorage.setItem(ACTIVE_LOBBY_USER_STORAGE_KEY, username);
+      }
     } else {
       window.localStorage.removeItem(ACTIVE_LOBBY_STORAGE_KEY);
+      window.localStorage.removeItem(ACTIVE_LOBBY_USER_STORAGE_KEY);
     }
   } catch {
     // Ignore.
+  }
+}
+
+function readPersistedLobbyUser(): string | null {
+  try {
+    return window.localStorage.getItem(ACTIVE_LOBBY_USER_STORAGE_KEY);
+  } catch {
+    return null;
   }
 }
 
@@ -106,9 +125,13 @@ export function App() {
   // Slice L4 — same persistence pattern for the new lobby. Special
   // case: 'fixture' is dev-only and shouldn't persist (a stale
   // entry would force fixture mode after a reload even when the
-  // user wanted to leave).
+  // user wanted to leave). L8 — persist alongside the username so a
+  // login-as-different-user doesn't inherit the stale lobbyId.
   const setActiveLobbyId = (id: string | null) => {
-    persistLobbyId(id === 'fixture' ? null : id);
+    persistLobbyId(
+      id === 'fixture' ? null : id,
+      session?.username,
+    );
     setActiveLobbyIdState(id);
   };
 
@@ -149,6 +172,39 @@ export function App() {
     }
   }, [session]);
 
+  // Slice L8 review fix — when a session is established, validate
+  // that the persisted activeLobbyId belongs to THIS user (not a
+  // prior login that left state behind). Mismatch → clear so the
+  // new user starts at the table list, not someone else's lobby.
+  // Same lint exemption as the DUELING effect above — the cascading
+  // render fires once per session-change, not on a hot path.
+  useEffect(() => {
+    if (!session) return;
+    const storedUser = readPersistedLobbyUser();
+    if (storedUser && storedUser !== session.username) {
+      persistLobbyId(null);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setActiveLobbyIdState(null);
+    }
+  }, [session]);
+
+  // Slice L8 — when the lobby's start-match transition completes the
+  // game store sets pendingStartGame, the existing subscriber above
+  // sets activeGameId, and we clear the lobby state so the route
+  // swap is clean. Without this, NewLobbyScreen and Game would
+  // briefly fight to render (lobby wins per the precedence below).
+  // The lint rule against setState in effects fires here; this is
+  // the canonical "reconcile derived state from two external
+  // signals" use case and the cascading-render cost is a single
+  // extra paint at game-start, not a hot-path concern.
+  useEffect(() => {
+    if (activeGameId && activeLobbyId) {
+      persistLobbyId(null);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setActiveLobbyIdState(null);
+    }
+  }, [activeGameId, activeLobbyId]);
+
   // Slice 70-A (ADR 0011 D1) — spectator placeholder route. Resolved
   // BEFORE the auth gate so a user pasting a spectate URL sees the
   // "shipping in v2.x" placeholder regardless of auth state. The
@@ -173,9 +229,19 @@ export function App() {
   // this state at first mount via readInitialLobbyId(). Active
   // lobby takes precedence over an active game window since users
   // entering the lobby intentionally are above any persisted game
-  // resumption.
+  // resumption — except: when the table state has advanced to
+  // DUELING the user belongs in the game window, not the lobby.
+  // The DUELING transition is handled via the existing
+  // pendingStartGame flow (NewLobbyScreen keeps a room-WS open
+  // for that purpose); when activeGameId gets set elsewhere we
+  // clear activeLobbyId here so the route swap is clean.
   if (activeLobbyId) {
-    return <NewLobbyScreen tableId={activeLobbyId} />;
+    return (
+      <NewLobbyScreen
+        tableId={activeLobbyId}
+        onLeave={() => setActiveLobbyId(null)}
+      />
+    );
   }
 
   if (activeGameId) {

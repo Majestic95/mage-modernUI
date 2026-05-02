@@ -1,12 +1,19 @@
 /**
  * Slice L1 — top bar: back to main menu, settings, sign-out.
  *
- * <p>L1 ships visual chrome only. Slice L8 wires the back button to
- * the host-confirm / leave-seat flow.
+ * <p>L8 wires the back button: host gets a close-confirm modal that
+ * tears down the table for everyone; guest just vacates their seat.
  */
 import { useAuthStore } from '../auth/store';
 
-export function LobbyTopBar() {
+interface Props {
+  /** Called when the user confirms leaving the lobby. */
+  onBack?: () => void;
+  /** Disabled state while the leave/close request is in flight. */
+  backDisabled?: boolean;
+}
+
+export function LobbyTopBar({ onBack, backDisabled = false }: Props = {}) {
   const session = useAuthStore((s) => s.session);
   const logout = useAuthStore((s) => s.logout);
 
@@ -19,7 +26,9 @@ export function LobbyTopBar() {
       <button
         type="button"
         data-testid="lobby-back-button"
-        className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium uppercase tracking-wider text-text-secondary transition-colors hover:bg-surface-card-hover hover:text-text-primary"
+        onClick={onBack}
+        disabled={backDisabled}
+        className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium uppercase tracking-wider text-text-secondary transition-colors hover:bg-surface-card-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-not-allowed disabled:opacity-60"
       >
         <BackChevron />
         <span>Lobby</span>
