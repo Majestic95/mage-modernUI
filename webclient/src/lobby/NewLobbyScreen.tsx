@@ -29,8 +29,11 @@ import { MyDecksPanel } from './MyDecksPanel';
 import { ReadyButton } from './ReadyButton';
 import { SeatRow } from './SeatRow';
 import { StartGameButton } from './StartGameButton';
+import { useLiveDecks } from './useLiveDecks';
 import { useLobbyTable } from './useLobbyTable';
 import { webTableToLobby } from './webTableToLobby';
+import type { WebDeckCardInfo } from '../api/schemas';
+import { useDecksStore } from '../decks/store';
 
 interface EditableInitial {
   password: string;
@@ -147,6 +150,7 @@ function LiveLobby({ tableId }: { tableId: string }) {
       tableId={tableId}
       roomId={roomId}
       editInitial={initialFromTable(table)}
+      useLiveDecksHook
     />
   );
 }
@@ -167,18 +171,33 @@ function LobbyShell({
   tableId,
   roomId,
   editInitial,
+  useLiveDecksHook = false,
 }: {
   data: LobbyFixture;
   tableId: string;
   roomId: string | null;
   editInitial: EditableInitial;
+  useLiveDecksHook?: boolean;
 }) {
   const session = useAuthStore((s) => s.session);
   const [editOpen, setEditOpen] = useState(false);
   const [readySubmitting, setReadySubmitting] = useState(false);
   const [readyError, setReadyError] = useState<string | null>(null);
-  const selectedDeck =
-    fixture.decks.find((d) => d.id === fixture.selectedDeckId) ?? null;
+  const [localSelectedDeckId, setLocalSelectedDeckId] = useState<string | null>(
+    fixture.selectedDeckId,
+  );
+  const [deckSubmitting, setDeckSubmitting] = useState(false);
+  const [deckError, setDeckError] = useState<string | null>(null);
+  // Live-mode deck data (slice L6). Fixture mode uses fixture.decks
+  // unchanged. The hook always runs (rules-of-hooks); when not in
+  // live mode, useLiveDecksHook=false and we ignore the result.
+  const live = useLiveDecks(useLiveDecksHook ? localSelectedDeckId : null);
+
+  const decks = useLiveDecksHook ? live.decks : fixture.decks;
+  const selectedDeckId = localSelectedDeckId ?? fixture.selectedDeckId;
+  const selectedDeck = useLiveDecksHook
+    ? live.selectedDeck
+    : decks.find((d) => d.id === selectedDeckId) ?? null;
   const localSeat =
     fixture.seats.find((s) => s.playerName === fixture.currentUsername) ?? null;
   const isHost = localSeat?.isHost ?? false;
@@ -187,6 +206,59 @@ function LobbyShell({
   const totalSeats = fixture.matchOptions.playerCount;
   const allReady = readyCount === totalSeats;
   const isFixture = tableId === 'fixture' || roomId === null;
+
+  // Slice L6 — submit deck on selection. Client-state selection
+  // updates immediately; the wire submit follows. On failure the
+  // selection is reverted so the UI stays truthful.
+  const onSelectDeck = async (deckId: string) => {
+    if (tableId === 'fixture' || roomId === null) {
+      // Fixture path — just move the highlight, no wire call.
+      setLocalSelectedDeckId(deckId);
+      return;
+    }
+    if (!session) {
+      setDeckError('Session expired — please reload.');
+      return;
+    }
+    const saved = useDecksStore.getState().decks.find((d) => d.id === deckId);
+    if (!saved) {
+      setDeckError('Selected deck not found in local storage.');
+      return;
+    }
+    const previous = localSelectedDeckId;
+    setLocalSelectedDeckId(deckId);
+    setDeckSubmitting(true);
+    setDeckError(null);
+    try {
+      const cards: WebDeckCardInfo[] = saved.cards;
+      const sideboard: WebDeckCardInfo[] = saved.sideboard;
+      await request(
+        `/api/rooms/${roomId}/tables/${tableId}/seat/deck`,
+        null,
+        {
+          method: 'PUT',
+          token: session.token,
+          body: {
+            name: session.username,
+            skill: 1,
+            deck: {
+              name: saved.name,
+              author: session.username,
+              cards,
+              sideboard,
+            },
+          },
+        },
+      );
+    } catch (err) {
+      setLocalSelectedDeckId(previous);
+      setDeckError(
+        err instanceof ApiError ? err.message : 'Failed to submit deck.',
+      );
+    } finally {
+      setDeckSubmitting(false);
+    }
+  };
 
   const toggleReady = async () => {
     if (isFixture) {
@@ -287,8 +359,10 @@ function LobbyShell({
           }}
         >
           <MyDecksPanel
-            decks={fixture.decks}
-            selectedDeckId={fixture.selectedDeckId}
+            decks={decks}
+            selectedDeckId={selectedDeckId}
+            onDeckSelect={(id) => void onSelectDeck(id)}
+            disabled={deckSubmitting}
           />
           <DeckPreviewPanel deck={selectedDeck} />
           <CommanderPreviewPanel deck={selectedDeck} />
@@ -313,6 +387,15 @@ function LobbyShell({
                 className="text-xs text-status-danger"
               >
                 {readyError}
+              </p>
+            )}
+            {deckError && (
+              <p
+                role="alert"
+                data-testid="deck-error"
+                className="text-xs text-status-danger"
+              >
+                {deckError}
               </p>
             )}
           </div>

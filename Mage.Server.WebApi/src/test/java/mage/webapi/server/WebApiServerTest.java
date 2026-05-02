@@ -716,6 +716,124 @@ class WebApiServerTest {
         assertEquals("BAD_REQUEST", JSON.readTree(r.body()).get("code").asText());
     }
 
+    /* ---------- slice L6: PUT /seat/deck (deck submit + swap) ---------- */
+
+    /** Slice L6 — PATCH-style helper for deck submit/swap. */
+    private HttpResponse<String> putJsonWithToken(String token, String path, String body) throws Exception {
+        return HTTP.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create("http://localhost:" + server.port() + path))
+                        .header("Content-Type", "application/json")
+                        .header("Authorization", "Bearer " + token)
+                        .timeout(Duration.ofSeconds(10))
+                        .method("PUT", HttpRequest.BodyPublishers.ofString(body))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
+    @Test
+    void seatDeck_firstTake_returns204() throws Exception {
+        // First-time take: user is not yet seated. PUT /seat/deck
+        // joins them with the supplied deck. We don't verify via the
+        // table-listing endpoint because GamesRoomImpl.getTables()
+        // returns a snapshot refreshed every 2 seconds, so a freshly-
+        // created/joined table won't appear there for a beat. The 204
+        // response itself confirms the join succeeded — the route's
+        // status code path runs only after LobbyService.swapDeck
+        // completes without throwing, which means upstream
+        // roomJoinTable returned ok=true.
+        String e2eToken = freshAnonBearer();
+        String username = JSON.readTree(
+                getWithToken(e2eToken, "/api/session/me").body())
+                .get("username").asText();
+        String roomId = mainRoomId();
+        String tableId = createTableWith(e2eToken, roomId,
+                "Two Player Duel", "Constructed - Vintage", 1,
+                List.of("HUMAN", "COMPUTER_MONTE_CARLO"));
+        postJsonWithToken(e2eToken,
+                "/api/rooms/" + roomId + "/tables/" + tableId + "/ai",
+                "{\"playerType\":\"COMPUTER_MONTE_CARLO\"}");
+        String deckJson = buildForestDeckJson(60);
+        String body = String.format(
+                "{\"name\":\"%s\",\"skill\":1,\"deck\":%s}", username, deckJson);
+        HttpResponse<String> r = putJsonWithToken(e2eToken,
+                "/api/rooms/" + roomId + "/tables/" + tableId + "/seat/deck",
+                body);
+        assertEquals(204, r.statusCode(), r.body());
+
+        // Cleanup
+        HTTP.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create("http://localhost:" + server.port()
+                                + "/api/rooms/" + roomId + "/tables/" + tableId))
+                        .header("Authorization", "Bearer " + e2eToken)
+                        .timeout(Duration.ofSeconds(5))
+                        .DELETE()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
+    @Test
+    void seatDeck_swap_returns204() throws Exception {
+        // Take seat, then swap deck via PUT — both calls must return
+        // 204. The in-place updateDeck path (LobbyService.swapDeck
+        // uses Match.updateDeck for seated users) avoids the leave-
+        // table trap where the owner leaving in WAITING state would
+        // remove the entire lobby. Same reason for not asserting on
+        // the listing — the cached snapshot is stale.
+        String e2eToken = freshAnonBearer();
+        String username = JSON.readTree(
+                getWithToken(e2eToken, "/api/session/me").body())
+                .get("username").asText();
+        String roomId = mainRoomId();
+        String tableId = createTableWith(e2eToken, roomId,
+                "Two Player Duel", "Constructed - Vintage", 1,
+                List.of("HUMAN", "COMPUTER_MONTE_CARLO"));
+        postJsonWithToken(e2eToken,
+                "/api/rooms/" + roomId + "/tables/" + tableId + "/ai",
+                "{\"playerType\":\"COMPUTER_MONTE_CARLO\"}");
+        String deckJson = buildForestDeckJson(60);
+        String body = String.format(
+                "{\"name\":\"%s\",\"skill\":1,\"deck\":%s}", username, deckJson);
+        // First-take seat
+        assertEquals(204, putJsonWithToken(e2eToken,
+                "/api/rooms/" + roomId + "/tables/" + tableId + "/seat/deck",
+                body).statusCode());
+        // Ready up
+        assertEquals(204, postJsonWithToken(e2eToken,
+                "/api/rooms/" + roomId + "/tables/" + tableId + "/seat/ready",
+                "{\"ready\":true}").statusCode());
+        // Swap deck — same body works as a re-submit
+        HttpResponse<String> swap = putJsonWithToken(e2eToken,
+                "/api/rooms/" + roomId + "/tables/" + tableId + "/seat/deck",
+                body);
+        assertEquals(204, swap.statusCode(), swap.body());
+
+        // Cleanup
+        HTTP.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create("http://localhost:" + server.port()
+                                + "/api/rooms/" + roomId + "/tables/" + tableId))
+                        .header("Authorization", "Bearer " + e2eToken)
+                        .timeout(Duration.ofSeconds(5))
+                        .DELETE()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
+    @Test
+    void seatDeck_unknownTable_returns404() throws Exception {
+        String roomId = mainRoomId();
+        String fakeTable = "00000000-0000-0000-0000-000000000000";
+        String body = "{\"name\":\"x\",\"skill\":1,\"deck\":"
+                + "{\"name\":\"d\",\"author\":\"\",\"cards\":[],\"sideboard\":[]}}";
+        HttpResponse<String> r = putJsonWithToken(bearer,
+                "/api/rooms/" + roomId + "/tables/" + fakeTable + "/seat/deck",
+                body);
+        assertEquals(404, r.statusCode(), r.body());
+        assertEquals("TABLE_NOT_FOUND", JSON.readTree(r.body()).get("code").asText());
+    }
+
     /* ---------- slice 13: deck submit ---------- */
 
     @Test

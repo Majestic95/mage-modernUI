@@ -9,9 +9,22 @@ import { ColorPipRow } from './ColorPipRow';
 interface Props {
   decks: LobbyDeck[];
   selectedDeckId: string;
+  /**
+   * Slice L6 — fired when the user clicks a deck row. The lobby
+   * container takes the deck and PUTs it to the server. Optional
+   * so fixture mode renders without a wire side-effect.
+   */
+  onDeckSelect?: (deckId: string) => void;
+  /** Disabled state for the deck rows (e.g. while a PUT is in flight). */
+  disabled?: boolean;
 }
 
-export function MyDecksPanel({ decks, selectedDeckId }: Props) {
+export function MyDecksPanel({
+  decks,
+  selectedDeckId,
+  onDeckSelect,
+  disabled = false,
+}: Props) {
   return (
     <aside
       data-testid="my-decks-panel"
@@ -34,11 +47,21 @@ export function MyDecksPanel({ decks, selectedDeckId }: Props) {
         data-testid="my-decks-list"
         className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto"
       >
+        {decks.length === 0 && (
+          <li
+            data-testid="my-decks-empty"
+            className="px-2 py-3 text-xs text-text-muted"
+          >
+            No saved decks yet. Build one from the Decks tab.
+          </li>
+        )}
         {decks.map((deck) => (
           <DeckRow
             key={deck.id}
             deck={deck}
             selected={deck.id === selectedDeckId}
+            onSelect={onDeckSelect}
+            disabled={disabled}
           />
         ))}
       </ul>
@@ -54,12 +77,41 @@ export function MyDecksPanel({ decks, selectedDeckId }: Props) {
   );
 }
 
-function DeckRow({ deck, selected }: { deck: LobbyDeck; selected: boolean }) {
+function DeckRow({
+  deck,
+  selected,
+  onSelect,
+  disabled,
+}: {
+  deck: LobbyDeck;
+  selected: boolean;
+  onSelect?: (deckId: string) => void;
+  disabled?: boolean;
+}) {
   return (
     <li
       data-testid="my-decks-row"
       data-selected={selected || undefined}
-      className="flex cursor-pointer items-center gap-2 rounded-md border p-1.5 transition-colors"
+      data-disabled={disabled || undefined}
+      role={onSelect ? 'button' : undefined}
+      tabIndex={onSelect && !disabled ? 0 : undefined}
+      onClick={() => {
+        if (onSelect && !disabled && !selected) onSelect(deck.id);
+      }}
+      onKeyDown={(e) => {
+        if (!onSelect || disabled || selected) return;
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onSelect(deck.id);
+        }
+      }}
+      className={
+        'flex items-center gap-2 rounded-md border p-1.5 transition-colors '
+        + (disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer')
+        + (onSelect && !disabled && !selected
+          ? ' hover:bg-surface-card-hover'
+          : '')
+      }
       style={{
         background: selected
           ? 'var(--color-surface-card-active)'

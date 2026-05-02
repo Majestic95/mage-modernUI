@@ -281,6 +281,24 @@ public final class WebApiServer {
                     tableId, req.ready());
             ctx.status(204);
         });
+        // Slice L6 (new-lobby-window) — submit / re-submit the caller's
+        // deck for their seat. Idempotent: covers both first-time take
+        // seat and mid-lobby deck swap. On success, the caller's ready
+        // flag is reset to false (deck change → re-confirm). Body shape
+        // mirrors WebJoinTableRequest.
+        app.put("/api/rooms/{roomId}/tables/{tableId}/seat/deck", ctx -> {
+            UUID roomId = parseUuid(ctx.pathParam("roomId"), "roomId");
+            UUID tableId = parseUuid(ctx.pathParam("tableId"), "tableId");
+            WebJoinTableRequest req = parseBody(ctx.body(), WebJoinTableRequest.class);
+            SessionEntry session = sessionFrom(ctx);
+            String name = (req.name() == null || req.name().isBlank())
+                    ? session.username() : req.name().trim();
+            int skill = req.skill() == null ? 1 : req.skill();
+            lobbyService.swapDeck(session.upstreamSessionId(), roomId, tableId,
+                    name, skill, DeckMapper.toUpstream(req.deck()),
+                    req.password());
+            ctx.status(204);
+        });
         app.delete("/api/rooms/{roomId}/tables/{tableId}/seat", ctx -> {
             UUID roomId = parseUuid(ctx.pathParam("roomId"), "roomId");
             UUID tableId = parseUuid(ctx.pathParam("tableId"), "tableId");

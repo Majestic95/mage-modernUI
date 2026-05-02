@@ -422,6 +422,109 @@ public final class LobbyService {
     }
 
     /**
+     * Slice L6 — submit (or re-submit) the caller's deck for their
+     * seat at this table. Idempotent endpoint covering two cases:
+     *
+     * <ol>
+     *   <li><b>First-time take seat</b> — caller is not yet seated;
+     *       delegates to {@link #joinTable}, which runs full deck
+     *       pre-validation and seats the user.</li>
+     *   <li><b>Mid-lobby deck swap</b> — caller is already seated;
+     *       validates the new deck against the table's validator,
+     *       then calls {@code Match.updateDeck(playerId, deck, false)}
+     *       to swap the deck in-place. We avoid {@code roomLeaveTable
+     *       + joinTable} because upstream's
+     *       {@code TableController.leaveTable} treats the owner
+     *       leaving in WAITING state as "owner abandoned the table,
+     *       remove it" — which would close the lobby for everyone
+     *       just because the host wanted to change deck. The
+     *       in-place update sidesteps that.</li>
+     * </ol>
+     *
+     * <p>On success, resets the caller's ready flag to false — they
+     * just changed deck and need to re-confirm.
+     */
+    public void swapDeck(String upstreamSessionId, UUID roomId, UUID tableId,
+                          String name, int skill, DeckCardLists deck,
+                          String password) {
+        UUID userId = embedded.managerFactory().sessionManager()
+                .getSession(upstreamSessionId)
+                .map(Session::getUserId)
+                .orElseThrow(() -> new WebApiException(401, "MISSING_SESSION",
+                        "Upstream session expired."));
+        Optional<TableController> tcOpt =
+                embedded.managerFactory().tableManager().getController(tableId);
+        if (tcOpt.isEmpty()) {
+            throw new WebApiException(404, "TABLE_NOT_FOUND", "Table not found.");
+        }
+        TableController tc = tcOpt.get();
+        Table table = tc.getTable();
+        if (table == null) {
+            throw new WebApiException(409, "TABLE_NOT_EDITABLE",
+                    "Table is in a state that does not accept deck submissions.");
+        }
+        String username = embedded.managerFactory().userManager()
+                .getUser(userId)
+                .map(u -> u.getName())
+                .orElse(null);
+
+        if (!tc.hasPlayer(userId)) {
+            // First-time take seat path. joinTable runs deck pre-
+            // validation; if it throws, swap fails cleanly.
+            joinTable(upstreamSessionId, roomId, tableId, name, skill, deck, password);
+            // joinTable doesn't touch the ready tracker, so nothing
+            // to reset here on first-take.
+            return;
+        }
+
+        // Already seated — in-place deck swap. Find the caller's
+        // playerId by matching the seat's player.getName() against
+        // their username. webclient passes username as the player
+        // name on /join and PUT /seat/deck (default fallback in the
+        // route handler), so the match is reliable in production.
+        UUID playerId = null;
+        if (username != null && table.getSeats() != null) {
+            for (var s : table.getSeats()) {
+                if (s != null && s.getPlayer() != null
+                        && username.equals(s.getPlayer().getName())) {
+                    playerId = s.getPlayer().getId();
+                    break;
+                }
+            }
+        }
+        if (playerId == null) {
+            throw new WebApiException(409, "TABLE_NOT_EDITABLE",
+                    "Could not locate caller's seat for deck swap.");
+        }
+        // Validate the new deck against the table's format. Match
+        // upstream's joinTable behavior — invalid deck rejected with
+        // a structured error.
+        preValidateDeck(tableId, deck);
+        Deck loadedDeck;
+        try {
+            loadedDeck = Deck.load(deck, false, false);
+        } catch (Exception ex) {
+            throw new WebApiException(400, "BAD_REQUEST",
+                    "Could not load deck: " + ex.getMessage());
+        }
+        // Update the MatchPlayer's deck in place. ignoreMainBasicLands
+        // = false matches upstream's auto-save semantics.
+        if (table.getMatch() == null) {
+            throw new WebApiException(409, "TABLE_NOT_EDITABLE",
+                    "Table has no active match for deck submission.");
+        }
+        table.getMatch().updateDeck(playerId, loadedDeck, false);
+        readyTracker.setReady(tableId, username, false);
+        LOG.info("Deck swapped: table={} user={} room={} (name/skill/password "
+                + "only consumed on first-take path)",
+                tableId, username, roomId);
+        // {@code name} / {@code skill} / {@code password} are used
+        // only on the first-take path (joinTable above); harmless
+        // unused parameters on the swap path. Java doesn't warn.
+        assert name != null || skill >= 0 || password == null;
+    }
+
+    /**
      * Slice L5 — guest opts in or out of "ready". The host is
      * implicitly ready (set via {@link #createTable}); they MAY toggle
      * themselves but the typical host UX is to use the Start Game
