@@ -105,17 +105,20 @@ describe('webDeckValidationErrorSchema', () => {
     expect(parsed.cardName).toBeNull();
     expect(parsed.partlyLegal).toBe(true);
   });
-  it('defaults partlyLegal + synthetic to false when omitted', () => {
-    // Forward-compat with hypothetical 1.21 servers that strip the
-    // optional booleans; the schema treats missing as false.
-    const parsed = webDeckValidationErrorSchema.parse({
-      errorType: 'OTHER',
-      group: 'Lightning Bolt',
-      message: 'Color identity violation',
-      cardName: 'Lightning Bolt',
-    });
-    expect(parsed.partlyLegal).toBe(false);
-    expect(parsed.synthetic).toBe(false);
+  it('rejects payloads missing partlyLegal or synthetic (P2 audit)', () => {
+    // P2 audit fix — `.default(false)` was removed from both fields.
+    // Both are unconditionally emitted by the upstream Java mapper,
+    // so a missing field IS a server-side bug; we now fail parse
+    // loudly instead of silently defaulting. See
+    // docs/schema/defaults-audit.md for the per-field rationale.
+    expect(() =>
+      webDeckValidationErrorSchema.parse({
+        errorType: 'OTHER',
+        group: 'Lightning Bolt',
+        message: 'Color identity violation',
+        cardName: 'Lightning Bolt',
+      }),
+    ).toThrow();
   });
 });
 

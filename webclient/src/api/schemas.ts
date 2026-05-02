@@ -37,8 +37,19 @@ export const webDeckValidationErrorSchema = z.object({
   group: z.string(),
   message: z.string(),
   cardName: z.string().nullable(),
-  partlyLegal: z.boolean().default(false),
-  synthetic: z.boolean().default(false),
+  // P2 audit fix — removed `.default(false)` on both fields. The
+  // upstream WebDeckValidationError DTO declares both as primitive
+  // booleans (Java required, never null), and DeckValidationMapper
+  // unconditionally populates them on every error. The defaults
+  // existed as a forward-compat shim from an earlier schema rev
+  // before they were always emitted; they no longer protect against
+  // any deployed server, only against a future server-side bug.
+  // Now a regression that drops either field surfaces immediately
+  // (parse failure → console.error) instead of silently producing
+  // false. Test fixtures already always include both (see
+  // schemas.test.ts:73,90 and client.test.ts:26,51).
+  partlyLegal: z.boolean(),
+  synthetic: z.boolean(),
 });
 export type WebDeckValidationError = z.infer<typeof webDeckValidationErrorSchema>;
 
