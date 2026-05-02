@@ -8,6 +8,8 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
+// vi is imported above; included here for clarity in the new
+// elementFromPoint stub used by the reorder test.
 import {
   webPlayerViewSchema,
   type WebPlayerView,
@@ -167,9 +169,21 @@ describe('MyHand — hand reorder via drag-and-drop (2026-05-02)', () => {
     expect(cards[0]).toHaveAttribute('data-card-id', A.id);
     expect(cards[1]).toHaveAttribute('data-card-id', B.id);
 
-    // pointerup on B with draggedCardId === A → reorder. After the
-    // reorder, A should sit AFTER B in DOM order.
-    fireEvent.pointerUp(cards[1], { pointerId: 1, bubbles: true });
+    // The reorder detection runs at document level via
+    // elementFromPoint (browser layout-aware). jsdom doesn't define
+    // elementFromPoint, so install a stub that returns card B for
+    // this pointerup, simulating "user released cursor over card B."
+    const original = (document as unknown as { elementFromPoint: unknown })
+      .elementFromPoint;
+    (document as unknown as { elementFromPoint: typeof document.elementFromPoint }).elementFromPoint =
+      () => cards[1];
+    try {
+      fireEvent.pointerUp(document, { pointerId: 1, bubbles: true });
+    } finally {
+      (document as unknown as { elementFromPoint: unknown }).elementFromPoint =
+        original;
+    }
+
     const cardsAfter = screen.getAllByTestId('hand-card');
     expect(cardsAfter[0]).toHaveAttribute('data-card-id', B.id);
     expect(cardsAfter[1]).toHaveAttribute('data-card-id', A.id);

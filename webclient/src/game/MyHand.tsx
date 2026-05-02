@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import type { WebCardView, WebPlayerView } from '../api/schemas';
 import { slow, SLOWMO } from '../animation/debug';
@@ -74,9 +74,9 @@ export function MyHand({
   // client-side UX: maintains a per-render-instance ordering of card
   // ids that survives hand-shape changes (cards drawn appear at the
   // end; cards leaving the hand are dropped from the order). The
-  // user can drag any hand card and release on another to move the
-  // dragged card to the target's position. Works regardless of
-  // priority — reorder is personal, not a game action.
+  // user can drag any hand card and release on another to swap their
+  // positions. Works regardless of priority — reorder is personal,
+  // not a game action.
   const handIds = Object.keys(hand);
   const [cardOrder, setCardOrder] = useState<string[]>(() => handIds);
   useEffect(() => {
@@ -104,6 +104,66 @@ export function MyHand({
       return next;
     });
   };
+
+  // Bug fix (2026-05-02 follow-up) — document-level pointerup with
+  // {@code elementFromPoint} for reorder detection. Initial
+  // implementation relied on React onPointerUp on each hand-card
+  // button, but the fan-positioned + z-index-stacked + hover-popover-
+  // overlapping layout meant pointerup didn't reliably reach the
+  // destination button (browser dispatches to whatever's on top at
+  // release; pointer-events-none popovers may interfere; fan-card
+  // overlap makes the "obvious" target ambiguous).
+  //
+  // The robust path: at every pointermove + pointerup, sample the
+  // element under the cursor via elementFromPoint and walk up to find
+  // a hand-card button. pointermove updates a "hover target" so the
+  // drop-recipient card gets a visible ring during the drag — without
+  // it the user has no way to tell the gesture is recognized.
+  // pointerup dispatches the reorder. Both listeners run in the
+  // capture phase so they fire BEFORE useDragState's bubble-phase
+  // pointerup clears the drag state.
+  const dragRef = useRef<string | null>(null);
+  dragRef.current = draggedCardId;
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+  useEffect(() => {
+    const findTargetId = (clientX: number, clientY: number): string | null => {
+      // jsdom doesn't define elementFromPoint; guard so test suites
+      // that don't stub it don't blow up unrelated event listeners.
+      if (typeof document.elementFromPoint !== 'function') return null;
+      const el = document.elementFromPoint(clientX, clientY);
+      if (!el) return null;
+      const handCardEl = (el as Element).closest(
+        '[data-testid="hand-card"]',
+      );
+      if (!handCardEl) return null;
+      return handCardEl.getAttribute('data-card-id');
+    };
+    const onMove = (ev: PointerEvent) => {
+      const fromId = dragRef.current;
+      if (!fromId) {
+        setDropTargetId((curr) => (curr === null ? curr : null));
+        return;
+      }
+      const toId = findTargetId(ev.clientX, ev.clientY);
+      const candidate = toId && toId !== fromId ? toId : null;
+      setDropTargetId((curr) => (curr === candidate ? curr : candidate));
+    };
+    const onUp = (ev: PointerEvent) => {
+      const fromId = dragRef.current;
+      if (!fromId) return;
+      const toId = findTargetId(ev.clientX, ev.clientY);
+      if (toId && toId !== fromId) onReorder(fromId, toId);
+      setDropTargetId(null);
+    };
+    document.addEventListener('pointermove', onMove, true);
+    document.addEventListener('pointerup', onUp, true);
+    document.addEventListener('pointercancel', onUp, true);
+    return () => {
+      document.removeEventListener('pointermove', onMove, true);
+      document.removeEventListener('pointerup', onUp, true);
+      document.removeEventListener('pointercancel', onUp, true);
+    };
+  }, []);
   const cards = cardOrder
     .map((id) => hand[id])
     .filter((c): c is WebCardView => !!c);
@@ -329,10 +389,9 @@ export function MyHand({
                   total={cards.length}
                   canAct={canAct}
                   isDragging={isDragging}
-                  draggedCardId={draggedCardId}
+                  isDropTarget={dropTargetId === card.id}
                   onObjectClick={onObjectClick}
                   onPointerDown={onPointerDown}
-                  onReorder={onReorder}
                   tooltip={cardTooltip(card)}
                   targetableForDialog={
                     dialogActive &&
@@ -391,10 +450,9 @@ function HandCardSlot({
   total,
   canAct,
   isDragging,
-  draggedCardId,
+  isDropTarget,
   onObjectClick,
   onPointerDown,
-  onReorder,
   tooltip,
   targetableForDialog,
 }: {
@@ -404,15 +462,14 @@ function HandCardSlot({
   canAct: boolean;
   isDragging: boolean;
   /**
-   * Bug fix (2026-05-02) — id of the card currently in flight
-   * for drag-to-play / drag-to-reorder. Reorder fires when the
-   * user releases the pointer on a DIFFERENT hand card while a
-   * drag is in progress, regardless of priority.
+   * Bug fix (2026-05-02) — true when a drag is in progress AND
+   * the cursor is currently hovering THIS card's hit zone (and
+   * THIS card is not the one being dragged). The slot draws a
+   * sky-blue ring so the user sees where the drop will land.
    */
-  draggedCardId: string | null;
+  isDropTarget: boolean;
   onObjectClick: (id: string) => void;
   onPointerDown: (cardId: string, ev: React.PointerEvent) => void;
-  onReorder: (fromId: string, toId: string) => void;
   tooltip: string;
   /**
    * Slice 70-Y.1 — when true, this hand card is in the engine's
@@ -451,14 +508,20 @@ function HandCardSlot({
   const layoutId = card.cardId ? card.cardId : undefined;
   return (
     <div
-      className="absolute left-1/2 top-2 transition-transform ease-out origin-bottom"
+      data-drop-target={isDropTarget || undefined}
+      className={
+        'absolute left-1/2 top-2 transition-transform ease-out origin-bottom ' +
+        (isDropTarget ? 'ring-4 ring-sky-400/80 rounded' : '')
+      }
       style={{
         transform,
         // Slice 57 â€” z-index ladder (audit finding 8): hand-lift caps
         // at 20 so it stays UNDER ActionPanel (z-30), drag preview
         // (z-40 â†’ z-50), modals (z-50), and hover popover portals.
         // Pre-fix this was 100 â€” paints over ActionPanel + GameDialog.
-        zIndex: lifted ? 20 : index,
+        // When this card is the drop target during a hand reorder,
+        // bump z so the highlight ring sits above neighbors.
+        zIndex: isDropTarget ? 25 : lifted ? 20 : index,
         transitionDuration: `${HAND_HOVER_LIFT_MS * SLOWMO}ms`,
       }}
     >
@@ -485,11 +548,6 @@ function HandCardSlot({
             onObjectClick(card.id);
           }}
           onPointerDown={(ev) => onPointerDown(card.id, ev)}
-          onPointerUp={() => {
-            if (draggedCardId && draggedCardId !== card.id) {
-              onReorder(draggedCardId, card.id);
-            }
-          }}
           onMouseEnter={() => setLifted(true)}
           onMouseLeave={() => setLifted(false)}
           onFocus={() => setLifted(true)}
