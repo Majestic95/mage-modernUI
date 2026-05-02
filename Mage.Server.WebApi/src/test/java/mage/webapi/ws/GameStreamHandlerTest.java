@@ -1374,7 +1374,9 @@ class GameStreamHandlerTest {
                 "{\"playerType\":\"COMPUTER_MAD\"}");
 
         String deckJson = buildForestDeckJson(token, 60);
-        String joinBody = "{\"name\":\"e2e-tester\",\"skill\":1,\"deck\":"
+        // Slice L7 review — server-side ready gate requires player
+        // name to match username (so the gate skips host's seat).
+        String joinBody = "{\"name\":\"" + username + "\",\"skill\":1,\"deck\":"
                 + deckJson + "}";
         HttpResponse<String> join = postWithToken(token,
                 "/api/rooms/" + roomId + "/tables/" + tableId + "/join", joinBody);
@@ -1418,7 +1420,9 @@ class GameStreamHandlerTest {
         // real gameId.
         HttpResponse<String> login = postJson("/api/session", "{}");
         assertEquals(200, login.statusCode());
-        String token = JSON.readTree(login.body()).get("token").asText();
+        JsonNode loginBody = JSON.readTree(login.body());
+        String token = loginBody.get("token").asText();
+        String username = loginBody.get("username").asText();
 
         // Drive the lobby flow that culminates in match-start.
         String roomId = JSON.readTree(getAuthed(token, "/api/server/main-room").body())
@@ -1430,7 +1434,9 @@ class GameStreamHandlerTest {
                 "{\"playerType\":\"COMPUTER_MONTE_CARLO\"}");
 
         String deckJson = buildForestDeckJson(token, 60);
-        String joinBody = "{\"name\":\"e2e-tester\",\"skill\":1,\"deck\":"
+        // Slice L7 review — server-side ready gate requires player
+        // name to match username (so the gate skips host's seat).
+        String joinBody = "{\"name\":\"" + username + "\",\"skill\":1,\"deck\":"
                 + deckJson + "}";
         HttpResponse<String> join = postWithToken(token,
                 "/api/rooms/" + roomId + "/tables/" + tableId + "/join", joinBody);
@@ -1563,7 +1569,9 @@ class GameStreamHandlerTest {
     void gameLifecycle_realGameId_initArrivesUnder3s() throws Exception {
         HttpResponse<String> login = postJson("/api/session", "{}");
         assertEquals(200, login.statusCode());
-        String token = JSON.readTree(login.body()).get("token").asText();
+        JsonNode loginBody2 = JSON.readTree(login.body());
+        String token = loginBody2.get("token").asText();
+        String username = loginBody2.get("username").asText();
 
         String roomId = JSON.readTree(getAuthed(token, "/api/server/main-room").body())
                 .get("roomId").asText();
@@ -1574,7 +1582,9 @@ class GameStreamHandlerTest {
                 "{\"playerType\":\"COMPUTER_MAD\"}");
 
         String deckJson = buildForestDeckJson(token, 60);
-        String joinBody = "{\"name\":\"e2e-tester\",\"skill\":1,\"deck\":"
+        // Slice L7 review — server-side ready gate requires player
+        // name to match username (so the gate skips host's seat).
+        String joinBody = "{\"name\":\"" + username + "\",\"skill\":1,\"deck\":"
                 + deckJson + "}";
         HttpResponse<String> join = postWithToken(token,
                 "/api/rooms/" + roomId + "/tables/" + tableId + "/join", joinBody);
@@ -1677,7 +1687,9 @@ class GameStreamHandlerTest {
                 "{\"playerType\":\"COMPUTER_MAD\"}");
 
         String deckJson = buildForestDeckJson(token, 60);
-        String joinBody = "{\"name\":\"e2e-tester\",\"skill\":1,\"deck\":"
+        // Slice L7 review — server-side ready gate requires player
+        // name to match username (so the gate skips host's seat).
+        String joinBody = "{\"name\":\"" + username + "\",\"skill\":1,\"deck\":"
                 + deckJson + "}";
         HttpResponse<String> join = postWithToken(token,
                 "/api/rooms/" + roomId + "/tables/" + tableId + "/join", joinBody);
@@ -1784,7 +1796,9 @@ class GameStreamHandlerTest {
 
         // HUMAN seat needs an explicit deck.
         String deckJson = buildForestDeckJson(token, 60);
-        String joinBody = "{\"name\":\"e2e-tester\",\"skill\":1,\"deck\":"
+        // Slice L7 review — server-side ready gate requires player
+        // name to match username (so the gate skips host's seat).
+        String joinBody = "{\"name\":\"" + username + "\",\"skill\":1,\"deck\":"
                 + deckJson + "}";
         HttpResponse<String> join = postWithToken(token,
                 "/api/rooms/" + roomId + "/tables/" + tableId + "/join", joinBody);

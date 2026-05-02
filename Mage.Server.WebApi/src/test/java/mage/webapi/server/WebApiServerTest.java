@@ -899,6 +899,14 @@ class WebApiServerTest {
     void endToEnd_createTableAddAiJoinStart_advancesTableState() throws Exception {
         // Use a fresh anon session so test state is isolated from `bearer`.
         String e2eToken = freshAnonBearer();
+        // Slice L7 review — server-side ready gate now requires
+        // /join's player name to match the user's username (which the
+        // gate uses to skip the host seat and lookup tracker entries
+        // for guest seats). Production webclient passes username as
+        // the default player name; tests must match.
+        String username = JSON.readTree(
+                getWithToken(e2eToken, "/api/session/me").body())
+                .get("username").asText();
 
         String roomId = mainRoomId();
         String tableId = createTableWith(e2eToken, roomId,
@@ -914,7 +922,7 @@ class WebApiServerTest {
         // Join with a 60-Forest deck
         String deckJson = buildForestDeckJson(60);
         String joinBody = String.format(
-                "{\"name\":\"e2e-tester\",\"skill\":1,\"deck\":%s}", deckJson);
+                "{\"name\":\"%s\",\"skill\":1,\"deck\":%s}", username, deckJson);
         HttpResponse<String> join = postJsonWithToken(e2eToken,
                 "/api/rooms/" + roomId + "/tables/" + tableId + "/join", joinBody);
         assertEquals(204, join.statusCode(), "join failed: " + join.body());

@@ -85,6 +85,15 @@ public final class LobbyService {
         void broadcast(UUID tableId);
     }
 
+    /**
+     * Slice L7 review (security-CRITICAL #2) — caps on user-supplied
+     * string fields. Without these a single host can churn a megabyte
+     * password through PATCH; combined with no rate-limiting this
+     * amplifies GC pressure. 64 chars is well above any real password.
+     */
+    private static final int MAX_PASSWORD_LEN = 64;
+    private static final int MAX_TABLE_NAME_LEN = 80;
+
     public void setStreamBroadcaster(TableStreamBroadcaster broadcaster) {
         this.streamBroadcaster = broadcaster;
     }
@@ -430,18 +439,35 @@ public final class LobbyService {
     }
 
     public void startMatch(String upstreamSessionId, UUID roomId, UUID tableId) {
-        // Slice L5 — readiness gating is enforced client-side (the
-        // Start Game button is disabled until every human seat is
-        // ready). A defense-in-depth server-side check was scoped here
-        // initially but cut: per-seat ready is keyed by username, while
-        // the upstream Seat is keyed by player UUID, and there is no
-        // public bridge between them on TableController. The path of
-        // record (the GUI) gates correctly; a hand-crafted POST that
-        // bypasses the gate at most starts the game with one unready
-        // guest, which is a UX inconvenience, not a state-corruption
-        // problem. Slice L7 (WebSocket push) revisits this — at that
-        // point the server already broadcasts the per-seat ready set
-        // and a gate can be added without the username/playerId mismatch.
+        // Slice L7 review (architecture HIGH #1, code-quality HIGH #8) —
+        // server-side readiness gate. The L5 javadoc that lived here
+        // claimed there was no public username→playerId bridge, but
+        // setSeatReady and swapDeck both build that bridge by walking
+        // table.getSeats() and matching player.getName(). We use the
+        // same walk: every occupied HUMAN seat (other than the host,
+        // who is implicitly ready per the design doc) must be in the
+        // tracker before upstream is invoked.
+        Optional<TableController> tcOpt =
+                embedded.managerFactory().tableManager().getController(tableId);
+        if (tcOpt.isPresent()) {
+            Table table = tcOpt.get().getTable();
+            if (table != null && table.getSeats() != null) {
+                String hostName = TableMapper.cleanControllerName(
+                        table.getControllerName());
+                for (var seat : table.getSeats()) {
+                    if (seat == null || seat.getPlayer() == null) continue;
+                    PlayerType type = seat.getPlayerType();
+                    if (type == null || type != PlayerType.HUMAN) continue;
+                    String name = seat.getPlayer().getName();
+                    if (name == null) continue;
+                    if (hostName != null && hostName.equalsIgnoreCase(name)) continue;
+                    if (!readyTracker.isReady(tableId, name)) {
+                        throw new WebApiException(422, "NOT_ALL_READY",
+                                "Not all guests have readied up.");
+                    }
+                }
+            }
+        }
         boolean ok;
         try {
             ok = embedded.server().matchStart(upstreamSessionId, roomId, tableId);
@@ -548,11 +574,20 @@ public final class LobbyService {
         }
         // Update the MatchPlayer's deck in place. ignoreMainBasicLands
         // = false matches upstream's auto-save semantics.
+        //
+        // Slice L7 review (code-quality HIGH #2) — synchronize on the
+        // upstream TableController so the deck swap doesn't race a
+        // concurrent listing call (TableMapper.seat reads the same
+        // deck collections) or another swap. Defensive try/catch in
+        // TableMapper still catches a leftover ConcurrentModification
+        // path; this lock makes the common path race-free.
         if (table.getMatch() == null) {
             throw new WebApiException(409, "TABLE_NOT_EDITABLE",
                     "Table has no active match for deck submission.");
         }
-        table.getMatch().updateDeck(playerId, loadedDeck, false);
+        synchronized (tc) {
+            table.getMatch().updateDeck(playerId, loadedDeck, false);
+        }
         readyTracker.setReady(tableId, username, false);
         LOG.info("Deck swapped: table={} user={} room={} (name/skill/password "
                 + "only consumed on first-take path)",
@@ -697,8 +732,24 @@ public final class LobbyService {
         // upstream setter. Enum-bearing fields parse into their
         // upstream type so an invalid value lands as 400 BAD_REQUEST
         // (via parseEnum) rather than reaching the live game state.
+        //
+        // Slice L7 review (code-quality HIGH #1) — synchronize the
+        // mutate-block on the upstream TableController. The same
+        // monitor is used by TableController.joinTable and other
+        // mutating paths, so taking it serializes our setter cascade
+        // against concurrent joins / leaves / starts and prevents
+        // half-applied option states.
         MatchOptions options = table.getMatch().getOptions();
+        synchronized (tc) {
         if (update.password() != null) {
+            // Slice L7 review (security-CRITICAL #2) — cap password
+            // length so a host can't churn megabyte passwords as a
+            // GC-pressure amplifier. 64 is well above any real
+            // password.
+            if (update.password().length() > MAX_PASSWORD_LEN) {
+                throw new WebApiException(400, "BAD_REQUEST",
+                        "password must be at most " + MAX_PASSWORD_LEN + " chars.");
+            }
             options.setPassword(update.password());
         }
         if (update.skillLevel() != null) {
@@ -736,6 +787,7 @@ public final class LobbyService {
             options.setRange(parseEnum(RangeOfInfluence.class,
                     update.range(), "range"));
         }
+        } // end synchronized (tc)
         // Slice L5 — settings change resets all guests to un-ready.
         // Host stays ready (preserved via resetToHost).
         String hostUsername = TableMapper.cleanControllerName(table.getControllerName());

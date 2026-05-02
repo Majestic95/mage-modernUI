@@ -72,12 +72,38 @@ public final class TableStreamHandler implements Consumer<WsConfig> {
             new ConcurrentHashMap<>();
     private final AtomicInteger messageId = new AtomicInteger(0);
 
+    /**
+     * Slice L7 review (security-CRITICAL #1) — Origin allowlist for the
+     * WS upgrade handshake. Browsers do NOT enforce same-origin on
+     * {@code new WebSocket(...)}, so without an explicit Origin check
+     * a malicious page could open a WS to localhost:18080 / the ngrok
+     * tunnel and read table state for any authenticated user.
+     *
+     * <p>Set via {@link #allowOrigins} after construction; mirrors the
+     * CORS list installed on the HTTP routes. Empty list = allow all
+     * (dev default; tests don't carry an Origin header).
+     */
+    private volatile List<String> allowedOrigins = List.of();
+
+    /**
+     * Slice L7 review (security-MEDIUM #8) — per-token subscriber cap.
+     * Without this, a single token can churn {@code new WebSocket(url)}
+     * to exhaust file descriptors / the WS thread pool.
+     */
+    private static final int MAX_SUBS_PER_TOKEN_PER_TABLE = 4;
+
     public TableStreamHandler(AuthService authService,
                                EmbeddedServer embedded,
                                SeatReadyTracker readyTracker) {
         this.authService = authService;
         this.embedded = embedded;
         this.readyTracker = readyTracker;
+    }
+
+    /** Slice L7 review — install the Origin allowlist post-ctor. */
+    public TableStreamHandler allowOrigins(List<String> origins) {
+        this.allowedOrigins = List.copyOf(origins);
+        return this;
     }
 
     @Override
@@ -90,6 +116,18 @@ public final class TableStreamHandler implements Consumer<WsConfig> {
     }
 
     private void onConnect(WsConnectContext ctx) {
+        // Slice L7 review (security-CRITICAL #1) — Origin allowlist
+        // BEFORE any auth or work. Cross-origin WS upgrades that don't
+        // match the HTTP CORS allowlist get closed at the handshake.
+        // Empty allowlist = dev mode (no enforcement).
+        if (!allowedOrigins.isEmpty()) {
+            String origin = ctx.header("Origin");
+            if (origin != null && !allowedOrigins.contains(origin)) {
+                closeWith(ctx, 4001, "Origin not allowed: " + origin);
+                return;
+            }
+        }
+
         String tableIdRaw = ctx.pathParam("tableId");
         UUID tableId;
         try {
@@ -109,6 +147,7 @@ public final class TableStreamHandler implements Consumer<WsConfig> {
             closeWith(ctx, 4001, "INVALID_TOKEN");
             return;
         }
+        SessionEntry session = resolved.get();
 
         // Snapshot the current WebTable. If the table doesn't exist
         // (mid-restart, race against removeTable, etc.) we close 4404
@@ -119,15 +158,61 @@ public final class TableStreamHandler implements Consumer<WsConfig> {
             return;
         }
 
+        // Slice L7 review (security-HIGH #3) — visibility check.
+        // Public tables (passworded=false AND spectatorsAllowed=true)
+        // are visible to any authed user. Otherwise the caller must be
+        // seated at this table. Without this gate any authed user can
+        // subscribe to any table's stream and read commander / deck /
+        // ready info before joining.
+        boolean publiclyVisible = !initial.passworded() && initial.spectatorsAllowed();
+        boolean seated = isUserSeated(initial, session.username());
+        if (!publiclyVisible && !seated) {
+            closeWith(ctx, 4003, "Subscribe denied: caller is not seated.");
+            return;
+        }
+
+        // Slice L7 review (security-MEDIUM #8) — per-(token, table)
+        // subscriber cap. Counts existing subs from this token at this
+        // table; reject if at the cap.
+        Set<WsContext> existing = subscribers.get(tableId);
+        if (existing != null) {
+            int sameToken = 0;
+            for (WsContext s : existing) {
+                if (token.equals(s.queryParam("token"))) sameToken++;
+            }
+            if (sameToken >= MAX_SUBS_PER_TOKEN_PER_TABLE) {
+                closeWith(ctx, 4029, "Subscriber cap reached.");
+                return;
+            }
+        }
+
         ctx.attribute(ATTR_TABLE_ID, tableId);
         subscribers
                 .computeIfAbsent(tableId, k -> ConcurrentHashMap.newKeySet())
                 .add(ctx);
         LOG.info("WS table connect: user={} table={} ({} subscribers)",
-                resolved.get().username(), tableId,
+                session.username(), tableId,
                 subscribers.get(tableId).size());
 
         sendFrame(ctx, tableId, initial);
+    }
+
+    /**
+     * Slice L7 review — case-insensitive trim-aware seat membership
+     * check, mirroring the client's identity normalization in
+     * {@code webTableToLobby.ts}. Used by the visibility gate in
+     * {@link #onConnect} to decide whether an authed caller may
+     * subscribe to a non-public table.
+     */
+    private static boolean isUserSeated(WebTable table, String username) {
+        if (username == null) return false;
+        String norm = username.trim().toLowerCase();
+        if (norm.isEmpty()) return false;
+        for (mage.webapi.dto.WebSeat s : table.seats()) {
+            if (!s.occupied()) continue;
+            if (norm.equals(s.playerName().trim().toLowerCase())) return true;
+        }
+        return false;
     }
 
     private void onClose(WsCloseContext ctx) {

@@ -104,6 +104,12 @@ public final class WebApiServer {
 
     public WebApiServer allowCorsOrigins(List<String> origins) {
         this.corsOrigins = List.copyOf(origins);
+        // Slice L7 review (security-CRITICAL #1) — propagate to the
+        // table stream handler so its WS handshake can enforce the
+        // same Origin allowlist that the HTTP CORS plugin enforces.
+        // Browsers don't apply same-origin to WebSocket upgrades, so
+        // without this an attacker can drive cross-origin WS reads.
+        this.tableStreamHandler.allowOrigins(this.corsOrigins);
         return this;
     }
 
