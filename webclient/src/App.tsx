@@ -24,6 +24,7 @@ type Tab = 'lobby' | 'decks' | 'cards';
  * Leave or auth signout.
  */
 const ACTIVE_GAME_STORAGE_KEY = 'xmage.activeGameId';
+const ACTIVE_LOBBY_STORAGE_KEY = 'xmage.activeLobbyId';
 
 function readStoredGameId(): string | null {
   try {
@@ -47,6 +48,33 @@ function persistGameId(id: string | null): void {
 }
 
 /**
+ * Slice L4 — initial activeLobbyId. URL param wins (covers fixture
+ * dev-entry + paste-the-link flows); falls back to persisted state
+ * so a reload while inside the lobby keeps the user there.
+ */
+function readInitialLobbyId(): string | null {
+  try {
+    const fromUrl = new URLSearchParams(window.location.search).get('lobby');
+    if (fromUrl) return fromUrl;
+    return window.localStorage.getItem(ACTIVE_LOBBY_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function persistLobbyId(id: string | null): void {
+  try {
+    if (id) {
+      window.localStorage.setItem(ACTIVE_LOBBY_STORAGE_KEY, id);
+    } else {
+      window.localStorage.removeItem(ACTIVE_LOBBY_STORAGE_KEY);
+    }
+  } catch {
+    // Ignore.
+  }
+}
+
+/**
  * Auth-gated tab shell.
  *
  * <p>Slice 4.1 had two screens; we used a tab switcher. Slice 5 adds
@@ -66,11 +94,22 @@ export function App() {
   const [activeGameId, setActiveGameIdState] = useState<string | null>(
     () => readStoredGameId(),
   );
+  const [activeLobbyId, setActiveLobbyIdState] = useState<string | null>(
+    () => readInitialLobbyId(),
+  );
 
   // Wrap setter so every transition writes localStorage.
   const setActiveGameId = (id: string | null) => {
     persistGameId(id);
     setActiveGameIdState(id);
+  };
+  // Slice L4 — same persistence pattern for the new lobby. Special
+  // case: 'fixture' is dev-only and shouldn't persist (a stale
+  // entry would force fixture mode after a reload even when the
+  // user wanted to leave).
+  const setActiveLobbyId = (id: string | null) => {
+    persistLobbyId(id === 'fixture' ? null : id);
+    setActiveLobbyIdState(id);
   };
 
   useEffect(() => {
@@ -106,6 +145,7 @@ export function App() {
   useEffect(() => {
     if (!session) {
       persistGameId(null);
+      persistLobbyId(null);
     }
   }, [session]);
 
@@ -123,18 +163,19 @@ export function App() {
     return <SpectatorPlaceholder gameId={spectateGameId} />;
   }
 
-  // Slice L1 (new-lobby-window) — dev-only fixture entry for visual
-  // review. `?lobby=fixture` renders the new lobby screen with
-  // hardcoded data. Slice L2 — `?lobby=<UUID>` triggers the live
-  // polling path against a real table on the server. Real entry
-  // from PreLobbyModal lands in slice L4.
-  const lobbyParam = new URLSearchParams(window.location.search).get('lobby');
-  if (lobbyParam && session) {
-    return <NewLobbyScreen tableId={lobbyParam} />;
-  }
-
   if (!session) {
     return <Login />;
+  }
+
+  // Slice L4 — programmatic lobby entry. PreLobbyModal calls
+  // setActiveLobbyId(tableId) on create; the param-init path
+  // (slice L1/L2 dev entry, ?lobby=fixture / ?lobby=<UUID>) seeds
+  // this state at first mount via readInitialLobbyId(). Active
+  // lobby takes precedence over an active game window since users
+  // entering the lobby intentionally are above any persisted game
+  // resumption.
+  if (activeLobbyId) {
+    return <NewLobbyScreen tableId={activeLobbyId} />;
   }
 
   if (activeGameId) {
@@ -191,7 +232,7 @@ export function App() {
       <main className="max-w-4xl mx-auto p-6 space-y-4">
         {tab === 'lobby' && (
           <>
-            <Lobby />
+            <Lobby onEnterLobby={setActiveLobbyId} />
             <LobbyChat />
             <DevOpenGame onOpen={setActiveGameId} />
           </>

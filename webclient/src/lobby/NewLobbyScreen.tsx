@@ -15,7 +15,8 @@
  * <p>Reference: docs/design/new-lobby-window.md
  */
 import { useEffect, useState } from 'react';
-import type { WebTable } from '../api/schemas';
+import { request } from '../api/client';
+import { webRoomRefSchema, type WebTable } from '../api/schemas';
 import { useAuthStore } from '../auth/store';
 import { CommanderPreviewPanel } from './CommanderPreviewPanel';
 import { DeckPreviewPanel } from './DeckPreviewPanel';
@@ -118,8 +119,6 @@ function LiveLobby({ tableId }: { tableId: string }) {
     let cancelled = false;
     (async () => {
       try {
-        const { request } = await import('../api/client');
-        const { webRoomRefSchema } = await import('../api/schemas');
         const r = await request('/api/server/main-room', webRoomRefSchema, {
           token: session.token,
         });

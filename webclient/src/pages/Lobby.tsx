@@ -10,17 +10,28 @@ import {
   type WebTableListing,
 } from '../api/schemas';
 import { useAuthStore } from '../auth/store';
-import { CreateTableModal } from './CreateTableModal';
+import { PreLobbyModal } from '../lobby/PreLobbyModal';
 import { JoinTableModal } from './JoinTableModal';
 
 const POLL_INTERVAL_MS = 5_000;
+
+interface Props {
+  /**
+   * Slice L4 — when set, the lobby's "+ Create table" button opens
+   * the slim {@link PreLobbyModal} and routes the resulting tableId
+   * into the new full-page lobby screen. Without this prop the
+   * button still works but the legacy table-list flow is the only
+   * post-create state.
+   */
+  onEnterLobby?: (tableId: string) => void;
+}
 
 /**
  * Lobby — discovers the singleton main room once, fetches server state
  * for create-table dropdowns, polls the table list every 5 s. Hosts
  * the create-table modal when the user clicks "Create".
  */
-export function Lobby() {
+export function Lobby({ onEnterLobby }: Props = {}) {
   const session = useAuthStore((s) => s.session);
   const [room, setRoom] = useState<WebRoomRef | null>(null);
   const [serverState, setServerState] = useState<WebServerState | null>(null);
@@ -204,11 +215,19 @@ export function Lobby() {
       </header>
 
       {createOpen && serverState && (
-        <CreateTableModal
+        <PreLobbyModal
           roomId={room.roomId}
           serverState={serverState}
           onClose={() => setCreateOpen(false)}
-          onCreated={requestImmediateRefresh}
+          onCreated={(tableId) => {
+            // Slice L4 — refresh the table list (so others see the
+            // new entry on poll) and route the host into the new
+            // full-page lobby. If onEnterLobby isn't wired (e.g.
+            // standalone Lobby usage in tests), fall back to the
+            // legacy stay-on-table-list behavior.
+            requestImmediateRefresh();
+            onEnterLobby?.(tableId);
+          }}
         />
       )}
 
