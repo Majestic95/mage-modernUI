@@ -1,4 +1,5 @@
 import type { WebGameView } from '../api/schemas';
+import { isCommanderEntry } from './commanderPredicates';
 
 /**
  * Slice 70-O (picture-catalog §1.2) — derives the header lobby-name
@@ -25,7 +26,7 @@ export function synthesizeLobbyName(gameView: WebGameView | null): string {
   // null gameView). "0 PLAYER FREE-FOR-ALL" would be nonsensical.
   if (playerCount === 0) return 'GAME';
   const isCommander = gameView.players.some((p) =>
-    p.commandList.some((co) => co.kind === 'commander'),
+    p.commandList.some(isCommanderEntry),
   );
 
   const formatTail =

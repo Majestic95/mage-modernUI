@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { WebGameView, WebPlayerView } from '../api/schemas';
 import { REDESIGN } from '../featureFlags';
+import { isCommanderEntry } from './commanderPredicates';
 import { LifeCounter } from './LifeCounter';
 import { PlayerPortrait } from './PlayerPortrait';
 
@@ -59,7 +60,7 @@ export function CommanderDamageTracker({ gameId, gameView, opponents }: Props) {
   // planes per slice 70-D's WebCommandObjectView discriminator).
   const rows: CommanderRow[] = opponents.flatMap((opp) =>
     opp.commandList
-      .filter((co) => co.kind === 'commander')
+      .filter(isCommanderEntry)
       .map((co) => ({
         opponentId: opp.playerId,
         opponentName: opp.name || 'Unknown',

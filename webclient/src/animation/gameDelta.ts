@@ -1,4 +1,5 @@
 import type { WebGameView, WebPlayerView, WebCardView } from '../api/schemas';
+import { isCommanderNamed } from '../game/commanderPredicates';
 
 /**
  * Slice 70-Z.2 — pure diff between successive {@link WebGameView}
@@ -94,7 +95,7 @@ function isCardCommander(
   // cast moment.
   for (const p of players) {
     for (const obj of p.commandList) {
-      if (obj.kind === 'commander' && obj.name === card.name) return true;
+      if (isCommanderNamed(obj, card.name)) return true;
     }
   }
   // Slice 70-Z bug fix — commandList empties the moment a commander
@@ -108,7 +109,7 @@ function isCardCommander(
   // (resolve_to_board fires when commander is on the battlefield).
   for (const entries of Object.values(snapshots)) {
     for (const obj of entries) {
-      if (obj.kind === 'commander' && obj.name === card.name) return true;
+      if (isCommanderNamed(obj, card.name)) return true;
     }
   }
   return false;

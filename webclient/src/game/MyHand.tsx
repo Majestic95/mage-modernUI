@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import type { WebCardView, WebPlayerView } from '../api/schemas';
 import { slow, SLOWMO } from '../animation/debug';
+import { filterCommanders } from './commanderPredicates';
 import {
   HAND_HOVER_LIFT_MS,
   LAYOUT_GLIDE,
@@ -508,7 +509,7 @@ function CommandZoneSlot({
   canAct: boolean;
   onObjectClick: (id: string) => void;
 }) {
-  const commanders = player.commandList.filter((e) => e.kind === 'commander');
+  const commanders = filterCommanders(player.commandList);
   if (commanders.length === 0) return null;
   return (
     <div

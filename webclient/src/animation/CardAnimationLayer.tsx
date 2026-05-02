@@ -18,6 +18,7 @@ import {
   resolveTileBBox,
   stubCardFromCommandList,
 } from './sourceResolvers';
+import { isCommanderEntry, isCommanderNamed } from '../game/commanderPredicates';
 import {
   BOARD_WIPE_STAGGER_MS,
   GROUND_CRACK_LANDING_DELAY_MS,
@@ -333,7 +334,7 @@ export function CardAnimationLayer(): React.JSX.Element {
       // multiple times, so the gate fires correctly on the 4th cast.
       const snapshots = useGameStore.getState().commanderSnapshots;
       const isCommander = Object.values(snapshots).some((entries) =>
-        entries.some((e) => e.kind === 'commander' && e.name === card.name),
+        entries.some((e) => isCommanderNamed(e, card.name)),
       );
       const isPlaneswalker = card.types.includes('PLANESWALKER');
       const isBigCmc = card.manaValue >= 7;
@@ -400,9 +401,7 @@ export function CardAnimationLayer(): React.JSX.Element {
       if (!player) return;
       const targetCenter = resolveCommanderReturnTarget(player.playerId);
       if (!targetCenter) return;
-      const commanderEntry = player.commandList.find(
-        (e) => e.kind === 'commander',
-      );
+      const commanderEntry = player.commandList.find(isCommanderEntry);
       if (!commanderEntry) return;
       const stub = stubCardFromCommandList(evt.cardId, commanderEntry);
       setActiveReturns((prev) => {

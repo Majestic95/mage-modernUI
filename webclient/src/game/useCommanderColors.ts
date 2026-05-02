@@ -1,6 +1,7 @@
 import { createContext, createElement, useContext, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import type { WebCardView, WebGameView } from '../api/schemas';
+import { isCommanderEntry } from './commanderPredicates';
 
 /**
  * Slice 70-Z polish — given a {@link WebCardView}, returns the
@@ -48,7 +49,7 @@ export function CommanderColorsProvider({ gameView, children }: ProviderProps) {
     const map = new Map<string, readonly string[]>();
     for (const p of gameView.players) {
       for (const entry of p.commandList) {
-        if (entry.kind === 'commander' && entry.name && !map.has(entry.name)) {
+        if (isCommanderEntry(entry) && entry.name && !map.has(entry.name)) {
           map.set(entry.name, p.colorIdentity ?? []);
         }
       }

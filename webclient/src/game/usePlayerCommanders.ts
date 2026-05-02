@@ -1,5 +1,6 @@
 import { useGameStore } from './store';
 import type { WebCommandObjectView, WebPlayerView } from '../api/schemas';
+import { filterCommanders } from './commanderPredicates';
 
 /**
  * Slice 70-X.14 (Wave A item 4 — Bug 4) — return the player's
@@ -33,5 +34,5 @@ export function usePlayerCommanders(
   // tests that mount a frame without going through applyFrame, by
   // non-commander formats, and by the first-frame seed before the
   // snapshot is populated.
-  return player.commandList.filter((co) => co.kind === 'commander');
+  return filterCommanders(player.commandList);
 }
