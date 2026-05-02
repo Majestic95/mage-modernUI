@@ -5,7 +5,6 @@ import io.javalin.websocket.WsCloseContext;
 import io.javalin.websocket.WsConfig;
 import io.javalin.websocket.WsConnectContext;
 import io.javalin.websocket.WsContext;
-import mage.MageException;
 import mage.view.TableView;
 import mage.webapi.SchemaVersion;
 import mage.webapi.auth.AuthService;
@@ -257,29 +256,29 @@ public final class TableStreamHandler implements Consumer<WsConfig> {
         }
     }
 
-    /** Build a {@link WebTable} from current upstream + tracker state. */
+    /**
+     * Build a {@link WebTable} from current upstream + tracker state.
+     *
+     * <p>Slice L7 review fix — read directly from
+     * {@code TableManager.getController(tableId).getTable()} rather
+     * than {@code roomGetAllTables}. The latter returns the
+     * {@code GamesRoomImpl.lobbyTables} cache which refreshes only
+     * every 2s, so a freshly-created table failed its own first WS
+     * snapshot for that window — clients connecting immediately after
+     * {@code POST /tables} got a 4404 close and "Table closed."
+     * Reading the live {@link Table} via the manager bypasses the
+     * cache entirely.
+     */
     private WebTable currentSnapshot(UUID tableId) {
         try {
-            // We don't have a direct "get one table" endpoint upstream;
-            // the listing is the only path that yields TableViews. Free-
-            // tier cost: O(rooms × tables); for the singleton lobby this
-            // is just iterating a small list per broadcast.
-            UUID roomId = embedded.server().serverGetMainRoomId();
-            List<TableView> views = embedded.server().roomGetAllTables(roomId);
-            if (views == null) return null;
-            for (TableView v : views) {
-                if (tableId.equals(v.getTableId())) {
-                    return TableMapper.table(v,
-                            embedded.managerFactory().tableManager(),
-                            readyTracker);
-                }
-            }
-            // Not in the listing — table likely removed or just-created
-            // and not yet visible (GamesRoomImpl refreshes lobbyTables
-            // every 2s). The poll-fallback the client retains will
-            // pick it up on the next refresh.
-            return null;
-        } catch (MageException ex) {
+            var tableManager = embedded.managerFactory().tableManager();
+            var tcOpt = tableManager.getController(tableId);
+            if (tcOpt.isEmpty()) return null;
+            mage.game.Table table = tcOpt.get().getTable();
+            if (table == null) return null;
+            TableView view = new TableView(table);
+            return TableMapper.table(view, tableManager, readyTracker);
+        } catch (RuntimeException ex) {
             LOG.warn("Snapshot failed for table {}: {}", tableId, ex.getMessage());
             return null;
         }
