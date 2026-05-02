@@ -180,7 +180,14 @@ export function EditSettingsModal({
       data-testid="edit-settings-modal-backdrop"
       className="fixed inset-0 z-50 flex items-center justify-center"
       style={{ background: 'var(--color-bg-overlay)' }}
-      onClick={tryClose}
+      // Same defensive guard as PreLobbyModal — only DIRECT clicks on
+      // the backdrop close. Stops native form-control events (number
+      // spinners, select dropdowns) from accidentally bubbling past
+      // the content's stopPropagation in some browsers and triggering
+      // a close.
+      onClick={(e) => {
+        if (e.target === e.currentTarget) tryClose();
+      }}
       role="presentation"
     >
       <div

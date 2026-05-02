@@ -392,13 +392,20 @@ class WebApiServerTest {
     }
 
     @Test
-    void unknownTable_addAi_returns422() throws Exception {
+    void unknownTable_addAi_returns404() throws Exception {
+        // 2026-05-02 — addAi now pre-validates the AI fallback deck
+        // before calling upstream. The pre-validation does a
+        // tableManager.getTable(tableId) lookup first; missing tables
+        // surface as 404 NOT_FOUND rather than the legacy 422
+        // UPSTREAM_REJECTED. The 404 is the more accurate surface for
+        // "table does not exist."
         String roomId = mainRoomId();
         String fakeTable = "00000000-0000-0000-0000-000000000000";
         HttpResponse<String> r = postJsonAuthed(
                 "/api/rooms/" + roomId + "/tables/" + fakeTable + "/ai",
                 "{\"playerType\":\"COMPUTER_MONTE_CARLO\"}");
-        assertEquals(422, r.statusCode());
+        assertEquals(404, r.statusCode());
+        assertEquals("NOT_FOUND", JSON.readTree(r.body()).get("code").asText());
     }
 
     /* ---------- slice 25: delete table ---------- */

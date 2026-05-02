@@ -115,6 +115,11 @@ public final class TableStreamHandler implements Consumer<WsConfig> {
     }
 
     private void onConnect(WsConnectContext ctx) {
+        // Slice L-diagnose — entry log so we can correlate the rejection
+        // path against the recurring "Table closed" symptom.
+        LOG.info("WS table onConnect: table={}, origin={}",
+                ctx.pathParam("tableId"), ctx.header("Origin"));
+
         // Slice L7 review (security-CRITICAL #1) — Origin allowlist
         // BEFORE any auth or work. Cross-origin WS upgrades that don't
         // match the HTTP CORS allowlist get closed at the handshake.
@@ -317,6 +322,18 @@ public final class TableStreamHandler implements Consumer<WsConfig> {
     }
 
     private static void closeWith(WsContext ctx, int code, String reason) {
+        // Slice L-diagnose — log every WS upgrade rejection so the
+        // recurring "Table closed" client symptom can be traced to
+        // its exact server-side branch (4404 not-found vs 4003
+        // visibility vs 4001 auth vs 4029 cap).
+        String tableId = "?";
+        try {
+            tableId = String.valueOf(ctx.pathParam("tableId"));
+        } catch (RuntimeException ignored) {
+            // pathParam may not be available outside route context
+        }
+        LOG.info("WS table upgrade rejected: code={}, reason={}, table={}",
+                code, reason, tableId);
         try {
             ctx.session.close(code, reason);
         } catch (RuntimeException ignored) {

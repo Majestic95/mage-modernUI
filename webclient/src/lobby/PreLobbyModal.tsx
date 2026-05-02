@@ -191,7 +191,19 @@ export function PreLobbyModal({
       data-testid="pre-lobby-modal-backdrop"
       className="fixed inset-0 z-50 flex items-center justify-center"
       style={{ background: 'var(--color-bg-overlay)' }}
-      onClick={onClose}
+      // User repro 2026-05-02: clicking the player-count <input
+      // type="number"> spinner buttons was closing the modal. Native
+      // spinner clicks emit events that don't reliably stop at a
+      // child's onClick stopPropagation in all browsers — and chained
+      // click+change events on a nested <label> can synthesise a
+      // second click that bubbles past the React handler. The
+      // robust fix is to gate the close on target===currentTarget so
+      // only DIRECT clicks on the backdrop trigger it; clicks that
+      // originate inside the modal (and bubble for any reason) are
+      // ignored.
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
       role="presentation"
     >
       <div
@@ -205,7 +217,6 @@ export function PreLobbyModal({
           borderColor: 'var(--color-card-frame-default)',
           boxShadow: 'var(--shadow-high)',
         }}
-        onClick={(e) => e.stopPropagation()}
       >
         <header>
           <h2

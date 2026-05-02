@@ -710,7 +710,11 @@ function LobbyShell({
           data-testid="close-confirm-backdrop"
           className="fixed inset-0 z-50 flex items-center justify-center"
           style={{ background: 'var(--color-bg-overlay)' }}
-          onClick={() => !leaveSubmitting && setCloseConfirmOpen(false)}
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !leaveSubmitting) {
+              setCloseConfirmOpen(false);
+            }
+          }}
           role="presentation"
         >
           <div
@@ -724,7 +728,6 @@ function LobbyShell({
               borderColor: 'var(--color-card-frame-default)',
               boxShadow: 'var(--shadow-high)',
             }}
-            onClick={(e) => e.stopPropagation()}
           >
             <h2
               className="text-base font-semibold uppercase text-text-primary"

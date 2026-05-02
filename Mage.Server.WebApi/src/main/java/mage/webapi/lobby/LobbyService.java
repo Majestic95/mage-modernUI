@@ -294,6 +294,42 @@ public final class LobbyService {
             throw new WebApiException(400, "BAD_REQUEST",
                     "playerType must be a COMPUTER_* value.");
         }
+        // 2026-05-02 — root-cause fix for "Table closed instantly".
+        // upstream's TableController.joinTable runs deck validation
+        // against the table's format. If the deck fails AND the
+        // submitting session belongs to the table OWNER (which our
+        // upstreamSessionId always is), upstream calls
+        // tableManager.removeTable(tableId) — destroying the entire
+        // table. Pre-flight check the deck against a freshly-minted
+        // validator FIRST so we surface 422 INVALID_AI_DECK without
+        // letting upstream destroy the table.
+        Table table = embedded.managerFactory().tableManager().getTable(tableId);
+        if (table == null) {
+            throw new WebApiException(404, "NOT_FOUND", "Table not found: " + tableId);
+        }
+        DeckCardLists fallbackDeck = buildFallbackDeckForTable(table);
+        DeckValidator tableValidator = table.getValidator();
+        if (tableValidator != null) {
+            DeckValidator fresh = newValidatorLike(tableValidator);
+            try {
+                Deck loaded = Deck.load(fallbackDeck, false, false);
+                if (!fresh.validate(loaded)) {
+                    List<DeckValidatorError> errors =
+                            fresh.getErrorsListSorted(DeckValidationMapper.DEFAULT_ERROR_LIMIT);
+                    LOG.warn("AI fallback deck failed validation for {} format; "
+                            + "skipping addAi to preserve table {}",
+                            fresh.getName(), tableId);
+                    throw new WebApiException(422, "AI_DECK_INVALID",
+                            "AI fallback deck does not validate for the "
+                                    + fresh.getName() + " format. "
+                                    + "Add AI seats from inside the lobby instead.",
+                            DeckValidationMapper.toDtoList(errors));
+                }
+            } catch (GameException ex) {
+                throw new WebApiException(500, "UPSTREAM_ERROR",
+                        "Could not load AI fallback deck: " + ex.getMessage());
+            }
+        }
         // Upstream's TableController.joinTable runs deck validation even
         // for AI seats (no isComputer bypass). We supply a 60-card basic-
         // lands fallback deck so the join validates. Slice 6b will add a
@@ -316,7 +352,6 @@ public final class LobbyService {
         //     the tree builder produce children before the empty-tree edge
         //     case fires. Mitigation, not cure — the upstream TODO is the
         //     real bug, and this slice deliberately doesn't touch it.
-        DeckCardLists fallbackDeck = buildFallbackBasicLandsDeck();
         boolean ok;
         try {
             ok = embedded.server().roomJoinTable(
@@ -368,6 +403,67 @@ public final class LobbyService {
         addEntryOrFallback(cards, "Quirion Sentinel", forest, 4);
         deck.setCards(cards);
         deck.setSideboard(new ArrayList<>());
+        return deck;
+    }
+
+    /**
+     * Pick the right fallback deck shape for {@code table}'s format.
+     * Commander tables need 99 mainboard + 1 commander in sideboard
+     * (the legacy 60-card pile fails Commander validation, which made
+     * upstream's joinTable destroy the entire table — see addAi).
+     * Other formats fall through to the 60-card constructed pile.
+     */
+    private DeckCardLists buildFallbackDeckForTable(Table table) {
+        String validatorName = table.getValidator() == null
+                ? "" : table.getValidator().getName();
+        if (validatorName != null
+                && validatorName.toLowerCase().contains("commander")) {
+            return buildCommanderFallbackDeck();
+        }
+        return buildFallbackBasicLandsDeck();
+    }
+
+    /**
+     * 99-Forest mainboard + 1 legendary green creature in the sideboard
+     * as the commander. We try a small list of widely-shipped legendary
+     * green creatures so a missing card from one set doesn't break the
+     * fallback. If none are available, throws — that's an unworkable
+     * card DB and we surface it loudly.
+     */
+    private DeckCardLists buildCommanderFallbackDeck() {
+        CardInfo forest = CardRepository.instance.findCard("Forest");
+        if (forest == null) {
+            throw new WebApiException(500, "UPSTREAM_ERROR",
+                    "Card DB has no Forest — cannot build AI Commander deck.");
+        }
+        CardInfo commander = null;
+        for (String candidate : new String[]{
+                "Yeva, Nature's Herald",
+                "Ezuri, Renegade Leader",
+                "Omnath, Locus of Mana",
+                "Ghalta, Primal Hunger",
+                "Gaddock Teeg",
+        }) {
+            CardInfo c = CardRepository.instance.findCard(candidate);
+            if (c != null) {
+                commander = c;
+                break;
+            }
+        }
+        if (commander == null) {
+            throw new WebApiException(500, "UPSTREAM_ERROR",
+                    "Card DB has no legendary green creature — "
+                            + "cannot build AI Commander fallback deck.");
+        }
+        DeckCardLists deck = new DeckCardLists();
+        deck.setName("AI Commander Deck");
+        deck.setAuthor("server");
+        List<DeckCardInfo> cards = new ArrayList<>();
+        addEntry(cards, "Forest", forest, 99);
+        deck.setCards(cards);
+        List<DeckCardInfo> sideboard = new ArrayList<>();
+        addEntry(sideboard, commander.getName(), commander, 1);
+        deck.setSideboard(sideboard);
         return deck;
     }
 
