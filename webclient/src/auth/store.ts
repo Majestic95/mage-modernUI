@@ -26,6 +26,15 @@ interface AuthState {
   clearError: () => void;
 }
 
+/**
+ * P1 audit fix — module-scoped guard so the offline-retry listener
+ * is installed at most once across multiple concurrent verify failures.
+ * Without this, repeated `verify` calls during a long offline window
+ * would each push an `online` listener onto the document, all firing
+ * re-verifies in parallel when connectivity returns.
+ */
+let onlineRetryArmed = false;
+
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
@@ -84,7 +93,34 @@ export const useAuthStore = create<AuthState>()(
           if (err instanceof ApiError && err.status === 0) {
             // Network failure — keep the session optimistically; the next
             // real request will surface the issue.
+            //
+            // P1 audit fix — install a one-shot 'online' listener so
+            // we re-verify automatically when connectivity returns.
+            // Without this, an offline-at-startup user would stay
+            // authenticated client-side forever; every subsequent
+            // request would 401 silently and the user would never
+            // get a clean re-login prompt. The module-level
+            // `onlineRetryArmed` flag prevents stacking listeners
+            // across repeated verify failures during a long offline
+            // window.
             set({ verifying: false });
+            if (
+              typeof window !== 'undefined' &&
+              !onlineRetryArmed &&
+              typeof window.addEventListener === 'function'
+            ) {
+              onlineRetryArmed = true;
+              const onOnline = () => {
+                onlineRetryArmed = false;
+                window.removeEventListener('online', onOnline);
+                // Defer to a microtask so the browser's `online` event
+                // handlers all run before our re-verify hits the wire.
+                Promise.resolve().then(() => {
+                  void get().verify();
+                });
+              };
+              window.addEventListener('online', onOnline);
+            }
             return;
           }
           set({ session: null, verifying: false });

@@ -621,19 +621,28 @@ export const useGameStore = create<GameState>()((set, get) => ({
         // the turn advances. Compare against the previous gameView's
         // turn; on a strict increase, drop all 'turn'-scoped stickies.
         // 'game'-scoped stickies survive until reset().
-        const prevTurn = get().gameView?.turn ?? 0;
-        const stickyAnswers =
-          gv.turn > prevTurn
-            ? dropTurnStickies(get().stickyAnswers)
-            : get().stickyAnswers;
-        set({
-          gameView: gv,
-          protocolError: null,
-          commanderSnapshots: accumulateCommanderSnapshots(
-            get().commanderSnapshots,
-            gv,
-          ),
-          stickyAnswers,
+        //
+        // P1 audit fix — use the function-form set so prevTurn,
+        // commanderSnapshots, and stickyAnswers all read from a
+        // single atomic state snapshot. The pre-fix code did three
+        // separate get()s before the set(), which under any future
+        // async middleware (Redux DevTools, etc.) could observe
+        // partially-applied state and miss a turn-sticky drop.
+        set((state) => {
+          const prevTurn = state.gameView?.turn ?? 0;
+          const stickyAnswers =
+            gv.turn > prevTurn
+              ? dropTurnStickies(state.stickyAnswers)
+              : state.stickyAnswers;
+          return {
+            gameView: gv,
+            protocolError: null,
+            commanderSnapshots: accumulateCommanderSnapshots(
+              state.commanderSnapshots,
+              gv,
+            ),
+            stickyAnswers,
+          };
         });
         return true;
       }
@@ -710,11 +719,19 @@ export const useGameStore = create<GameState>()((set, get) => ({
   clearDialog: () => set({ pendingDialog: null }),
 
   consumeStartGame: () => {
-    const pending = get().pendingStartGame;
-    if (pending !== null) {
-      set({ pendingStartGame: null });
-    }
-    return pending;
+    // P1 audit fix — function-form set captures the current value
+    // atomically inside the reducer so a concurrent applyFrame that
+    // arrives between the read and the write can't drop a fresh
+    // pendingStartGame. Read the captured value via a closure-bound
+    // ref rather than a second get() call.
+    let captured: WebStartGameInfo | null = null;
+    set((state) => {
+      captured = state.pendingStartGame;
+      return state.pendingStartGame === null
+        ? state
+        : { pendingStartGame: null };
+    });
+    return captured;
   },
 
   clearSideboard: () => set({ pendingSideboard: null }),
@@ -727,7 +744,19 @@ export const useGameStore = create<GameState>()((set, get) => ({
       return { chatMessages: next };
     }),
 
-  reset: () => set(INITIAL),
+  // P1 audit fix — build a fresh copy of every nested object on each
+  // reset() so a future contributor who in-place-mutates state (e.g.
+  // `state.chatMessages[id] = [...]`) can't poison the INITIAL
+  // singleton across resets. Sharing references was safe under
+  // current code but a latent footgun for future regressions.
+  reset: () =>
+    set({
+      ...INITIAL,
+      chatMessages: {},
+      gameLog: [],
+      commanderSnapshots: {},
+      stickyAnswers: {},
+    }),
 
   setStickyAnswer: (key, answer, scope) =>
     set((state) => ({
