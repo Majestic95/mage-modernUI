@@ -8,13 +8,20 @@ import mage.cards.decks.DeckValidator;
 import mage.cards.decks.DeckValidatorError;
 import mage.cards.repository.CardInfo;
 import mage.cards.repository.CardRepository;
+import mage.constants.MatchTimeLimit;
+import mage.constants.MultiplayerAttackOption;
+import mage.constants.RangeOfInfluence;
+import mage.constants.SkillLevel;
 import mage.game.GameException;
 import mage.game.Table;
 import mage.game.match.MatchOptions;
+import mage.game.mulligan.MulliganType;
 import mage.players.PlayerType;
 import mage.server.Session;
+import mage.server.TableController;
 import mage.view.TableView;
 import mage.webapi.WebApiException;
+import mage.webapi.dto.WebMatchOptionsUpdate;
 import mage.webapi.dto.WebRoomRef;
 import mage.webapi.dto.WebTable;
 import mage.webapi.dto.WebTableListing;
@@ -26,6 +33,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -387,6 +395,120 @@ public final class LobbyService {
             }
         } catch (MageException ex) {
             throw upstream(update ? "updating deck" : "submitting deck", ex);
+        }
+    }
+
+    /**
+     * Slice L3 (new-lobby-window) — host-only edit of an existing
+     * table's editable {@link MatchOptions} subset.
+     *
+     * <p>Format ({@code deckType}), mode ({@code gameType}), and
+     * {@code winsNeeded} are NOT editable here — they are locked
+     * at table creation. Player count + AI seat add/remove are
+     * structural and go through the existing seat endpoints.
+     *
+     * <p>Owner check: {@link TableController#isOwner(UUID)}. Non-
+     * owners get a 403 NOT_OWNER. Unknown table → 404 TABLE_NOT_FOUND.
+     * Bad enum string → 400 BAD_REQUEST.
+     *
+     * @return the freshly-mapped {@link WebTable} reflecting the new
+     *         options. Note that polling clients will pick up the
+     *         change on their next poll regardless; the return value
+     *         is a convenience so the caller doesn't have to re-poll.
+     */
+    public WebTable updateMatchOptions(String upstreamSessionId,
+                                        UUID roomId,
+                                        UUID tableId,
+                                        WebMatchOptionsUpdate update) {
+        if (update == null) {
+            throw new WebApiException(400, "BAD_REQUEST",
+                    "Update body is required.");
+        }
+        UUID userId = embedded.managerFactory().sessionManager()
+                .getSession(upstreamSessionId)
+                .map(Session::getUserId)
+                .orElseThrow(() -> new WebApiException(401, "MISSING_SESSION",
+                        "Upstream session expired."));
+        Optional<TableController> tcOpt =
+                embedded.managerFactory().tableManager().getController(tableId);
+        if (tcOpt.isEmpty()) {
+            throw new WebApiException(404, "TABLE_NOT_FOUND",
+                    "Table not found.");
+        }
+        TableController tc = tcOpt.get();
+        if (!tc.isOwner(userId)) {
+            throw new WebApiException(403, "NOT_OWNER",
+                    "Only the table owner can edit settings.");
+        }
+        Table table = tc.getTable();
+        if (table == null || table.getMatch() == null
+                || table.getMatch().getOptions() == null) {
+            throw new WebApiException(409, "TABLE_NOT_EDITABLE",
+                    "Table is not in a state where settings can be edited.");
+        }
+        // Apply the partial update. Each non-null field maps to its
+        // upstream setter. Enum-bearing fields parse into their
+        // upstream type so an invalid value lands as 400 BAD_REQUEST
+        // (via parseEnum) rather than reaching the live game state.
+        MatchOptions options = table.getMatch().getOptions();
+        if (update.password() != null) {
+            options.setPassword(update.password());
+        }
+        if (update.skillLevel() != null) {
+            options.setSkillLevel(parseEnum(SkillLevel.class,
+                    update.skillLevel(), "skillLevel"));
+        }
+        if (update.matchTimeLimit() != null) {
+            options.setMatchTimeLimit(parseEnum(MatchTimeLimit.class,
+                    update.matchTimeLimit(), "matchTimeLimit"));
+        }
+        if (update.freeMulligans() != null) {
+            int v = update.freeMulligans();
+            if (v < 0 || v > 5) {
+                throw new WebApiException(400, "BAD_REQUEST",
+                        "freeMulligans must be 0..5; got " + v + ".");
+            }
+            options.setFreeMulligans(v);
+        }
+        if (update.mulliganType() != null) {
+            // Upstream typo — `setMullgianType` (sic). Match it.
+            options.setMullgianType(parseEnum(MulliganType.class,
+                    update.mulliganType(), "mulliganType"));
+        }
+        if (update.spectatorsAllowed() != null) {
+            options.setSpectatorsAllowed(update.spectatorsAllowed());
+        }
+        if (update.rated() != null) {
+            options.setRated(update.rated());
+        }
+        if (update.attackOption() != null) {
+            options.setAttackOption(parseEnum(MultiplayerAttackOption.class,
+                    update.attackOption(), "attackOption"));
+        }
+        if (update.range() != null) {
+            options.setRange(parseEnum(RangeOfInfluence.class,
+                    update.range(), "range"));
+        }
+        LOG.info("Table options updated: {} (caller={})", tableId, userId);
+        // Build a fresh {@link TableView} directly off the upstream
+        // {@link Table} reference. Earlier draft re-fetched via
+        // {@code roomGetAllTables}, but that view is rebuilt only when
+        // the room emits its periodic listing — for a just-modified
+        // table we want the immediately-current state. Constructing
+        // the view from the live Table guarantees the response
+        // reflects the mutation we just performed.
+        TableView freshView = new TableView(table);
+        return TableMapper.table(freshView, embedded.managerFactory().tableManager());
+    }
+
+    private static <E extends Enum<E>> E parseEnum(Class<E> enumClass,
+                                                    String raw,
+                                                    String field) {
+        try {
+            return Enum.valueOf(enumClass, raw);
+        } catch (IllegalArgumentException ex) {
+            throw new WebApiException(400, "BAD_REQUEST",
+                    "Invalid " + field + ": '" + raw + "'.");
         }
     }
 

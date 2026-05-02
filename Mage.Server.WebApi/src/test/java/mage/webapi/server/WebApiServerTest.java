@@ -472,6 +472,137 @@ class WebApiServerTest {
         assertEquals("BAD_REQUEST", JSON.readTree(del.body()).get("code").asText());
     }
 
+    /* ---------- slice L3: edit table options (PATCH) ---------- */
+
+    @Test
+    void patchTable_byOwner_updatesEditableFields() throws Exception {
+        String roomId = mainRoomId();
+        String tableId = createTestTable(roomId);
+        // Patch a curated subset of fields (one of each interesting kind:
+        // string, enum-string, int, boolean) so the success path covers
+        // the key dispatch arms in updateMatchOptions.
+        String body = """
+                {"password":"hunter2","skillLevel":"SERIOUS",
+                 "freeMulligans":3,"spectatorsAllowed":false,"rated":true}
+                """;
+        HttpResponse<String> r = patchJsonAuthed(
+                "/api/rooms/" + roomId + "/tables/" + tableId, body);
+        assertEquals(200, r.statusCode(), r.body());
+
+        JsonNode table = JSON.readTree(r.body());
+        // Re-mapped WebTable comes back. Spot-check the fields that
+        // surface on the wire (skillLevel + spectatorsAllowed + rated +
+        // passworded). freeMulligans isn't surfaced on WebTable today,
+        // so it's covered by the "no error" outcome only.
+        assertEquals(tableId, table.get("tableId").asText());
+        assertEquals("SERIOUS", table.get("skillLevel").asText());
+        assertFalse(table.get("spectatorsAllowed").asBoolean());
+        assertTrue(table.get("rated").asBoolean());
+        assertTrue(table.get("passworded").asBoolean(),
+                "non-empty password must mark the table passworded");
+    }
+
+    @Test
+    void patchTable_emptyPassword_clearsPasswordedFlag() throws Exception {
+        String roomId = mainRoomId();
+        String tableId = createTestTable(roomId);
+        // First set a password.
+        patchJsonAuthed("/api/rooms/" + roomId + "/tables/" + tableId,
+                "{\"password\":\"x\"}");
+        // Then clear it.
+        HttpResponse<String> r = patchJsonAuthed(
+                "/api/rooms/" + roomId + "/tables/" + tableId,
+                "{\"password\":\"\"}");
+        assertEquals(200, r.statusCode(), r.body());
+        assertFalse(JSON.readTree(r.body()).get("passworded").asBoolean(),
+                "empty password must clear the passworded flag");
+    }
+
+    @Test
+    void patchTable_byNonOwner_returns403() throws Exception {
+        String ownerToken = freshAnonBearer();
+        String roomId = mainRoomId();
+        String tableId = createTableWith(ownerToken, roomId,
+                "Two Player Duel", "Constructed - Vintage", 1,
+                List.of("HUMAN", "COMPUTER_MONTE_CARLO"));
+
+        String otherToken = freshAnonBearer();
+        HttpResponse<String> r = patchJsonWithToken(otherToken,
+                "/api/rooms/" + roomId + "/tables/" + tableId,
+                "{\"password\":\"steal\"}");
+        assertEquals(403, r.statusCode(), r.body());
+        assertEquals("NOT_OWNER", JSON.readTree(r.body()).get("code").asText());
+
+        // Cleanup
+        HTTP.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create("http://localhost:" + server.port()
+                                + "/api/rooms/" + roomId + "/tables/" + tableId))
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .timeout(Duration.ofSeconds(5))
+                        .DELETE()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
+    @Test
+    void patchTable_unknownTable_returns404() throws Exception {
+        String roomId = mainRoomId();
+        String fakeTable = "00000000-0000-0000-0000-000000000000";
+        HttpResponse<String> r = patchJsonAuthed(
+                "/api/rooms/" + roomId + "/tables/" + fakeTable,
+                "{\"password\":\"x\"}");
+        assertEquals(404, r.statusCode(), r.body());
+        assertEquals("TABLE_NOT_FOUND", JSON.readTree(r.body()).get("code").asText());
+    }
+
+    @Test
+    void patchTable_invalidEnumValue_returns400() throws Exception {
+        String roomId = mainRoomId();
+        String tableId = createTestTable(roomId);
+        HttpResponse<String> r = patchJsonAuthed(
+                "/api/rooms/" + roomId + "/tables/" + tableId,
+                "{\"skillLevel\":\"GOD_TIER\"}");
+        assertEquals(400, r.statusCode(), r.body());
+        JsonNode err = JSON.readTree(r.body());
+        assertEquals("BAD_REQUEST", err.get("code").asText());
+        assertTrue(err.get("message").asText().contains("skillLevel"),
+                "error message should name the offending field; got: " + err);
+    }
+
+    @Test
+    void patchTable_outOfRangeFreeMulligans_returns400() throws Exception {
+        String roomId = mainRoomId();
+        String tableId = createTestTable(roomId);
+        HttpResponse<String> r = patchJsonAuthed(
+                "/api/rooms/" + roomId + "/tables/" + tableId,
+                "{\"freeMulligans\":99}");
+        assertEquals(400, r.statusCode(), r.body());
+        assertEquals("BAD_REQUEST", JSON.readTree(r.body()).get("code").asText());
+    }
+
+    @Test
+    void patchTable_emptyBody_isNoOp_returns200() throws Exception {
+        String roomId = mainRoomId();
+        String tableId = createTestTable(roomId);
+        // {} is valid JSON; every field null → no mutations applied,
+        // just returns the current WebTable.
+        HttpResponse<String> r = patchJsonAuthed(
+                "/api/rooms/" + roomId + "/tables/" + tableId, "{}");
+        assertEquals(200, r.statusCode(), r.body());
+        assertEquals(tableId, JSON.readTree(r.body()).get("tableId").asText());
+    }
+
+    @Test
+    void patchTable_malformedTableId_returns400() throws Exception {
+        String roomId = mainRoomId();
+        HttpResponse<String> r = patchJsonAuthed(
+                "/api/rooms/" + roomId + "/tables/not-a-uuid",
+                "{\"password\":\"x\"}");
+        assertEquals(400, r.statusCode(), r.body());
+        assertEquals("BAD_REQUEST", JSON.readTree(r.body()).get("code").asText());
+    }
+
     /* ---------- slice 13: deck submit ---------- */
 
     @Test
@@ -747,6 +878,23 @@ class WebApiServerTest {
                         .header("Authorization", "Bearer " + token)
                         .timeout(Duration.ofSeconds(10))
                         .POST(HttpRequest.BodyPublishers.ofString(body))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
+    /** Slice L3 — PATCH helper for the new edit-table-options endpoint. */
+    private HttpResponse<String> patchJsonAuthed(String path, String body) throws Exception {
+        return patchJsonWithToken(bearer, path, body);
+    }
+
+    private HttpResponse<String> patchJsonWithToken(String token, String path, String body) throws Exception {
+        return HTTP.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create("http://localhost:" + server.port() + path))
+                        .header("Content-Type", "application/json")
+                        .header("Authorization", "Bearer " + token)
+                        .timeout(Duration.ofSeconds(10))
+                        .method("PATCH", HttpRequest.BodyPublishers.ofString(body))
                         .build(),
                 HttpResponse.BodyHandlers.ofString());
     }

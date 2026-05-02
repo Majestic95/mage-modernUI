@@ -19,6 +19,7 @@ import mage.webapi.dto.WebDeckCardLists;
 import mage.webapi.dto.WebError;
 import mage.webapi.dto.WebHealth;
 import mage.webapi.dto.WebJoinTableRequest;
+import mage.webapi.dto.WebMatchOptionsUpdate;
 import mage.webapi.dto.WebSessionRequest;
 import mage.webapi.embed.EmbeddedServer;
 import mage.webapi.lobby.DeckValidationService;
@@ -251,6 +252,18 @@ public final class WebApiServer {
             lobbyService.startMatch(session.upstreamSessionId(), roomId, tableId);
             ctx.status(204);
         });
+        // Slice L3 (new-lobby-window) — host-only edit of the table's
+        // editable MatchOptions subset. See WebMatchOptionsUpdate for
+        // the field list. Format / mode / winsNeeded are NOT here —
+        // locked at table creation.
+        app.patch("/api/rooms/{roomId}/tables/{tableId}", ctx -> {
+            UUID roomId = parseUuid(ctx.pathParam("roomId"), "roomId");
+            UUID tableId = parseUuid(ctx.pathParam("tableId"), "tableId");
+            WebMatchOptionsUpdate req = parseBody(ctx.body(), WebMatchOptionsUpdate.class);
+            SessionEntry session = sessionFrom(ctx);
+            ctx.json(lobbyService.updateMatchOptions(
+                    session.upstreamSessionId(), roomId, tableId, req));
+        });
         app.delete("/api/rooms/{roomId}/tables/{tableId}/seat", ctx -> {
             UUID roomId = parseUuid(ctx.pathParam("roomId"), "roomId");
             UUID tableId = parseUuid(ctx.pathParam("tableId"), "tableId");
@@ -307,6 +320,13 @@ public final class WebApiServer {
             // path it's null and Jackson omits the field via NON_NULL.
             ctx.json(new WebError(SchemaVersion.CURRENT, ex.code(), ex.getMessage(),
                     ex.validationErrors()));
+            // Slice L3 — flag the context so the catch-all 404 handler
+            // below doesn't overwrite our custom body. Without this,
+            // a {@code WebApiException(404, "TABLE_NOT_FOUND")} would
+            // stage status 404 + custom JSON, then app.error(404, ...)
+            // would fire next and stomp the body with the generic
+            // route-not-found message.
+            ctx.attribute("webapi.error-handled", Boolean.TRUE);
         });
         app.exception(BadRequestResponse.class, (ex, ctx) -> {
             ctx.status(400);
@@ -314,7 +334,8 @@ public final class WebApiServer {
                     ex.getMessage() == null ? "Bad request." : ex.getMessage()));
         });
         app.error(404, ctx -> {
-            if (ctx.path().startsWith("/api/")) {
+            if (ctx.path().startsWith("/api/")
+                    && ctx.attribute("webapi.error-handled") == null) {
                 ctx.json(new WebError(SchemaVersion.CURRENT, "NOT_FOUND",
                         "Route not found: " + ctx.method() + " " + ctx.path()));
             }

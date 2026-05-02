@@ -14,9 +14,10 @@ const FORMAT_DISPLAY: Record<string, string> = {
 interface Props {
   options: LobbyMatchOptions;
   isHost: boolean;
+  onEditSettings?: () => void;
 }
 
-export function GameSettingsPanel({ options, isHost }: Props) {
+export function GameSettingsPanel({ options, isHost, onEditSettings }: Props) {
   return (
     <aside
       data-testid="game-settings-panel"
@@ -53,6 +54,7 @@ export function GameSettingsPanel({ options, isHost }: Props) {
         <button
           type="button"
           data-testid="edit-settings-button"
+          onClick={onEditSettings}
           className="mt-auto rounded-md border border-card-frame-default/80 px-4 py-2 text-sm font-medium text-text-primary transition-colors hover:border-accent-primary/60 hover:bg-surface-card-hover"
         >
           Edit Settings

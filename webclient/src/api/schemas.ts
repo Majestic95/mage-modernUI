@@ -270,6 +270,26 @@ export const webTableSchema = z.object({
 });
 export type WebTable = z.infer<typeof webTableSchema>;
 
+/**
+ * Slice L3 (new-lobby-window) — partial update payload for
+ * {@code PATCH /api/rooms/{roomId}/tables/{tableId}}. Every field is
+ * optional; the server treats null/undefined as "no change." Mirrors
+ * the server-side {@code WebMatchOptionsUpdate} record. Format /
+ * mode / winsNeeded are NOT here — locked at table creation.
+ */
+export const webMatchOptionsUpdateSchema = z.object({
+  password: z.string().optional(),
+  skillLevel: z.string().optional(),
+  matchTimeLimit: z.string().optional(),
+  freeMulligans: z.number().int().optional(),
+  mulliganType: z.string().optional(),
+  spectatorsAllowed: z.boolean().optional(),
+  rated: z.boolean().optional(),
+  attackOption: z.string().optional(),
+  range: z.string().optional(),
+});
+export type WebMatchOptionsUpdate = z.infer<typeof webMatchOptionsUpdateSchema>;
+
 export const webTableListingSchema = z.object({
   schemaVersion: z.string(),
   tables: z.array(webTableSchema),

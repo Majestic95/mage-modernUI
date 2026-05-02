@@ -14,9 +14,12 @@
  *
  * <p>Reference: docs/design/new-lobby-window.md
  */
+import { useEffect, useState } from 'react';
+import type { WebTable } from '../api/schemas';
 import { useAuthStore } from '../auth/store';
 import { CommanderPreviewPanel } from './CommanderPreviewPanel';
 import { DeckPreviewPanel } from './DeckPreviewPanel';
+import { EditSettingsModal } from './EditSettingsModal';
 import { GameSettingsPanel } from './GameSettingsPanel';
 import { LOBBY_FIXTURE, type LobbyFixture } from './fixtures';
 import { LobbyHeader } from './LobbyHeader';
@@ -26,6 +29,54 @@ import { SeatRow } from './SeatRow';
 import { StartGameButton } from './StartGameButton';
 import { useLobbyTable } from './useLobbyTable';
 import { webTableToLobby } from './webTableToLobby';
+
+interface EditableInitial {
+  password: string;
+  skillLevel: string;
+  matchTimeLimit: string;
+  freeMulligans: number;
+  mulliganType: string;
+  spectatorsAllowed: boolean;
+  rated: boolean;
+  attackOption: string;
+  range: string;
+}
+
+const DEFAULT_INITIAL: EditableInitial = {
+  password: '',
+  skillLevel: 'CASUAL',
+  matchTimeLimit: 'NONE',
+  freeMulligans: 0,
+  mulliganType: 'GAME_DEFAULT',
+  spectatorsAllowed: true,
+  rated: false,
+  attackOption: 'LEFT',
+  range: 'ALL',
+};
+
+/**
+ * Slice L3 — derive Edit-Settings initial values from a live
+ * {@link WebTable}. Only the four fields that round-trip on
+ * {@code WebTable} today (skillLevel, password-flag, spectators,
+ * rated) are derived from the wire; the rest fall back to the
+ * server-side defaults defined in {@link DEFAULT_INITIAL}. Sparse
+ * PATCH diff means a "no-touch" save sends nothing, so the
+ * possibly-stale defaults can't accidentally overwrite real values.
+ *
+ * <p>Adding the missing fields to WebTable (matchTimeLimit,
+ * freeMulligans, mulliganType, attackOption, range) is a follow-up
+ * slice — additive, fits within schema 1.27.
+ */
+function initialFromTable(table: WebTable | null): EditableInitial {
+  if (!table) return DEFAULT_INITIAL;
+  return {
+    ...DEFAULT_INITIAL,
+    password: '',
+    skillLevel: table.skillLevel || DEFAULT_INITIAL.skillLevel,
+    spectatorsAllowed: table.spectatorsAllowed,
+    rated: table.rated,
+  };
+}
 
 interface Props {
   /**
@@ -38,7 +89,14 @@ interface Props {
 
 export function NewLobbyScreen({ tableId }: Props) {
   if (tableId === 'fixture') {
-    return <LobbyShell data={LOBBY_FIXTURE} />;
+    return (
+      <LobbyShell
+        data={LOBBY_FIXTURE}
+        tableId="fixture"
+        roomId={null}
+        editInitial={DEFAULT_INITIAL}
+      />
+    );
   }
   return <LiveLobby tableId={tableId} />;
 }
@@ -47,6 +105,34 @@ function LiveLobby({ tableId }: { tableId: string }) {
   const session = useAuthStore((s) => s.session);
   const username = session?.username ?? '';
   const { table, error, loading } = useLobbyTable(tableId);
+  const [roomId, setRoomId] = useState<string | null>(null);
+
+  // Slice L3 — discover the singleton main room ID once. The PATCH
+  // endpoint needs both roomId + tableId; useLobbyTable already
+  // resolves the room for its polling, but doesn't expose it. Cheap
+  // to call again here (one-shot) so the modal can render the room
+  // path. If this becomes a recurring shape, extract a useMainRoom()
+  // hook in a future slice.
+  useEffect(() => {
+    if (!session) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { request } = await import('../api/client');
+        const { webRoomRefSchema } = await import('../api/schemas');
+        const r = await request('/api/server/main-room', webRoomRefSchema, {
+          token: session.token,
+        });
+        if (!cancelled) setRoomId(r.roomId);
+      } catch {
+        // Swallow — modal will render in fixture-mode (Save no-op)
+        // until roomId resolves.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [session]);
 
   if (loading && !table) {
     return <LobbyStatus message="Loading table…" />;
@@ -55,7 +141,14 @@ function LiveLobby({ tableId }: { tableId: string }) {
     return <LobbyStatus message={error ?? 'Table not found.'} />;
   }
   const data = webTableToLobby({ webTable: table, currentUsername: username });
-  return <LobbyShell data={data} />;
+  return (
+    <LobbyShell
+      data={data}
+      tableId={tableId}
+      roomId={roomId}
+      editInitial={initialFromTable(table)}
+    />
+  );
 }
 
 function LobbyStatus({ message }: { message: string }) {
@@ -69,7 +162,18 @@ function LobbyStatus({ message }: { message: string }) {
   );
 }
 
-function LobbyShell({ data: fixture }: { data: LobbyFixture }) {
+function LobbyShell({
+  data: fixture,
+  tableId,
+  roomId,
+  editInitial,
+}: {
+  data: LobbyFixture;
+  tableId: string;
+  roomId: string | null;
+  editInitial: EditableInitial;
+}) {
+  const [editOpen, setEditOpen] = useState(false);
   const selectedDeck =
     fixture.decks.find((d) => d.id === fixture.selectedDeckId) ?? null;
   const isHost =
@@ -125,6 +229,7 @@ function LobbyShell({ data: fixture }: { data: LobbyFixture }) {
           <GameSettingsPanel
             options={fixture.matchOptions}
             isHost={isHost}
+            onEditSettings={() => setEditOpen(true)}
           />
           <SeatRow
             seats={fixture.seats}
@@ -157,6 +262,15 @@ function LobbyShell({ data: fixture }: { data: LobbyFixture }) {
           </div>
         </section>
       </main>
+
+      {editOpen && (
+        <EditSettingsModal
+          roomId={roomId}
+          tableId={tableId}
+          initial={editInitial}
+          onClose={() => setEditOpen(false)}
+        />
+      )}
     </div>
   );
 }
