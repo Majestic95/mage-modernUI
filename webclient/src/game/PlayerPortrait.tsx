@@ -382,7 +382,23 @@ function CircularHalo({
   const bloomExtentPx = paddingPx <= 1.5 ? 4 : paddingPx <= 2 ? 8 : 11;
   const bloomBlurPx = paddingPx <= 1.5 ? 4 : paddingPx <= 2 ? 7 : 9;
 
-  const rotates = colorIdentity.length > 1 && !eliminated;
+  // Bug fix (2026-05-02) — rotation now gated on isActive (per user
+  // direction: "halo and glow rotate in unison when it is the
+  // player's turn; together they breathe and rotate"). Previously
+  // rotation was on whenever the halo was multicolor regardless of
+  // turn, which decoupled rotation from the turn signal. Now the
+  // active player's portrait both pulses (opacity breathe) AND
+  // rotates the conic-gradient angle in lockstep across ring + bloom
+  // (they share `--halo-angle` from the parent's animate-halo-rotate
+  // keyframe). Inactive players' multicolor rings stay static so
+  // motion is reserved for the turn-state signal.
+  //
+  // Single- and zero-color halos still don't rotate visibly because
+  // computeHaloBackground returns a solid color for those cases (no
+  // gradient bands to rotate); the same isActive gate applies, but
+  // its visible effect is null. Multicolor halos are where the
+  // rotation reads at a glance.
+  const rotates = colorIdentity.length > 1 && !eliminated && isActive;
   const pulses = isActive && !eliminated;
 
   // Slice 70-Z polish (code critic I2) — longhand top/right/bottom/

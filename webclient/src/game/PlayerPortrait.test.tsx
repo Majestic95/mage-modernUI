@@ -205,19 +205,37 @@ describe('PlayerPortrait — halo variants', () => {
     );
   });
 
-  it('multicolor halo rotates (data-rotating="true")', () => {
-    // Picture-catalog §2.0: multicolor halos rotate at 12s/rev via
-    // animate-halo-rotate. Single-color rings are static (rotation
-    // would burn paint cycles).
+  it('multicolor halo rotates only when isActive=true (turn-coupled rotation)', () => {
+    // Bug fix (2026-05-02) — rotation is now gated on isActive (per
+    // user direction: "halo + glow rotate when it is the player's
+    // turn; together they breathe and rotate"). Multicolor identity
+    // alone is no longer enough.
     render(
       <PlayerPortrait
-        player={makePlayer({ colorIdentity: ['W', 'U', 'B', 'G'] })}
+        player={makePlayer({
+          colorIdentity: ['W', 'U', 'B', 'G'],
+          isActive: true,
+        })}
       />,
     );
     expect(screen.getByTestId('player-portrait-halo')).toHaveAttribute(
       'data-rotating',
       'true',
     );
+  });
+
+  it('multicolor halo does NOT rotate when isActive=false', () => {
+    render(
+      <PlayerPortrait
+        player={makePlayer({
+          colorIdentity: ['W', 'U', 'B', 'G'],
+          isActive: false,
+        })}
+      />,
+    );
+    expect(
+      screen.getByTestId('player-portrait-halo'),
+    ).not.toHaveAttribute('data-rotating');
   });
 
   it('single-color halo does NOT rotate', () => {
@@ -258,14 +276,18 @@ describe('PlayerPortrait — halo variants', () => {
     expect(bloom.style.filter).toMatch(/blur\(\d+px\)/);
   });
 
-  it('bloom + ring carry data-rotating="true" for multicolor identity', () => {
+  it('bloom + ring carry data-rotating="true" for multicolor + active player', () => {
     // Slice 70-Z polish — both children carry data-rotating for
     // e2e/screenshot harness assertions. The animation itself
     // lives on the parent halo-stack div per the lockstep
-    // guarantee test below.
+    // guarantee test below. Bug fix (2026-05-02): rotation now
+    // additionally requires isActive=true.
     render(
       <PlayerPortrait
-        player={makePlayer({ colorIdentity: ['W', 'U', 'B', 'G'] })}
+        player={makePlayer({
+          colorIdentity: ['W', 'U', 'B', 'G'],
+          isActive: true,
+        })}
         size="medium"
       />,
     );
@@ -340,11 +362,14 @@ describe('PlayerPortrait — halo variants', () => {
   it('halo-stack parent carries the rotation animation (lockstep guarantee)', () => {
     // Slice 70-Z polish (code critic I1) — animation classes live on
     // a SHARED PARENT div so bloom + ring genuinely consume the same
-    // animated --halo-angle. Verify the parent (not the children)
-    // owns animate-halo-rotate when multicolor.
+    // animated --halo-angle. Bug fix (2026-05-02): rotation now
+    // additionally requires isActive=true to couple to turn state.
     render(
       <PlayerPortrait
-        player={makePlayer({ colorIdentity: ['W', 'U', 'B', 'G'] })}
+        player={makePlayer({
+          colorIdentity: ['W', 'U', 'B', 'G'],
+          isActive: true,
+        })}
         size="medium"
       />,
     );
