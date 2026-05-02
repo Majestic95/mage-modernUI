@@ -285,6 +285,14 @@ interface GameState {
   clearSideboard: () => void;
   /** Reset back to the pre-connect state — for navigating away. */
   reset: () => void;
+  /**
+   * P0 audit fix — drop the chatMessages bucket for a chatId. Called
+   * by {@link LobbyChat} on unmount so chat from a prior login doesn't
+   * persist into the next session (privacy + memory). Targeted (not a
+   * full reset) so `pendingStartGame`, `sidePanelCollapsed`, etc. stay
+   * intact across the lobby → game transition.
+   */
+  clearChatBucket: (chatId: string) => void;
 
   /**
    * Slice 70-Y / Wave 8 — record a sticky yes/no answer.
@@ -684,6 +692,17 @@ export const useGameStore = create<GameState>()((set, get) => ({
       }
 
       default:
+        // P0 audit fix — surface unknown methods loudly. Previously
+        // returned silently, which means a server-side new method
+        // (or a typo in `frame.method`) was dropped without diagnostic.
+        // Combined with stream.ts advancing lastMessageId on dispatch,
+        // unrecognized frames are unrecoverable on reconnect — better
+        // to know about it in dev so the schema gets bumped.
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[store] applyFrame: unknown method "${frame.method}" — frame dropped. ` +
+            `Bump schema or add a handler.`,
+        );
         return false;
     }
   },
@@ -699,6 +718,14 @@ export const useGameStore = create<GameState>()((set, get) => ({
   },
 
   clearSideboard: () => set({ pendingSideboard: null }),
+
+  clearChatBucket: (chatId) =>
+    set((state) => {
+      if (!(chatId in state.chatMessages)) return state;
+      const next = { ...state.chatMessages };
+      delete next[chatId];
+      return { chatMessages: next };
+    }),
 
   reset: () => set(INITIAL),
 

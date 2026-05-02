@@ -102,6 +102,47 @@ export function useDialogTargets(stream: GameStream | null): DialogTargetState {
   const cardsView1 = data.cardsView1 ?? {};
   const cardCount = Object.keys(cardsView1).length;
   if (cardCount === 0) {
+    // P0 audit fix — gameTarget over PLAYERS (e.g. "Lightning Bolt:
+    // target player or planeswalker") arrives with empty cardsView1
+    // and a populated targets[] of player UUIDs. The clickRouter
+    // already accepts clicks via target mode, but without this
+    // branch the player frames don't pulse — the same affordance gap
+    // we just fixed for board-target creature dialogs.
+    //
+    // Activate the hook so consumers (PlayerArea via the targetable
+    // prop OR future per-player pulse) get a non-empty
+    // eligiblePlayerIds. The pick / cancel handlers already work
+    // for player UUIDs (engine accepts the same response shape).
+    if (
+      pendingDialog.method === 'gameTarget' &&
+      Array.isArray(data.targets) &&
+      data.targets.length > 0
+    ) {
+      const eligiblePlayerIds = new Set<string>(data.targets);
+      const messageId = pendingDialog.messageId;
+      const pickPlayer = (id: string) => {
+        stream.sendPlayerResponse(messageId, 'uuid', id);
+      };
+      const cancelPlayer = !data.flag
+        ? () => {
+            stream.sendPlayerResponse(
+              messageId,
+              'uuid',
+              '00000000-0000-0000-0000-000000000000',
+            );
+          }
+        : null;
+      return {
+        active: true,
+        eligibleCardIds: EMPTY_SET,
+        eligiblePlayerIds,
+        message: data.message,
+        min: data.min,
+        max: data.max,
+        pick: pickPlayer,
+        cancel: cancelPlayer,
+      };
+    }
     // gameSelect over board permanents (no cardsView1) IS click-to-
     // resolve via the existing clickRouter target/manaPay paths — but
     // those are not driven by this hook. This hook only covers the

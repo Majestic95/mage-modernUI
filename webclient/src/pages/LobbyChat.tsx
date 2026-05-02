@@ -23,6 +23,7 @@ import { GameStream } from '../game/stream';
 export function LobbyChat() {
   const session = useAuthStore((s) => s.session);
   const chatBuckets = useGameStore((s) => s.chatMessages);
+  const clearChatBucket = useGameStore((s) => s.clearChatBucket);
   const [chatId, setChatId] = useState<string | null>(null);
   const [roomId, setRoomId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -55,6 +56,12 @@ export function LobbyChat() {
   }, [session]);
 
   // Open the room WebSocket when both session and roomId are known.
+  //
+  // P0 audit fix — drop the chatMessages bucket for this chatId on
+  // unmount so messages from a prior session don't persist into the
+  // next login. Without this, login → logout → re-login leaks the
+  // earlier user's chat into the new view (privacy issue; also pure
+  // memory growth across long sessions).
   useEffect(() => {
     if (!session || !roomId) return;
     const stream = new GameStream({
@@ -64,11 +71,13 @@ export function LobbyChat() {
     });
     streamRef.current = stream;
     stream.open();
+    const capturedChatId = chatId;
     return () => {
       stream.close();
       streamRef.current = null;
+      if (capturedChatId) clearChatBucket(capturedChatId);
     };
-  }, [session, roomId]);
+  }, [session, roomId, chatId, clearChatBucket]);
 
   const messages = useMemo(
     () => (chatId ? chatBuckets[chatId] ?? [] : []),

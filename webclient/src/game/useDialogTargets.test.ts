@@ -277,4 +277,93 @@ describe('useDialogTargets', () => {
       '00000000-0000-0000-0000-000000000000',
     );
   });
+
+  // P0 audit fix — gameTarget over players (e.g. "Lightning Bolt:
+  // target player or planeswalker") arrives with empty cardsView1 +
+  // populated targets[] of player UUIDs. Pre-fix: the hook returned
+  // INACTIVE → no pulse on player frames even though clickRouter
+  // accepted the click. Post-fix: hook activates with
+  // eligiblePlayerIds = Set(targets) so PlayerArea targetable prop
+  // and any future per-player pulse get a non-empty set.
+  it('activates for gameTarget with empty cardsView1 + populated targets[] (player target)', () => {
+    const PLAYER_UUID = '99999999-9999-9999-9999-999999999999';
+    const stream = fakeStream();
+    const data = webGameClientMessageSchema.parse({
+      gameView: null,
+      message: 'Choose target player or planeswalker.',
+      targets: [PLAYER_UUID],
+      cardsView1: {},
+      min: 1,
+      max: 1,
+      flag: false,
+      choice: null,
+    });
+    useGameStore.setState({
+      gameView: gvWithHand(),
+      pendingDialog: {
+        method: 'gameTarget',
+        messageId: 7,
+        data,
+      } as never,
+    });
+    const { result } = renderHook(() => useDialogTargets(stream));
+    expect(result.current.active).toBe(true);
+    expect(result.current.eligiblePlayerIds.has(PLAYER_UUID)).toBe(true);
+    expect(result.current.eligibleCardIds.size).toBe(0);
+    expect(result.current.cancel).not.toBeNull();
+  });
+
+  it('player-target pick dispatches the player UUID via sendPlayerResponse', () => {
+    const PLAYER_UUID = '99999999-9999-9999-9999-999999999999';
+    const stream = fakeStream();
+    const data = webGameClientMessageSchema.parse({
+      gameView: null,
+      message: 'Choose target player.',
+      targets: [PLAYER_UUID],
+      cardsView1: {},
+      min: 1,
+      max: 1,
+      flag: true,
+      choice: null,
+    });
+    useGameStore.setState({
+      gameView: gvWithHand(),
+      pendingDialog: {
+        method: 'gameTarget',
+        messageId: 7,
+        data,
+      } as never,
+    });
+    const { result } = renderHook(() => useDialogTargets(stream));
+    result.current.pick!(PLAYER_UUID);
+    expect(stream.sendPlayerResponse).toHaveBeenCalledWith(7, 'uuid', PLAYER_UUID);
+  });
+
+  it('still inactive for gameSelect with empty cardsView1 (different prompt class)', () => {
+    // The fix is scoped to gameTarget specifically; gameSelect over
+    // board permanents (no cardsView1) routes through clickRouter
+    // directly, not this hook. Lock that scoping.
+    const PERM_UUID = '88888888-8888-8888-8888-888888888888';
+    const stream = fakeStream();
+    const data = webGameClientMessageSchema.parse({
+      gameView: null,
+      message: 'Select an attacker.',
+      targets: [PERM_UUID],
+      cardsView1: {},
+      min: 0,
+      max: 1,
+      flag: false,
+      choice: null,
+    });
+    useGameStore.setState({
+      gameView: gvWithHand(),
+      pendingDialog: {
+        method: 'gameSelect',
+        messageId: 7,
+        data,
+      } as never,
+    });
+    const { result } = renderHook(() => useDialogTargets(stream));
+    expect(result.current.active).toBe(false);
+  });
 });

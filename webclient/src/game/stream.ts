@@ -30,6 +30,7 @@ import {
   type WebStreamFrame,
 } from '../api/schemas';
 import { useGameStore } from './store';
+import { useAuthStore } from '../auth/store';
 
 const DEFAULT_BASE_URL = 'http://localhost:18080';
 
@@ -288,6 +289,19 @@ export class GameStream {
         useGameStore
           .getState()
           .setConnection('error', ev.reason || `auth failed (${ev.code})`);
+        // P0 audit fix — propagate the auth failure into the auth
+        // store so the SPA's auth gate kicks the user back to the
+        // login page. Without this, a 4001 (UPSTREAM_NO_USER, e.g.
+        // server bounced and the upstream session is gone) or 4003
+        // (NOT_A_PLAYER_IN_GAME) leaves the user stuck with a stale
+        // bearer token + a broken WS — no path forward except a
+        // manual page refresh. Reproduced live earlier in the session
+        // ("Server refused to create the table").
+        //
+        // logout() is async (DELETE /api/sessions); we fire-and-
+        // forget. Local state clears synchronously (auth/store.ts
+        // setSession(null)), which is what triggers the re-route.
+        void useAuthStore.getState().logout();
         return;
       }
       this.maybeScheduleReconnect();

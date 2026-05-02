@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   webCardViewSchema,
   webGameClientMessageSchema,
@@ -963,5 +963,49 @@ describe('useGameStore', () => {
     expect(useGameStore.getState().commanderSnapshots[pid]).toBeDefined();
     useGameStore.getState().reset();
     expect(useGameStore.getState().commanderSnapshots).toEqual({});
+  });
+
+  // P0 audit fix — chatMessages targeted clear so LobbyChat can drop
+  // its bucket on unmount without nuking the rest of the store.
+  it('clearChatBucket removes only the named chatId, leaves others intact', () => {
+    const chatA = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+    const chatB = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+    useGameStore.setState({
+      chatMessages: {
+        [chatA]: [{ chatId: chatA, username: 'alice', message: 'hi' } as never],
+        [chatB]: [{ chatId: chatB, username: 'bob', message: 'hey' } as never],
+      },
+    });
+    useGameStore.getState().clearChatBucket(chatA);
+    const state = useGameStore.getState();
+    expect(state.chatMessages[chatA]).toBeUndefined();
+    expect(state.chatMessages[chatB]).toHaveLength(1);
+  });
+
+  it('clearChatBucket is a no-op when the chatId is not present', () => {
+    useGameStore.setState({ chatMessages: {} });
+    const before = useGameStore.getState().chatMessages;
+    useGameStore.getState().clearChatBucket('not-a-real-chat');
+    expect(useGameStore.getState().chatMessages).toBe(before);
+  });
+
+  // P0 audit fix — applyFrame for an unknown method returns false AND
+  // logs a console.warn so a server-ships-new-method scenario doesn't
+  // get silently dropped during a rolling upgrade.
+  it('applyFrame returns false and warns for an unknown method', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const result = useGameStore.getState().applyFrame(
+      {
+        method: 'someUnknownFutureMethod',
+        messageId: 1,
+        objectId: null,
+        data: null,
+      } as never,
+      null,
+    );
+    expect(result).toBe(false);
+    expect(warnSpy).toHaveBeenCalled();
+    expect(warnSpy.mock.calls[0]?.[0]).toMatch(/unknown method/i);
+    warnSpy.mockRestore();
   });
 });
