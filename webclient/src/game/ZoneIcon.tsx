@@ -107,21 +107,23 @@ export function ZoneIcon({
 }
 
 /**
- * Graveyard + exile path. Behavior per picture-catalog §2.2:
- * <ul>
- *   <li><b>Self variant</b> — clickable when non-empty; opens the
- *       shared {@link ZoneBrowser} modal listing every card.</li>
- *   <li><b>Opponent variant</b> — hover tooltip listing the card
- *       names (public information per MTG rules: "Opponent
- *       graveyard/exile show on hover (tooltip — public
- *       information per MTG rules)"). No modal click — the
- *       tooltip suffices for at-a-glance reads. Avoids the
- *       overdesign the catalog warns against ("Don't overdesign
- *       these").</li>
- * </ul>
+ * Graveyard + exile path. Bug fix (2026-05-02) — both variants are
+ * now clickable buttons that open the {@link ZoneBrowser} modal.
+ *
+ * <p>Why the change: the slice-70-P "opponent gets a hover tooltip
+ * instead of click" pattern proved un-discoverable in playtest. The
+ * tooltip required precise hover, capped at 10 entries, and
+ * silently failed on touch input. Per MTG rules graveyard and exile
+ * are public information — every player can ask to look at any
+ * graveyard / exile zone at any time. Click → modal mirrors the
+ * paper-game right ("hand me your graveyard for a sec"), works on
+ * touch, and removes the 10-card cap.
+ *
+ * <p>Empty zones still render as plain text (nothing to view; a
+ * disabled button would just add visual noise).
  *
  * <p>Both variants own the hidden-layoutId sink so cross-zone
- * resolve animations can land here.
+ * resolve animations can land here regardless of perspective.
  */
 function PublicZoneIcon({
   zone,
@@ -140,34 +142,17 @@ function PublicZoneIcon({
   const cardList = Object.values(cards);
   const count = cardList.length;
   const empty = count === 0;
-  // Slice 70-P — opponent tooltip text. Picture-catalog §2.2 says
-  // "show on hover" — we synthesize a newline-separated list of
-  // card names so a native title= tooltip surfaces it. For empty
-  // zones the title is omitted (no tooltip on a "0" chip).
-  //
-  // Slice 70-P critic UI/UX-I4 fix — cap the list at 10 entries
-  // so a long graveyard (mid-game mill / discard floods past 30+
-  // cards) doesn't produce a giant unstyled tooltip column that
-  // scrolls off-screen on most browsers. Surplus collapses to
-  // "... and N more"; the player can still open the modal
-  // experience via the public game log if they need full detail.
-  const TOOLTIP_CAP = 10;
-  const opponentTooltip =
-    variant === 'opponent' && !empty
-      ? buildOpponentTooltip(playerName, zone, cardList, TOOLTIP_CAP)
-      : `Browse ${playerName}'s ${zone}`;
   return (
     <span className="relative inline-block">
       <span className="text-text-secondary">{label}</span>{' '}
-      {empty || variant === 'opponent' ? (
-        // Opponent path renders a non-clickable count chip with a
-        // hover tooltip; same shape as the empty case so the
-        // user-visible difference is "tooltip vs nothing on hover."
+      {empty ? (
+        // Empty: plain text. No button — there's nothing to view, and
+        // a disabled-looking button would clutter the cluster for
+        // every player who hasn't lost / exiled anything yet.
         <span
           data-testid={`zone-count-${zone}`}
           data-variant={variant}
           className="font-mono"
-          title={opponentTooltip}
         >
           {count}
         </span>
@@ -178,12 +163,15 @@ function PublicZoneIcon({
           data-variant={variant}
           onClick={() => setOpen(true)}
           className={
-            'font-mono cursor-pointer text-text-primary ' +
-            'hover:text-accent-primary underline underline-offset-2'
+            'inline-flex items-center gap-1 px-1.5 py-0.5 rounded ' +
+            'bg-zinc-800/70 hover:bg-zinc-700 border border-zinc-700 ' +
+            'text-text-primary font-mono cursor-pointer transition-colors'
           }
-          title={`Browse ${playerName}'s ${zone}`}
+          title={`Browse ${playerName}'s ${zone} (${count} card${count === 1 ? '' : 's'})`}
+          aria-label={`Browse ${playerName}'s ${zone} — ${count} card${count === 1 ? '' : 's'}`}
         >
-          {count}
+          <ZoneGlyph zone={zone} />
+          <span>{count}</span>
         </button>
       )}
       {/*
@@ -236,24 +224,49 @@ function PublicZoneIcon({
 }
 
 /**
- * Slice 70-P (UI/UX critic I4) — bounded tooltip body for opponent
- * zone chips. Caps the visible card list at {@code cap} entries so
- * a giant graveyard doesn't overflow the native browser tooltip's
- * render space. Surplus collapses to "... and N more".
- *
- * <p>Returns a string suitable for the {@code title=} attribute.
- * Newline separators render as line breaks in Chrome / Firefox /
- * Safari native tooltips.
+ * Bug fix (2026-05-02) — small inline glyph for graveyard / exile
+ * chips so the count button reads as an open-zone affordance, not
+ * just a number. Using inline SVG (not unicode emoji) for cross-
+ * platform render consistency — emoji rendering varies wildly on
+ * Windows vs macOS vs Linux Chrome.
  */
-function buildOpponentTooltip(
-  playerName: string,
-  zone: 'graveyard' | 'exile',
-  cardList: readonly { name: string }[],
-  cap: number,
-): string {
-  const visible = cardList.slice(0, cap);
-  const overflow = Math.max(0, cardList.length - cap);
-  const names = visible.map((c) => c.name).join('\n');
-  const suffix = overflow > 0 ? `\n... and ${overflow} more` : '';
-  return `${playerName}'s ${zone}:\n${names}${suffix}`;
+function ZoneGlyph({ zone }: { zone: 'graveyard' | 'exile' }) {
+  if (zone === 'graveyard') {
+    // Tombstone silhouette with a small cross.
+    return (
+      <svg
+        width="11"
+        height="11"
+        viewBox="0 0 11 11"
+        aria-hidden="true"
+        className="shrink-0"
+      >
+        <path
+          d="M2 4.5 a3.5 3.5 0 0 1 7 0 V10 H2 Z"
+          fill="currentColor"
+        />
+        <rect x="5.1" y="5" width="0.8" height="3" fill="rgb(24 24 27)" />
+        <rect x="4.1" y="6" width="2.8" height="0.8" fill="rgb(24 24 27)" />
+      </svg>
+    );
+  }
+  // Exile: outward / "leaving the game" arrow inside a square hint.
+  return (
+    <svg
+      width="11"
+      height="11"
+      viewBox="0 0 11 11"
+      aria-hidden="true"
+      className="shrink-0"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M2.5 5.5 V9 H6" />
+      <path d="M5.5 2 H9 V5.5" />
+      <path d="M9 2 L4.5 6.5" />
+    </svg>
+  );
 }
