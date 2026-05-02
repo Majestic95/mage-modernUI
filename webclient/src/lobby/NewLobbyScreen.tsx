@@ -136,7 +136,7 @@ function LiveLobby({
   // Slice L7 — WebSocket push replaces the 5s polling. Same return
   // shape so the rest of the component is unchanged. Polling lives on
   // as fallback inside the hook for hard-failure paths.
-  const { table, error, loading } = useTableStream(tableId);
+  const { table, error, loading, permanentFailure } = useTableStream(tableId);
   const [roomId, setRoomId] = useState<string | null>(null);
 
   // Slice L3 — discover the singleton main room ID once. The PATCH
@@ -189,7 +189,13 @@ function LiveLobby({
     return <LobbyStatus message="Loading table…" />;
   }
   if (!table) {
-    return <LobbyStatus message={error ?? 'Table not found.'} />;
+    return (
+      <LobbyStatus
+        message={error ?? 'Table not found.'}
+        showLeaveButton={permanentFailure}
+        onLeave={onLeave}
+      />
+    );
   }
   const data = webTableToLobby({ webTable: table, currentUsername: username });
   return (
@@ -204,13 +210,32 @@ function LiveLobby({
   );
 }
 
-function LobbyStatus({ message }: { message: string }) {
+function LobbyStatus({
+  message,
+  showLeaveButton = false,
+  onLeave,
+}: {
+  message: string;
+  showLeaveButton?: boolean;
+  onLeave?: () => void;
+}) {
   return (
     <div
       data-testid="lobby-status"
-      className="flex h-screen flex-col items-center justify-center gap-2 bg-bg-base text-text-secondary"
+      className="flex h-screen flex-col items-center justify-center gap-4 bg-bg-base text-text-secondary"
     >
       <p>{message}</p>
+      {showLeaveButton && onLeave && (
+        <button
+          type="button"
+          data-testid="lobby-status-leave"
+          onClick={onLeave}
+          className="rounded-md border px-4 py-2 text-sm text-text-primary transition-colors hover:bg-surface-card-hover"
+          style={{ borderColor: 'var(--color-card-frame-default)' }}
+        >
+          Return to main menu
+        </button>
+      )}
     </div>
   );
 }
@@ -234,8 +259,14 @@ function LobbyShell({
   const [editOpen, setEditOpen] = useState(false);
   const [readySubmitting, setReadySubmitting] = useState(false);
   const [readyError, setReadyError] = useState<string | null>(null);
+  // Slice L8 review (UX HIGH #4) — initialize selection only from the
+  // fixture path. In live mode the user has no selected deck until
+  // they explicitly pick one; setting it from LOBBY_FIXTURE here would
+  // mean an optimistic-revert (failed PUT /seat/deck) reverts to a
+  // fixture deck ID that doesn't exist in the user's actual deck list,
+  // blanking the deck preview with no clear feedback.
   const [localSelectedDeckId, setLocalSelectedDeckId] = useState<string | null>(
-    fixture.selectedDeckId,
+    tableId === 'fixture' ? fixture.selectedDeckId : null,
   );
   const [deckSubmitting, setDeckSubmitting] = useState(false);
   const [deckError, setDeckError] = useState<string | null>(null);
@@ -493,7 +524,11 @@ function LobbyShell({
           'radial-gradient(ellipse 90% 60% at 50% 35%, rgba(139, 92, 246, 0.18) 0%, rgba(76, 29, 149, 0.08) 35%, transparent 70%), radial-gradient(ellipse 60% 40% at 80% 80%, rgba(91, 192, 240, 0.10) 0%, transparent 60%), radial-gradient(ellipse 50% 30% at 15% 90%, rgba(168, 85, 247, 0.10) 0%, transparent 60%)',
       }}
     >
-      <LobbyTopBar onBack={onBack} backDisabled={leaveSubmitting} />
+      <LobbyTopBar
+        onBack={onBack}
+        backDisabled={leaveSubmitting}
+        signOutNeedsConfirm={tableId !== 'fixture'}
+      />
 
       {/* Main fills remaining viewport height. `min-h-0` is critical:
           without it, flex children retain content-driven heights and

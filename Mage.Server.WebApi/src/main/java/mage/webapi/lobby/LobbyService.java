@@ -90,9 +90,10 @@ public final class LobbyService {
      * string fields. Without these a single host can churn a megabyte
      * password through PATCH; combined with no rate-limiting this
      * amplifies GC pressure. 64 chars is well above any real password.
+     * Mirrors {@code MatchOptionsBuilder.MAX_PASSWORD_LEN} which now
+     * caps the create-time path too (L8 review fix).
      */
     private static final int MAX_PASSWORD_LEN = 64;
-    private static final int MAX_TABLE_NAME_LEN = 80;
 
     public void setStreamBroadcaster(TableStreamBroadcaster broadcaster) {
         this.streamBroadcaster = broadcaster;
@@ -125,6 +126,18 @@ public final class LobbyService {
     }
 
     public WebTableListing listTables(UUID roomId) {
+        return listTables(roomId, null);
+    }
+
+    /**
+     * Slice L8 review (security HIGH #1) — viewer-aware overload.
+     * When {@code viewerUsername} is non-null, seat-level deck and
+     * commander info is redacted on passworded tables for viewers
+     * who aren't seated there. The route handler should always
+     * pass the caller's username; the no-arg overload is for
+     * test / internal paths.
+     */
+    public WebTableListing listTables(UUID roomId, String viewerUsername) {
         try {
             List<TableView> views = embedded.server().roomGetAllTables(roomId);
             // Slice 70-X — thread the TableManager through to the mapper
@@ -133,10 +146,13 @@ public final class LobbyService {
             // Slice L5 — also thread the SeatReadyTracker so per-seat
             // ready flags reflect the live opt-in state, not just the
             // L2 type-based default (true for AI / false for HUMAN).
+            // Slice L8 review — also thread the viewer username so the
+            // mapper can redact private-table seat info.
             return TableMapper.listing(
                     views == null ? List.of() : views,
                     embedded.managerFactory().tableManager(),
-                    readyTracker
+                    readyTracker,
+                    viewerUsername
             );
         } catch (MageException ex) {
             throw upstream("listing tables", ex);
@@ -527,6 +543,7 @@ public final class LobbyService {
             throw new WebApiException(409, "TABLE_NOT_EDITABLE",
                     "Table is in a state that does not accept deck submissions.");
         }
+        requireNotTournament(table);
         String username = embedded.managerFactory().userManager()
                 .getUser(userId)
                 .map(u -> u.getName())
@@ -627,6 +644,7 @@ public final class LobbyService {
             throw new WebApiException(409, "TABLE_NOT_EDITABLE",
                     "Table is not in a state where ready can be toggled.");
         }
+        requireNotTournament(table);
         // Verify the caller actually has a seat at this table —
         // otherwise the tracker would happily store a username with no
         // corresponding seat, and the start gate could be bypassed by
@@ -728,6 +746,7 @@ public final class LobbyService {
             throw new WebApiException(409, "TABLE_NOT_EDITABLE",
                     "Table is not in a state where settings can be edited.");
         }
+        requireNotTournament(table);
         // Apply the partial update. Each non-null field maps to its
         // upstream setter. Enum-bearing fields parse into their
         // upstream type so an invalid value lands as 400 BAD_REQUEST
@@ -807,6 +826,22 @@ public final class LobbyService {
                 readyTracker);
         broadcast(tableId);
         return result;
+    }
+
+    /**
+     * Slice L8 review (security HIGH #2) — reject lobby actions on
+     * tournament tables. The new lobby flow (Pre/EditSettingsModal,
+     * setSeatReady, swapDeck, startMatch via the new endpoint) was
+     * not designed for the tournament state machine; quietly running
+     * upstream calls against an {@code isTournament=true} table can
+     * leave it in an inconsistent state. Tournament + draft flows
+     * stay on the legacy table-list path.
+     */
+    private void requireNotTournament(Table table) {
+        if (table != null && table.isTournament()) {
+            throw new WebApiException(409, "WRONG_TABLE_KIND",
+                    "Tournament tables are not supported by the new lobby flow.");
+        }
     }
 
     private static <E extends Enum<E>> E parseEnum(Class<E> enumClass,

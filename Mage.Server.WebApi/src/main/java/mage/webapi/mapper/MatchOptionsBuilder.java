@@ -34,6 +34,19 @@ public final class MatchOptionsBuilder {
      */
     public static final int MAX_SEATS = 20;
 
+    /**
+     * Slice L8 review (security CRITICAL #1) — caps on user-supplied
+     * strings at table-create time. The L7 fix added a 64-char password
+     * cap to {@code LobbyService.updateMatchOptions} (PATCH path) but
+     * left the create path uncapped. A guest could POST a multi-megabyte
+     * password and pin the resulting MatchOptions in memory until the
+     * table was reaped. 64 chars is well above any real password.
+     * 80 chars is the same tableName cap that was declared in
+     * LobbyService but never enforced.
+     */
+    public static final int MAX_PASSWORD_LEN = 64;
+    public static final int MAX_TABLE_NAME_LEN = 80;
+
     private MatchOptionsBuilder() {
     }
 
@@ -50,11 +63,20 @@ public final class MatchOptionsBuilder {
 
         String tableName = (req.tableName() == null || req.tableName().isBlank())
                 ? defaultTableName : req.tableName().trim();
+        if (tableName.length() > MAX_TABLE_NAME_LEN) {
+            throw new WebApiException(400, "BAD_REQUEST",
+                    "tableName must be at most " + MAX_TABLE_NAME_LEN + " chars.");
+        }
+        String password = nullToEmpty(req.password());
+        if (password.length() > MAX_PASSWORD_LEN) {
+            throw new WebApiException(400, "BAD_REQUEST",
+                    "password must be at most " + MAX_PASSWORD_LEN + " chars.");
+        }
 
         MatchOptions options = new MatchOptions(tableName, req.gameType(), /* multiPlayer */ false);
         options.setDeckType(req.deckType());
         options.setWinsNeeded(req.winsNeeded());
-        options.setPassword(nullToEmpty(req.password()));
+        options.setPassword(password);
         options.setSkillLevel(parseEnum(SkillLevel.class, req.skillLevel(), SkillLevel.CASUAL, "skillLevel"));
         options.setMatchTimeLimit(parseEnum(MatchTimeLimit.class, req.matchTimeLimit(),
                 MatchTimeLimit.NONE, "matchTimeLimit"));

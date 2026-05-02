@@ -235,7 +235,11 @@ public final class WebApiServer {
         app.get("/api/server/main-room", ctx -> ctx.json(lobbyService.mainRoom()));
         app.get("/api/rooms/{roomId}/tables", ctx -> {
             UUID roomId = parseUuid(ctx.pathParam("roomId"), "roomId");
-            ctx.json(lobbyService.listTables(roomId));
+            // Slice L8 review (security HIGH #1) — pass the caller's
+            // username so per-seat deck/commander info is redacted on
+            // passworded tables the caller isn't seated at.
+            SessionEntry session = sessionFrom(ctx);
+            ctx.json(lobbyService.listTables(roomId, session.username()));
         });
         app.post("/api/rooms/{roomId}/tables", ctx -> {
             UUID roomId = parseUuid(ctx.pathParam("roomId"), "roomId");

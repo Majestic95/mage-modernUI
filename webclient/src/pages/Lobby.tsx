@@ -236,6 +236,7 @@ export function Lobby({ onEnterLobby }: Props = {}) {
           roomId={room.roomId}
           tableId={joinTarget.tableId}
           tableName={joinTarget.tableName}
+          passworded={joinTarget.passworded}
           onClose={() => setJoinTarget(null)}
           onJoined={() => {
             // Slice L9-prep — guests who join an existing table from

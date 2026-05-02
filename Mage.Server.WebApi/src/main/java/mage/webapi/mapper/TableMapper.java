@@ -49,33 +49,55 @@ public final class TableMapper {
     }
 
     public static WebTableListing listing(List<TableView> views) {
-        return listing(views, null, null);
+        return listing(views, null, null, null);
     }
 
     public static WebTableListing listing(List<TableView> views, TableManager tableManager) {
-        return listing(views, tableManager, null);
+        return listing(views, tableManager, null, null);
     }
 
     public static WebTableListing listing(List<TableView> views,
                                            TableManager tableManager,
                                            SeatReadyTracker readyTracker) {
+        return listing(views, tableManager, readyTracker, null);
+    }
+
+    /**
+     * Slice L8 review (security HIGH #1) — viewer-aware overload.
+     * When {@code viewerUsername} is non-null, per-table seat info
+     * (deckName, commanderName, deck stats) is redacted for any table
+     * where the viewer is not seated AND the table is passworded.
+     * Without this, GET /tables leaks pre-game commander identity
+     * + deck names of passworded-table seats to anyone authed.
+     */
+    public static WebTableListing listing(List<TableView> views,
+                                           TableManager tableManager,
+                                           SeatReadyTracker readyTracker,
+                                           String viewerUsername) {
         List<WebTable> tables = views.stream()
-                .map((TableView v) -> table(v, tableManager, readyTracker))
+                .map((TableView v) -> table(v, tableManager, readyTracker, viewerUsername))
                 .toList();
         return new WebTableListing(SchemaVersion.CURRENT, tables);
     }
 
     public static WebTable table(TableView v) {
-        return table(v, null, null);
+        return table(v, null, null, null);
     }
 
     public static WebTable table(TableView v, TableManager tableManager) {
-        return table(v, tableManager, null);
+        return table(v, tableManager, null, null);
     }
 
     public static WebTable table(TableView v,
                                   TableManager tableManager,
                                   SeatReadyTracker readyTracker) {
+        return table(v, tableManager, readyTracker, null);
+    }
+
+    public static WebTable table(TableView v,
+                                  TableManager tableManager,
+                                  SeatReadyTracker readyTracker,
+                                  String viewerUsername) {
         Objects.requireNonNull(v, "TableView is null");
         Match match = lookupMatch(v.getTableId(), tableManager);
         String deckType = emptyIfNull(v.getDeckType());
@@ -107,6 +129,29 @@ public final class TableMapper {
             range = opts.getRange() == null
                     ? "" : opts.getRange().name();
         }
+        // Slice L8 review (security HIGH #1) — visibility filter on
+        // seat-level deck/commander info for passworded tables. If the
+        // viewer is not seated at this table AND the table is
+        // passworded, redact the per-seat deck info before emitting.
+        // Empty viewerUsername (e.g. internal server-to-server call)
+        // skips the filter — only externally-driven callers pass a
+        // viewer.
+        boolean isPassworded = v.isPassworded();
+        boolean redactSeats = isPassworded
+                && viewerUsername != null && !viewerUsername.isBlank()
+                && !viewerSeated(v.getSeats(), viewerUsername);
+        List<WebSeat> seats;
+        if (v.getSeats() == null) {
+            seats = List.of();
+        } else {
+            seats = v.getSeats().stream()
+                    .map(s -> {
+                        WebSeat full = seat(s, match, deckSizeRequired,
+                                readyTracker, tableId, hostUsername);
+                        return redactSeats ? redact(full) : full;
+                    })
+                    .toList();
+        }
         return new WebTable(
                 tableId.toString(),
                 emptyIfNull(v.getTableName()),
@@ -117,21 +162,59 @@ public final class TableMapper {
                 hostUsername,
                 v.getSkillLevel() == null ? "" : v.getSkillLevel().name(),
                 v.isTournament(),
-                v.isPassworded(),
+                isPassworded,
                 v.getSpectatorsAllowed(),
                 v.isRated(),
                 v.isLimited(),
-                v.getSeats() == null ? List.of()
-                        : v.getSeats().stream()
-                                .map(s -> seat(s, match, deckSizeRequired,
-                                        readyTracker, tableId, hostUsername))
-                                .toList(),
+                seats,
                 matchTimeLimit,
                 freeMulligans,
                 mulliganType,
                 attackOption,
                 range
         );
+    }
+
+    /**
+     * Slice L8 review — strip deck / commander info from a seat for
+     * the visibility filter on passworded tables. Player name +
+     * occupancy + ready state stay visible (so the table list still
+     * reads "alice / open / open / open"); the deck-builder details
+     * are scrubbed.
+     */
+    private static WebSeat redact(WebSeat full) {
+        if (full == null) return null;
+        return new WebSeat(
+                full.playerName(),
+                full.playerType(),
+                full.occupied(),
+                "",   // commanderName redacted
+                0,    // commanderImageNumber redacted
+                full.ready(),
+                "",   // deckName redacted
+                0,    // deckSize redacted
+                full.deckSizeRequired()
+        );
+    }
+
+    /**
+     * Slice L8 review — viewer-seat check for the redaction gate.
+     * Mirrors the client's normalize-and-compare so a casing/
+     * whitespace mismatch on a username doesn't trigger inadvertent
+     * redaction for a legitimately seated viewer.
+     */
+    private static boolean viewerSeated(List<? extends mage.view.SeatView> seats,
+                                          String viewerUsername) {
+        if (seats == null) return false;
+        String norm = viewerUsername.trim().toLowerCase();
+        if (norm.isEmpty()) return false;
+        for (var s : seats) {
+            if (s == null) continue;
+            String name = s.getPlayerName();
+            if (name == null) continue;
+            if (norm.equals(name.trim().toLowerCase())) return true;
+        }
+        return false;
     }
 
     /**

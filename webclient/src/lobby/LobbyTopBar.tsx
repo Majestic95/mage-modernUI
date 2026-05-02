@@ -11,11 +11,34 @@ interface Props {
   onBack?: () => void;
   /** Disabled state while the leave/close request is in flight. */
   backDisabled?: boolean;
+  /**
+   * Slice L8 review (UX HIGH #6) — when true, sign-out shows a
+   * confirm dialog before tearing down the session (hosts in an
+   * active lobby would otherwise destroy other players' setups
+   * with one misclick).
+   */
+  signOutNeedsConfirm?: boolean;
 }
 
-export function LobbyTopBar({ onBack, backDisabled = false }: Props = {}) {
+export function LobbyTopBar({
+  onBack,
+  backDisabled = false,
+  signOutNeedsConfirm = false,
+}: Props = {}) {
   const session = useAuthStore((s) => s.session);
   const logout = useAuthStore((s) => s.logout);
+
+  const handleSignOut = () => {
+    if (signOutNeedsConfirm) {
+      // Browser-native confirm — small UX, but matches the
+      // existing "Delete table" confirm on the legacy flow.
+      const ok = window.confirm(
+        "Sign out and leave the lobby? This will close the table for everyone if you're the host.",
+      );
+      if (!ok) return;
+    }
+    void logout();
+  };
 
   return (
     <header
@@ -40,17 +63,15 @@ export function LobbyTopBar({ onBack, backDisabled = false }: Props = {}) {
             {session.username}
           </span>
         )}
-        <IconButton
-          ariaLabel="Settings"
-          data-testid="lobby-settings-button"
-          onClick={() => undefined}
-        >
-          <GearIcon />
-        </IconButton>
+        {/* Slice L8 review (UX HIGH #5) — the previous Settings gear
+            was a no-op (onClick={() => undefined}) and just confused
+            users. Hidden until there's a real destination (app prefs
+            / theme / volume). The host-only Edit Settings affordance
+            for the lobby itself lives in GameSettingsPanel. */}
         <IconButton
           ariaLabel="Sign out"
           data-testid="lobby-signout-button"
-          onClick={() => void logout()}
+          onClick={handleSignOut}
         >
           <SignOutIcon />
         </IconButton>
@@ -97,25 +118,6 @@ function BackChevron() {
       aria-hidden="true"
     >
       <polyline points="10,3 5,8 10,13" />
-    </svg>
-  );
-}
-
-function GearIcon() {
-  return (
-    <svg
-      width="18"
-      height="18"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.6"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <circle cx="12" cy="12" r="3" />
-      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
     </svg>
   );
 }

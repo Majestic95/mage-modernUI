@@ -32,6 +32,15 @@ interface State {
   table: WebTable | null;
   error: string | null;
   loading: boolean;
+  /**
+   * Slice L8 review fix — true when the WS hit a permanent close
+   * code (4404 table-not-found, 4001 auth, 4003 visibility/origin).
+   * The lobby renders a "Return to main menu" affordance instead of
+   * leaving the user stuck staring at "Table closed." with no way
+   * out. The activeLobbyId in localStorage still points at the dead
+   * table on reload; the parent's onLeave clears it.
+   */
+  permanentFailure: boolean;
 }
 
 const BACKOFF_INITIAL_MS = 500;
@@ -58,6 +67,7 @@ export function useTableStream(tableId: string): State {
     table: null,
     error: null,
     loading: true,
+    permanentFailure: false,
   });
 
   // Resolve the room once. Same one-shot as useLobbyTable.
@@ -76,6 +86,7 @@ export function useTableStream(tableId: string): State {
             table: null,
             error: err instanceof ApiError ? err.message : 'Failed to load room.',
             loading: false,
+            permanentFailure: false,
           });
         }
       }
@@ -123,6 +134,7 @@ export function useTableStream(tableId: string): State {
               ? '(reconnecting...)'
               : 'Table not found in the lobby listing — it may have been closed.',
             loading: false,
+            permanentFailure: false,
           });
         } catch {
           if (stoppedRef.current) return;
@@ -186,7 +198,12 @@ export function useTableStream(tableId: string): State {
         if (frame.method !== 'tableUpdate') return;
         const tableResult = webTableSchema.safeParse(frame.data);
         if (!tableResult.success) return;
-        setState({ table: tableResult.data, error: null, loading: false });
+        setState({
+          table: tableResult.data,
+          error: null,
+          loading: false,
+          permanentFailure: false,
+        });
       };
 
       socket.onclose = (ev) => {
@@ -194,7 +211,12 @@ export function useTableStream(tableId: string): State {
         // Permanent failure codes — stop reconnecting. 4404 means the
         // table got removed; auth codes mean the token is bad.
         if (ev.code === 4404) {
-          setState({ table: null, error: 'Table closed.', loading: false });
+          setState({
+            table: null,
+            error: 'Table closed.',
+            loading: false,
+            permanentFailure: true,
+          });
           stoppedRef.current = true;
           return;
         }
@@ -203,6 +225,7 @@ export function useTableStream(tableId: string): State {
             table: null,
             error: 'Connection rejected: ' + (ev.reason || 'auth failed'),
             loading: false,
+            permanentFailure: true,
           });
           stoppedRef.current = true;
           return;

@@ -10,6 +10,13 @@ interface Props {
   roomId: string;
   tableId: string;
   tableName: string;
+  /**
+   * Slice L8 review (UX HIGH #5) — when the table requires a
+   * password, the modal renders an input for it. Without this, the
+   * server returned 422 PASSWORD_REQUIRED with no recovery affordance
+   * and the user was stuck.
+   */
+  passworded?: boolean;
   onClose: () => void;
   onJoined: () => void;
 }
@@ -28,11 +35,12 @@ interface Props {
  * back to the original message-only path otherwise.
  */
 export function JoinTableModal({
-  roomId, tableId, tableName, onClose, onJoined,
+  roomId, tableId, tableName, passworded = false, onClose, onJoined,
 }: Props) {
   const session = useAuthStore((s) => s.session);
   const decks = useDecksStore((s) => s.decks);
   const [selectedId, setSelectedId] = useState<string>(decks[0]?.id ?? '');
+  const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [validationErrors, setValidationErrors] = useState<
@@ -69,7 +77,7 @@ export function JoinTableModal({
           method: 'POST',
           body: {
             name: session.username,
-            password: '',
+            password: passworded ? password : '',
             skill: 1,
             deck: toRequestBody(deck, session.username),
           },
@@ -130,6 +138,23 @@ export function JoinTableModal({
             selectedId={selectedId}
             onSelect={setSelectedId}
           />
+        )}
+
+        {passworded && (
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-zinc-400 uppercase tracking-wide">
+              Password
+            </span>
+            <input
+              type="password"
+              data-testid="join-password-input"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoFocus={decks.length > 0}
+              className="bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-zinc-100"
+              maxLength={64}
+            />
+          </label>
         )}
 
         {error && (
