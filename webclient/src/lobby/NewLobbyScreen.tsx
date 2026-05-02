@@ -76,7 +76,7 @@ export function NewLobbyScreen({ tableId }: Props) {
             column is intentionally vacant in L1. */}
         <section
           data-testid="lobby-top-row"
-          className="grid min-h-0 gap-3"
+          className="grid h-full min-h-0 gap-3"
           style={{
             gridTemplateColumns: 'minmax(220px, 260px) 1fr minmax(280px, 320px)',
           }}
@@ -95,7 +95,7 @@ export function NewLobbyScreen({ tableId }: Props) {
         {/* Bottom half — deck management + commander preview + start. */}
         <section
           data-testid="lobby-bottom-row"
-          className="grid min-h-0 gap-3"
+          className="grid h-full min-h-0 gap-3"
           style={{
             gridTemplateColumns:
               'minmax(240px, 280px) minmax(320px, 360px) 1fr minmax(220px, 280px)',

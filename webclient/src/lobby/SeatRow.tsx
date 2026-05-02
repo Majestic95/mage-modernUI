@@ -16,7 +16,7 @@ export function SeatRow({ seats, currentUsername }: Props) {
   return (
     <div
       data-testid="seat-row"
-      className="grid gap-3"
+      className="grid h-full min-h-0 gap-3"
       style={{
         gridTemplateColumns: `repeat(${seats.length}, minmax(0, 1fr))`,
       }}

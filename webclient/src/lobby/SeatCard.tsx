@@ -86,13 +86,14 @@ function CommanderCard({
       // Outer slot fills available row height; the inner card centers
       // and uses aspect-ratio to derive its width from height (capped
       // at the slot's own width).
-      className="flex min-h-0 w-full flex-1 items-center justify-center"
+      className="flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden"
     >
       <div
         className="relative h-full overflow-hidden rounded-lg"
         style={{
           aspectRatio: '5 / 7',
           maxWidth: '100%',
+          maxHeight: '100%',
           background: 'var(--color-surface-card)',
           boxShadow: 'var(--shadow-medium)',
           border: '1px solid var(--color-card-frame-default)',
