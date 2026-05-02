@@ -91,8 +91,13 @@ function mapSeat(
   index: number,
   webTable: WebTable,
 ): LobbySeat {
-  const isHost = webSeat.occupied
-    && webSeat.playerName === stripControllerSuffix(webTable.controllerName);
+  // Slice L7 polish — normalize before compare so a wire-side variation
+  // (controllerName carrying the post-suffix-strip "alice" while the
+  // seat playerName is "alice " with whitespace, or vice-versa) doesn't
+  // de-identify the host. Both ends are trimmed + case-preserved.
+  const hostName = normalizeName(stripControllerSuffix(webTable.controllerName));
+  const seatName = normalizeName(webSeat.playerName);
+  const isHost = webSeat.occupied && seatName === hostName && seatName !== '';
   const colorIdentity = inferColorIdentity(webSeat.commanderName);
   const artUrl = webSeat.commanderName
     ? scryfallByName(webSeat.commanderName, 'art_crop')
@@ -165,6 +170,16 @@ function stripControllerSuffix(raw: string): string {
   if (!raw) return '';
   const comma = raw.indexOf(', ');
   return comma >= 0 ? raw.substring(0, comma) : raw;
+}
+
+/**
+ * Slice L7 polish — canonicalize a player/controller name before
+ * equality compare. Trims and lowercases; lowercase is the safer
+ * comparison since xmage usernames are case-insensitive on registration
+ * but the wire echoes the user's chosen casing.
+ */
+function normalizeName(raw: string): string {
+  return raw.trim().toLowerCase();
 }
 
 function scryfallByName(name: string, kind: 'art_crop' | 'normal'): string {

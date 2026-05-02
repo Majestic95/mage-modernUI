@@ -30,7 +30,7 @@ import { ReadyButton } from './ReadyButton';
 import { SeatRow } from './SeatRow';
 import { StartGameButton } from './StartGameButton';
 import { useLiveDecks } from './useLiveDecks';
-import { useLobbyTable } from './useLobbyTable';
+import { useTableStream } from './useTableStream';
 import { webTableToLobby } from './webTableToLobby';
 import type { WebDeckCardInfo } from '../api/schemas';
 import { useDecksStore } from '../decks/store';
@@ -109,7 +109,10 @@ export function NewLobbyScreen({ tableId }: Props) {
 function LiveLobby({ tableId }: { tableId: string }) {
   const session = useAuthStore((s) => s.session);
   const username = session?.username ?? '';
-  const { table, error, loading } = useLobbyTable(tableId);
+  // Slice L7 — WebSocket push replaces the 5s polling. Same return
+  // shape so the rest of the component is unchanged. Polling lives on
+  // as fallback inside the hook for hard-failure paths.
+  const { table, error, loading } = useTableStream(tableId);
   const [roomId, setRoomId] = useState<string | null>(null);
 
   // Slice L3 — discover the singleton main room ID once. The PATCH
@@ -190,6 +193,18 @@ function LobbyShell({
   const [deckError, setDeckError] = useState<string | null>(null);
   const [startSubmitting, setStartSubmitting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
+  // Slice L7 polish — settings-change banner. Set by EditSettingsModal
+  // on save; auto-dismisses after 4s. The wire-side mechanism (server
+  // resets guest ready flags on PATCH) drives the actual state; the
+  // banner is purely UX feedback so users notice they need to re-ready.
+  const [settingsChangedNotice, setSettingsChangedNotice] = useState<
+    string | null
+  >(null);
+  useEffect(() => {
+    if (!settingsChangedNotice) return;
+    const t = setTimeout(() => setSettingsChangedNotice(null), 4000);
+    return () => clearTimeout(t);
+  }, [settingsChangedNotice]);
   // Live-mode deck data (slice L6). Fixture mode uses fixture.decks
   // unchanged. The hook always runs (rules-of-hooks); when not in
   // live mode, useLiveDecksHook=false and we ignore the result.
@@ -200,8 +215,14 @@ function LobbyShell({
   const selectedDeck = useLiveDecksHook
     ? live.selectedDeck
     : decks.find((d) => d.id === selectedDeckId) ?? null;
+  // Slice L7 polish — normalize playerName / username comparison so a
+  // wire-side variation (whitespace, casing) doesn't silently deny the
+  // user's seat identity, leaving them with a greyed Ready Up button.
+  const normalizedUsername = fixture.currentUsername.trim().toLowerCase();
   const localSeat =
-    fixture.seats.find((s) => s.playerName === fixture.currentUsername) ?? null;
+    fixture.seats.find(
+      (s) => s.playerName.trim().toLowerCase() === normalizedUsername,
+    ) ?? null;
   const isHost = localSeat?.isHost ?? false;
   const isLocalReady = localSeat?.ready ?? false;
   const readyCount = fixture.seats.filter((s) => s.occupied && s.ready).length;
@@ -400,7 +421,10 @@ function LobbyShell({
             onDeckSelect={(id) => void onSelectDeck(id)}
             disabled={deckSubmitting}
           />
-          <DeckPreviewPanel deck={selectedDeck} />
+          <DeckPreviewPanel
+            deck={selectedDeck}
+            statsLoading={useLiveDecksHook && live.selectedStatsLoading}
+          />
           <CommanderPreviewPanel deck={selectedDeck} />
           <div className="flex flex-col items-end justify-end gap-1">
             {isHost ? (
@@ -455,7 +479,32 @@ function LobbyShell({
           tableId={tableId}
           initial={editInitial}
           onClose={() => setEditOpen(false)}
+          onSaved={() =>
+            setSettingsChangedNotice(
+              'Settings changed — guests must re-ready up.',
+            )
+          }
         />
+      )}
+
+      {settingsChangedNotice && (
+        <div
+          data-testid="settings-change-notice"
+          role="status"
+          aria-live="polite"
+          className="pointer-events-none fixed inset-x-0 top-16 z-40 flex justify-center px-4"
+        >
+          <div
+            className="rounded-md border px-4 py-2 text-sm text-text-primary backdrop-blur-sm"
+            style={{
+              background: 'rgba(21, 34, 41, 0.92)',
+              borderColor: 'var(--color-status-warning)',
+              boxShadow: 'var(--shadow-medium)',
+            }}
+          >
+            {settingsChangedNotice}
+          </div>
+        </div>
       )}
     </div>
   );

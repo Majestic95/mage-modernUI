@@ -55,6 +55,15 @@ public final class LobbyService {
 
     private final EmbeddedServer embedded;
     private final SeatReadyTracker readyTracker;
+    /**
+     * Slice L7 — pushed-to on every mutation that changes the wire
+     * shape (ready toggles, deck swaps, seat join/leave, settings
+     * PATCH). Set via {@link #setStreamBroadcaster} after construction
+     * to avoid a circular dependency between {@code LobbyService} and
+     * {@code TableStreamHandler}. Null in test contexts; broadcast
+     * calls are no-ops when null.
+     */
+    private volatile TableStreamBroadcaster streamBroadcaster;
 
     public LobbyService(EmbeddedServer embedded) {
         this(embedded, new SeatReadyTracker());
@@ -66,9 +75,29 @@ public final class LobbyService {
         this.readyTracker = readyTracker;
     }
 
-    /** Visible-for-test accessor for the tracker. */
-    SeatReadyTracker readyTracker() {
+    /** Visible for {@link mage.webapi.ws.TableStreamHandler} + tests. */
+    public SeatReadyTracker readyTracker() {
         return readyTracker;
+    }
+
+    /** Slice L7 — minimal broadcast contract; satisfied by TableStreamHandler. */
+    public interface TableStreamBroadcaster {
+        void broadcast(UUID tableId);
+    }
+
+    public void setStreamBroadcaster(TableStreamBroadcaster broadcaster) {
+        this.streamBroadcaster = broadcaster;
+    }
+
+    private void broadcast(UUID tableId) {
+        TableStreamBroadcaster b = streamBroadcaster;
+        if (b != null && tableId != null) {
+            try {
+                b.broadcast(tableId);
+            } catch (RuntimeException ex) {
+                LOG.warn("Broadcast failed for table {}: {}", tableId, ex.getMessage());
+            }
+        }
     }
 
     /** Discover the singleton main lobby. */
@@ -276,6 +305,7 @@ public final class LobbyService {
             throw new WebApiException(422, "UPSTREAM_REJECTED",
                     "Server rejected the AI seat (table full, AI cap reached, etc.).");
         }
+        broadcast(tableId);
     }
 
     /**
@@ -364,6 +394,10 @@ public final class LobbyService {
         // Slice L5 — drop the ready-tracker entry; the table is gone.
         readyTracker.removeTable(tableId);
         LOG.info("Table removed: {} from room {}", tableId, roomId);
+        // Slice L7 — broadcast so any subscribers get a final close
+        // (the handler returns null from currentSnapshot for a removed
+        // table and closes the WS with code 4404).
+        broadcast(tableId);
     }
 
     public void leaveSeat(String upstreamSessionId, UUID roomId, UUID tableId) {
@@ -392,6 +426,7 @@ public final class LobbyService {
         if (username != null) {
             readyTracker.setReady(tableId, username, false);
         }
+        broadcast(tableId);
     }
 
     public void startMatch(String upstreamSessionId, UUID roomId, UUID tableId) {
@@ -419,6 +454,9 @@ public final class LobbyService {
         }
         // Slice L5 — game's begun; drop the tracker entry.
         readyTracker.removeTable(tableId);
+        // Slice L7 — broadcast so subscribers see state=DUELING and
+        // can transition to the game window.
+        broadcast(tableId);
     }
 
     /**
@@ -474,6 +512,7 @@ public final class LobbyService {
             joinTable(upstreamSessionId, roomId, tableId, name, skill, deck, password);
             // joinTable doesn't touch the ready tracker, so nothing
             // to reset here on first-take.
+            broadcast(tableId);
             return;
         }
 
@@ -518,6 +557,7 @@ public final class LobbyService {
         LOG.info("Deck swapped: table={} user={} room={} (name/skill/password "
                 + "only consumed on first-take path)",
                 tableId, username, roomId);
+        broadcast(tableId);
         // {@code name} / {@code skill} / {@code password} are used
         // only on the first-take path (joinTable above); harmless
         // unused parameters on the swap path. Java doesn't warn.
@@ -574,6 +614,7 @@ public final class LobbyService {
         readyTracker.setReady(tableId, username, ready);
         LOG.info("Seat ready toggled: table={} room={} user={} ready={}",
                 tableId, roomId, username, ready);
+        broadcast(tableId);
     }
 
     /**
@@ -709,9 +750,11 @@ public final class LobbyService {
         // the view from the live Table guarantees the response
         // reflects the mutation we just performed.
         TableView freshView = new TableView(table);
-        return TableMapper.table(freshView,
+        WebTable result = TableMapper.table(freshView,
                 embedded.managerFactory().tableManager(),
                 readyTracker);
+        broadcast(tableId);
+        return result;
     }
 
     private static <E extends Enum<E>> E parseEnum(Class<E> enumClass,

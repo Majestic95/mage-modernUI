@@ -9,11 +9,17 @@ import { ManaCurveHistogram } from './ManaCurveHistogram';
 
 interface Props {
   deck: LobbyDeck | null;
+  /**
+   * Slice L7 polish — true while card metadata for the selected deck
+   * is being fetched. Renders a "Calculating stats…" pill so zeros
+   * don't read as broken stats.
+   */
+  statsLoading?: boolean;
 }
 
 const PIP_ORDER: LobbyColor[] = ['W', 'U', 'B', 'R', 'G'];
 
-export function DeckPreviewPanel({ deck }: Props) {
+export function DeckPreviewPanel({ deck, statsLoading = false }: Props) {
   if (!deck) {
     return (
       <section
@@ -37,19 +43,32 @@ export function DeckPreviewPanel({ deck }: Props) {
         boxShadow: 'var(--shadow-low)',
       }}
     >
-      <header className="flex items-center justify-between">
+      <header className="flex items-center justify-between gap-2">
         <h2
-          className="truncate text-xs font-semibold uppercase text-text-primary"
+          className="min-w-0 flex-1 truncate text-xs font-semibold uppercase text-text-primary"
           style={{ letterSpacing: '0.14em' }}
           title={deck.name}
         >
           {deck.name}
         </h2>
+        {statsLoading && (
+          <span
+            data-testid="deck-stats-loading"
+            className="rounded-full px-2 py-0.5 text-[10px] uppercase text-text-secondary"
+            style={{
+              letterSpacing: '0.1em',
+              border: '1px solid var(--color-card-frame-default)',
+              background: 'var(--color-bg-elevated)',
+            }}
+          >
+            Calculating…
+          </span>
+        )}
         <button
           type="button"
           aria-label="Edit deck name"
           data-testid="deck-preview-edit-button"
-          className="text-text-secondary transition-colors hover:text-text-primary"
+          className="flex-shrink-0 text-text-secondary transition-colors hover:text-text-primary"
         >
           <PencilIcon />
         </button>

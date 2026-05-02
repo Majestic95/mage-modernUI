@@ -210,11 +210,11 @@ The original L1 ("trim CreateTableModal") was reordered: the trim depends on Edi
 
 6. **Slice L6 — My Decks + Deck Preview + deck change.** Wire `useDeckStore` to MyDecksPanel. Implement `computeStats` utility (mana curve, type counts, color pips, color identity). New `PUT /seat/deck` endpoint with debounce. Deck change broadcasts; seat un-readies.
 
-7. **Slice L7 — WS table stream.** Replace 5s polling with WS push. Ready toggles, deck changes, seat joins propagate <100ms.
+7. **Slice L7 — WS table stream + UX polish.** Replace 5s polling with WS push. Ready toggles, deck changes, seat joins propagate <100ms. Folds in deferred polish: optimistic seat-card update on deck pick (now natural with push), settings-change → guest-ready-reset notification banner, live-deck loading skeleton, local-user identity normalization for edge wire shapes.
 
 8. **Slice L8 — Back button + leave / close.** Host close-confirm modal. Guest leave-seat. Verify host close removes the table for everyone.
 
-9. **Slice L9 — Retire old flow.** Delete legacy CreateTableModal full-modal code. Update lobby table list to route joiners to the new lobby on join.
+9. **Slice L9 — Retire old flow + polish.** Delete legacy CreateTableModal full-modal code. Update lobby table list to route joiners to the new lobby on join. Per-error-code user-friendly messages (404 "table no longer exists", 403 "not seated", 422 "deck invalid").
 
 Total estimated commits: ~9. Each ~30–60 min review + deploy cycle.
 

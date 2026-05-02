@@ -33,6 +33,7 @@ import mage.webapi.mapper.VersionMapper;
 import mage.webapi.metrics.MetricsHandler;
 import mage.webapi.ws.GameStreamHandler;
 import mage.webapi.ws.RoomStreamHandler;
+import mage.webapi.ws.TableStreamHandler;
 import mage.webapi.ws.SpectatorStreamHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -82,6 +83,7 @@ public final class WebApiServer {
     private final AuthService authService;
     private final LobbyService lobbyService;
     private final DeckValidationService deckValidationService;
+    private final TableStreamHandler tableStreamHandler;
     private List<String> corsOrigins = List.of();
     private Javalin app;
 
@@ -91,6 +93,13 @@ public final class WebApiServer {
         this.authService = new AuthService(embedded, sessionStore);
         this.lobbyService = new LobbyService(embedded);
         this.deckValidationService = new DeckValidationService();
+        // Slice L7 — wire the per-table broadcaster. Constructed after
+        // LobbyService so the handler can read the same SeatReadyTracker
+        // when rebuilding WebTable snapshots; LobbyService gets a back-
+        // reference so its mutation methods can fire the broadcast.
+        this.tableStreamHandler = new TableStreamHandler(
+                authService, embedded, lobbyService.readyTracker());
+        lobbyService.setStreamBroadcaster(tableStreamHandler::broadcast);
     }
 
     public WebApiServer allowCorsOrigins(List<String> origins) {
@@ -144,6 +153,11 @@ public final class WebApiServer {
         app.ws("/api/games/{gameId}/spectate",
                 new SpectatorStreamHandler(authService, embedded));
         app.ws("/api/rooms/{roomId}/stream", new RoomStreamHandler(authService, embedded));
+        // Slice L7 (new-lobby-window) — per-table push stream that
+        // replaces the 5s polling on GET /tables for the new lobby
+        // screen. Pushes a {@link WebTable} snapshot on connect and
+        // on every mutation. Inbound surface is empty.
+        app.ws("/api/rooms/{roomId}/tables/{tableId}/stream", tableStreamHandler);
 
         app.start(port);
         LOG.info("WebApi listening on port {}", app.port());

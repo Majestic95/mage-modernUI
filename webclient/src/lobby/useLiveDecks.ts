@@ -71,6 +71,13 @@ async function fetchAll(names: string[], token: string): Promise<void> {
 interface UseLiveDecksResult {
   decks: LobbyDeck[];
   selectedDeck: LobbyDeck | null;
+  /**
+   * Slice L7 polish — true when the selected deck still has unresolved
+   * card metadata in flight. The deck-preview can show a skeleton /
+   * "calculating stats…" indicator instead of zeroes that look like
+   * a buggy curve.
+   */
+  selectedStatsLoading: boolean;
 }
 
 const SCRYFALL = 'https://api.scryfall.com/cards/named';
@@ -145,9 +152,22 @@ export function useLiveDecks(selectedDeckId: string | null): UseLiveDecksResult 
     [decks, selectedDeckId],
   );
 
+  // Slice L7 polish — derive loading from cache state rather than
+  // tracking it via setState (avoids the cascading-render lint).
+  // The deck is "loading stats" iff at least one of its unique card
+  // names is still missing from the cache.
+  const selectedStatsLoading = (() => {
+    if (!selectedSaved) return false;
+    for (const name of uniqueCardNames(selectedSaved)) {
+      if (!cardCache.has(name)) return true;
+    }
+    return false;
+  })();
+
   return {
     decks,
     selectedDeck,
+    selectedStatsLoading,
   };
 }
 
