@@ -1,15 +1,24 @@
 /**
- * Slice L1 — bottom-center-right large commander art preview.
- * Lore paragraph from the mockup is intentionally omitted (locked
- * decision #13 — xmage card DB has no commander lore).
+ * Commander preview — full card image on the left, Oracle text on
+ * the right. Pulls card details from Scryfall via {@link useScryfallCard}
+ * (cached per name). Falls back to the deck's local commanderArtUrl
+ * crop if Scryfall is unreachable so the panel never goes blank.
  */
+import { ManaCost, ManaText } from '../game/ManaCost';
 import type { LobbyDeck } from './fixtures';
+import { lobbyCardImageUrl } from './fixtures';
+import { useScryfallCard } from './useScryfallCard';
 
 interface Props {
   deck: LobbyDeck | null;
 }
 
 export function CommanderPreviewPanel({ deck }: Props) {
+  const commanderName = deck?.commanderName?.trim() ?? '';
+  const { card, loading, error } = useScryfallCard(
+    commanderName.length > 0 ? commanderName : null,
+  );
+
   return (
     <section
       data-testid="commander-preview-panel"
@@ -19,62 +28,233 @@ export function CommanderPreviewPanel({ deck }: Props) {
         boxShadow: 'var(--shadow-low)',
       }}
     >
-      <header>
+      <header className="flex items-baseline justify-between">
         <h2
           className="text-xs font-semibold uppercase text-text-primary"
           style={{ letterSpacing: '0.14em' }}
         >
           Commander Preview
         </h2>
+        {loading && (
+          <span
+            data-testid="commander-preview-loading"
+            className="text-[10px] uppercase text-text-secondary"
+            style={{ letterSpacing: '0.1em' }}
+          >
+            Loading…
+          </span>
+        )}
       </header>
 
-      {deck && deck.commanderArtUrl ? (
-        <div
-          className="relative min-h-0 flex-1 overflow-hidden rounded-lg"
-          style={{
-            background: 'var(--color-bg-elevated)',
-            border: '1px solid var(--color-card-frame-default)',
-            boxShadow: 'var(--shadow-medium)',
-          }}
-        >
-          <img
-            src={deck.commanderArtUrl}
-            alt={deck.commanderName}
-            loading="lazy"
-            referrerPolicy="no-referrer"
-            style={{
-              width: '100%',
-              height: '100%',
-              objectFit: 'cover',
-              display: 'block',
-            }}
-          />
-          {/* Soft bottom-fade for the name plate. */}
-          <div
-            className="pointer-events-none absolute inset-x-0 bottom-0"
-            style={{
-              height: '40%',
-              background:
-                'linear-gradient(to top, rgba(14, 26, 32, 0.9) 0%, rgba(14, 26, 32, 0) 100%)',
-            }}
-          />
-          <div className="absolute inset-x-0 bottom-0 px-4 pb-3">
-            <p className="text-base font-semibold text-text-primary">
-              {deck.commanderName}
-            </p>
-          </div>
-        </div>
+      {!deck || !commanderName ? (
+        <EmptyState />
       ) : (
         <div
-          className="flex min-h-0 flex-1 items-center justify-center rounded-lg text-sm text-text-muted"
-          style={{
-            background: 'var(--color-bg-elevated)',
-            border: '1px solid var(--color-card-frame-default)',
-          }}
+          className="grid min-h-0 flex-1 gap-3"
+          style={{ gridTemplateColumns: 'auto 1fr' }}
         >
-          No commander selected
+          <CardImage
+            // Prefer Scryfall's resolved image (handles double-faced
+            // / split / promo printings); fall back to our exact-name
+            // builder so a transient network failure still paints the
+            // card.
+            imageUrl={card?.imageUrl ?? lobbyCardImageUrl(commanderName)}
+            commanderName={commanderName}
+          />
+          <CardDetails
+            commanderName={commanderName}
+            card={card}
+            error={error}
+          />
         </div>
       )}
     </section>
+  );
+}
+
+function CardImage({
+  imageUrl,
+  commanderName,
+}: {
+  imageUrl: string;
+  commanderName: string;
+}) {
+  // Height-driven sizing — the card fills the panel's row height,
+  // width derived from the 5/7 aspect ratio so the proportions match
+  // a real Magic card. The width is naturally capped by the panel
+  // column width upstream (the container is `auto` in the grid above).
+  return (
+    <div className="flex h-full min-h-0 items-start">
+      <div
+        className="relative h-full overflow-hidden rounded-lg"
+        style={{
+          aspectRatio: '5 / 7',
+          background: 'var(--color-surface-card)',
+          boxShadow: 'var(--shadow-medium)',
+          border: '1px solid var(--color-card-frame-default)',
+        }}
+      >
+        <img
+          src={imageUrl}
+          alt={commanderName}
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          style={{
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            display: 'block',
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function CardDetails({
+  commanderName,
+  card,
+  error,
+}: {
+  commanderName: string;
+  card: ReturnType<typeof useScryfallCard>['card'];
+  error: string | null;
+}) {
+  return (
+    <div className="flex min-h-0 min-w-0 flex-col gap-2 overflow-y-auto">
+      <div className="flex items-baseline justify-between gap-2">
+        <h3
+          className="truncate text-base font-semibold text-text-primary"
+          title={card?.name ?? commanderName}
+        >
+          {card?.name ?? commanderName}
+        </h3>
+        {card?.manaCost && (
+          <ManaCost cost={card.manaCost} size="sm" />
+        )}
+      </div>
+
+      {card?.typeLine && (
+        <p className="text-xs uppercase text-text-secondary"
+           style={{ letterSpacing: '0.06em' }}>
+          {card.typeLine}
+        </p>
+      )}
+
+      {/* Oracle text — Scryfall returns one paragraph per line break.
+          Render each as its own <p> so abilities visually separate.
+          ManaText handles inline {W}/{2}/etc symbols. */}
+      {card?.oracleText && (
+        <div className="flex flex-col gap-1.5 text-sm leading-snug text-text-primary">
+          {card.oracleText.split('\n').map((para, i) => (
+            <p key={i}>
+              <ManaText text={para} />
+            </p>
+          ))}
+        </div>
+      )}
+
+      {card?.backFace && (
+        <BackFaceBlock face={card.backFace} />
+      )}
+
+      {(card?.power || card?.toughness || card?.loyalty) && (
+        <div
+          className="mt-auto flex items-center justify-end gap-3 border-t pt-2 text-sm font-semibold text-text-primary"
+          style={{ borderColor: 'var(--color-card-frame-default)' }}
+        >
+          {card?.loyalty && (
+            <span
+              data-testid="commander-loyalty"
+              className="rounded-md px-2 py-0.5 text-xs"
+              style={{
+                background: 'var(--color-bg-elevated)',
+                border: '1px solid var(--color-card-frame-default)',
+              }}
+            >
+              Loyalty {card.loyalty}
+            </span>
+          )}
+          {card?.power != null && card?.toughness != null && (
+            <span
+              data-testid="commander-pt"
+              className="rounded-md px-2 py-0.5 text-xs"
+              style={{
+                background: 'var(--color-bg-elevated)',
+                border: '1px solid var(--color-card-frame-default)',
+              }}
+            >
+              {card.power} / {card.toughness}
+            </span>
+          )}
+        </div>
+      )}
+
+      {error && !card && (
+        <p
+          data-testid="commander-preview-error"
+          role="alert"
+          className="text-xs text-status-warning"
+        >
+          Couldn't load card details ({error}).
+        </p>
+      )}
+    </div>
+  );
+}
+
+function BackFaceBlock({
+  face,
+}: {
+  face: NonNullable<ReturnType<typeof useScryfallCard>['card']>['backFace'];
+}) {
+  if (!face) return null;
+  return (
+    <div
+      data-testid="commander-back-face"
+      className="mt-1 rounded-md border p-2"
+      style={{
+        borderColor: 'var(--color-card-frame-default)',
+        background: 'rgba(14, 26, 32, 0.45)',
+      }}
+    >
+      <div className="flex items-baseline justify-between gap-2">
+        <h4 className="truncate text-sm font-semibold text-text-primary">
+          {face.name}
+        </h4>
+        {face.manaCost && <ManaCost cost={face.manaCost} size="sm" />}
+      </div>
+      {face.typeLine && (
+        <p
+          className="mt-0.5 text-[11px] uppercase text-text-secondary"
+          style={{ letterSpacing: '0.06em' }}
+        >
+          {face.typeLine}
+        </p>
+      )}
+      {face.oracleText && (
+        <div className="mt-1 flex flex-col gap-1 text-xs leading-snug text-text-primary">
+          {face.oracleText.split('\n').map((para, i) => (
+            <p key={i}>
+              <ManaText text={para} />
+            </p>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EmptyState() {
+  return (
+    <div
+      className="flex min-h-0 flex-1 items-center justify-center rounded-lg text-sm text-text-muted"
+      style={{
+        background: 'var(--color-bg-elevated)',
+        border: '1px solid var(--color-card-frame-default)',
+      }}
+    >
+      No commander selected
+    </div>
   );
 }

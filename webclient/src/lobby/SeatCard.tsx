@@ -36,7 +36,12 @@ export function SeatCard({ seat, isCurrentUser }: Props) {
           colorIdentity={seat.colorIdentity}
           isHost={seat.isHost}
           isReady={seat.ready}
-          isActive={false}
+          // Lobby has no "active turn" concept, but we want every
+          // seat's halo to feel alive — so set isActive=true so
+          // multicolor halos rotate (12s/rev) and the bloom pulses
+          // (1.9s breathe). Mirrors the in-game commander halo
+          // exactly per user direction 2026-05-02.
+          isActive={true}
           size="medium"
         />
         <div className="mt-0.5 text-center">
