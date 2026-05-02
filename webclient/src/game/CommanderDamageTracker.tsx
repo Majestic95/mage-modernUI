@@ -4,6 +4,7 @@ import { REDESIGN } from '../featureFlags';
 import { isCommanderEntry } from './commanderPredicates';
 import { LifeCounter } from './LifeCounter';
 import { PlayerPortrait } from './PlayerPortrait';
+import { useGameStore } from './store';
 
 /**
  * Slice 70-F (ADR 0011 D5) — manual commander-damage tracker per
@@ -55,20 +56,42 @@ function storageKey(gameId: string, opponentId: string, commanderId: string): st
 }
 
 export function CommanderDamageTracker({ gameId, gameView, opponents }: Props) {
-  // Build the row list from each opponent's command zone. Filter
-  // for entries with kind="commander" (excludes emblems / dungeons /
-  // planes per slice 70-D's WebCommandObjectView discriminator).
-  const rows: CommanderRow[] = opponents.flatMap((opp) =>
-    opp.commandList
-      .filter(isCommanderEntry)
-      .map((co) => ({
-        opponentId: opp.playerId,
-        opponentName: opp.name || 'Unknown',
-        commanderId: co.id,
-        commanderName: co.name || 'Unknown commander',
-        opponent: opp,
-      })),
+  // Bug fix (2026-05-02) — same `commandList` leaky-abstraction
+  // defect documented in `xmage_commandlist_leaky.md`. The wire's
+  // commandList empties when the commander leaves the command zone
+  // (cast → battlefield), so a tracker reading only from live
+  // commandList loses the row the moment the opponent's commander
+  // gets cast — exactly when damage tracking is most relevant.
+  // Fall back to the store's accumulated commanderSnapshots, which
+  // remember every commander seen across the whole game.
+  const commanderSnapshots = useGameStore(
+    (s) => s.commanderSnapshots ?? {},
   );
+
+  // Build the row list from each opponent's commander roster. Prefer
+  // live commandList (handles partner pairings appearing mid-game)
+  // and fill in from snapshot for commanders that have left the
+  // command zone. Dedupe by (opponentId, commanderName) so a
+  // re-cast doesn't double up.
+  const rows: CommanderRow[] = opponents.flatMap((opp) => {
+    const liveCommanders = opp.commandList.filter(isCommanderEntry);
+    const snapshotCommanders = (commanderSnapshots[opp.playerId] ?? [])
+      .filter(isCommanderEntry);
+    const seenNames = new Set<string>();
+    const merged: typeof liveCommanders = [];
+    for (const co of [...liveCommanders, ...snapshotCommanders]) {
+      if (seenNames.has(co.name)) continue;
+      seenNames.add(co.name);
+      merged.push(co);
+    }
+    return merged.map((co) => ({
+      opponentId: opp.playerId,
+      opponentName: opp.name || 'Unknown',
+      commanderId: co.id,
+      commanderName: co.name || 'Unknown commander',
+      opponent: opp,
+    }));
+  });
 
   if (rows.length === 0) {
     return null;
