@@ -41,15 +41,15 @@ export function LobbyHeader({
   return (
     <header
       data-testid="lobby-header"
-      className="grid items-end gap-4 pt-4"
+      className="grid items-center gap-4 pt-2"
       style={{ gridTemplateColumns: '1fr auto 1fr' }}
     >
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-0.5">
         <h1
           data-testid="lobby-title"
-          className="font-semibold uppercase leading-tight"
+          className="font-semibold uppercase leading-none"
           style={{
-            fontSize: 'var(--font-size-display)',
+            fontSize: 'clamp(20px, 1.6vw + 0.5rem, 28px)',
             letterSpacing: '0.04em',
           }}
         >
@@ -58,7 +58,7 @@ export function LobbyHeader({
         </h1>
         <p
           data-testid="lobby-subtitle"
-          className="text-sm text-text-secondary"
+          className="text-xs text-text-secondary"
           style={{ letterSpacing: '0.02em' }}
         >
           {modeLabel} · {playerCount} Players
@@ -96,7 +96,7 @@ function StatusPill({
       data-testid="lobby-status-pill"
       data-all-ready={allReady || undefined}
       className={
-        'flex flex-col items-center gap-0.5 rounded-xl border px-6 py-3 text-center backdrop-blur-sm ' +
+        'flex flex-col items-center gap-0.5 rounded-xl border px-5 py-2 text-center backdrop-blur-sm ' +
         accentClass
       }
       style={{
@@ -105,12 +105,12 @@ function StatusPill({
       }}
     >
       <span
-        className="text-xs font-semibold uppercase"
+        className="text-[11px] font-semibold uppercase"
         style={{ letterSpacing: '0.12em' }}
       >
         {label}
       </span>
-      <span className="text-sm text-text-secondary">
+      <span className="text-xs text-text-secondary">
         <span className="font-semibold text-text-primary">{readyCount}</span> /{' '}
         {totalSeats} Players Ready
       </span>

@@ -25,8 +25,10 @@ export function ManaCurveHistogram({ curve }: Props) {
   const safeCurve = ensureLength(curve, 8);
   const max = Math.max(1, ...safeCurve);
 
+  // Use the SVG viewBox for aspect-ratio scaling — the rendered
+  // width matches the parent container, height scales proportionally.
   const width = 240;
-  const height = 78;
+  const height = 70;
   const labelHeight = 12;
   const valueHeight = 14;
   const barAreaHeight = height - labelHeight - valueHeight;
@@ -35,13 +37,15 @@ export function ManaCurveHistogram({ curve }: Props) {
   const barWidth = slotWidth - 6;
 
   return (
-    <div className="flex flex-col items-start gap-1">
+    <div className="flex w-full flex-col items-start gap-1">
       <svg
         data-testid="mana-curve-histogram"
-        width={width}
-        height={height}
+        viewBox={`0 0 ${width} ${height}`}
+        preserveAspectRatio="xMidYMid meet"
         role="img"
         aria-label="Mana curve histogram"
+        className="w-full"
+        style={{ maxHeight: 80 }}
       >
         {safeCurve.map((value, i) => {
           const barHeight = (value / max) * barAreaHeight;

@@ -31,7 +31,7 @@ export function DeckPreviewPanel({ deck }: Props) {
   return (
     <section
       data-testid="deck-preview-panel"
-      className="flex flex-col gap-3 rounded-xl border border-card-frame-default/60 p-4"
+      className="flex h-full min-h-0 flex-col gap-2 overflow-hidden rounded-xl border border-card-frame-default/60 p-3"
       style={{
         background: 'rgba(21, 34, 41, 0.85)',
         boxShadow: 'var(--shadow-low)',
@@ -55,13 +55,16 @@ export function DeckPreviewPanel({ deck }: Props) {
         </button>
       </header>
 
-      <div className="grid items-start gap-3" style={{ gridTemplateColumns: 'auto 1fr' }}>
+      <div
+        className="grid min-h-0 flex-1 items-start gap-3"
+        style={{ gridTemplateColumns: 'auto 1fr' }}
+      >
         <CommanderCardArt
           name={deck.commanderName}
           imageUrl={lobbyCardImageUrl(deck.commanderName)}
         />
 
-        <div className="flex flex-col gap-2">
+        <div className="flex min-h-0 flex-col gap-2">
           <CardCountBlock
             count={deck.mainboardSize}
             required={deck.requiredSize}
@@ -71,7 +74,7 @@ export function DeckPreviewPanel({ deck }: Props) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-x-3 gap-y-2 pt-1">
+      <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
         <TypeStat
           label="Creatures"
           count={deck.typeCounts.creatures}
@@ -95,7 +98,7 @@ export function DeckPreviewPanel({ deck }: Props) {
       </div>
 
       <div
-        className="mt-1 flex items-center justify-between gap-2 border-t pt-3"
+        className="flex items-center justify-between gap-2 border-t pt-2"
         style={{ borderColor: 'var(--color-card-frame-default)' }}
       >
         <ColorPipRow colors={deck.colorIdentity} size="md" />
@@ -112,29 +115,34 @@ function CommanderCardArt({
   name: string;
   imageUrl: string;
 }) {
+  // Height-driven sizing — fills the parent's row height, derives
+  // width from aspect-ratio. Caps at a sensible width so a tall
+  // narrow viewport doesn't make the card preview comically wide.
   return (
-    <div
-      className="relative overflow-hidden rounded-lg"
-      style={{
-        width: 110,
-        aspectRatio: '5 / 7',
-        background: 'var(--color-surface-card)',
-        boxShadow: 'var(--shadow-medium)',
-        border: '1px solid var(--color-card-frame-default)',
-      }}
-    >
-      <img
-        src={imageUrl}
-        alt={name}
-        loading="lazy"
-        referrerPolicy="no-referrer"
+    <div className="flex h-full min-h-0 items-start">
+      <div
+        className="relative h-full overflow-hidden rounded-lg"
         style={{
-          width: '100%',
-          height: '100%',
-          objectFit: 'cover',
-          display: 'block',
+          aspectRatio: '5 / 7',
+          maxWidth: 130,
+          background: 'var(--color-surface-card)',
+          boxShadow: 'var(--shadow-medium)',
+          border: '1px solid var(--color-card-frame-default)',
         }}
-      />
+      >
+        <img
+          src={imageUrl}
+          alt={name}
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          style={{
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            display: 'block',
+          }}
+        />
+      </div>
     </div>
   );
 }

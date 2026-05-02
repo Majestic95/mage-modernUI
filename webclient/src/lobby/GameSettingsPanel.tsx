@@ -20,7 +20,7 @@ export function GameSettingsPanel({ options, isHost }: Props) {
   return (
     <aside
       data-testid="game-settings-panel"
-      className="flex flex-col gap-4 rounded-xl border border-card-frame-default/60 p-5"
+      className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto rounded-xl border border-card-frame-default/60 p-4"
       style={{
         background: 'rgba(21, 34, 41, 0.85)',
         boxShadow: 'var(--shadow-low)',
@@ -33,7 +33,7 @@ export function GameSettingsPanel({ options, isHost }: Props) {
         Game Settings
       </h2>
 
-      <dl className="flex flex-col gap-3 text-sm">
+      <dl className="flex flex-col gap-2 text-sm">
         <SettingRow label="Format" value={FORMAT_DISPLAY[options.format]} />
         <SettingRow label="Starting Life" value={String(options.startingLife)} />
         {options.format === 'commander' && (
@@ -50,7 +50,7 @@ export function GameSettingsPanel({ options, isHost }: Props) {
         <button
           type="button"
           data-testid="edit-settings-button"
-          className="mt-2 rounded-md border border-card-frame-default/80 px-4 py-2 text-sm font-medium text-text-primary transition-colors hover:border-accent-primary/60 hover:bg-surface-card-hover"
+          className="mt-auto rounded-md border border-card-frame-default/80 px-4 py-2 text-sm font-medium text-text-primary transition-colors hover:border-accent-primary/60 hover:bg-surface-card-hover"
         >
           Edit Settings
         </button>

@@ -19,7 +19,7 @@ export function SeatCard({ seat, isCurrentUser }: Props) {
       data-host={seat.isHost || undefined}
       data-ready={seat.ready || undefined}
       data-current={isCurrentUser || undefined}
-      className="relative flex flex-col items-center gap-3 rounded-xl border p-4 transition-colors"
+      className="relative flex h-full min-h-0 flex-col items-center gap-2 rounded-xl border p-3 transition-colors"
       style={{
         background: 'rgba(21, 34, 41, 0.85)',
         borderColor: isCurrentUser
@@ -28,8 +28,8 @@ export function SeatCard({ seat, isCurrentUser }: Props) {
         boxShadow: 'var(--shadow-low)',
       }}
     >
-      {/* Portrait + name block */}
-      <div className="flex w-full flex-col items-center gap-1.5 pt-2">
+      {/* Portrait + name block — fixed natural height. */}
+      <div className="flex w-full flex-col items-center gap-1 pt-1">
         <LobbySeatPortrait
           name={seat.playerName}
           artUrl={seat.commanderArtUrl}
@@ -37,24 +37,30 @@ export function SeatCard({ seat, isCurrentUser }: Props) {
           isHost={seat.isHost}
           isReady={seat.ready}
           isActive={false}
+          size="medium"
         />
-        <div className="mt-1 text-center">
-          <p className="text-base font-semibold leading-tight text-text-primary">
+        <div className="mt-0.5 text-center">
+          <p className="text-sm font-semibold leading-tight text-text-primary">
             {seat.playerName}
           </p>
           {seat.subtitle && (
-            <p className="text-xs text-text-secondary">{seat.subtitle}</p>
+            <p className="text-xs leading-tight text-text-secondary">
+              {seat.subtitle}
+            </p>
           )}
         </div>
       </div>
 
-      {/* Commander card */}
+      {/* Commander card — flex-1 takes remaining row height; its width
+          is then derived from the height via aspect-ratio, capped at
+          the column width. This is the height-driven sizing pattern
+          that lets the seat row fit any viewport. */}
       <CommanderCard
         cardImageUrl={seat.commanderCardImageUrl}
         commanderName={seat.commanderName}
       />
 
-      {/* Deck plate */}
+      {/* Deck plate — fixed natural height. */}
       <DeckPlate
         deckName={seat.deckName}
         size={seat.deckSize}
@@ -62,7 +68,7 @@ export function SeatCard({ seat, isCurrentUser }: Props) {
         artUrl={seat.commanderArtUrl}
       />
 
-      {/* Ready status */}
+      {/* Ready status — fixed natural height. */}
       <ReadyStatus ready={seat.ready} />
     </div>
   );
@@ -77,32 +83,40 @@ function CommanderCard({
 }) {
   return (
     <div
-      className="relative w-full overflow-hidden rounded-lg"
-      style={{
-        aspectRatio: '5 / 7',
-        background: 'var(--color-surface-card)',
-        boxShadow: 'var(--shadow-medium)',
-        border: '1px solid var(--color-card-frame-default)',
-      }}
+      // Outer slot fills available row height; the inner card centers
+      // and uses aspect-ratio to derive its width from height (capped
+      // at the slot's own width).
+      className="flex min-h-0 w-full flex-1 items-center justify-center"
     >
-      {cardImageUrl ? (
-        <img
-          src={cardImageUrl}
-          alt={commanderName}
-          loading="lazy"
-          referrerPolicy="no-referrer"
-          style={{
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-            display: 'block',
-          }}
-        />
-      ) : (
-        <div className="flex h-full w-full items-center justify-center p-3 text-center text-xs text-text-muted">
-          {commanderName || 'No commander selected'}
-        </div>
-      )}
+      <div
+        className="relative h-full overflow-hidden rounded-lg"
+        style={{
+          aspectRatio: '5 / 7',
+          maxWidth: '100%',
+          background: 'var(--color-surface-card)',
+          boxShadow: 'var(--shadow-medium)',
+          border: '1px solid var(--color-card-frame-default)',
+        }}
+      >
+        {cardImageUrl ? (
+          <img
+            src={cardImageUrl}
+            alt={commanderName}
+            loading="lazy"
+            referrerPolicy="no-referrer"
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              display: 'block',
+            }}
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center p-3 text-center text-xs text-text-muted">
+            {commanderName || 'No commander selected'}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -122,11 +136,11 @@ function DeckPlate({
   return (
     <div
       data-testid="seat-deck-plate"
-      className="flex w-full items-center gap-3 rounded-lg border border-card-frame-default/60 p-2"
+      className="flex w-full items-center gap-2 rounded-lg border border-card-frame-default/60 p-1.5"
       style={{ background: 'var(--color-surface-card)' }}
     >
       <div
-        className="h-10 w-10 flex-shrink-0 overflow-hidden rounded-md"
+        className="h-8 w-8 flex-shrink-0 overflow-hidden rounded-md"
         style={{ background: 'var(--color-bg-elevated)' }}
       >
         {artUrl ? (
@@ -144,16 +158,16 @@ function DeckPlate({
           />
         ) : null}
       </div>
-      <div className="flex min-w-0 flex-col">
+      <div className="flex min-w-0 flex-col leading-tight">
         <p
-          className="truncate text-sm font-medium text-text-primary"
+          className="truncate text-xs font-medium text-text-primary"
           title={deckName}
         >
           {deckName}
         </p>
         <p
           className={
-            'text-xs ' +
+            'text-[10px] ' +
             (valid ? 'text-text-secondary' : 'text-status-warning')
           }
         >

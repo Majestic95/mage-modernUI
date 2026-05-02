@@ -25,7 +25,7 @@ export function StartGameButton({ enabled, isHost, allReady }: Props) {
         data-testid="start-game-button"
         data-enabled={enabled || undefined}
         disabled={!enabled}
-        className="relative rounded-xl px-12 py-4 text-2xl font-semibold uppercase tracking-wide transition-all"
+        className="relative rounded-xl px-10 py-3 text-xl font-semibold uppercase tracking-wide transition-all"
         style={{
           background: enabled
             ? 'linear-gradient(180deg, #FF8C42 0%, #E5602A 100%)'

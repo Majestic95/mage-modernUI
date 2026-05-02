@@ -6,8 +6,8 @@ export function OpenSeatCard() {
   return (
     <div
       data-testid="open-seat-card"
-      className="relative flex flex-col items-center justify-center gap-4 rounded-xl border border-dashed border-card-frame-default/80 p-4 text-center"
-      style={{ background: 'rgba(21, 34, 41, 0.45)', minHeight: 460 }}
+      className="relative flex h-full min-h-0 flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-card-frame-default/80 p-4 text-center"
+      style={{ background: 'rgba(21, 34, 41, 0.45)' }}
     >
       <div
         className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-dashed"

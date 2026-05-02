@@ -41,7 +41,7 @@ export function NewLobbyScreen({ tableId }: Props) {
   return (
     <div
       data-testid="new-lobby-screen"
-      className="relative flex min-h-screen flex-col overflow-hidden bg-bg-base text-text-primary"
+      className="relative flex h-screen flex-col overflow-hidden bg-bg-base text-text-primary"
       style={{
         // Subtle nebula gradient backdrop matching the in-game battlefield
         // ambient. Composited from a deep teal-purple radial spotlight
@@ -52,7 +52,18 @@ export function NewLobbyScreen({ tableId }: Props) {
     >
       <LobbyTopBar />
 
-      <main className="flex flex-1 flex-col gap-5 px-6 pb-6">
+      {/* Main fills remaining viewport height. `min-h-0` is critical:
+          without it, flex children retain content-driven heights and
+          the page overflows the viewport. The grid splits the space
+          between header (auto) and the two content rows; the rows
+          share the remaining space at 1.15:1 ratio (matching mockup
+          where seats > decks). */}
+      <main
+        className="grid min-h-0 flex-1 gap-3 px-5 pb-4"
+        style={{
+          gridTemplateRows: 'auto minmax(0, 1.15fr) minmax(0, 1fr)',
+        }}
+      >
         <LobbyHeader
           format={fixture.matchOptions.format}
           mode={fixture.matchOptions.mode}
@@ -65,9 +76,9 @@ export function NewLobbyScreen({ tableId }: Props) {
             column is intentionally vacant in L1. */}
         <section
           data-testid="lobby-top-row"
-          className="grid gap-5"
+          className="grid min-h-0 gap-3"
           style={{
-            gridTemplateColumns: 'minmax(260px, 280px) 1fr minmax(300px, 340px)',
+            gridTemplateColumns: 'minmax(220px, 260px) 1fr minmax(280px, 320px)',
           }}
         >
           <GameSettingsPanel
@@ -84,10 +95,10 @@ export function NewLobbyScreen({ tableId }: Props) {
         {/* Bottom half — deck management + commander preview + start. */}
         <section
           data-testid="lobby-bottom-row"
-          className="grid flex-1 gap-5"
+          className="grid min-h-0 gap-3"
           style={{
             gridTemplateColumns:
-              'minmax(280px, 300px) minmax(360px, 400px) 1fr minmax(280px, 320px)',
+              'minmax(240px, 280px) minmax(320px, 360px) 1fr minmax(220px, 280px)',
           }}
         >
           <MyDecksPanel

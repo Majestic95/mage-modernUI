@@ -15,7 +15,7 @@ export function MyDecksPanel({ decks, selectedDeckId }: Props) {
   return (
     <aside
       data-testid="my-decks-panel"
-      className="flex flex-col gap-3 rounded-xl border border-card-frame-default/60 p-4"
+      className="flex h-full min-h-0 flex-col gap-2 rounded-xl border border-card-frame-default/60 p-3"
       style={{
         background: 'rgba(21, 34, 41, 0.85)',
         boxShadow: 'var(--shadow-low)',
@@ -32,7 +32,7 @@ export function MyDecksPanel({ decks, selectedDeckId }: Props) {
 
       <ul
         data-testid="my-decks-list"
-        className="flex flex-1 flex-col gap-1.5 overflow-y-auto"
+        className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto"
       >
         {decks.map((deck) => (
           <DeckRow
@@ -46,7 +46,7 @@ export function MyDecksPanel({ decks, selectedDeckId }: Props) {
       <button
         type="button"
         data-testid="my-decks-new-deck-button"
-        className="rounded-md border border-card-frame-default/80 px-3 py-2 text-sm font-medium text-text-secondary transition-colors hover:border-accent-primary/60 hover:text-text-primary"
+        className="rounded-md border border-card-frame-default/80 px-3 py-1.5 text-sm font-medium text-text-secondary transition-colors hover:border-accent-primary/60 hover:text-text-primary"
       >
         New Deck
       </button>
@@ -59,7 +59,7 @@ function DeckRow({ deck, selected }: { deck: LobbyDeck; selected: boolean }) {
     <li
       data-testid="my-decks-row"
       data-selected={selected || undefined}
-      className="flex cursor-pointer items-center gap-2.5 rounded-md border p-2 transition-colors"
+      className="flex cursor-pointer items-center gap-2 rounded-md border p-1.5 transition-colors"
       style={{
         background: selected
           ? 'var(--color-surface-card-active)'
@@ -70,7 +70,7 @@ function DeckRow({ deck, selected }: { deck: LobbyDeck; selected: boolean }) {
       }}
     >
       <div
-        className="h-10 w-10 flex-shrink-0 overflow-hidden rounded-md"
+        className="h-8 w-8 flex-shrink-0 overflow-hidden rounded-md"
         style={{ background: 'var(--color-bg-elevated)' }}
       >
         {deck.commanderArtUrl ? (
@@ -88,11 +88,11 @@ function DeckRow({ deck, selected }: { deck: LobbyDeck; selected: boolean }) {
           />
         ) : null}
       </div>
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <p className="truncate text-sm font-medium text-text-primary">
+      <div className="flex min-w-0 flex-1 flex-col leading-tight">
+        <p className="truncate text-xs font-medium text-text-primary">
           {deck.name}
         </p>
-        <p className="truncate text-xs text-text-secondary">
+        <p className="truncate text-[10px] text-text-secondary">
           {deck.commanderName}
         </p>
       </div>

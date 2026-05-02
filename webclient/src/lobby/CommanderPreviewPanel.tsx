@@ -13,7 +13,7 @@ export function CommanderPreviewPanel({ deck }: Props) {
   return (
     <section
       data-testid="commander-preview-panel"
-      className="flex flex-col gap-3 rounded-xl border border-card-frame-default/60 p-4"
+      className="flex h-full min-h-0 flex-col gap-2 rounded-xl border border-card-frame-default/60 p-3"
       style={{
         background: 'rgba(21, 34, 41, 0.85)',
         boxShadow: 'var(--shadow-low)',
@@ -30,12 +30,11 @@ export function CommanderPreviewPanel({ deck }: Props) {
 
       {deck && deck.commanderArtUrl ? (
         <div
-          className="relative flex-1 overflow-hidden rounded-lg"
+          className="relative min-h-0 flex-1 overflow-hidden rounded-lg"
           style={{
             background: 'var(--color-bg-elevated)',
             border: '1px solid var(--color-card-frame-default)',
             boxShadow: 'var(--shadow-medium)',
-            minHeight: 220,
           }}
         >
           <img
@@ -67,11 +66,10 @@ export function CommanderPreviewPanel({ deck }: Props) {
         </div>
       ) : (
         <div
-          className="flex flex-1 items-center justify-center rounded-lg text-sm text-text-muted"
+          className="flex min-h-0 flex-1 items-center justify-center rounded-lg text-sm text-text-muted"
           style={{
             background: 'var(--color-bg-elevated)',
             border: '1px solid var(--color-card-frame-default)',
-            minHeight: 220,
           }}
         >
           No commander selected
