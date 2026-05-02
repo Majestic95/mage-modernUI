@@ -102,14 +102,17 @@ export function PrimaryButton({
 export function SecondaryButton({
   onClick,
   children,
+  'data-testid': testId,
 }: {
   onClick: () => void;
   children: React.ReactNode;
+  'data-testid'?: string;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      data-testid={testId}
       className="px-4 py-2 rounded text-zinc-300 hover:bg-zinc-800"
     >
       {children}

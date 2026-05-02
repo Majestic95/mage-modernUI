@@ -125,6 +125,49 @@ export function TargetDialog({ dialog, stream, clearDialog }: ContentProps) {
           </SecondaryButton>
         </Buttons>
       )}
+      {/*
+        Bug fix (2026-05-02) — defensive escape hatch for a mandatory
+        gameTarget (flag=true) with NO legal targets in either
+        cardsView1 or the resolvable targets list. Per CR 603.3c, a
+        triggered ability with no legal target on resolution should
+        be REMOVED automatically by the engine — but xmage's upstream
+        engine occasionally fires the prompt anyway (most commonly
+        Spell Queller's exiled-card-returns trigger after the
+        creature is silenced before resolution). Without this button
+        the user is stuck; the engine waits forever for a selection
+        from an empty set.
+
+        We send the all-zeros UUID and tear down the dialog locally.
+        If upstream re-fires the same prompt, it remounts naturally
+        on the next frame (no protocol divergence). The button is
+        labeled "Forfeit (no legal targets)" to communicate that this
+        is a stuck-state escape — not a normal cancel.
+
+        Eligible only when:
+          - dialog is mandatory (flag=true)
+          - cardsView1 is empty (no card-shaped legal options)
+          - resolvedTargets is empty (no player / synthetic targets)
+        Otherwise the user has a legitimate choice they should make.
+      */}
+      {!hasCards &&
+        resolvedTargets.length === 0 &&
+        dialog.data.flag && (
+          <Buttons>
+            <SecondaryButton
+              data-testid="target-forfeit"
+              onClick={() => {
+                stream?.sendPlayerResponse(
+                  dialog.messageId,
+                  'uuid',
+                  '00000000-0000-0000-0000-000000000000',
+                );
+                clearDialog();
+              }}
+            >
+              Forfeit (no legal targets)
+            </SecondaryButton>
+          </Buttons>
+        )}
     </>
   );
 }
