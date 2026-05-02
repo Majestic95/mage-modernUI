@@ -170,7 +170,12 @@ const KEEPALIVE_INTERVAL_MS = 30_000;
  * or expired). {@code 4003} — request well-formed but rejected
  * (gameId malformed, room chat not registered).
  */
-const NO_RETRY_CLOSE_CODES = new Set<number>([4001, 4003]);
+// P2 audit fix — 4400 PROTOCOL_VERSION_UNSUPPORTED is a permanent
+// reject (server speaks a different major version than this client);
+// retrying the same handshake 8× over ~75s won't change the answer.
+// Adding it here also surfaces the user-visible auth-error path
+// instead of the silent retry storm.
+const NO_RETRY_CLOSE_CODES = new Set<number>([4001, 4003, 4400]);
 
 export class GameStream {
   private socket: WebSocket | null = null;
@@ -559,6 +564,16 @@ export class GameStream {
           envelope,
         );
       }
+      // P2 audit fix — surface dropped sends in the store so the UI
+      // can show a "your last action didn't reach the server" hint
+      // instead of leaving the user wondering why their click did
+      // nothing. Cleared automatically when the connection re-opens.
+      const type =
+        (envelope as { type?: unknown }).type === 'string' ||
+        typeof (envelope as { type?: unknown }).type === 'string'
+          ? String((envelope as { type: string }).type)
+          : 'unknown';
+      useGameStore.getState().noteSendDropped(type);
       return;
     }
     try {

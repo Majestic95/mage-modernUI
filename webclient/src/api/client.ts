@@ -96,17 +96,24 @@ export async function request<S extends z.ZodTypeAny>(
 ): Promise<z.infer<S> | void> {
   const headers: Record<string, string> = {
     Accept: 'application/json',
-    // ngrok-free-tier playtest tunnels serve a browser-targeted HTML
-    // interstitial ("you are about to visit...") on the FIRST request
-    // from any User-Agent that looks like Chrome/Firefox/Safari. The
-    // SPA's fetch() then JSON.parse-fails on the HTML body and
-    // surfaces as "Failed to fetch" / BAD_RESPONSE. ngrok documents
-    // this header as the explicit bypass for API clients —
-    // https://ngrok.com/docs/network-edge/domains-and-tcp-addresses/#warning-page
-    // — and non-ngrok backends ignore unknown headers, so this is
-    // harmless on production deploys (always-on by design).
-    'ngrok-skip-browser-warning': '1',
   };
+  // ngrok-free-tier playtest tunnels serve a browser-targeted HTML
+  // interstitial ("you are about to visit...") on the FIRST request
+  // from any User-Agent that looks like Chrome/Firefox/Safari. The
+  // SPA's fetch() then JSON.parse-fails on the HTML body and
+  // surfaces as "Failed to fetch" / BAD_RESPONSE. ngrok documents
+  // this header as the explicit bypass for API clients —
+  // https://ngrok.com/docs/network-edge/domains-and-tcp-addresses/#warning-page
+  //
+  // P2 audit fix — gate the header on whether the resolved API URL
+  // actually points at ngrok. Pre-fix it was sent unconditionally,
+  // which leaked the infra hint to anyone inspecting prod requests
+  // even after we move off ngrok to a real backend domain. Auto-
+  // detect keeps the header working today AND silently drops it
+  // once the API URL stops containing "ngrok".
+  if (baseUrl.includes('ngrok')) {
+    headers['ngrok-skip-browser-warning'] = '1';
+  }
   if (options.token) {
     headers['Authorization'] = `Bearer ${options.token}`;
   }

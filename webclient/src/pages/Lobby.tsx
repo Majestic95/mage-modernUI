@@ -75,7 +75,16 @@ export function Lobby() {
   const onDelete = useCallback(
     async (table: WebTable) => {
       if (!session || !room) return;
-      if (!window.confirm(`Delete table "${table.tableName}"? This cannot be undone.`)) {
+      // P2 audit fix — server-controlled tableName interpolated into a
+      // confirm() dialog. confirm() text-escapes (XSS-safe) but a
+      // malicious player could still craft a name with embedded
+      // newlines / very long text that floods the dialog. Truncate to
+      // 80 visible chars and replace newlines with spaces so the
+      // dialog stays readable.
+      const safeName = String(table.tableName ?? '')
+        .replace(/[\r\n\t]/g, ' ')
+        .slice(0, 80);
+      if (!window.confirm(`Delete table "${safeName}"? This cannot be undone.`)) {
         return;
       }
       setActionError(null);

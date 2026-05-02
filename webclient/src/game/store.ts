@@ -132,6 +132,17 @@ interface GameState {
   closeReason: string;
   /** Last protocol-level error (streamError frame), if any. */
   protocolError: string | null;
+  /**
+   * P2 audit fix — non-null when the most recent outbound send was
+   * dropped because the socket wasn't open (mid-reconnect, mid-close,
+   * etc.). Pre-fix, GameStream.sendEnvelope only logged a console.warn;
+   * the user clicked a dialog response that vanished into the void
+   * with no UI feedback, and the server side timed out the prompt.
+   * Setting this flag lets the next gameUpdate / connection-open path
+   * surface "your last action didn't reach the server — try again."
+   * Cleared on connection re-open.
+   */
+  lastSendDropped: { type: string; at: number } | null;
 
   /** Latest game-state snapshot. */
   gameView: WebGameView | null;
@@ -271,6 +282,12 @@ interface GameState {
 
   /** Connection lifecycle setters (called by GameStream). */
   setConnection: (s: ConnectionState, reason?: string) => void;
+  /**
+   * P2 audit fix — record that an outbound envelope was dropped.
+   * Called by {@link GameStream.sendEnvelope} when the socket isn't
+   * open. Cleared automatically when the connection re-opens.
+   */
+  noteSendDropped: (type: string) => void;
   /** Apply an inbound frame. Returns true if the frame was handled. */
   applyFrame: (frame: WebStreamFrame, validatedData: unknown) => boolean;
   /** Clear the pending dialog — called when the player submits a response. */
@@ -346,6 +363,7 @@ const INITIAL: Pick<
   | 'connection'
   | 'closeReason'
   | 'protocolError'
+  | 'lastSendDropped'
   | 'gameView'
   | 'lastWrapped'
   | 'gameEnd'
@@ -363,6 +381,7 @@ const INITIAL: Pick<
   connection: 'idle',
   closeReason: '',
   protocolError: null,
+  lastSendDropped: null,
   gameView: null,
   lastWrapped: null,
   gameEnd: null,
@@ -506,10 +525,17 @@ export const useGameStore = create<GameState>()((set, get) => ({
     set({ sidePanelCollapsed: collapsed }),
 
   setConnection: (s, reason) =>
-    set({
+    set((state) => ({
       connection: s,
-      closeReason: reason ?? get().closeReason,
-    }),
+      closeReason: reason ?? state.closeReason,
+      // P2 audit fix — once the socket opens again, drop any stale
+      // "send dropped" record so the UI doesn't keep nagging the user
+      // about an action that already failed past relevance.
+      lastSendDropped: s === 'open' ? null : state.lastSendDropped,
+    })),
+
+  noteSendDropped: (type) =>
+    set({ lastSendDropped: { type, at: Date.now() } }),
 
   applyFrame: (frame, validatedData) => {
     // Bump messageId tracker on every frame regardless of method so

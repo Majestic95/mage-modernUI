@@ -4,6 +4,24 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      P2 audit fix — narrow Content-Security-Policy directives. Kept
+      intentionally minimal so we don't break the SPA's external image
+      sources (Scryfall) or its WebSocket/HTTPS calls to ngrok / Vercel
+      / future-prod. The three directives below are universally safe
+      for a Vite-bundled SPA and reduce XSS blast radius:
+        - object-src 'none' blocks <object>, <embed>, <applet>;
+        - base-uri 'self' prevents <base> tag injection from rebasing
+          all relative URLs to an attacker domain;
+        - form-action 'self' prevents auto-injected forms from
+          submitting credentials to a foreign origin.
+      frame-ancestors must be set via an HTTP header (not a meta tag),
+      so it lives in the deploy config (Vercel / nginx) instead of here.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="object-src 'none'; base-uri 'self'; form-action 'self'"
+    />
     <title>Mage Modern UI</title>
   </head>
   <body>
