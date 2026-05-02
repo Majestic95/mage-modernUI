@@ -11,6 +11,7 @@ import { slow } from '../animation/debug';
 import { ELIMINATION_SLASH } from '../animation/transitions';
 import { formatColorIdentity } from './PlayerFrame.helpers';
 import { PlayerFrameRedesigned } from './PlayerFrameRedesigned';
+import { useGameStore } from './store';
 
 /**
  * Slice 70-D (ADR 0011 D5) — PlayerFrame extracted from PlayerArea
@@ -89,6 +90,17 @@ export function PlayerFrame({
   onPlayerClick,
   targetable,
 }: Props) {
+  // Bug fix (2026-05-01) — colorIdentity snapshot fallback for the
+  // legacy HaloRing. Same root cause as the redesigned PlayerPortrait
+  // halo: server's deriveColorIdentity goes empty when commander
+  // leaves command zone. See PlayerPortrait.tsx for the full rationale.
+  const colorIdentitySnapshot = useGameStore(
+    (s) => s.colorIdentitySnapshots?.[player.playerId],
+  );
+  const resolvedColorIdentity =
+    player.colorIdentity && player.colorIdentity.length > 0
+      ? player.colorIdentity
+      : (colorIdentitySnapshot ?? player.colorIdentity ?? []);
   // Slice 70-K — REDESIGN branch dispatches before any legacy
   // computation. The two paths are mutually exclusive at render
   // time but share the player view-object; everything heavy-weight
@@ -129,7 +141,7 @@ export function PlayerFrame({
     player.hasPriority ? 'has priority' : null,
     eliminated ? 'eliminated' : null,
     disconnected ? 'disconnected' : null,
-    formatColorIdentity(player.colorIdentity),
+    formatColorIdentity(resolvedColorIdentity),
   ]
     .filter(Boolean)
     .join(', ');
@@ -252,7 +264,7 @@ export function PlayerFrame({
         the halo now a true ring (mask-based, see HaloRing below),
         the previous z-stacking ambiguity is resolved.
       */}
-      <HaloRing colorIdentity={player.colorIdentity} eliminated={eliminated} />
+      <HaloRing colorIdentity={resolvedColorIdentity} eliminated={eliminated} />
 
       {/*
         Slice 70-D (ADR 0011 D2) — eliminated-slash overlay. SVG

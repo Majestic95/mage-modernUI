@@ -48,6 +48,7 @@ import { type CSSProperties, useMemo } from 'react';
 import type { WebPlayerView } from '../api/schemas';
 import { computeHaloBackground, manaTokenForCode } from './halo';
 import { scryfallCommanderImageUrl } from './scryfall';
+import { useGameStore } from './store';
 import { usePlayerCommanders } from './usePlayerCommanders';
 
 export type PlayerPortraitSize = 'small' | 'medium' | 'large';
@@ -120,6 +121,22 @@ export function PlayerPortrait({
   // single-portrait-per-seat picture-catalog spec).
   const commanders = usePlayerCommanders(player);
   const commander = commanders[0] ?? null;
+  // Bug fix (2026-05-01) — server's `deriveColorIdentity` reads from
+  // live `commandList`, which empties when the commander leaves the
+  // command zone. Without the snapshot fallback, the halo flips to
+  // the neutral team-ring color (white) the moment the commander is
+  // cast — which is the cinematic moment players want the colored
+  // halo most. Use the snapshot when the live value is empty.
+  const colorIdentitySnapshot = useGameStore(
+    // Defensive `?.` — test fixtures that mock the store with a
+    // stripped-down shape don't include colorIdentitySnapshots, so
+    // guard against the field being undefined entirely.
+    (s) => s.colorIdentitySnapshots?.[player.playerId],
+  );
+  const resolvedColorIdentity =
+    player.colorIdentity && player.colorIdentity.length > 0
+      ? player.colorIdentity
+      : (colorIdentitySnapshot ?? player.colorIdentity ?? []);
   const imageUrl = commander
     ? scryfallCommanderImageUrl(commander, 'art_crop')
     : null;
@@ -194,7 +211,7 @@ export function PlayerPortrait({
       ) : (
         <FallbackInitial
           name={player.name}
-          colorIdentity={player.colorIdentity}
+          colorIdentity={resolvedColorIdentity}
           sizePx={sizePx}
           eliminated={eliminated}
           disconnected={disconnected}
@@ -202,7 +219,7 @@ export function PlayerPortrait({
       )}
       {haloVariant === 'circular' && (
         <CircularHalo
-          colorIdentity={player.colorIdentity}
+          colorIdentity={resolvedColorIdentity}
           isActive={player.isActive}
           eliminated={eliminated}
           paddingPx={HALO_PADDING_PX[size]}

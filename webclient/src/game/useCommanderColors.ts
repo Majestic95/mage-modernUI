@@ -2,6 +2,7 @@ import { createContext, createElement, useContext, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import type { WebCardView, WebGameView } from '../api/schemas';
 import { isCommanderEntry } from './commanderPredicates';
+import { useGameStore } from './store';
 
 /**
  * Slice 70-Z polish — given a {@link WebCardView}, returns the
@@ -44,18 +45,50 @@ interface ProviderProps {
 }
 
 export function CommanderColorsProvider({ gameView, children }: ProviderProps) {
+  // Bug fix (2026-05-01) — read both the live commandList AND the
+  // accumulated commanderSnapshots so commanders that have left the
+  // command zone (cast → battlefield) keep their entry in the lookup
+  // map. Likewise, fall back to colorIdentitySnapshots when the live
+  // colorIdentity is empty (server's deriveColorIdentity goes empty
+  // when commandList empties — same root cause).
+  // Defensive `?? {}` — test fixtures that mock the store with a
+  // stripped-down shape don't include the snapshots fields.
+  const commanderSnapshots = useGameStore((s) => s.commanderSnapshots ?? {});
+  const colorIdentitySnapshots = useGameStore(
+    (s) => s.colorIdentitySnapshots ?? {},
+  );
+
   const lookup = useMemo<ReadonlyMap<string, readonly string[]>>(() => {
     if (!gameView) return EMPTY_LOOKUP;
     const map = new Map<string, readonly string[]>();
     for (const p of gameView.players) {
+      // Resolved colorIdentity for this player: live → snapshot → empty
+      const liveColors = p.colorIdentity ?? [];
+      const snapshotColors = colorIdentitySnapshots[p.playerId] ?? [];
+      const colors = liveColors.length > 0 ? liveColors : snapshotColors;
+      // Iterate live commanders first, then any snapshot commanders not
+      // already in the live list (commander left command zone case).
+      const seenNames = new Set<string>();
       for (const entry of p.commandList) {
         if (isCommanderEntry(entry) && entry.name && !map.has(entry.name)) {
-          map.set(entry.name, p.colorIdentity ?? []);
+          map.set(entry.name, colors);
+          seenNames.add(entry.name);
+        }
+      }
+      const snapEntries = commanderSnapshots[p.playerId] ?? [];
+      for (const entry of snapEntries) {
+        if (
+          isCommanderEntry(entry) &&
+          entry.name &&
+          !map.has(entry.name) &&
+          !seenNames.has(entry.name)
+        ) {
+          map.set(entry.name, colors);
         }
       }
     }
     return map;
-  }, [gameView]);
+  }, [gameView, commanderSnapshots, colorIdentitySnapshots]);
   return createElement(
     CommanderColorsContext.Provider,
     { value: lookup },

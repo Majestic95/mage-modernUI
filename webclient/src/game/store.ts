@@ -225,6 +225,23 @@ interface GameState {
   commanderSnapshots: Record<string, WebCommandObjectView[]>;
 
   /**
+   * Bug fix (2026-05-01) — same shape as commanderSnapshots but for
+   * the player's commander color identity. Server's
+   * `deriveColorIdentity` reads from live commandList, which empties
+   * the moment a commander leaves the command zone (cast → stack →
+   * battlefield), so the wire's `colorIdentity` field becomes `[]`
+   * exactly when the player can FIRST see their commander's halo
+   * (just-cast or on-battlefield). Snapshot the first non-empty
+   * value we observe for each player and never overwrite — color
+   * identity is fixed at deck-build time, so the snapshot is
+   * authoritative for the rest of the game.
+   *
+   * <p>Keyed by {@code playerId}; values are stable readonly arrays
+   * to play nicely with React identity checks.
+   */
+  colorIdentitySnapshots: Record<string, readonly string[]>;
+
+  /**
    * Slice 70-Y / Wave 8 (2026-05-01) — sticky yes/no answers for
    * repetitive triggers (Smothering Tithe, Rhystic Study, Esper
    * Sentinel — fires per-opponent-action, multiple prompts per turn
@@ -376,6 +393,7 @@ const INITIAL: Pick<
   | 'gameOverPending'
   | 'sidePanelCollapsed'
   | 'commanderSnapshots'
+  | 'colorIdentitySnapshots'
   | 'stickyAnswers'
 > = {
   connection: 'idle',
@@ -394,6 +412,7 @@ const INITIAL: Pick<
   gameOverPending: false,
   sidePanelCollapsed: false,
   commanderSnapshots: {},
+  colorIdentitySnapshots: {},
   stickyAnswers: {},
 };
 
@@ -427,6 +446,36 @@ function accumulateCommanderSnapshots(
     if (merged !== seen) {
       next[playerId] = merged;
     }
+  }
+  return changed ? next : prev;
+}
+
+/**
+ * Bug fix (2026-05-01) — snapshot the player's commander color
+ * identity the first time we observe it non-empty. Server-side
+ * `deriveColorIdentity` reads from live `commandList` and returns
+ * empty as soon as the commander leaves the command zone, so the
+ * portrait halo + commander-card halo would silently fall back to
+ * the neutral team-ring color the moment the commander gets cast.
+ * Snapshot once and never overwrite — color identity is fixed at
+ * deck build time.
+ *
+ * <p>Returns the previous reference if no snapshot changed, so
+ * React subscribers don't re-render unnecessarily.
+ */
+function accumulateColorIdentitySnapshots(
+  prev: Record<string, readonly string[]>,
+  gv: WebGameView,
+): Record<string, readonly string[]> {
+  let changed = false;
+  const next: Record<string, readonly string[]> = { ...prev };
+  for (const p of gv.players) {
+    const playerId = p.playerId;
+    if (!playerId) continue;
+    if (next[playerId] !== undefined) continue;
+    if (!p.colorIdentity || p.colorIdentity.length === 0) continue;
+    next[playerId] = [...p.colorIdentity];
+    changed = true;
   }
   return changed ? next : prev;
 }
@@ -627,6 +676,10 @@ export const useGameStore = create<GameState>()((set, get) => ({
             get().commanderSnapshots,
             gv,
           ),
+          colorIdentitySnapshots: accumulateColorIdentitySnapshots(
+            get().colorIdentitySnapshots,
+            gv,
+          ),
         });
         return true;
       }
@@ -665,6 +718,10 @@ export const useGameStore = create<GameState>()((set, get) => ({
             protocolError: null,
             commanderSnapshots: accumulateCommanderSnapshots(
               state.commanderSnapshots,
+              gv,
+            ),
+            colorIdentitySnapshots: accumulateColorIdentitySnapshots(
+              state.colorIdentitySnapshots,
               gv,
             ),
             stickyAnswers,
@@ -781,6 +838,7 @@ export const useGameStore = create<GameState>()((set, get) => ({
       chatMessages: {},
       gameLog: [],
       commanderSnapshots: {},
+      colorIdentitySnapshots: {},
       stickyAnswers: {},
     }),
 

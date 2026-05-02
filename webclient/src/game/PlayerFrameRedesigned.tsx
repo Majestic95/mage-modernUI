@@ -10,6 +10,7 @@ import { ZoneIcon } from './ZoneIcon';
 import { slow } from '../animation/debug';
 import { ELIMINATION_SLASH } from '../animation/transitions';
 import { formatColorIdentity } from './PlayerFrame.helpers';
+import { useGameStore } from './store';
 
 /**
  * Slice 70-Z (P2 audit) — extracted from PlayerFrame.tsx so the
@@ -67,6 +68,19 @@ export function PlayerFrameRedesigned({
   void position;
   const portraitSize = perspective === 'self' ? 'large' : 'medium';
 
+  // Bug fix (2026-05-01) — colorIdentity snapshot fallback for the
+  // SR label. PlayerPortrait below applies the same fallback for its
+  // halo ring; reuse the snapshot here so the aria announcement
+  // doesn't drop the color-identity hint when the live wire field
+  // is empty (commander on battlefield path).
+  const colorIdentitySnapshot = useGameStore(
+    (s) => s.colorIdentitySnapshots?.[player.playerId],
+  );
+  const resolvedColorIdentity =
+    player.colorIdentity && player.colorIdentity.length > 0
+      ? player.colorIdentity
+      : (colorIdentitySnapshot ?? player.colorIdentity ?? []);
+
   // Aria-label preserved verbatim from the legacy branch — same
   // composition rules per slice 70-D + 70-H critic UX-I3 / I1.
   const ariaLabel = [
@@ -77,7 +91,7 @@ export function PlayerFrameRedesigned({
     player.hasPriority ? 'has priority' : null,
     eliminated ? 'eliminated' : null,
     disconnected ? 'disconnected' : null,
-    formatColorIdentity(player.colorIdentity),
+    formatColorIdentity(resolvedColorIdentity),
   ]
     .filter(Boolean)
     .join(', ');
