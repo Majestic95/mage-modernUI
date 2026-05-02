@@ -192,6 +192,14 @@ export class GameStream {
    * just need the bytes to reset everyone's idle timer.
    */
   private keepaliveTimer: unknown = null;
+  /**
+   * P1 audit fix — visibilitychange listener handle so we can detach
+   * on close(). When the tab returns to foreground, force a fresh
+   * close+open so the resume path (?since=lastMessageId) catches up
+   * any frames the server emitted while the tab was frozen by the
+   * OS (mobile backgrounding) or suspended by the browser.
+   */
+  private visibilityHandler: (() => void) | null = null;
 
   constructor(options: GameStreamOptions) {
     this.gameId = options.gameId;
@@ -212,6 +220,14 @@ export class GameStream {
     // Reset the caller-close flag — open() is the explicit "I want a
     // live connection" signal, even after a previous close().
     this.closedByCaller = false;
+    // P1 audit fix — install the visibilitychange listener once per
+    // GameStream lifetime. When the OS freezes the tab or backgrounds
+    // it, the WS may die silently (the close event might not fire
+    // until the OS thaws the tab). On return-to-foreground, force a
+    // close+open so the resume path catches any missed frames. The
+    // handler self-guards against duplicate triggers (already-open
+    // sockets are no-op via the early return at the top of open()).
+    this.installVisibilityHandler();
     const wsBase = toWsBase(httpBase);
     const path = this.endpoint === 'room' ? 'rooms' : 'games';
     // Resume from the last seen messageId on the game endpoint —
@@ -312,6 +328,7 @@ export class GameStream {
     this.closedByCaller = true;
     this.cancelReconnect();
     this.cancelKeepalive();
+    this.removeVisibilityHandler();
     // Null out our reference *before* requesting the OS close. A
     // subsequent open() in the same tick (StrictMode double-mount)
     // can then proceed without short-circuiting on `this.socket`.
@@ -334,20 +351,93 @@ export class GameStream {
    * future "Reconnect" button trigger another open()) to retry past
    * that point. Auto-reconnect can be globally disabled via the
    * constructor option.
+   *
+   * <p>P1 audit fix — when the cap is reached, surface a terminal
+   * error state (`reconnect-failed`) so the UI can show a manual
+   * "Reconnect" button instead of leaving the user staring at a
+   * frozen "closed" message. {@link manualReconnect} resets the
+   * attempt counter and re-opens. Without this, a flaky wifi user
+   * past ~75s of dropouts had no recovery affordance short of a
+   * full page refresh (which loses unsubmitted clicks / draft state).
    */
   private maybeScheduleReconnect(): void {
     if (!this.autoReconnect || this.closedByCaller) {
       return;
     }
     if (this.reconnectAttempt >= RECONNECT_BACKOFF_MS.length) {
+      useGameStore
+        .getState()
+        .setConnection(
+          'error',
+          'Connection lost — automatic reconnect gave up. Click reconnect to retry.',
+        );
       return;
     }
-    const delay = RECONNECT_BACKOFF_MS[this.reconnectAttempt]!;
+    const delay = RECONNECT_BACKOFF_MS[this.reconnectAttempt] ?? 25_000;
     this.reconnectAttempt += 1;
     this.reconnectTimer = this.scheduler.set(() => {
       this.reconnectTimer = null;
       this.open();
     }, delay);
+  }
+
+  /**
+   * P1 audit fix — public hook for the UI to manually retry the
+   * connection after the auto-reconnect cap. Resets the attempt
+   * counter so the full backoff ladder is available again, then
+   * fires {@link open}. No-op when the socket is already open or
+   * the caller has explicitly closed.
+   */
+  manualReconnect(): void {
+    if (this.closedByCaller) return;
+    if (this.socket && this.socket.readyState === WebSocket.OPEN) return;
+    this.cancelReconnect();
+    this.reconnectAttempt = 0;
+    this.open();
+  }
+
+  /**
+   * P1 audit fix — install a visibilitychange listener that forces
+   * a reconnect when the tab returns to foreground. Idempotent: a
+   * second call is a no-op. Removed in {@link close} so a closed
+   * stream doesn't keep listening forever.
+   */
+  private installVisibilityHandler(): void {
+    if (this.visibilityHandler) return;
+    if (typeof document === 'undefined') return;
+    const handler = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (this.closedByCaller) return;
+      // If socket is open and healthy, no-op. If closed/closing/null,
+      // trigger an immediate reconnect (bypass backoff — the user
+      // just returned and expects responsiveness).
+      const socket = this.socket;
+      if (socket && socket.readyState === WebSocket.OPEN) return;
+      this.cancelReconnect();
+      this.reconnectAttempt = 0;
+      // Force a fresh socket via close + open so the resume path
+      // (?since=lastMessageId) catches up any missed frames. If
+      // socket is null, just open.
+      if (socket) {
+        try {
+          socket.close(1000, 'tab returned');
+        } catch {
+          // ignore
+        }
+        this.socket = null;
+      }
+      this.open();
+    };
+    document.addEventListener('visibilitychange', handler);
+    this.visibilityHandler = handler;
+  }
+
+  private removeVisibilityHandler(): void {
+    if (!this.visibilityHandler) return;
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this.visibilityHandler);
+    }
+    this.visibilityHandler = null;
   }
 
   private cancelReconnect(): void {
@@ -512,13 +602,18 @@ export class GameStream {
     if (typeof envelope.schemaVersion === 'string') {
       const parts = parseSchemaVersion(envelope.schemaVersion);
       if (parts && parts.major !== EXPECTED_SCHEMA_MAJOR) {
-        useGameStore
-          .getState()
-          .setConnection(
-            'error',
-            `Wire-format major version ${parts.major} != expected `
-              + `${EXPECTED_SCHEMA_MAJOR}; refusing frames.`,
-          );
+        const errorMessage =
+          `Wire-format major version ${parts.major} != expected `
+            + `${EXPECTED_SCHEMA_MAJOR}; refusing frames.`;
+        // P1 audit fix — close the socket on major mismatch FIRST,
+        // then set the error state. close() calls setConnection
+        // ('closed', ...) internally so the order matters: setting
+        // error AFTER close ensures the user-visible state is the
+        // explicit error message, not 'closed'. Without this fix,
+        // the WS stayed open and a slow follow-up frame would reset
+        // state, hiding the wire-rejection from the user.
+        this.close(1011, 'schema mismatch');
+        useGameStore.getState().setConnection('error', errorMessage);
         return;
       }
     }

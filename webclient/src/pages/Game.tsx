@@ -171,7 +171,12 @@ export function Game({ gameId, onLeave }: Props) {
                 stream={stream}
               />
             ) : (
-              <Waiting connection={connection} />
+              <Waiting
+                connection={connection}
+                onReconnect={
+                  stream ? () => stream.manualReconnect() : undefined
+                }
+              />
             )}
           </div>
           <GameEndOverlay gameId={gameId} onLeave={onLeave} />

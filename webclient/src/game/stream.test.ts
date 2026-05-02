@@ -655,4 +655,50 @@ describe('GameStream', () => {
     const activePending = sched.queued.filter((q) => !q.cancelled);
     expect(activePending).toHaveLength(0);
   });
+
+  // P1 audit fix — when the auto-reconnect cap is exhausted the
+  // store's connection state should flip to 'error' with a clear
+  // message so the UI can render a manual "Reconnect" button.
+  it('reconnect cap exhaustion sets connection error with a clear message', () => {
+    const sched = makeFakeScheduler();
+    const stream = new GameStream({
+      gameId: FAKE_GAME_ID,
+      token: 't',
+      webSocketCtor: FakeWebSocket as unknown as typeof WebSocket,
+      scheduler: sched.scheduler,
+    });
+    stream.open();
+    // Burn through all 8 retries — same shape as the test above.
+    for (let i = 0; i < 8; i++) {
+      FakeWebSocket.instances[i]!._close(1006, 'fail');
+      sched.fireNext();
+    }
+    FakeWebSocket.instances[8]!._close(1006, 'final');
+    expect(useGameStore.getState().connection).toBe('error');
+    expect(useGameStore.getState().closeReason ?? '').toMatch(
+      /reconnect|gave up/i,
+    );
+  });
+
+  // P1 audit fix — manualReconnect resets the attempt counter and
+  // re-opens the socket so a user past the auto-reconnect cap can
+  // recover without a full page refresh.
+  it('manualReconnect after cap exhaustion fires a fresh open', () => {
+    const sched = makeFakeScheduler();
+    const stream = new GameStream({
+      gameId: FAKE_GAME_ID,
+      token: 't',
+      webSocketCtor: FakeWebSocket as unknown as typeof WebSocket,
+      scheduler: sched.scheduler,
+    });
+    stream.open();
+    for (let i = 0; i < 8; i++) {
+      FakeWebSocket.instances[i]!._close(1006, 'fail');
+      sched.fireNext();
+    }
+    FakeWebSocket.instances[8]!._close(1006, 'final');
+    const before = FakeWebSocket.instances.length;
+    stream.manualReconnect();
+    expect(FakeWebSocket.instances.length).toBe(before + 1);
+  });
 });
