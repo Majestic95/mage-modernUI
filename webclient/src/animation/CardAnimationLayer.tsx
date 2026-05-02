@@ -307,14 +307,26 @@ export function CardAnimationLayer(): React.JSX.Element {
         return;
       }
       // Cinematic-tier gate: commander OR planeswalker OR CMC ≥ 7.
-      const isCommander = gv.players.some((p) =>
-        p.commandList.some(
-          (e) => e.kind === 'commander' && e.name === card.name,
-        ),
+      //
+      // Slice 70-Z bug fix — `commandList` only carries commanders
+      // currently IN the command zone. The moment a commander
+      // resolves onto the battlefield, that player's commandList
+      // empties for them — so checking commandList here would miss
+      // EVERY commander cast and never fire the ground-crack for the
+      // most cinematic moment of the game. The store accumulates
+      // commander entries across zone changes via
+      // `commanderSnapshots` (slice 70-Y bug 4 — same accumulator
+      // that keeps the commander portrait alive after they leave the
+      // command zone). Read from that instead. Bonus: snapshots also
+      // remember commanders that died-and-returned-to-command-zone
+      // multiple times, so the gate fires correctly on the 4th cast.
+      const snapshots = useGameStore.getState().commanderSnapshots;
+      const isCommander = Object.values(snapshots).some((entries) =>
+        entries.some((e) => e.kind === 'commander' && e.name === card.name),
       );
       const isPlaneswalker = card.types.includes('PLANESWALKER');
       const isBigCmc = card.manaValue >= 7;
-      if (dbg) console.log('[animDebug]   gates:', { isCommander, isPlaneswalker, isBigCmc, cardName: card.name, commandLists: gv.players.map(p => p.commandList.map(e => `${e.kind}:${e.name}`)) });
+      if (dbg) console.log('[animDebug]   gates:', { isCommander, isPlaneswalker, isBigCmc, cardName: card.name, snapshots: Object.fromEntries(Object.entries(snapshots).map(([k, v]) => [k, v.map((e) => `${e.kind}:${e.name}`)])) });
       if (!isCommander && !isPlaneswalker && !isBigCmc) {
         if (dbg) console.log('[animDebug]   gated: not cinematic-tier (no commander/planeswalker/CMC≥7 match)');
         return;

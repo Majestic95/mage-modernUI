@@ -87,9 +87,27 @@ function isCinematicCast(
 function isCardCommander(
   card: WebCardView,
   players: readonly WebPlayerView[],
+  snapshots: Record<string, ReadonlyArray<{ kind: string; name: string }>> = {},
 ): boolean {
+  // Live commandList — only populated while the commander is in the
+  // command zone. Catches the standard commander-from-command-zone
+  // cast moment.
   for (const p of players) {
     for (const obj of p.commandList) {
+      if (obj.kind === 'commander' && obj.name === card.name) return true;
+    }
+  }
+  // Slice 70-Z bug fix — commandList empties the moment a commander
+  // leaves the command zone (cast → stack, resolve → battlefield,
+  // etc.), which means the live check above misses every post-cast
+  // diff event. The store's accumulated commanderSnapshots remembers
+  // every commander seen in any prior snapshot, so we always know
+  // who the commanders are regardless of current zone. Required for
+  // cinematic-cast gating (cast event fires when commander is on the
+  // stack, NOT in command zone) AND for the ground-crack landing
+  // (resolve_to_board fires when commander is on the battlefield).
+  for (const entries of Object.values(snapshots)) {
+    for (const obj of entries) {
       if (obj.kind === 'commander' && obj.name === card.name) return true;
     }
   }
@@ -221,6 +239,12 @@ export type GameEvent =
 export function diffGameViews(
   prev: WebGameView | null,
   next: WebGameView,
+  // Slice 70-Z bug fix — accumulated commander snapshots from the
+  // store. Threaded through so isCardCommander can recognize a
+  // commander even after they leave the command zone (which empties
+  // the live commandList). Defaults to {} so existing call sites in
+  // tests continue to work without mock plumbing.
+  commanderSnapshots: Record<string, ReadonlyArray<{ kind: string; name: string }>> = {},
 ): GameEvent[] {
   if (prev === null) return [];
   const before = indexSnapshot(prev);
@@ -262,7 +286,7 @@ export function diffGameViews(
       // discriminator that crosses the battlefield/commandList split).
       if (wasIn.zone === 'battlefield') {
         const card = before.cards.get(cardId);
-        if (card && isCardCommander(card, next.players)) {
+        if (card && isCardCommander(card, next.players, commanderSnapshots)) {
           events.push({
             kind: 'commander_returned',
             cardId,
@@ -283,7 +307,7 @@ export function diffGameViews(
         if (!card) continue;
         const cinematic = isCinematicCast(
           card,
-          isCardCommander(card, next.players),
+          isCardCommander(card, next.players, commanderSnapshots),
         );
         events.push({
           kind: 'cast',
@@ -307,7 +331,7 @@ export function diffGameViews(
       if (!card) continue;
       const cinematic = isCinematicCast(
         card,
-        isCardCommander(card, next.players),
+        isCardCommander(card, next.players, commanderSnapshots),
       );
       const localSeat = next.players.findIndex(
         (p) => p.playerId === next.myPlayerId,

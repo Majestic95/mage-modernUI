@@ -60,7 +60,14 @@ export function useGameDelta(
         prevRef.current = null;
         return;
       }
-      const events = diffGameViews(prevRef.current, state.gameView);
+      // Slice 70-Z bug fix — read accumulated commander snapshots so
+      // the diff can recognize a commander even after they leave the
+      // command zone (live commandList empties on zone change). The
+      // snapshots map persists across snapshots in the store; reading
+      // it inside the subscribe callback is fine — it's the latest
+      // value at this exact diff moment.
+      const snapshots = useGameStore.getState().commanderSnapshots;
+      const events = diffGameViews(prevRef.current, state.gameView, snapshots);
       prevRef.current = state.gameView;
       if (events.length > 0) {
         onEventsRef.current(events);
