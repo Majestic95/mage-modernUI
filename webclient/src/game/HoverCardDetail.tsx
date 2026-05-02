@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { WebCardView } from '../api/schemas';
 import { scryfallImageUrl } from './scryfall';
@@ -20,16 +20,49 @@ import { renderUpstreamMarkup } from './dialogs/markupRenderer';
  * text (each line a separate paragraph), and a subdued footer with
  * set code + rarity.
  */
-function CardDetail({ card }: { card: WebCardView }) {
+function CardDetail({
+  card,
+  onFlip,
+  isFlipped,
+}: {
+  card: WebCardView;
+  onFlip?: () => void;
+  isFlipped?: boolean;
+}) {
   const isCreature = card.power || card.toughness;
   const isPlaneswalker = !!card.startingLoyalty;
   const imageUrl = scryfallImageUrl(card);
   return (
     <div
       data-testid="card-detail"
-      className="bg-zinc-900 border border-zinc-700 rounded shadow-xl w-64 text-xs overflow-hidden"
+      data-flipped={isFlipped || undefined}
+      className="bg-zinc-900 border border-zinc-700 rounded shadow-xl w-64 text-xs overflow-hidden relative"
     >
       {imageUrl && <CardImage url={imageUrl} alt={card.name} />}
+      {/* Bug fix #2 (2026-05-02) — DFC flip toggle. Per CR 712.x both
+          faces are public information; the visual spec the user asked
+          for is "click flip, see back; move mouse away, returns to
+          front." `flipped` state lives in HoverCardDetail and resets
+          when the popover closes, so leaving and re-hovering always
+          shows the front first. The button is the ONLY element with
+          pointer-events-auto inside the otherwise pass-through popover
+          so the trigger's hover state isn't disturbed by hovering
+          empty popover real estate. */}
+      {onFlip && (
+        <button
+          type="button"
+          data-testid="card-detail-flip"
+          onClick={(e) => {
+            e.stopPropagation();
+            onFlip();
+          }}
+          className="absolute top-1 right-1 z-10 px-2 py-0.5 text-[10px] font-medium rounded bg-zinc-800/90 hover:bg-zinc-700 text-zinc-100 border border-zinc-600 shadow"
+          style={{ pointerEvents: 'auto' }}
+          aria-label={isFlipped ? 'Show front face' : 'Show back face'}
+        >
+          {isFlipped ? '↺ Front' : '↻ Flip'}
+        </button>
+      )}
       <div className="p-3 space-y-2">
         <div className="flex items-baseline justify-between gap-2">
           <span className="font-semibold text-sm text-zinc-100 truncate">
@@ -118,6 +151,17 @@ export function HoverCardDetail({
   children: ReactNode;
 }) {
   const [show, setShow] = useState(false);
+  // Bug fix #2 (2026-05-02) — DFC flip state. `flipped` toggles the
+  // displayed face when the user clicks the flip button. Resets to
+  // false whenever `show` becomes false so leaving and re-hovering
+  // always shows the front first (per user-stated UX: "pop back to
+  // front when you stop hovering").
+  const [flipped, setFlipped] = useState(false);
+  useEffect(() => {
+    if (!show) setFlipped(false);
+  }, [show]);
+  const transformable = !!(card.transformable && card.secondCardFace);
+  const displayCard = transformable && flipped ? card.secondCardFace! : card;
   const triggerRef = useRef<HTMLSpanElement | null>(null);
   const popoverRef = useRef<HTMLDivElement | null>(null);
   // Slice 38: viewport-clamped position. Initial render places the
@@ -196,7 +240,11 @@ export function HoverCardDetail({
                 : { left: -9999, top: -9999, opacity: 0 }
             }
           >
-            <CardDetail card={card} />
+            <CardDetail
+              card={displayCard}
+              onFlip={transformable ? () => setFlipped((f) => !f) : undefined}
+              isFlipped={flipped}
+            />
           </div>,
           document.body,
         )}
