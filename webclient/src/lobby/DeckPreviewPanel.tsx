@@ -135,15 +135,18 @@ function CommanderCardArt({
   imageUrl: string;
 }) {
   // Height-driven sizing — fills the parent's row height, derives
-  // width from aspect-ratio. Caps at a sensible width so a tall
-  // narrow viewport doesn't make the card preview comically wide.
+  // width from aspect-ratio. Cap raised to 240 (was 130) so the
+  // commander card renders at near-full proportional size in the
+  // widened DeckPreview column. NewLobbyScreen sets the column to
+  // minmax(440, 520), comfortably accommodating a 240×336 card plus
+  // the stats column.
   return (
     <div className="flex h-full min-h-0 items-start">
       <div
         className="relative h-full overflow-hidden rounded-lg"
         style={{
           aspectRatio: '5 / 7',
-          maxWidth: 130,
+          maxWidth: 240,
           background: 'var(--color-surface-card)',
           boxShadow: 'var(--shadow-medium)',
           border: '1px solid var(--color-card-frame-default)',

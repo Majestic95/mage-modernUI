@@ -613,13 +613,18 @@ function LobbyShell({
           <div aria-hidden="true" />
         </section>
 
-        {/* Bottom half — deck management + commander preview + start. */}
+        {/* Bottom half — deck management + commander preview + start.
+            DeckPreview column widened (was 320-360 → 440-520) so the
+            commander card art renders at near-full proportional size
+            instead of a thumbnail. CommanderPreview ('1fr') absorbs
+            the loss — its art is objectFit:cover and crops gracefully
+            when the column is narrower. */}
         <section
           data-testid="lobby-bottom-row"
           className="grid h-full min-h-0 gap-3"
           style={{
             gridTemplateColumns:
-              'minmax(240px, 280px) minmax(320px, 360px) 1fr minmax(220px, 280px)',
+              'minmax(240px, 280px) minmax(440px, 520px) 1fr minmax(220px, 280px)',
           }}
         >
           <MyDecksPanel
