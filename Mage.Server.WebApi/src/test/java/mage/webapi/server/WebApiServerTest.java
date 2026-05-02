@@ -46,6 +46,12 @@ class WebApiServerTest {
     void start() throws Exception {
         EmbeddedServer embedded = EmbeddedServer.boot(CONFIG_PATH);
         server = new WebApiServer(embedded).start(0);
+        // Slice L8 review (security HIGH #3) — production session-mint
+        // is rate-limited per IP. Tests churn fresh anon bearers at
+        // high cadence; swap in a permissive limiter so the cap doesn't
+        // 429 legit test traffic.
+        server.setSessionMintLimiter(
+                new mage.webapi.auth.IpRateLimiter(Integer.MAX_VALUE, 60_000L));
 
         // Slice 70 — reset MetricsRegistry counters before this test
         // class's HTTP probes start firing them. Counter state is

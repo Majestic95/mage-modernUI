@@ -55,6 +55,11 @@ class GameStreamHandlerTest {
     void start() throws Exception {
         embedded = EmbeddedServer.boot(CONFIG_PATH);
         server = new WebApiServer(embedded).start(0);
+        // Slice L8 review (security HIGH #3) — disable session-mint
+        // rate limiting in tests; the suite churns fresh anon bearers
+        // far above any production-realistic rate.
+        server.setSessionMintLimiter(
+                new mage.webapi.auth.IpRateLimiter(Integer.MAX_VALUE, 60_000L));
 
         HttpResponse<String> r = postJson("/api/session", "{}");
         assertEquals(200, r.statusCode(), "anon login must succeed: " + r.body());

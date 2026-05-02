@@ -95,6 +95,9 @@ function StatusPill({
     <div
       data-testid="lobby-status-pill"
       data-all-ready={allReady || undefined}
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
       className={
         'flex flex-col items-center gap-0.5 rounded-xl border px-5 py-2 text-center backdrop-blur-sm ' +
         accentClass

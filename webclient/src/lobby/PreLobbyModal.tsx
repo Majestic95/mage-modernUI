@@ -88,15 +88,25 @@ export function PreLobbyModal({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [onClose]);
 
-  // When the gameType changes the player-count bounds shift —
-  // clamp the current value into the new range.
+  // Slice L8 review (UX MEDIUM #24) — clamp via useEffect rather
+  // than setState-in-render. Previous draft set state during render
+  // body, which triggered a forced extra render every time gameType
+  // changed (and on the first render with mismatched defaults,
+  // double-rendered unconditionally). The effect-based clamp runs
+  // after commit and only sets state when the value would actually
+  // change — no cascading-render warning, single repaint per change.
+  useEffect(() => {
+    // Clamp playerCount to the new mode's [min,max] range when gameType
+    // changes. Doing this in render would loop (setState during render);
+    // doing it in the onChange handler would miss programmatic gameType
+    // updates. Functional updater short-circuits when no change is needed.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPlayerCount((prev) => {
+      const next = clamp(prev, minPlayers, maxPlayers);
+      return next === prev ? prev : next;
+    });
+  }, [minPlayers, maxPlayers]);
   const clampedCount = clamp(playerCount, minPlayers, maxPlayers);
-  if (clampedCount !== playerCount) {
-    // setState in render is fine here — React batches it; this
-    // is the recommended pattern for "derived from props" state
-    // when the source-of-truth lives elsewhere.
-    setPlayerCount(clampedCount);
-  }
 
   const handleSubmit = async () => {
     if (!session) {

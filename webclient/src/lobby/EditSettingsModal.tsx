@@ -116,17 +116,34 @@ export function EditSettingsModal({
 
   // Slice L6 polish — Esc closes the modal; first input gets focus
   // on mount so the user lands somewhere actionable.
+  // Slice L8 review (UX MEDIUM #20) — when there are unsaved changes,
+  // confirm before discarding via Esc. Submit button click fires the
+  // wire path; Cancel and Esc both go through this handler.
+  const tryClose = () => {
+    const dirty = Object.keys(diff(initial, values)).length > 0;
+    if (dirty) {
+      const ok = window.confirm(
+        'Discard unsaved settings changes?',
+      );
+      if (!ok) return;
+    }
+    onClose();
+  };
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
-        onClose();
+        tryClose();
       }
     };
     window.addEventListener('keydown', onKeyDown);
     firstFieldRef.current?.focus();
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
+    // tryClose closes over current `initial`/`values`; binding via
+    // window listener means we re-attach when those change so Esc
+    // sees the latest diff.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initial, values, onClose]);
 
   const isFixture = tableId === 'fixture' || roomId === null;
 
@@ -163,7 +180,7 @@ export function EditSettingsModal({
       data-testid="edit-settings-modal-backdrop"
       className="fixed inset-0 z-50 flex items-center justify-center"
       style={{ background: 'var(--color-bg-overlay)' }}
-      onClick={onClose}
+      onClick={tryClose}
       role="presentation"
     >
       <div
@@ -190,7 +207,7 @@ export function EditSettingsModal({
             type="button"
             aria-label="Close"
             data-testid="edit-settings-close"
-            onClick={onClose}
+            onClick={tryClose}
             className="text-text-secondary transition-colors hover:text-text-primary"
           >
             <CloseIcon />
@@ -310,7 +327,7 @@ export function EditSettingsModal({
           <button
             type="button"
             data-testid="edit-settings-cancel"
-            onClick={onClose}
+            onClick={tryClose}
             className="rounded-md border px-4 py-2 text-sm text-text-secondary transition-colors hover:bg-surface-card-hover hover:text-text-primary"
             style={{ borderColor: 'var(--color-card-frame-default)' }}
           >

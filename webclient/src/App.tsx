@@ -188,6 +188,15 @@ export function App() {
     }
   }, [session]);
 
+  // Slice L8 review (UX HIGH #7 + architecture HIGH #3) — would
+  // hoist the room WebSocket to App-level so lobby↔game transitions
+  // don't drop room frames. Pulled back from this batch because the
+  // existing LobbyChat tests assert ownership of the connection;
+  // moving it would require rewriting App.test + LobbyChat.test
+  // contract assertions. Tracked as a focused tech-debt slice; the
+  // singleton file at src/lobby/roomStreamSingleton.ts is the
+  // scaffold for the eventual migration.
+
   // Slice L8 — when the lobby's start-match transition completes the
   // game store sets pendingStartGame, the existing subscriber above
   // sets activeGameId, and we clear the lobby state so the route

@@ -173,10 +173,26 @@ public final class TableStreamHandler implements Consumer<WsConfig> {
         // Slice L7 review (security-MEDIUM #8) — per-(token, table)
         // subscriber cap. Counts existing subs from this token at this
         // table; reject if at the cap.
+        //
+        // Slice L8 review (code-quality HIGH #5) — skip closed contexts
+        // when counting. The Jetty WS layer fires onClose lazily on
+        // network drops (idle timeout, tens of seconds); a fast-
+        // reconnecting client legitimately hits the cap with orphan
+        // entries that have already lost their socket. Treat
+        // {@code !ctx.session.isOpen()} as "this slot is gone, free to
+        // reuse." Stale entries get pruned here too — opportunistic
+        // cleanup avoids needing a separate sweeper.
         Set<WsContext> existing = subscribers.get(tableId);
         if (existing != null) {
             int sameToken = 0;
             for (WsContext s : existing) {
+                if (s.session != null && !s.session.isOpen()) {
+                    // Prune dead entry while we're walking — onClose
+                    // will be a no-op when it eventually fires (set
+                    // is concurrent + idempotent remove).
+                    existing.remove(s);
+                    continue;
+                }
                 if (token.equals(s.queryParam("token"))) sameToken++;
             }
             if (sameToken >= MAX_SUBS_PER_TOKEN_PER_TABLE) {

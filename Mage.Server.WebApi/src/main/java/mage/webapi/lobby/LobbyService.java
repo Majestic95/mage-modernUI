@@ -592,18 +592,23 @@ public final class LobbyService {
         // Update the MatchPlayer's deck in place. ignoreMainBasicLands
         // = false matches upstream's auto-save semantics.
         //
-        // Slice L7 review (code-quality HIGH #2) — synchronize on the
-        // upstream TableController so the deck swap doesn't race a
-        // concurrent listing call (TableMapper.seat reads the same
-        // deck collections) or another swap. Defensive try/catch in
-        // TableMapper still catches a leftover ConcurrentModification
-        // path; this lock makes the common path race-free.
+        // Slice L8 review (code-quality HIGH #2) — lock BOTH monitors:
+        // {@code tc} (TableController, which serializes vs other join /
+        // leave / settings paths) AND {@code match} (which is the actual
+        // object being mutated by {@code updateDeck}, and is what
+        // {@code TableMapper.seat()} iterates via
+        // {@code mp.getDeck().getCards()}). The previous draft locked
+        // only on tc, missing the real read/write conflict. Lock order
+        // is fixed (tc → match) to avoid deadlock with any future
+        // path that might want both.
         if (table.getMatch() == null) {
             throw new WebApiException(409, "TABLE_NOT_EDITABLE",
                     "Table has no active match for deck submission.");
         }
         synchronized (tc) {
-            table.getMatch().updateDeck(playerId, loadedDeck, false);
+            synchronized (table.getMatch()) {
+                table.getMatch().updateDeck(playerId, loadedDeck, false);
+            }
         }
         readyTracker.setReady(tableId, username, false);
         LOG.info("Deck swapped: table={} user={} room={} (name/skill/password "
@@ -759,6 +764,7 @@ public final class LobbyService {
         // against concurrent joins / leaves / starts and prevents
         // half-applied option states.
         MatchOptions options = table.getMatch().getOptions();
+        WebTable result;
         synchronized (tc) {
         if (update.password() != null) {
             // Slice L7 review (security-CRITICAL #2) — cap password
@@ -806,24 +812,28 @@ public final class LobbyService {
             options.setRange(parseEnum(RangeOfInfluence.class,
                     update.range(), "range"));
         }
+        // Slice L8 review (code-quality HIGH #3) — extend the
+        // synchronized block to cover the {@link TableView}
+        // construction. The earlier draft exited the lock before
+        // {@code new TableView(table)} ran, opening a torn-read window
+        // where a concurrent join could land between our setter
+        // cascade and the view-rebuild and the broadcast would ship
+        // an inconsistent snapshot. Holding the lock through the view
+        // construction makes the whole "mutate + snapshot + return"
+        // operation atomic relative to other tc-synchronized callers.
+        TableView freshView = new TableView(table);
+        result = TableMapper.table(freshView,
+                embedded.managerFactory().tableManager(),
+                readyTracker);
         } // end synchronized (tc)
         // Slice L5 — settings change resets all guests to un-ready.
-        // Host stays ready (preserved via resetToHost).
+        // Host stays ready (preserved via resetToHost). Outside the
+        // lock — readyTracker has its own internal synchronization
+        // and doesn't share state with TableController's monitor.
         String hostUsername = TableMapper.cleanControllerName(table.getControllerName());
         readyTracker.resetToHost(tableId, hostUsername);
         LOG.info("Table options updated: {} (caller={}, ready reset to host)",
                 tableId, userId);
-        // Build a fresh {@link TableView} directly off the upstream
-        // {@link Table} reference. Earlier draft re-fetched via
-        // {@code roomGetAllTables}, but that view is rebuilt only when
-        // the room emits its periodic listing — for a just-modified
-        // table we want the immediately-current state. Constructing
-        // the view from the live Table guarantees the response
-        // reflects the mutation we just performed.
-        TableView freshView = new TableView(table);
-        WebTable result = TableMapper.table(freshView,
-                embedded.managerFactory().tableManager(),
-                readyTracker);
         broadcast(tableId);
         return result;
     }

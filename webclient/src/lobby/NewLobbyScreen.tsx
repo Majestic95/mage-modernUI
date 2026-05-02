@@ -15,7 +15,7 @@
  *
  * <p>Reference: docs/design/new-lobby-window.md
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ApiError, request } from '../api/client';
 import { webRoomRefSchema, type WebTable } from '../api/schemas';
 import { useAuthStore } from '../auth/store';
@@ -172,6 +172,13 @@ function LiveLobby({
   // table-list screen, but unmounts as soon as activeLobbyId is set
   // and NewLobbyScreen takes over — without this hook the new lobby
   // would silently miss the start-game transition.
+  //
+  // L8 review (UX HIGH #7) — this also closes on lobby unmount, so
+  // the lobby→game transition can briefly drop room frames. Tracked
+  // as a focused refactor (room-WS hoist to App.tsx) — pulled back
+  // from this batch because moving it breaks App.test + LobbyChat.test
+  // contract assertions. The scaffold lives in roomStreamSingleton.ts
+  // for the eventual migration.
   useEffect(() => {
     if (!session || !roomId) return;
     const stream = new GameStream({
@@ -278,9 +285,9 @@ function LobbyShell({
   const [leaveError, setLeaveError] = useState<string | null>(null);
   const [closeConfirmOpen, setCloseConfirmOpen] = useState(false);
   // Slice L7 polish — settings-change banner. Set by EditSettingsModal
-  // on save; auto-dismisses after 4s. The wire-side mechanism (server
-  // resets guest ready flags on PATCH) drives the actual state; the
-  // banner is purely UX feedback so users notice they need to re-ready.
+  // on save AND derived from a wire-side ready-count drop so it's
+  // visible to guests too (slice L8 review UX HIGH #8). Auto-dismisses
+  // after 4s.
   const [settingsChangedNotice, setSettingsChangedNotice] = useState<
     string | null
   >(null);
@@ -289,6 +296,7 @@ function LobbyShell({
     const t = setTimeout(() => setSettingsChangedNotice(null), 4000);
     return () => clearTimeout(t);
   }, [settingsChangedNotice]);
+  const prevReadyRef = useRef<{ ready: number; occupied: number } | null>(null);
   // Live-mode deck data (slice L6). Fixture mode uses fixture.decks
   // unchanged. The hook always runs (rules-of-hooks); when not in
   // live mode, useLiveDecksHook=false and we ignore the result.
@@ -317,6 +325,33 @@ function LobbyShell({
   const totalSeats = fixture.matchOptions.playerCount;
   const allReady = readyCount === totalSeats;
   const isFixture = tableId === 'fixture' || roomId === null;
+
+  // Slice L8 review (UX HIGH #8) — observe readyCount drops without a
+  // corresponding seat-occupancy change. Server resets guests on PATCH;
+  // this is the visible signal to guests that "settings changed —
+  // re-ready". Skips the host (they fired the change themselves) and
+  // skips the first observation (when we don't have a baseline yet).
+  useEffect(() => {
+    const occupiedCount = fixture.seats.filter((s) => s.occupied).length;
+    const readyCountObs = fixture.seats.filter((s) => s.occupied && s.ready).length;
+    const prev = prevReadyRef.current;
+    prevReadyRef.current = { ready: readyCountObs, occupied: occupiedCount };
+    if (!prev) return;
+    // Skip the case where occupancy ALSO dropped (a seat leave naturally
+    // drops ready) — only fire on settings-driven drops where occupancy
+    // is unchanged. Skip the host (host fires it from EditSettingsModal
+    // directly).
+    if (isHost) return;
+    if (
+      readyCountObs < prev.ready
+      && occupiedCount === prev.occupied
+      && readyCountObs < occupiedCount  // there are now un-ready guests
+    ) {
+      setSettingsChangedNotice(
+        'Settings changed — re-ready up.',
+      );
+    }
+  }, [fixture.seats, isHost]);
 
   // Slice L6 — submit deck on selection. Client-state selection
   // updates immediately; the wire submit follows. On failure the
@@ -402,10 +437,17 @@ function LobbyShell({
         { method: 'DELETE', token: session.token },
       );
     } catch (err) {
-      // ApiError 422 NOT_SEATED is acceptable — leaving when not
-      // seated is a no-op server-side. Anything else surfaces.
-      if (err instanceof ApiError && err.status === 422) {
-        // ignore
+      // ApiError 422 with code NOT_SEATED is acceptable — leaving
+      // when not seated is a no-op server-side and we should still
+      // route to main menu. Slice L8 review (UX MEDIUM #22) — narrow
+      // the swallow to that specific code; other 422 (e.g. wrong
+      // table state) surface as errors.
+      if (
+        err instanceof ApiError
+        && err.status === 422
+        && err.code === 'NOT_SEATED'
+      ) {
+        // ignore — fall through to onLeave()
       } else {
         setLeaveError(
           err instanceof ApiError ? err.message : 'Failed to leave the table.',
@@ -707,8 +749,9 @@ function LobbyShell({
                 type="button"
                 data-testid="close-confirm-cancel"
                 disabled={leaveSubmitting}
+                autoFocus
                 onClick={() => setCloseConfirmOpen(false)}
-                className="rounded-md border px-4 py-2 text-sm text-text-secondary transition-colors hover:bg-surface-card-hover hover:text-text-primary disabled:opacity-60"
+                className="rounded-md border px-4 py-2 text-sm text-text-secondary transition-colors hover:bg-surface-card-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:opacity-60"
                 style={{ borderColor: 'var(--color-card-frame-default)' }}
               >
                 Cancel

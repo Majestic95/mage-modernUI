@@ -40,6 +40,10 @@ class AuthServiceTest {
     void start() {
         EmbeddedServer embedded = EmbeddedServer.boot(CONFIG_PATH);
         server = new WebApiServer(embedded).start(0);
+        // Slice L8 review — disable session-mint rate limiting; tests
+        // exercise the auth path at high cadence.
+        server.setSessionMintLimiter(
+                new mage.webapi.auth.IpRateLimiter(Integer.MAX_VALUE, 60_000L));
     }
 
     @AfterAll

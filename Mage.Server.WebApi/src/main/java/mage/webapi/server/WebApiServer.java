@@ -84,6 +84,27 @@ public final class WebApiServer {
     private final LobbyService lobbyService;
     private final DeckValidationService deckValidationService;
     private final TableStreamHandler tableStreamHandler;
+    /**
+     * Slice L8 review (security HIGH #3) — per-IP rate limiter for
+     * session-mint. Anonymous tokens are otherwise unbounded.
+     * Volatile so tests can swap in a permissive limiter via
+     * {@link #setSessionMintLimiter} without reading partial writes.
+     */
+    private volatile mage.webapi.auth.IpRateLimiter sessionMintLimiter =
+            new mage.webapi.auth.IpRateLimiter();
+
+    /**
+     * Visible-for-test: tests churn session-mint at high rate (each
+     * test mints a fresh anon bearer); production limits would 429
+     * the test fixture. Replace with a permissive limiter (e.g.
+     * {@code new IpRateLimiter(Integer.MAX_VALUE, 60_000)}) in
+     * {@code @BeforeAll} setup.
+     */
+    public void setSessionMintLimiter(mage.webapi.auth.IpRateLimiter limiter) {
+        if (limiter != null) {
+            this.sessionMintLimiter = limiter;
+        }
+    }
     private List<String> corsOrigins = List.of();
     private Javalin app;
 
@@ -194,10 +215,29 @@ public final class WebApiServer {
 
         // Public — auth
         app.post("/api/session", ctx -> {
+            // Slice L8 review (security HIGH #3) — per-IP rate limit
+            // on session mint. Anonymous tokens (empty body) used to
+            // be unbounded; combined with the per-token WS sub cap
+            // this was a trivial DoS amplifier. 20/min/IP is generous
+            // for legit users, restrictive for abuse.
+            String ip = ctx.ip();
+            if (!sessionMintLimiter.tryAcquire(ip)) {
+                throw new WebApiException(429, "RATE_LIMITED",
+                        "Too many session-mint requests from this IP. "
+                                + "Wait a minute and retry.");
+            }
             WebSessionRequest req = parseSessionRequest(ctx.body());
             ctx.json(authService.login(req.username(), req.password()));
         });
         app.post("/api/session/admin", ctx -> {
+            // Same per-IP cap on admin login attempts; failed admin
+            // login is an obvious brute-force amplification surface.
+            String ip = ctx.ip();
+            if (!sessionMintLimiter.tryAcquire(ip)) {
+                throw new WebApiException(429, "RATE_LIMITED",
+                        "Too many login attempts from this IP. "
+                                + "Wait a minute and retry.");
+            }
             WebAdminSessionRequest req = ctx.bodyAsClass(WebAdminSessionRequest.class);
             ctx.json(authService.loginAdmin(req == null ? null : req.adminPassword()));
         });
