@@ -242,6 +242,24 @@ interface GameState {
   colorIdentitySnapshots: Record<string, readonly string[]>;
 
   /**
+   * Bug fix (2026-05-02) — momentary reveal toasts. Per CR 701.16a
+   * a reveal "shows the card to all players" — it's instantaneous,
+   * NOT a persistent zone. Engine emits these as gameInform messages
+   * matching {@code "<player> reveals <card>"}; the inform reducer
+   * detects the pattern and appends to this queue. The
+   * {@code RevealToast} component reads the queue, filters for
+   * unexpired entries (≤ {@link REVEAL_TOAST_TTL_MS} old) and
+   * renders them as overlay banners. Older entries linger in the
+   * queue until the next reveal frame replaces them — keeps the
+   * reducer pure (no time-driven state mutations).
+   */
+  recentReveals: ReadonlyArray<{
+    id: number;
+    message: string;
+    addedAt: number;
+  }>;
+
+  /**
    * Slice 70-Y / Wave 8 (2026-05-01) — sticky yes/no answers for
    * repetitive triggers (Smothering Tithe, Rhystic Study, Esper
    * Sentinel — fires per-opponent-action, multiple prompts per turn
@@ -394,6 +412,7 @@ const INITIAL: Pick<
   | 'sidePanelCollapsed'
   | 'commanderSnapshots'
   | 'colorIdentitySnapshots'
+  | 'recentReveals'
   | 'stickyAnswers'
 > = {
   connection: 'idle',
@@ -413,8 +432,13 @@ const INITIAL: Pick<
   sidePanelCollapsed: false,
   commanderSnapshots: {},
   colorIdentitySnapshots: {},
+  recentReveals: [],
   stickyAnswers: {},
 };
+
+export const REVEAL_TOAST_TTL_MS = 5000;
+const REVEAL_QUEUE_CAP = 8;
+const REVEAL_DETECTOR = / reveals? /;
 
 /**
  * Slice 70-X.14 (Bug 4) — accumulate per-player commanders into the
@@ -501,7 +525,7 @@ function accumulateColorIdentitySnapshots(
  */
 type GameInformReduce = Pick<
   GameState,
-  'lastWrapped' | 'gameView' | 'gameLog' | 'gameOverPending'
+  'lastWrapped' | 'gameView' | 'gameLog' | 'gameOverPending' | 'recentReveals'
 >;
 
 function reduceGameInformOrOver(
@@ -514,6 +538,7 @@ function reduceGameInformOrOver(
   // message. Empty-message gameInform frames (engine pushes
   // these for state-only updates) don't add log noise.
   let nextLog = state.gameLog;
+  let nextReveals = state.recentReveals;
   if (wrapped.message && wrapped.message.length > 0) {
     const entry: GameLogEntry = {
       id: frame.messageId,
@@ -524,12 +549,28 @@ function reduceGameInformOrOver(
     nextLog = nextLog.length >= GAME_LOG_CAP
       ? [...nextLog.slice(nextLog.length - GAME_LOG_CAP + 1), entry]
       : [...nextLog, entry];
+    // Bug fix (2026-05-02) — detect reveal lines (PlayerImpl.revealCards
+    // emits "<player> reveals <card>" / "<player> reveals her hand: ...").
+    // Per CR 701.16a reveal is momentary, not a persistent zone, so we
+    // queue rather than store; the toast component dismisses by TTL.
+    if (REVEAL_DETECTOR.test(wrapped.message)) {
+      const reveal = {
+        id: frame.messageId,
+        message: wrapped.message,
+        addedAt: Date.now(),
+      };
+      const grown = [...nextReveals, reveal];
+      nextReveals = grown.length > REVEAL_QUEUE_CAP
+        ? grown.slice(grown.length - REVEAL_QUEUE_CAP)
+        : grown;
+    }
   }
   const isGameOver = frame.method === 'gameOver';
   return {
     lastWrapped: wrapped,
     gameView: nextGv,
     gameLog: nextLog,
+    recentReveals: nextReveals,
     // Slice 19: flag the gameOver-pending state so the banner
     // renders. Cleared on the next gameInit (best-of-N next game)
     // or on reset (user leaves).
@@ -839,6 +880,7 @@ export const useGameStore = create<GameState>()((set, get) => ({
       gameLog: [],
       commanderSnapshots: {},
       colorIdentitySnapshots: {},
+      recentReveals: [],
       stickyAnswers: {},
     }),
 

@@ -336,6 +336,25 @@ body {
 }
 
 /*
+ * Bug fix (2026-05-02) — reveal-toast entry animation. Per CR
+ * 701.16a a reveal "shows the card to all players, then ceases to
+ * do so" — momentary by definition. The toast fades + slides in
+ * over 200ms, then the React component holds the rendered state
+ * until its TTL expires. Tagged data-essential-motion in the React
+ * tree so reduced-motion users still see the toast (the existence
+ * of the toast IS the rule-mandated information; only the slide
+ * is decorative — but they're cheap to keep coupled).
+ */
+@keyframes reveal-toast-in {
+  0%   { opacity: 0; transform: translateY(-8px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+.animate-reveal-toast-in {
+  animation: reveal-toast-in 200ms ease-out;
+}
+
+/*
  * Slice 70-Z.3 — ribbon-trail sweep. Animates an SVG path's
  * stroke-dashoffset from its full length down to 0, "drawing" the
  * stroke from source to destination, then fades opacity in the last

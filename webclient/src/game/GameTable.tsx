@@ -7,6 +7,7 @@ import { Battlefield } from './Battlefield';
 import { CommanderDamageTracker } from './CommanderDamageTracker';
 import { GameLog } from './GameLog';
 import { GameDialog } from './dialogs/GameDialog';
+import { RevealToast } from './RevealToast';
 import { ManaCost } from './ManaCost';
 import { MulliganModal } from './MulliganModal';
 import { MyHand } from './MyHand';
@@ -513,6 +514,13 @@ export function GameTable({ gameId, gameView, stream }: Props) {
         The dialog's `right-` offset reads --side-panel-width above
         so its bottom-right shells dock LEFT of the panel. */}
       <GameDialog stream={stream} />
+
+      {/* Bug fix (2026-05-02) — momentary reveal toast (CR 701.16a).
+          Mounted at GameTable level so it escapes the grid and floats
+          over both battlefield and hand. Dispatched from the store's
+          gameInform reducer when a "<player> reveals <card>" log line
+          arrives. */}
+      <RevealToast />
 
       {/* Slice 70-F — Mulligan modal wraps the engine's gameAsk
           mulligan flow with the spec §Mulligan full-mode chrome
