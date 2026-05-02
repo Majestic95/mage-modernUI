@@ -543,6 +543,17 @@ function HandCardSlot({
           // canAct internally below; aria-disabled keeps the SR
           // announcement intact.
           aria-disabled={!canAct || undefined}
+          // Bug fix (2026-05-02 follow-up #2) — preventDefault on
+          // dragstart kills the browser's NATIVE HTML5 drag, which
+          // <img> elements (the Scryfall card art) trigger by default
+          // when the user pointer-downs and moves. Native drag hijacks
+          // the pointer: pointermove is suppressed, pointerup never
+          // fires (dragend fires instead), and the OS shows the red
+          // "no-drop" cursor since no element accepts an HTML5 drop.
+          // We don't want native drag at all — we own the gesture via
+          // pointer events. preventDefault on dragstart is the
+          // canonical opt-out and works on all browsers.
+          onDragStart={(ev) => ev.preventDefault()}
           onClick={() => {
             if (!canAct) return;
             onObjectClick(card.id);
