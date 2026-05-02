@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import type { WebCardView, WebPlayerView } from '../api/schemas';
 import { slow, SLOWMO } from '../animation/debug';
@@ -70,7 +70,43 @@ export function MyHand({
    */
   stream?: GameStream | null;
 }) {
-  const cards = Object.values(hand);
+  // Bug fix (2026-05-02) — hand reorder via drag-and-drop. Pure
+  // client-side UX: maintains a per-render-instance ordering of card
+  // ids that survives hand-shape changes (cards drawn appear at the
+  // end; cards leaving the hand are dropped from the order). The
+  // user can drag any hand card and release on another to move the
+  // dragged card to the target's position. Works regardless of
+  // priority — reorder is personal, not a game action.
+  const handIds = Object.keys(hand);
+  const [cardOrder, setCardOrder] = useState<string[]>(() => handIds);
+  useEffect(() => {
+    setCardOrder((prev) => {
+      const inHand = new Set(handIds);
+      const kept = prev.filter((id) => inHand.has(id));
+      const keptSet = new Set(kept);
+      const added = handIds.filter((id) => !keptSet.has(id));
+      const next = added.length === 0 && kept.length === prev.length ? prev : [...kept, ...added];
+      return next;
+    });
+  }, [handIds.join('|')]);
+  const onReorder = (fromId: string, toId: string) => {
+    if (fromId === toId) return;
+    // Swap semantics: dropping A onto B trades their positions.
+    // Cleaner than "insert-before-target" because the latter is a
+    // no-op when source is already adjacent-left of target — the
+    // user's gesture should always have a visible effect.
+    setCardOrder((prev) => {
+      const fromIdx = prev.indexOf(fromId);
+      const toIdx = prev.indexOf(toId);
+      if (fromIdx === -1 || toIdx === -1) return prev;
+      const next = [...prev];
+      [next[fromIdx], next[toIdx]] = [next[toIdx], next[fromIdx]];
+      return next;
+    });
+  };
+  const cards = cardOrder
+    .map((id) => hand[id])
+    .filter((c): c is WebCardView => !!c);
   // Slice 70-Y.1 — when the click-resolution flag is on, derive the
   // engine's eligible-cards set so hand cards in scope pulse and
   // route clicks through the dialog response channel. When the flag
@@ -217,8 +253,10 @@ export function MyHand({
                     total={cards.length}
                     canAct={canAct}
                     isDragging={isDragging}
+                    draggedCardId={draggedCardId}
                     onObjectClick={onObjectClick}
                     onPointerDown={onPointerDown}
+                    onReorder={onReorder}
                     tooltip={cardTooltip(card)}
                     targetableForDialog={
                       dialogActive &&
@@ -291,8 +329,10 @@ export function MyHand({
                   total={cards.length}
                   canAct={canAct}
                   isDragging={isDragging}
+                  draggedCardId={draggedCardId}
                   onObjectClick={onObjectClick}
                   onPointerDown={onPointerDown}
+                  onReorder={onReorder}
                   tooltip={cardTooltip(card)}
                   targetableForDialog={
                     dialogActive &&
@@ -351,8 +391,10 @@ function HandCardSlot({
   total,
   canAct,
   isDragging,
+  draggedCardId,
   onObjectClick,
   onPointerDown,
+  onReorder,
   tooltip,
   targetableForDialog,
 }: {
@@ -361,8 +403,16 @@ function HandCardSlot({
   total: number;
   canAct: boolean;
   isDragging: boolean;
+  /**
+   * Bug fix (2026-05-02) — id of the card currently in flight
+   * for drag-to-play / drag-to-reorder. Reorder fires when the
+   * user releases the pointer on a DIFFERENT hand card while a
+   * drag is in progress, regardless of priority.
+   */
+  draggedCardId: string | null;
   onObjectClick: (id: string) => void;
   onPointerDown: (cardId: string, ev: React.PointerEvent) => void;
+  onReorder: (fromId: string, toId: string) => void;
   tooltip: string;
   /**
    * Slice 70-Y.1 — when true, this hand card is in the engine's
@@ -419,9 +469,27 @@ function HandCardSlot({
           data-card-id={card.id}
           data-dragging={isDragging || undefined}
           data-lifted={lifted || undefined}
-          disabled={!canAct}
-          onClick={() => onObjectClick(card.id)}
-          onPointerDown={(ev) => canAct && onPointerDown(card.id, ev)}
+          // Bug fix (2026-05-02) — replace disabled={!canAct} with
+          // aria-disabled. The native disabled attribute fully
+          // suppresses pointer/click events, which prevented the user
+          // from drag-reordering their hand on opponents' turns
+          // ("frozen-when-not-priority" complaint). Reorder is a
+          // personal layout choice, not a game action — it should
+          // work whenever, the same way you can rearrange real cards
+          // in your hand at any time. Cast clicks remain gated on
+          // canAct internally below; aria-disabled keeps the SR
+          // announcement intact.
+          aria-disabled={!canAct || undefined}
+          onClick={() => {
+            if (!canAct) return;
+            onObjectClick(card.id);
+          }}
+          onPointerDown={(ev) => onPointerDown(card.id, ev)}
+          onPointerUp={() => {
+            if (draggedCardId && draggedCardId !== card.id) {
+              onReorder(draggedCardId, card.id);
+            }
+          }}
           onMouseEnter={() => setLifted(true)}
           onMouseLeave={() => setLifted(false)}
           onFocus={() => setLifted(true)}

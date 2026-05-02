@@ -7,7 +7,7 @@
  * {@code flagState.redesign} per test to exercise both branches.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import {
   webPlayerViewSchema,
   type WebPlayerView,
@@ -132,6 +132,64 @@ describe('MyHand — REDESIGN branch (picture-catalog §4)', () => {
     expect(hint).toHaveTextContent(/Waiting for opponent/);
     // Hint sits in the corner so the hand fan stays unobstructed.
     expect(hint.className).toMatch(/absolute/);
+  });
+});
+
+describe('MyHand — hand reorder via drag-and-drop (2026-05-02)', () => {
+  // Use two minimal cards. The schema requires several fields, but
+  // since these tests only exercise rendering / pointer events on
+  // hand-card buttons, a stripped object cast through `as any` keeps
+  // the fixture compact.
+  const A = { id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', cardId: 'aid', name: 'Card A', cardNumber: '1' } as never;
+  const B = { id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', cardId: 'bid', name: 'Card B', cardNumber: '2' } as never;
+
+  it('renders cards in the user-provided order; drop on a different hand card moves the dragged one to that slot', () => {
+    const reorderCalls: Array<[string, string]> = [];
+
+    // First render: hand has A then B in iteration order. The drag-
+    // in-progress is on A; releasing pointer on B should fire a
+    // reorder dispatch (A → B's slot).
+    render(
+      <MyHand
+        {...PASSTHROUGH}
+        hand={{ [A.id]: A, [B.id]: B }}
+        draggedCardId={A.id}
+        onObjectClick={() => {
+          // Internal reorder doesn't go through onObjectClick — this
+          // is just a placeholder so we know if a stray cast fires.
+          reorderCalls.push(['cast', 'fired']);
+        }}
+      />,
+    );
+
+    const cards = screen.getAllByTestId('hand-card');
+    expect(cards).toHaveLength(2);
+    expect(cards[0]).toHaveAttribute('data-card-id', A.id);
+    expect(cards[1]).toHaveAttribute('data-card-id', B.id);
+
+    // pointerup on B with draggedCardId === A → reorder. After the
+    // reorder, A should sit AFTER B in DOM order.
+    fireEvent.pointerUp(cards[1], { pointerId: 1, bubbles: true });
+    const cardsAfter = screen.getAllByTestId('hand-card');
+    expect(cardsAfter[0]).toHaveAttribute('data-card-id', B.id);
+    expect(cardsAfter[1]).toHaveAttribute('data-card-id', A.id);
+    // No stray cast fired during the reorder.
+    expect(reorderCalls).toHaveLength(0);
+  });
+
+  it('hand cards remain interactive (aria-disabled instead of disabled) when canAct=false', () => {
+    render(
+      <MyHand
+        {...PASSTHROUGH}
+        canAct={false}
+        hand={{ [A.id]: A }}
+      />,
+    );
+    const card = screen.getByTestId('hand-card');
+    // The native `disabled` attribute would block pointer events and
+    // freeze drag-to-reorder. aria-disabled keeps SR semantics.
+    expect(card).not.toBeDisabled();
+    expect(card).toHaveAttribute('aria-disabled', 'true');
   });
 });
 

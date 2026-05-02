@@ -265,7 +265,14 @@ describe('Game page', () => {
     sendSpy.mockRestore();
   });
 
-  it('hand cards are disabled when self does not have priority — shows "Waiting for opponent" hint', () => {
+  it('hand cards mark aria-disabled when self does not have priority — shows "Waiting for opponent" hint', () => {
+    // Bug fix (2026-05-02) — was expect(...).toBeDisabled(). The
+    // hand fan no longer hard-disables the underlying button when
+    // the player lacks priority; instead it sets aria-disabled and
+    // gates the cast click handler internally. This lets drag-to-
+    // reorder fire on opponents' turns (a personal-layout action,
+    // not a game action) while still announcing the disabled state
+    // to assistive tech and showing the "Waiting for opponent" hint.
     render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
     const gv = buildGameView();
     const me = gv.players.find((p) => p.controlled)!;
@@ -276,10 +283,39 @@ describe('Game page', () => {
       useGameStore.setState({ connection: 'open', gameView: gv });
     });
 
-    expect(screen.getByTestId('hand-card')).toBeDisabled();
+    expect(screen.getByTestId('hand-card')).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
     expect(screen.getByTestId('hand-disabled-hint')).toHaveTextContent(
       /Waiting for opponent/i,
     );
+  });
+
+  it('clicking a hand card while !canAct does NOT dispatch a cast (silent gate)', async () => {
+    // Bug fix (2026-05-02) companion — verify the aria-disabled
+    // contract still suppresses cast dispatch. Without the internal
+    // canAct gate, the new pointer-events-on path would let an
+    // opponent-turn click reach the engine and gameError back.
+    const userEvent = (await import('@testing-library/user-event')).default;
+    const user = userEvent.setup();
+    const sendSpy = vi
+      .spyOn(GameStream.prototype, 'sendObjectClick')
+      .mockImplementation(() => {});
+
+    render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+    const gv = buildGameView();
+    const me = gv.players.find((p) => p.controlled)!;
+    me.hasPriority = false;
+    me.isActive = false;
+    gv.priorityPlayerName = 'COMPUTER_MONTE_CARLO';
+    act(() => {
+      useGameStore.setState({ connection: 'open', gameView: gv });
+    });
+
+    await user.click(screen.getByTestId('hand-card'));
+    expect(sendSpy).not.toHaveBeenCalled();
+    sendSpy.mockRestore();
   });
 
   /* ---------- slice 23: turn / priority indicators + hand hints ---------- */
