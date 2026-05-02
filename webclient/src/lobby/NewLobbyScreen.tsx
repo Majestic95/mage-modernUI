@@ -326,6 +326,40 @@ function LobbyShell({
   const allReady = readyCount === totalSeats;
   const isFixture = tableId === 'fixture' || roomId === null;
 
+  // 2026-05-02 — optimistic host-seat override. The wire echoes a
+  // seat's commanderName / colorIdentity / deckSize from the deck
+  // upstream actually loaded; if the user picked a deck whose
+  // sideboard or mainboard is empty (skeleton deck pre-build), the
+  // wire reports commanderName="" and the seat's halo falls back to
+  // the neutral team-ring color. Worse, switching to a different
+  // deck doesn't visually update the seat until upstream finishes
+  // re-validating the new deck (~1-2s). Override the local user's
+  // seat with the locally-selected deck's data so the halo, the
+  // commander art, and the deck plate update INSTANTLY on click.
+  // Wire-driven for everyone else — only the local seat is
+  // optimistic.
+  const seatsForRow = fixture.seats.map((s) => {
+    if (!localSeat || s.seatId !== localSeat.seatId) return s;
+    if (!selectedDeck) return s;
+    return {
+      ...s,
+      commanderName: selectedDeck.commanderName || s.commanderName,
+      commanderArtUrl: selectedDeck.commanderArtUrl ?? s.commanderArtUrl,
+      commanderCardImageUrl:
+        selectedDeck.commanderArtUrl
+          ? selectedDeck.commanderArtUrl.replace('art_crop', 'normal')
+          : s.commanderCardImageUrl,
+      colorIdentity:
+        selectedDeck.colorIdentity.length > 0
+          ? selectedDeck.colorIdentity
+          : s.colorIdentity,
+      deckName: selectedDeck.name || s.deckName,
+      deckSize: selectedDeck.mainboardSize || s.deckSize,
+      deckRequired: selectedDeck.requiredSize || s.deckRequired,
+      subtitle: subtitleFromCommanderName(selectedDeck.commanderName),
+    };
+  });
+
   // Slice L8 review (UX HIGH #8) — observe readyCount drops without a
   // corresponding seat-occupancy change. Server resets guests on PATCH;
   // this is the visible signal to guests that "settings changed —
@@ -607,7 +641,7 @@ function LobbyShell({
             onEditSettings={() => setEditOpen(true)}
           />
           <SeatRow
-            seats={fixture.seats}
+            seats={seatsForRow}
             currentUsername={fixture.currentUsername}
           />
           <div aria-hidden="true" />
@@ -818,6 +852,19 @@ function LobbyShell({
       )}
     </div>
   );
+}
+
+/**
+ * Many MTG legendary cards follow the "Name, Title" pattern; we
+ * surface the title as the seat subtitle. Mirrors the same helper
+ * in webTableToLobby — kept local so the optimistic-seat override
+ * can compute the subtitle from a locally-chosen commander without
+ * importing across the wire-mapping module boundary.
+ */
+function subtitleFromCommanderName(name: string): string {
+  if (!name) return '';
+  const comma = name.indexOf(', ');
+  return comma >= 0 ? name.substring(comma + 2) : '';
 }
 
 /**
