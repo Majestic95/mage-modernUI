@@ -65,11 +65,13 @@ public final class TableMapper {
     public static WebTable table(TableView v, TableManager tableManager) {
         Objects.requireNonNull(v, "TableView is null");
         Match match = lookupMatch(v.getTableId(), tableManager);
+        String deckType = emptyIfNull(v.getDeckType());
+        int deckSizeRequired = requiredMainboardSize(deckType);
         return new WebTable(
                 v.getTableId().toString(),
                 emptyIfNull(v.getTableName()),
                 emptyIfNull(v.getGameType()),
-                emptyIfNull(v.getDeckType()),
+                deckType,
                 v.getTableState() == null ? "" : v.getTableState().name(),
                 isoOrEmpty(v.getCreateTime()),
                 cleanControllerName(v.getControllerName()),
@@ -80,7 +82,7 @@ public final class TableMapper {
                 v.isRated(),
                 v.isLimited(),
                 v.getSeats() == null ? List.of()
-                        : v.getSeats().stream().map(s -> seat(s, match)).toList()
+                        : v.getSeats().stream().map(s -> seat(s, match, deckSizeRequired)).toList()
         );
     }
 
@@ -102,9 +104,9 @@ public final class TableMapper {
         return comma >= 0 ? raw.substring(0, comma) : raw;
     }
 
-    private static WebSeat seat(SeatView s, Match match) {
+    private static WebSeat seat(SeatView s, Match match, int deckSizeRequired) {
         if (s == null) {
-            return new WebSeat("", "", false, "", 0);
+            return new WebSeat("", "", false, "", 0, false, "", 0, deckSizeRequired);
         }
         boolean occupied = s.getPlayerId() != null;
         PlayerType type = s.getPlayerType();
@@ -132,13 +134,22 @@ public final class TableMapper {
         // fall back to the "no commander info" state — better than a
         // 500 on the lobby listing endpoint that hangs the table list
         // for everyone.
+        //
+        // Slice L2 — same defensive pattern extended to deck name +
+        // mainboard size; both read live engine state, so a failure
+        // shouldn't break the lobby listing.
         String commanderName = "";
         int commanderImageNumber = 0;
+        String deckName = "";
+        int deckSize = 0;
         if (occupied && match != null) {
             try {
                 MatchPlayer mp = match.getPlayer(s.getPlayerId());
                 if (mp != null && mp.getDeck() != null) {
-                    Card commander = firstSideboardCard(mp.getDeck());
+                    Deck deck = mp.getDeck();
+                    deckName = emptyIfNull(deck.getName());
+                    deckSize = deck.getCards() == null ? 0 : deck.getCards().size();
+                    Card commander = firstSideboardCard(deck);
                     if (commander != null) {
                         commanderName = emptyIfNull(commander.getName());
                         commanderImageNumber =
@@ -150,15 +161,62 @@ public final class TableMapper {
                 // the seat itself is still rendered.
                 commanderName = "";
                 commanderImageNumber = 0;
+                deckName = "";
+                deckSize = 0;
             }
         }
+        // Slice L2 — AI seats auto-ready on join (no human to opt in).
+        // HUMAN seats start un-ready; slice L5 wires the toggle endpoint.
+        boolean ready = occupied && type != null && type != PlayerType.HUMAN;
         return new WebSeat(
                 emptyIfNull(s.getPlayerName()),
                 type == null ? "" : type.name(),
                 occupied,
                 commanderName,
-                commanderImageNumber
+                commanderImageNumber,
+                ready,
+                deckName,
+                deckSize,
+                deckSizeRequired
         );
+    }
+
+    /**
+     * Slice L2 — derive the format's required mainboard size from
+     * the upstream deck-type string. {@code DeckType} names follow
+     * the convention {@code "<Family> - <Variant>"} where Family is
+     * "Constructed", "Commander", "Limited", etc. Heuristic match —
+     * if a future format introduces a non-{60,100,40} size, this
+     * method needs an extension; the lobby's deck plate validation
+     * then surfaces the wrong "required" target.
+     *
+     * <p>{@code 0} means "unknown" — the lobby renders just the
+     * mainboard size without a "/{required}" suffix.
+     */
+    static int requiredMainboardSize(String deckType) {
+        if (deckType == null || deckType.isBlank()) {
+            return 0;
+        }
+        String s = deckType.toLowerCase();
+        if (s.contains("commander")) {
+            return 100;
+        }
+        // Check constructed-family BEFORE limited so "Constructed -
+        // Freeform Unlimited" classifies as constructed (60) rather
+        // than tripping the "limited" substring inside "unlimited".
+        if (s.contains("constructed")
+                || s.contains("standard")
+                || s.contains("modern")
+                || s.contains("legacy")
+                || s.contains("vintage")
+                || s.contains("pauper")
+                || s.contains("freeform")) {
+            return 60;
+        }
+        if (s.contains("limited") || s.contains("draft") || s.contains("sealed")) {
+            return 40;
+        }
+        return 0;
     }
 
     private static Match lookupMatch(UUID tableId, TableManager tableManager) {

@@ -118,6 +118,53 @@ class TableMapperTest {
         assertSame(commander, TableMapper.firstSideboardCard(deck));
     }
 
+    // ---- requiredMainboardSize (slice L2: lock the deck-size derivation
+    // contract). The lobby seat plate renders a "/{required}" suffix so
+    // players see at-a-glance whether their deck is legal. The required
+    // size is derived from the table's deckType string — a heuristic
+    // pattern match. Drop these and a misclassified deckType silently
+    // shows e.g. "60/100" for a Constructed deck or vice versa.
+
+    @Test
+    void requiredMainboardSize_commander_returns100() {
+        assertEquals(100, TableMapper.requiredMainboardSize("Commander"));
+        assertEquals(100, TableMapper.requiredMainboardSize("Commander - Brawl"));
+        assertEquals(100, TableMapper.requiredMainboardSize("Tiny Leaders Commander"));
+    }
+
+    @Test
+    void requiredMainboardSize_constructed_returns60() {
+        assertEquals(60, TableMapper.requiredMainboardSize("Constructed - Vintage"));
+        assertEquals(60, TableMapper.requiredMainboardSize("Standard"));
+        assertEquals(60, TableMapper.requiredMainboardSize("Modern"));
+        assertEquals(60, TableMapper.requiredMainboardSize("Legacy"));
+        assertEquals(60, TableMapper.requiredMainboardSize("Pauper"));
+        assertEquals(60, TableMapper.requiredMainboardSize(
+                "Constructed - Freeform Unlimited"));
+    }
+
+    @Test
+    void requiredMainboardSize_limited_returns40() {
+        assertEquals(40, TableMapper.requiredMainboardSize("Limited"));
+        assertEquals(40, TableMapper.requiredMainboardSize("Draft"));
+        assertEquals(40, TableMapper.requiredMainboardSize("Sealed"));
+    }
+
+    @Test
+    void requiredMainboardSize_caseInsensitive() {
+        assertEquals(100, TableMapper.requiredMainboardSize("COMMANDER"));
+        assertEquals(60, TableMapper.requiredMainboardSize("STANDARD"));
+        assertEquals(40, TableMapper.requiredMainboardSize("DRAFT"));
+    }
+
+    @Test
+    void requiredMainboardSize_unknownOrBlank_returnsZero() {
+        assertEquals(0, TableMapper.requiredMainboardSize(null));
+        assertEquals(0, TableMapper.requiredMainboardSize(""));
+        assertEquals(0, TableMapper.requiredMainboardSize("   "));
+        assertEquals(0, TableMapper.requiredMainboardSize("Mystery Format"));
+    }
+
     /**
      * Minimal {@link Card} stub built via dynamic proxy. The
      * {@code firstSideboardCard} code path only invokes

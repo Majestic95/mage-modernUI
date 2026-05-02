@@ -4,14 +4,14 @@
  */
 import type { LobbyFormatId, LobbyModeId } from './fixtures';
 
-const FORMAT_LABEL: Record<LobbyFormatId, string> = {
+const FORMAT_LABEL: Record<string, string> = {
   commander: 'Commander',
   standard: 'Standard',
   modern: 'Modern',
   pauper: 'Pauper',
 };
 
-const MODE_LABEL: Record<LobbyModeId, string> = {
+const MODE_LABEL: Record<string, string> = {
   'free-for-all': 'Free-for-All',
   'two-player-duel': '1v1 Duel',
   'two-headed-giant': 'Two-Headed Giant',

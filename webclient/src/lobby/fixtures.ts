@@ -10,12 +10,17 @@
  * intentionally mirror the wire shape so the swap is one prop swap.
  */
 
-export type LobbyFormatId = 'commander' | 'standard' | 'modern' | 'pauper';
-export type LobbyModeId =
-  | 'free-for-all'
-  | 'two-player-duel'
-  | 'two-headed-giant'
-  | 'tiny-leaders';
+/**
+ * Slice L2 — relaxed from a strict union to {@code string}. The wire's
+ * {@code WebTable.deckType} / {@code .gameType} are free-form strings
+ * (e.g. "Commander - Brawl", "Constructed - Vintage"); display
+ * components in {@link LobbyHeader} + {@link GameSettingsPanel} look
+ * up known IDs in their respective label maps and fall back to the
+ * raw string for unknown values, so untyped strings flow through
+ * fine.
+ */
+export type LobbyFormatId = string;
+export type LobbyModeId = string;
 
 export interface LobbyMatchOptions {
   format: LobbyFormatId;

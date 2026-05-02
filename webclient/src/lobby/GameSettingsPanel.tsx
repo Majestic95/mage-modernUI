@@ -4,7 +4,7 @@
  */
 import type { LobbyMatchOptions } from './fixtures';
 
-const FORMAT_DISPLAY: Record<LobbyMatchOptions['format'], string> = {
+const FORMAT_DISPLAY: Record<string, string> = {
   commander: 'Commander',
   standard: 'Standard',
   modern: 'Modern',
@@ -34,7 +34,10 @@ export function GameSettingsPanel({ options, isHost }: Props) {
       </h2>
 
       <dl className="flex flex-col gap-2 text-sm">
-        <SettingRow label="Format" value={FORMAT_DISPLAY[options.format]} />
+        <SettingRow
+          label="Format"
+          value={FORMAT_DISPLAY[options.format] ?? options.format}
+        />
         <SettingRow label="Starting Life" value={String(options.startingLife)} />
         {options.format === 'commander' && (
           <SettingRow

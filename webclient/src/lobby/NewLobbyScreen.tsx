@@ -3,32 +3,73 @@
  * legacy CreateTableModal + table-list pre-game flow with a dedicated
  * full-page screen.
  *
- * <p>L1 ships static fixture data only. Slice L2 wires real
- * {@link WebTable} via polling; slice L7 swaps polling for a per-table
- * WebSocket stream. Slice L4 wires the entry path from the slim
- * PreLobbyModal.
+ * <p>L1 shipped static fixture data only. Slice L2 wires real
+ * {@link WebTable} via polling — when {@code tableId} is a UUID, the
+ * page polls {@code GET /api/rooms/.../tables} and maps the matching
+ * {@link WebTable} into the lobby's view shape. {@code "fixture"}
+ * stays as a dev-only entry path so the visual shell can still be
+ * reviewed without a live table. Slice L7 swaps polling for a
+ * per-table WebSocket stream. Slice L4 wires the real entry path
+ * from the slim PreLobbyModal.
  *
  * <p>Reference: docs/design/new-lobby-window.md
  */
+import { useAuthStore } from '../auth/store';
 import { CommanderPreviewPanel } from './CommanderPreviewPanel';
 import { DeckPreviewPanel } from './DeckPreviewPanel';
 import { GameSettingsPanel } from './GameSettingsPanel';
-import { LOBBY_FIXTURE } from './fixtures';
+import { LOBBY_FIXTURE, type LobbyFixture } from './fixtures';
 import { LobbyHeader } from './LobbyHeader';
 import { LobbyTopBar } from './LobbyTopBar';
 import { MyDecksPanel } from './MyDecksPanel';
 import { SeatRow } from './SeatRow';
 import { StartGameButton } from './StartGameButton';
+import { useLobbyTable } from './useLobbyTable';
+import { webTableToLobby } from './webTableToLobby';
 
 interface Props {
-  /** Table identifier. L1 ignores this — fixture only. */
+  /**
+   * Table identifier. {@code "fixture"} renders L1 fixture data
+   * (no wire calls). Anything else is treated as a real upstream
+   * tableId and triggers the polling hook.
+   */
   tableId: string;
 }
 
 export function NewLobbyScreen({ tableId }: Props) {
-  // L1 fixture path — slice L2 will derive from useTableStream(tableId).
-  void tableId;
-  const fixture = LOBBY_FIXTURE;
+  if (tableId === 'fixture') {
+    return <LobbyShell data={LOBBY_FIXTURE} />;
+  }
+  return <LiveLobby tableId={tableId} />;
+}
+
+function LiveLobby({ tableId }: { tableId: string }) {
+  const session = useAuthStore((s) => s.session);
+  const username = session?.username ?? '';
+  const { table, error, loading } = useLobbyTable(tableId);
+
+  if (loading && !table) {
+    return <LobbyStatus message="Loading table…" />;
+  }
+  if (!table) {
+    return <LobbyStatus message={error ?? 'Table not found.'} />;
+  }
+  const data = webTableToLobby({ webTable: table, currentUsername: username });
+  return <LobbyShell data={data} />;
+}
+
+function LobbyStatus({ message }: { message: string }) {
+  return (
+    <div
+      data-testid="lobby-status"
+      className="flex h-screen flex-col items-center justify-center gap-2 bg-bg-base text-text-secondary"
+    >
+      <p>{message}</p>
+    </div>
+  );
+}
+
+function LobbyShell({ data: fixture }: { data: LobbyFixture }) {
   const selectedDeck =
     fixture.decks.find((d) => d.id === fixture.selectedDeckId) ?? null;
   const isHost =

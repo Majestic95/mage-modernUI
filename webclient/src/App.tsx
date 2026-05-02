@@ -125,10 +125,12 @@ export function App() {
 
   // Slice L1 (new-lobby-window) — dev-only fixture entry for visual
   // review. `?lobby=fixture` renders the new lobby screen with
-  // hardcoded data. Real entry from PreLobbyModal lands in slice L4.
+  // hardcoded data. Slice L2 — `?lobby=<UUID>` triggers the live
+  // polling path against a real table on the server. Real entry
+  // from PreLobbyModal lands in slice L4.
   const lobbyParam = new URLSearchParams(window.location.search).get('lobby');
-  if (lobbyParam === 'fixture' && session) {
-    return <NewLobbyScreen tableId="fixture" />;
+  if (lobbyParam && session) {
+    return <NewLobbyScreen tableId={lobbyParam} />;
   }
 
   if (!session) {

@@ -237,6 +237,18 @@ export const webSeatSchema = z.object({
   // upgrade — same forward-compat pattern as commandList.
   commanderName: z.string().default(''),
   commanderImageNumber: z.number().default(0),
+  // Slice L2 (new-lobby-window, schema 1.27) — additive fields for
+  // the new lobby's per-seat ready system + deck plate display.
+  // `ready` is wire-only state pre-L5; the server emits `false` for
+  // human seats and `true` for AI seats (auto-ready on join). L5
+  // wires the toggle endpoint that flips it. The deck-info fields
+  // read from the seat's registered deck on the upstream Match; if
+  // no deck is registered yet they default to '' / 0. Defaults below
+  // mean a 1.26 server (no fields) still parses — forward-compat.
+  ready: z.boolean().default(false),
+  deckName: z.string().default(''),
+  deckSize: z.number().default(0),
+  deckSizeRequired: z.number().default(0),
 });
 export type WebSeat = z.infer<typeof webSeatSchema>;
 
