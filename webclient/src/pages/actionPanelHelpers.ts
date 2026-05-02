@@ -76,3 +76,48 @@ export function nextPhaseAction(step: string): string | null {
       return null;
   }
 }
+
+/**
+ * Slice 70-Z bug fix (2026-05-01) — pick the dispatch action for the
+ * primary action button based on the same state the LABEL morph uses,
+ * so the action matches what the player sees on the button.
+ *
+ * <p><b>The bug this fixes:</b> the morphing label flips to
+ * "Pass Priority" when the stack is non-empty AND it's your priority,
+ * but the underlying click dispatch was always
+ * {@link nextPhaseAction}. From PRECOMBAT_MAIN that returns
+ * {@code PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE} — a MACRO that sets
+ * {@code passedUntilNextMain=true} and auto-passes through
+ * main1 + begin_combat, halting at the declare-attackers prompt.
+ * User playtest 2026-05-01: cast 1-mana spell with 4 mana available,
+ * pressed "Pass Priority" expecting to resolve and keep priority,
+ * was dropped straight onto the Attack prompt with no chance to use
+ * the remaining 3 mana. Per CR 117.3b the active player MUST get
+ * priority back after a spell resolves; the macro skipped past that
+ * window.
+ *
+ * <p><b>Fix:</b> when the label is "Pass Priority" (stack non-empty
+ * + my priority), dispatch {@code PASS_PRIORITY_UNTIL_STACK_RESOLVED}
+ * instead. That action auto-passes through the current resolution
+ * (and bots' priority windows) and STOPS on empty stack — the
+ * engine then grants priority back to the active player in the
+ * current phase. {@link HumanPlayer.java:1300-1316} guards it
+ * against new stack objects (default {@code stopOnStackNewObjects}
+ * is true), so a counterspell from another player correctly cancels
+ * the auto-pass. Rules-clean.
+ *
+ * <p>Other labels still flow through {@link nextPhaseAction} — the
+ * "Next Phase" / "Attack" / "Block" / "End Step" / "Done" labels
+ * are explicit phase-advance / decision-point macros where the
+ * existing dispatch is correct.
+ */
+export function primaryActionFor(
+  step: string,
+  stackEmpty: boolean,
+  myPriority: boolean,
+): string | null {
+  if (!stackEmpty && myPriority) {
+    return 'PASS_PRIORITY_UNTIL_STACK_RESOLVED';
+  }
+  return nextPhaseAction(step);
+}

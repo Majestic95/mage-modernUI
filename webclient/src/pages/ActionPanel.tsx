@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useAuthStore } from '../auth/store';
 import { useGameStore } from '../game/store';
 import type { GameStream } from '../game/stream';
-import { nextPhaseAction } from './actionPanelHelpers';
+import { nextPhaseAction, primaryActionFor } from './actionPanelHelpers';
 
 interface Props {
   stream: GameStream | null;
@@ -123,8 +123,18 @@ export function ActionPanel({ stream }: Props) {
       if (match.action === NEXT_PHASE_SENTINEL) {
         // Read latest store state directly — captured `gv` would
         // be stale across re-renders without re-binding the listener.
-        const step = useGameStore.getState().gameView?.step ?? '';
-        const action = nextPhaseAction(step);
+        // Slice 70-Z bug fix — pass through `primaryActionFor` so F2
+        // dispatches PASS_PRIORITY_UNTIL_STACK_RESOLVED when stack is
+        // non-empty + my priority, NOT the broader phase-skip macro
+        // (which auto-passed through main1 + begin_combat into
+        // declare-attackers, robbing the user of their post-resolve
+        // priority window).
+        const gv2 = useGameStore.getState().gameView;
+        const step = gv2?.step ?? '';
+        const stackEmpty2 = !gv2 || Object.keys(gv2.stack).length === 0;
+        const username = useAuthStore.getState().session?.username;
+        const myPriority2 = !!gv2 && gv2.priorityPlayerName === username;
+        const action = primaryActionFor(step, stackEmpty2, myPriority2);
         if (action) stream.sendPlayerAction(action);
       } else {
         stream.sendPlayerAction(match.action);
@@ -148,6 +158,13 @@ export function ActionPanel({ stream }: Props) {
   const stackEmpty = Object.keys(gv.stack).length === 0;
   const inCombatOrBeginning = isInCombatOrBeginning(gv.step);
   const nextPhase = nextPhaseAction(gv.step);
+  // Slice 70-Z bug fix — see actionPanelHelpers.ts. Primary button
+  // dispatch must match what the engine should do based on stack
+  // state, not just the phase-advance macro. When stack is non-empty
+  // + my priority the action is PASS_PRIORITY_UNTIL_STACK_RESOLVED
+  // so spell resolution returns priority to the active player
+  // instead of skipping past their post-resolve window.
+  const primaryAction = primaryActionFor(gv.step, stackEmpty, myPriority);
 
   return (
     <div
@@ -178,9 +195,9 @@ export function ActionPanel({ stream }: Props) {
       <button
         type="button"
         data-testid="next-phase-button"
-        data-action={nextPhase ?? ''}
+        data-action={primaryAction ?? ''}
         onClick={() => {
-          if (nextPhase && myPriority) send(nextPhase);
+          if (primaryAction && myPriority) send(primaryAction);
         }}
         disabled={!nextPhase || !myPriority}
         title={

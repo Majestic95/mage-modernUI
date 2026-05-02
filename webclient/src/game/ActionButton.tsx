@@ -42,7 +42,7 @@ import { useEffect, useState } from 'react';
 import { useAuthStore } from '../auth/store';
 import { useGameStore } from './store';
 import type { GameStream } from './stream';
-import { nextPhaseAction } from '../pages/actionPanelHelpers';
+import { nextPhaseAction, primaryActionFor } from '../pages/actionPanelHelpers';
 
 /**
  * Slice 70-M — multi-pass shortcut menu items. Each maps to an
@@ -183,8 +183,15 @@ export function ActionButton({ stream }: Props) {
       const ctrlOrCmd = ev.ctrlKey || ev.metaKey;
       // Map ev.key to the menu item; F2 is the primary action.
       if (ev.key === 'F2') {
-        const step = useGameStore.getState().gameView?.step ?? '';
-        const action = nextPhaseAction(step);
+        const gv2 = useGameStore.getState().gameView;
+        const step = gv2?.step ?? '';
+        const stackEmpty2 = !gv2 || Object.keys(gv2.stack).length === 0;
+        const username = useAuthStore.getState().session?.username;
+        const myPriority2 = !!gv2 && gv2.priorityPlayerName === username;
+        // Slice 70-Z bug fix — F2 must follow the same dispatch rules
+        // as the primary button click so the hotkey doesn't fire the
+        // wrong action when stack is non-empty (see primaryActionFor).
+        const action = primaryActionFor(step, stackEmpty2, myPriority2);
         if (action) {
           ev.preventDefault();
           stream.sendPlayerAction(action);
@@ -242,7 +249,16 @@ export function ActionButton({ stream }: Props) {
 
   const myPriority = gv.priorityPlayerName === session.username;
   const stackEmpty = Object.keys(gv.stack).length === 0;
+  // Slice 70-Z bug fix — `primaryActionFor` returns the action
+  // matching what the button label says. When stack is non-empty + my
+  // priority, label morphs to "Pass Priority" and the action is
+  // PASS_PRIORITY_UNTIL_STACK_RESOLVED (resolves the spell, returns
+  // priority to AP); otherwise the action is the existing
+  // phase-advance macro from `nextPhaseAction`. Disabled state is
+  // still keyed off `nextPhaseAction` because pre-game / between-
+  // games has no phase to advance to.
   const nextPhase = nextPhaseAction(gv.step);
+  const primaryAction = primaryActionFor(gv.step, stackEmpty, myPriority);
   const label = deriveActionLabel(gv.step, myPriority, stackEmpty, !!nextPhase);
 
   // Disabled when there's no next-phase action available (pre-game,
@@ -251,8 +267,8 @@ export function ActionButton({ stream }: Props) {
   const disabled = !nextPhase || !stream;
 
   const dispatchPrimary = () => {
-    if (!nextPhase || !stream) return;
-    stream.sendPlayerAction(nextPhase);
+    if (!primaryAction || !stream) return;
+    stream.sendPlayerAction(primaryAction);
   };
 
   const dispatchMenuItem = (item: MenuItem) => {
@@ -281,7 +297,7 @@ export function ActionButton({ stream }: Props) {
         <button
           type="button"
           data-testid="action-button-primary"
-          data-action={nextPhase ?? ''}
+          data-action={primaryAction ?? ''}
           aria-label={label}
           onClick={dispatchPrimary}
           disabled={disabled}

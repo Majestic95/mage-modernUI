@@ -44,8 +44,16 @@ vi.mock('../auth/store', async () => {
     await vi.importActual<typeof import('../auth/store')>('../auth/store');
   return {
     ...actual,
-    useAuthStore: <T,>(selector: (s: typeof authState) => T) =>
-      selector(authState),
+    // Slice 70-Z bug fix exposed a gap — the F2 handler now reads
+    // useAuthStore.getState() to derive myPriority for primaryActionFor.
+    // Mirror the useGameStore mock pattern: assign a `getState` helper
+    // onto the mocked function so direct .getState() calls work too.
+    useAuthStore: Object.assign(
+      <T,>(selector: (s: typeof authState) => T) => selector(authState),
+      {
+        getState: () => authState,
+      },
+    ),
   };
 });
 
@@ -292,6 +300,63 @@ describe('ActionButton — hotkeys', () => {
     const stream = makeStream();
     render(<ActionButton stream={stream} />);
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F2' }));
+    expect(stream.sendPlayerAction).toHaveBeenCalledWith(
+      'PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE',
+    );
+  });
+
+  // Slice 70-Z bug fix — when stack is non-empty AND it's my priority,
+  // the morphing label flips to "Pass Priority" (deriveActionLabel),
+  // and the dispatch must follow: PASS_PRIORITY_UNTIL_STACK_RESOLVED
+  // so the spell resolves and AP regains priority IN THE CURRENT
+  // PHASE, instead of the previous behavior which auto-passed through
+  // main1 + begin_combat into declare-attackers (a UX violation of
+  // CR 117.3b).
+  it('F2 with stack non-empty + my priority dispatches UNTIL_STACK_RESOLVED, not the phase macro', () => {
+    setGame({
+      step: 'PRECOMBAT_MAIN',
+      priorityPlayerName: 'alice',
+      stack: { 'spell-on-stack': {} },
+    });
+    authState.session = { username: 'alice' };
+    const stream = makeStream();
+    render(<ActionButton stream={stream} />);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F2' }));
+    expect(stream.sendPlayerAction).toHaveBeenCalledWith(
+      'PASS_PRIORITY_UNTIL_STACK_RESOLVED',
+    );
+    expect(stream.sendPlayerAction).not.toHaveBeenCalledWith(
+      'PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE',
+    );
+  });
+
+  it('primary button click with stack non-empty + my priority dispatches UNTIL_STACK_RESOLVED', async () => {
+    setGame({
+      step: 'PRECOMBAT_MAIN',
+      priorityPlayerName: 'alice',
+      stack: { 'spell-on-stack': {} },
+    });
+    authState.session = { username: 'alice' };
+    const stream = makeStream();
+    render(<ActionButton stream={stream} />);
+    await userEvent.click(screen.getByTestId('action-button-primary'));
+    expect(stream.sendPlayerAction).toHaveBeenCalledWith(
+      'PASS_PRIORITY_UNTIL_STACK_RESOLVED',
+    );
+  });
+
+  it('primary button click with empty stack still dispatches the phase macro', async () => {
+    // Sanity: empty-stack path is unchanged. The fix is scoped to the
+    // "Pass Priority" label state.
+    setGame({
+      step: 'PRECOMBAT_MAIN',
+      priorityPlayerName: 'alice',
+      stack: {},
+    });
+    authState.session = { username: 'alice' };
+    const stream = makeStream();
+    render(<ActionButton stream={stream} />);
+    await userEvent.click(screen.getByTestId('action-button-primary'));
     expect(stream.sendPlayerAction).toHaveBeenCalledWith(
       'PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE',
     );
