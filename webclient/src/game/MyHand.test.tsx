@@ -191,6 +191,86 @@ describe('MyHand — hand reorder via drag-and-drop (2026-05-02)', () => {
     expect(reorderCalls).toHaveLength(0);
   });
 
+  it('drop card 4 onto card 1 inserts at slot 0 and shifts cards 1-3 right (insert/shift, not swap)', () => {
+    // User-reported scenario (2026-05-02): "drop card 4 on card 1,
+    // expect [4, 1, 2, 3] — card 4 takes card 1's slot, the rest
+    // scoot over." Earlier swap semantics produced [4, 2, 3, 1] which
+    // didn't match the physical-hand reorder mental model.
+    const C = { id: 'cccccccc-cccc-cccc-cccc-cccccccccccc', cardId: 'cid', name: 'Card C', cardNumber: '3' } as never;
+    const D = { id: 'dddddddd-dddd-dddd-dddd-dddddddddddd', cardId: 'did', name: 'Card D', cardNumber: '4' } as never;
+
+    render(
+      <MyHand
+        {...PASSTHROUGH}
+        hand={{ [A.id]: A, [B.id]: B, [C.id]: C, [D.id]: D }}
+        draggedCardId={D.id}
+      />,
+    );
+
+    const cards = screen.getAllByTestId('hand-card');
+    expect(cards.map((el) => el.getAttribute('data-card-id'))).toEqual([
+      A.id,
+      B.id,
+      C.id,
+      D.id,
+    ]);
+
+    const original = (document as unknown as { elementFromPoint: unknown })
+      .elementFromPoint;
+    (document as unknown as { elementFromPoint: typeof document.elementFromPoint }).elementFromPoint =
+      () => cards[0]; // drop on card A (slot 0)
+    try {
+      fireEvent.pointerUp(document, { pointerId: 1, bubbles: true });
+    } finally {
+      (document as unknown as { elementFromPoint: unknown }).elementFromPoint =
+        original;
+    }
+
+    const cardsAfter = screen.getAllByTestId('hand-card');
+    expect(cardsAfter.map((el) => el.getAttribute('data-card-id'))).toEqual([
+      D.id, // 4 took 1's slot
+      A.id, // 1 shifted right
+      B.id, // 2 shifted right
+      C.id, // 3 shifted right
+    ]);
+  });
+
+  it('drag-right insert: drop card 1 onto card 4 places 1 after 4 (cards 2-3 shift left)', () => {
+    // Mirror direction of the user's example: dragging right inserts
+    // AFTER the target so the visible result is "1 ends up at the
+    // right end, 2-3 scoot left."
+    const C = { id: 'cccccccc-cccc-cccc-cccc-cccccccccccc', cardId: 'cid', name: 'Card C', cardNumber: '3' } as never;
+    const D = { id: 'dddddddd-dddd-dddd-dddd-dddddddddddd', cardId: 'did', name: 'Card D', cardNumber: '4' } as never;
+
+    render(
+      <MyHand
+        {...PASSTHROUGH}
+        hand={{ [A.id]: A, [B.id]: B, [C.id]: C, [D.id]: D }}
+        draggedCardId={A.id}
+      />,
+    );
+
+    const cards = screen.getAllByTestId('hand-card');
+    const original = (document as unknown as { elementFromPoint: unknown })
+      .elementFromPoint;
+    (document as unknown as { elementFromPoint: typeof document.elementFromPoint }).elementFromPoint =
+      () => cards[3]; // drop on card D (slot 3)
+    try {
+      fireEvent.pointerUp(document, { pointerId: 1, bubbles: true });
+    } finally {
+      (document as unknown as { elementFromPoint: unknown }).elementFromPoint =
+        original;
+    }
+
+    const cardsAfter = screen.getAllByTestId('hand-card');
+    expect(cardsAfter.map((el) => el.getAttribute('data-card-id'))).toEqual([
+      B.id,
+      C.id,
+      D.id,
+      A.id,
+    ]);
+  });
+
   it('hand cards remain interactive (aria-disabled instead of disabled) when canAct=false', () => {
     render(
       <MyHand

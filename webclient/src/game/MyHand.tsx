@@ -91,17 +91,33 @@ export function MyHand({
   }, [handIds.join('|')]);
   const onReorder = (fromId: string, toId: string) => {
     if (fromId === toId) return;
-    // Swap semantics: dropping A onto B trades their positions.
-    // Cleaner than "insert-before-target" because the latter is a
-    // no-op when source is already adjacent-left of target — the
-    // user's gesture should always have a visible effect.
+    // Insert / shift semantics (per user feedback 2026-05-02): drop
+    // source onto target → source takes target's slot, every card
+    // between source's old position and target shifts ONE slot toward
+    // source's old position to fill the gap. Mirrors the way the user
+    // would physically reorder cards in their hand: "this card goes
+    // here, the rest scoot over."
+    //
+    // Implementation: remove source from its index, then splice-insert
+    // at target's ORIGINAL index. This works in both directions:
+    //   - drag-left (fromIdx > toIdx): `without` length unchanged at
+    //     toIdx, so inserting there places source BEFORE target —
+    //     target and intervening cards shift right.
+    //   - drag-right (fromIdx < toIdx): removing source shifted the
+    //     array left by 1 starting at fromIdx, so the original toIdx
+    //     in `without` corresponds to the slot AFTER target. Inserting
+    //     there places source after target — intervening cards shifted
+    //     left when source was removed.
     setCardOrder((prev) => {
       const fromIdx = prev.indexOf(fromId);
       const toIdx = prev.indexOf(toId);
       if (fromIdx === -1 || toIdx === -1) return prev;
-      const next = [...prev];
-      [next[fromIdx], next[toIdx]] = [next[toIdx], next[fromIdx]];
-      return next;
+      const without = [
+        ...prev.slice(0, fromIdx),
+        ...prev.slice(fromIdx + 1),
+      ];
+      without.splice(toIdx, 0, fromId);
+      return without;
     });
   };
 
