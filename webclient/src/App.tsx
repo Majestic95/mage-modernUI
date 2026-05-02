@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAuthStore } from './auth/store';
 import { useGameStore } from './game/store';
+import { NewLobbyScreen } from './lobby/NewLobbyScreen';
 import { CardSearch } from './pages/CardSearch';
 import { Decks } from './pages/Decks';
 import { Game } from './pages/Game';
@@ -120,6 +121,14 @@ export function App() {
   const spectateGameId = matchSpectatePath(window.location.pathname);
   if (spectateGameId) {
     return <SpectatorPlaceholder gameId={spectateGameId} />;
+  }
+
+  // Slice L1 (new-lobby-window) — dev-only fixture entry for visual
+  // review. `?lobby=fixture` renders the new lobby screen with
+  // hardcoded data. Real entry from PreLobbyModal lands in slice L4.
+  const lobbyParam = new URLSearchParams(window.location.search).get('lobby');
+  if (lobbyParam === 'fixture' && session) {
+    return <NewLobbyScreen tableId="fixture" />;
   }
 
   if (!session) {

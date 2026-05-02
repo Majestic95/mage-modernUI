@@ -57,6 +57,13 @@
   --color-text-secondary: #9BA8B0;
   --color-text-muted: #5F6E78;
   --color-text-on-accent: #E8EDF0;
+
+  /* Card frame neutrals — slice L1 (new-lobby-window) exposed
+   * --color-card-frame-default for utility-class use so the lobby
+   * panels can write `border-card-frame-default/60` instead of
+   * inline borderColor. The token already exists in tokens.css; this
+   * just mirrors it into @theme. */
+  --color-card-frame-default: #2A3640;
 }
 
 /* Project-wide CSS custom properties go here. Theme palette per
