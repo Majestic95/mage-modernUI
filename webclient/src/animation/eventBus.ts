@@ -52,6 +52,17 @@ export function on<K extends GameEventKind>(
  * mounting-error mustn't cascade to the next.
  */
 export function emit(evt: GameEvent): void {
+  // Slice 70-Z diagnostic — opt-in via ?animDebug=1. Logs every emit
+  // so we can confirm the diff pipeline is producing events when
+  // animations don't seem to fire live.
+  if (
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('animDebug') === '1'
+  ) {
+    const bucketSize = listeners.get(evt.kind)?.size ?? 0;
+    // eslint-disable-next-line no-console
+    console.log(`[animDebug] emit ${evt.kind}`, evt, `(${bucketSize} listener${bucketSize === 1 ? '' : 's'})`);
+  }
   const bucket = listeners.get(evt.kind);
   if (!bucket) return;
   for (const fn of bucket) {

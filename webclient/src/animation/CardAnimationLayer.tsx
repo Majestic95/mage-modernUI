@@ -107,8 +107,16 @@ export function CardAnimationLayer(): React.JSX.Element {
   // the entry from local state.
   useEffect(() => {
     return on('cast', (evt) => {
-      if (!evt.cinematic) return;
-      if (prefersReducedMotion()) return;
+      const dbg = isAnimDebug();
+      if (dbg) console.log('[animDebug] cast fired', evt);
+      if (!evt.cinematic) {
+        if (dbg) console.log('[animDebug]   gated: cast event has cinematic=false');
+        return;
+      }
+      if (prefersReducedMotion()) {
+        if (dbg) console.log('[animDebug]   gated: prefers-reduced-motion');
+        return;
+      }
       // The cast event carries the cardId but not the card payload.
       // Resolve it from the current gameView snapshot via Zustand's
       // imperative escape hatch — we're inside a useEffect-registered
@@ -266,20 +274,38 @@ export function CardAnimationLayer(): React.JSX.Element {
   // bbox via [data-card-id] and mount the GroundCrackOverlay.
   useEffect(() => {
     return on('resolve_to_board', (evt) => {
-      if (prefersReducedMotion()) return;
+      const dbg = isAnimDebug();
+      if (dbg) console.log('[animDebug] resolve_to_board fired', evt);
+      if (prefersReducedMotion()) {
+        if (dbg) console.log('[animDebug]   gated: prefers-reduced-motion');
+        return;
+      }
       const gv = useGameStore.getState().gameView;
-      if (!gv) return;
+      if (!gv) {
+        if (dbg) console.log('[animDebug]   gated: no gameView');
+        return;
+      }
       const player = gv.players[evt.ownerSeat];
-      if (!player) return;
+      if (!player) {
+        if (dbg) console.log('[animDebug]   gated: no player at seat', evt.ownerSeat);
+        return;
+      }
       // Battlefield Record key is card.id (== card.cardId for
       // non-stack zones).
       const perm = player.battlefield[evt.cardId];
-      if (!perm) return;
+      if (!perm) {
+        if (dbg) console.log('[animDebug]   gated: cardId', evt.cardId, 'NOT in battlefield. keys=', Object.keys(player.battlefield));
+        return;
+      }
       const card = perm.card;
+      if (dbg) console.log('[animDebug]   card resolved:', { name: card.name, types: card.types, typeLine: card.typeLine, manaValue: card.manaValue });
       // Token exclusion — typeLine carries "Token Creature — ..."
       // for engine-created tokens. A 7-mana actual creature card
       // never has "Token" in its typeLine.
-      if (card.typeLine.toLowerCase().startsWith('token')) return;
+      if (card.typeLine.toLowerCase().startsWith('token')) {
+        if (dbg) console.log('[animDebug]   gated: token (typeLine=', card.typeLine, ')');
+        return;
+      }
       // Cinematic-tier gate: commander OR planeswalker OR CMC ≥ 7.
       const isCommander = gv.players.some((p) =>
         p.commandList.some(
@@ -288,7 +314,11 @@ export function CardAnimationLayer(): React.JSX.Element {
       );
       const isPlaneswalker = card.types.includes('PLANESWALKER');
       const isBigCmc = card.manaValue >= 7;
-      if (!isCommander && !isPlaneswalker && !isBigCmc) return;
+      if (dbg) console.log('[animDebug]   gates:', { isCommander, isPlaneswalker, isBigCmc, cardName: card.name, commandLists: gv.players.map(p => p.commandList.map(e => `${e.kind}:${e.name}`)) });
+      if (!isCommander && !isPlaneswalker && !isBigCmc) {
+        if (dbg) console.log('[animDebug]   gated: not cinematic-tier (no commander/planeswalker/CMC≥7 match)');
+        return;
+      }
       // Defer bbox capture until the LAYOUT_GLIDE has settled. On
       // race conditions (e.g. the user resolves DURING a cinematic
       // hold, which briefly produces a layoutId collision), the
@@ -297,7 +327,9 @@ export function CardAnimationLayer(): React.JSX.Element {
       // to 3 times via rAF so we get a stable bbox.
       const tryCapture = (attempt: number) => {
         const bbox = resolveTileBBox(evt.cardId);
+        if (dbg) console.log('[animDebug]   bbox attempt', attempt, ':', bbox);
         if (bbox && bbox.width > 0 && bbox.height > 0) {
+          if (dbg) console.log('[animDebug]   ✓ mounting GroundCrackOverlay for', evt.cardId);
           setActiveCracks((prev) => {
             const next = new Map(prev);
             next.set(evt.cardId, { bbox });
@@ -307,6 +339,8 @@ export function CardAnimationLayer(): React.JSX.Element {
         }
         if (attempt < 3) {
           requestAnimationFrame(() => tryCapture(attempt + 1));
+        } else if (dbg) {
+          console.log('[animDebug]   ✗ bbox capture failed after 3 retries');
         }
       };
       const t = setTimeout(
@@ -484,6 +518,21 @@ function countAgainstBudget(populate: () => void): void {
 function prefersReducedMotion(): boolean {
   if (typeof window === 'undefined' || !window.matchMedia) return false;
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+/**
+ * Slice 70-Z diagnostic — opt-in console tracing for animations. Enable
+ * by appending `?animDebug=1` to the page URL. When on, every event
+ * subscription logs entry + each gate decision so we can see why an
+ * animation didn't fire. Production-safe (silent unless flag is set).
+ */
+function isAnimDebug(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return new URLSearchParams(window.location.search).get('animDebug') === '1';
+  } catch {
+    return false;
+  }
 }
 
 /**
