@@ -19,6 +19,33 @@ minor mismatches.
 
 ---
 
+## 1.26 — 2026-05-01 — Stack ability source CardView (slice 70-Z)
+
+Adds one additive field — `WebCardView.source: WebCardView | null` —
+populated only for ability-shaped stack objects (upstream
+`AbilityView`). Carries the full CardView of the source card
+(creature/enchantment/emblem/etc.) so the focal stack can render the
+source card's actual visual instead of a blank "Ability"
+placeholder. Schema 1.18's `sourceLabel` (a string name) stays for
+backwards compat; `source` is the richer companion field. Recursion
+is capped at one level — `source.source` is always `null` on the
+wire.
+
+### `WebCardView` — added `source` field
+
+```diff
+   "sourceLabel": "Soul Warden",
++  "source": { "id":"…", "name":"Soul Warden", "manaCost":"{W}", … }
+ }
+```
+
+Webclient: focal stack swaps its CardFace input from the ability
+view to the source view when `source` is non-null, so triggered /
+activated abilities on the stack render as a copy of the source
+card (CR 117.3b context — players need to identify which permanent
+fired). `cardId`-based Framer layoutId stays on the entry's own id
+so the source permanent doesn't animate off the battlefield.
+
 ## 1.23 — 2026-04-29 — Player connectionState for DISCONNECTED overlay (slice 70-H)
 
 Adds one additive field — `WebPlayerView.connectionState: string` —

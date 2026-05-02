@@ -29,7 +29,7 @@ class CardViewMapperTest {
     private static final ObjectMapper JSON = new ObjectMapper();
 
     @Test
-    void cardView_jsonShape_locksTwentyFourFields() throws Exception {
+    void cardView_jsonShape_locksTwentyFiveFields() throws Exception {
         WebCardView dto = new WebCardView(
                 "550e8400-e29b-41d4-a716-446655440000",
                 "550e8400-e29b-41d4-a716-446655440000",
@@ -54,19 +54,23 @@ class CardViewMapperTest {
                 false,
                 false,
                 null,
-                ""
+                "",
+                null
         );
         JsonNode node = JSON.valueToTree(dto);
 
-        assertEquals(24, node.size(),
-                "WebCardView must have exactly 24 fields "
-                        + "(slice 52a added cardId for cross-zone animation); got: " + node);
+        assertEquals(25, node.size(),
+                "WebCardView must have exactly 25 fields "
+                        + "(slice 70-Z added source for ability-stack rendering); got: " + node);
         // Snapshot the field set explicitly so adding a field forces
         // a CHANGELOG bump. transformable/transformed/secondCardFace
         // landed in 1.12 — DFC + MDFC support per audit §3.
         // sourceLabel landed in 1.18 — trigger-order source attribution.
         // cardId landed in 1.19 (slice 52a) — stack/spell underlying
         // card UUID for Framer Motion layoutId cross-zone animation.
+        // source landed in 1.26 (slice 70-Z) — full source CardView
+        // for ability stack objects so the focal stack can render the
+        // source card's visual instead of a blank "Ability" placeholder.
         for (String field : List.of(
                 "id", "cardId", "name", "displayName", "expansionSetCode",
                 "cardNumber", "manaCost", "manaValue", "typeLine",
@@ -74,7 +78,7 @@ class CardViewMapperTest {
                 "power", "toughness", "startingLoyalty", "rules",
                 "faceDown", "counters",
                 "transformable", "transformed", "secondCardFace",
-                "sourceLabel")) {
+                "sourceLabel", "source")) {
             assertTrue(node.has(field), "missing field: " + field);
         }
     }
@@ -102,7 +106,7 @@ class CardViewMapperTest {
                         "3", "2", "",
                         List.of("Goad target creature."),
                         false, Map.of(),
-                        false, false, null, ""),
+                        false, false, null, "", null),
                 "alice", false, false, false, true, false, 0,
                 List.of(), "", false,
                 // Slice 69c: populated by mapper from
@@ -125,7 +129,7 @@ class CardViewMapperTest {
                 List.of("Forest"), List.of(), "COMMON",
                 "", "", "", List.of("({T}: Add {G}.)"),
                 false, Map.of(),
-                false, false, null, "");
+                false, false, null, "", null);
         WebPermanentView dto = new WebPermanentView(
                 card, "alice", false, false, false, true, false, 0,
                 List.of(), "", false, List.of());
@@ -142,7 +146,7 @@ class CardViewMapperTest {
             assertTrue(node.has(field), "missing field: " + field);
         }
         // Composition: the nested card carries the full WebCardView shape.
-        assertEquals(24, node.get("card").size(),
+        assertEquals(25, node.get("card").size(),
                 "permanent.card must be a full WebCardView");
         // Schema 1.20 wire shape: empty array until slice 69b plumbs
         // live Permanent access through the mapper (ADR 0010 v2 D3c).
@@ -168,5 +172,121 @@ class CardViewMapperTest {
                 () -> CardViewMapper.toCardDto(null));
         assertThrows(IllegalArgumentException.class,
                 () -> CardViewMapper.toPermanentDto(null));
+    }
+
+    @Test
+    void cardView_ordinaryCard_sourceIsNull() throws Exception {
+        // Slice 70-Z — for non-AbilityView inputs (battlefield, hand,
+        // graveyard, exile, stack-spells), `source` is null. Only
+        // ability stack objects carry a populated source.
+        mage.view.CardView cv = new mage.view.CardView(true);
+        cv.overrideId(java.util.UUID.fromString(
+                "11111111-1111-1111-1111-111111111111"));
+
+        WebCardView dto = CardViewMapper.toCardDto(cv);
+
+        org.junit.jupiter.api.Assertions.assertNull(dto.source(),
+                "ordinary CardViews must have null source");
+        assertEquals("", dto.sourceLabel(),
+                "ordinary CardViews must have empty sourceLabel");
+    }
+
+    @Test
+    void cardView_abilityView_populatesSourceAndCapsRecursion() throws Exception {
+        // Slice 70-Z / schema 1.26 — for an upstream AbilityView the
+        // mapper populates `source` with a full WebCardView of the
+        // source card so the focal stack can render the source's
+        // visual instead of a blank "Ability" placeholder.
+        //
+        // AbilityView has no no-arg constructor (it requires an
+        // Ability + sourceName + sourceCard); we build it via JDK
+        // serialization-bypass reflection so the test stays decoupled
+        // from upstream Ability subclass choices. Same pattern the
+        // existing CardViewMapperCardIdTest uses for installing a
+        // back face — reflection over package-private upstream
+        // internals is acceptable in test setup.
+        java.util.UUID sourceId = java.util.UUID.fromString(
+                "22222222-2222-2222-2222-222222222222");
+        mage.view.CardView sourceCv = new mage.view.CardView(true);
+        sourceCv.overrideId(sourceId);
+        // Stamp a name on the source so the assertion has something
+        // to read; CardView's `name` field is package-private with
+        // no public setter so reflection sets it directly.
+        java.lang.reflect.Field nameField =
+                mage.view.CardView.class.getDeclaredField("name");
+        nameField.setAccessible(true);
+        nameField.set(sourceCv, "Soul Warden");
+
+        mage.view.AbilityView abilityView = newAbilityView(
+                java.util.UUID.fromString(
+                        "33333333-3333-3333-3333-333333333333"),
+                "Soul Warden", sourceCv);
+
+        WebCardView dto = CardViewMapper.toCardDto(abilityView);
+
+        // sourceLabel surface (schema 1.18) — backwards compat.
+        assertEquals("Soul Warden", dto.sourceLabel());
+        // source full CardView surface (schema 1.26) — new in 70-Z.
+        org.junit.jupiter.api.Assertions.assertNotNull(dto.source(),
+                "ability stack objects must populate source");
+        assertEquals("Soul Warden", dto.source().name());
+        assertEquals(sourceId.toString(), dto.source().id());
+        // Recursion cap: source-of-source is null on the wire.
+        org.junit.jupiter.api.Assertions.assertNull(dto.source().source(),
+                "source must not chain — recursion capped at one level");
+    }
+
+    /**
+     * Construct an {@link mage.view.AbilityView} without going through
+     * its public constructor (which requires a real Ability). Uses
+     * {@code sun.reflect.ReflectionFactory} to bypass the constructor —
+     * same JVM API the JDK serialization machinery uses, so the
+     * surefire {@code --add-opens} flag bundle already covers it.
+     *
+     * <p>After bypass-allocation we populate the same fields the real
+     * constructor at {@code AbilityView.java:19-36} would set, so the
+     * mapper's {@code cv.getManaCostStr()} / {@code cv.getRules()} /
+     * {@code cv.getColor()} / etc. don't NPE on uninitialized fields.
+     */
+    @SuppressWarnings("unused")
+    private static mage.view.AbilityView newAbilityView(
+            java.util.UUID id, String sourceName, mage.view.CardView sourceCard)
+            throws Exception {
+        sun.reflect.ReflectionFactory rf =
+                sun.reflect.ReflectionFactory.getReflectionFactory();
+        java.lang.reflect.Constructor<Object> objCtor =
+                Object.class.getDeclaredConstructor();
+        java.lang.reflect.Constructor<?> avCtor =
+                rf.newConstructorForSerialization(
+                        mage.view.AbilityView.class, objCtor);
+        mage.view.AbilityView av =
+                (mage.view.AbilityView) avCtor.newInstance();
+        // Mirror AbilityView's constructor field-init so the mapper's
+        // accessors (getManaCostStr, getRules, getColor, etc.) don't
+        // NPE on null collections.
+        setField(mage.view.SimpleCardView.class, av, "id", id);
+        setField(mage.view.CardView.class, av, "name", "Ability");
+        setField(mage.view.CardView.class, av, "displayName", "Ability");
+        setField(mage.view.CardView.class, av, "rules", new java.util.ArrayList<String>());
+        setField(mage.view.CardView.class, av, "power", "");
+        setField(mage.view.CardView.class, av, "toughness", "");
+        setField(mage.view.CardView.class, av, "loyalty", "");
+        setField(mage.view.CardView.class, av, "defense", "");
+        setField(mage.view.CardView.class, av, "cardTypes", new java.util.ArrayList<>());
+        setField(mage.view.CardView.class, av, "subTypes", new mage.util.SubTypes());
+        setField(mage.view.CardView.class, av, "superTypes", new java.util.ArrayList<>());
+        setField(mage.view.CardView.class, av, "color", new mage.ObjectColor());
+        setField(mage.view.CardView.class, av, "manaCostLeftStr", new java.util.ArrayList<String>());
+        setField(mage.view.CardView.class, av, "manaCostRightStr", new java.util.ArrayList<String>());
+        setField(mage.view.AbilityView.class, av, "sourceName", sourceName);
+        setField(mage.view.AbilityView.class, av, "sourceCard", sourceCard);
+        return av;
+    }
+
+    private static void setField(Class<?> cls, Object target, String name, Object value)
+            throws Exception {
+        java.lang.reflect.Field f = cls.getDeclaredField(name);
+        f.setAccessible(true);
+        f.set(target, value);
     }
 }

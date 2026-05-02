@@ -483,3 +483,141 @@ describe('StackZone — REDESIGN combat mode (picture-catalog §3.2)', () => {
     expect(zone.dataset['stackMode']).toBe('focal');
   });
 });
+
+// --- Slice 70-Z / schema 1.26 — ability stack-source swap ---------
+
+describe('StackZone — ability source-card swap (slice 70-Z)', () => {
+  beforeEach(() => {
+    flagState.redesign = true;
+  });
+
+  it('renders the source card visual when an ability has source set', () => {
+    // Ability stack object — name="Ability" placeholder, source carries
+    // the full Soul Warden card. The focal CardFace must render Soul
+    // Warden, not the blank placeholder.
+    const sourceCard = makeCard({
+      id: 'soul-warden-1',
+      cardId: 'soul-warden-1',
+      name: 'Soul Warden',
+      colors: ['W'],
+    });
+    const ability = makeCard({
+      id: 'trigger-1',
+      cardId: 'trigger-1',
+      name: 'Ability',
+      displayName: 'Ability',
+      colors: [],
+      source: sourceCard,
+    });
+    render(<StackZone stack={makeStack([ability])} combat={[]} />);
+    // CardFace renders by display name in test (real renderer uses
+    // image, but the placeholder text path is the test-readable
+    // surface).
+    const focal = screen.getByTestId('stack-focal-card');
+    expect(focal.textContent).toContain('Soul Warden');
+    expect(focal.textContent).not.toContain('Ability');
+  });
+
+  it('falls back to the entry itself when source is null (spells)', () => {
+    // Spells on the stack come through with source === null. The
+    // focal must render the spell's own card (existing behavior).
+    const spell = makeCard({
+      id: 'bolt-1',
+      cardId: 'bolt-1',
+      name: 'Lightning Bolt',
+      colors: ['R'],
+      source: null,
+    });
+    render(<StackZone stack={makeStack([spell])} combat={[]} />);
+    const focal = screen.getByTestId('stack-focal-card');
+    expect(focal.textContent).toContain('Lightning Bolt');
+  });
+
+  it('keeps the entry-own cardId for layoutId, not the source cardId', () => {
+    // Critical: source permanent stays on the battlefield; we must NOT
+    // animate it off-board to the focal stack. layoutId tracks the
+    // entry's own cardId (a unique-per-trigger id), not the source's.
+    const sourceCard = makeCard({
+      id: 'soul-warden-1',
+      cardId: 'soul-warden-cardId',
+      name: 'Soul Warden',
+    });
+    const ability = makeCard({
+      id: 'trigger-1',
+      cardId: 'trigger-cardId',
+      name: 'Ability',
+      source: sourceCard,
+    });
+    render(<StackZone stack={makeStack([ability])} combat={[]} />);
+    const focal = screen.getByTestId('stack-focal-card');
+    expect(focal.dataset['layoutId']).toBe('trigger-cardId');
+    expect(focal.dataset['layoutId']).not.toBe('soul-warden-cardId');
+  });
+
+  it('renders three independent visuals when three identical-source triggers stack', () => {
+    // Three creatures with "when this ETB, draw a card" entering
+    // simultaneously → three triggers on the stack. User confirmed
+    // (slice 70-Z question #5): three independent visuals, no badge
+    // collapse. They are independent stack objects.
+    const sourceCard = makeCard({
+      id: 'src',
+      cardId: 'src-cardId',
+      name: 'Soul Warden',
+    });
+    const t1 = makeCard({ id: 't1', cardId: 't1', name: 'Ability', source: sourceCard });
+    const t2 = makeCard({ id: 't2', cardId: 't2', name: 'Ability', source: sourceCard });
+    const t3 = makeCard({ id: 't3', cardId: 't3', name: 'Ability', source: sourceCard });
+    render(<StackZone stack={makeStack([t1, t2, t3])} combat={[]} />);
+    expect(screen.getByTestId('stack-focal-card')).toBeInTheDocument();
+    // The non-topmost two are fan tiles.
+    expect(screen.getAllByTestId('stack-fan-card')).toHaveLength(2);
+  });
+
+  it('fan tiles also swap to the source card when source is set', () => {
+    const sourceCard = makeCard({
+      id: 'src',
+      cardId: 'src-cardId',
+      name: 'Soul Warden',
+    });
+    const top = makeCard({
+      id: 'top',
+      cardId: 'top',
+      name: 'Lightning Bolt',
+      source: null,
+    });
+    const fanAbility = makeCard({
+      id: 'fan-1',
+      cardId: 'fan-1',
+      name: 'Ability',
+      source: sourceCard,
+    });
+    render(<StackZone stack={makeStack([fanAbility, top])} combat={[]} />);
+    // Top is the spell, fan is the ability whose visual must be Soul
+    // Warden.
+    const fan = screen.getByTestId('stack-fan-card');
+    expect(fan.textContent).toContain('Soul Warden');
+  });
+});
+
+describe('StackZone — legacy strip ability source-card swap', () => {
+  beforeEach(() => {
+    flagState.redesign = false;
+  });
+
+  it('legacy branch also swaps to source when present', () => {
+    const sourceCard = makeCard({
+      id: 'src',
+      cardId: 'src-cardId',
+      name: 'Soul Warden',
+    });
+    const ability = makeCard({
+      id: 'trigger-1',
+      cardId: 'trigger-1',
+      name: 'Ability',
+      source: sourceCard,
+    });
+    render(<StackZone stack={makeStack([ability])} />);
+    const entry = screen.getByTestId('stack-entry');
+    expect(entry.textContent).toContain('Soul Warden');
+  });
+});

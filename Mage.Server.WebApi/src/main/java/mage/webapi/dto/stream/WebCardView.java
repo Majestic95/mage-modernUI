@@ -81,6 +81,17 @@ import java.util.Map;
  *     "from: ‹source›" attribution under each rule, useful for
  *     emblems / dungeons / planes whose rule text doesn't include the
  *     source. Empty string for ordinary cards.
+ * @param source          non-null only when this view is an upstream
+ *     {@code AbilityView} carrying a triggered / activated ability —
+ *     populated with a full {@link WebCardView} of the source card
+ *     (the permanent / emblem / graveyard card that produced the
+ *     ability). Schema 1.26 — lets the focal stack render the source
+ *     card's actual visual instead of a blank "Ability" placeholder
+ *     so players can identify what is triggering and from where.
+ *     Recursion is capped at one level: the source view's own
+ *     {@code source} is always {@code null} on the wire (an ability
+ *     of an ability is not a thing in MTG). For ordinary cards (any
+ *     non-{@code AbilityView}) this is {@code null}.
  */
 public record WebCardView(
         String id,
@@ -106,6 +117,7 @@ public record WebCardView(
         boolean transformable,
         boolean transformed,
         WebCardView secondCardFace,
-        String sourceLabel
+        String sourceLabel,
+        WebCardView source
 ) {
 }

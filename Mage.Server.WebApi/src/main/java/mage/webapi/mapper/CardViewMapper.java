@@ -36,7 +36,7 @@ public final class CardViewMapper {
     }
 
     public static WebCardView toCardDto(CardView cv) {
-        return toCardDto(cv, null, true);
+        return toCardDto(cv, null, true, true);
     }
 
     /**
@@ -54,25 +54,25 @@ public final class CardViewMapper {
      * the card UUID).
      */
     public static WebCardView toCardDto(CardView cv, UUID underlyingCardId) {
-        return toCardDto(cv, underlyingCardId, true);
+        return toCardDto(cv, underlyingCardId, true, true);
     }
 
     /**
-     * Internal entry point for the recursive secondCardFace mapping.
-     * {@code allowSecondFace} is true on the top-level call and false
-     * when mapping the back face — caps recursion at one level so the
-     * wire format never carries a third-tier face. Mirrors upstream
-     * {@code CardView.secondCardFace} which itself never recurses past
-     * the first back face.
+     * Internal entry point for the recursive secondCardFace + source
+     * mapping. {@code allowSecondFace} caps recursion at one level on
+     * the back-face path; {@code allowSource} caps recursion at one
+     * level on the ability-source path. Both are true on the top-level
+     * call and false on the recursive call so the wire format never
+     * carries a third-tier face or a source-of-source.
      *
      * <p>The {@code underlyingCardId} parameter is forwarded to
-     * {@link #resolveCardId} for the top-level mapping; the recursive
-     * back-face call always passes null so the second face's
-     * {@code cardId} resolves to its own {@code id} (back faces are
-     * separate Card instances upstream and don't share a UUID with
-     * the front face).
+     * {@link #resolveCardId} for the top-level mapping; recursive
+     * calls always pass null so back-face / source views resolve their
+     * own {@code cardId} from their own {@code id}.
      */
-    private static WebCardView toCardDto(CardView cv, UUID underlyingCardId, boolean allowSecondFace) {
+    private static WebCardView toCardDto(CardView cv, UUID underlyingCardId,
+                                         boolean allowSecondFace,
+                                         boolean allowSource) {
         if (cv == null) {
             throw new IllegalArgumentException("CardView must not be null");
         }
@@ -87,7 +87,10 @@ public final class CardViewMapper {
                 if (upstreamSecond != null) {
                     // Recursive call passes null underlyingCardId — the
                     // back face resolves its own cardId from cv.getId().
-                    secondFace = toCardDto(upstreamSecond, null, false);
+                    // allowSource=true so a back face that is itself an
+                    // AbilityView (degenerate but defensively allowed)
+                    // still surfaces its source.
+                    secondFace = toCardDto(upstreamSecond, null, false, true);
                 }
             } catch (RuntimeException ex) {
                 // Defensive: some upstream code paths NPE when reading
@@ -122,7 +125,8 @@ public final class CardViewMapper {
                 transformable,
                 transformed,
                 secondFace,
-                extractSourceLabel(cv)
+                extractSourceLabel(cv),
+                extractSource(cv, allowSource)
         );
     }
 
@@ -161,6 +165,36 @@ public final class CardViewMapper {
         if (!(cv instanceof AbilityView av)) return "";
         CardView source = av.getSourceCard();
         return source == null ? "" : nullToEmpty(source.getName());
+    }
+
+    /**
+     * For an {@link AbilityView}, return a full {@link WebCardView} of
+     * the source card so the focal stack can render the source's
+     * actual visual (image, mana cost, types, rules) instead of a
+     * blank "Ability" placeholder. Schema 1.26 / slice 70-Z.
+     *
+     * <p>Recursion-capped: when {@code allowSource} is false (the
+     * recursive call mapping the source itself), this returns null so
+     * the wire never carries a source-of-source chain. Returns null
+     * for ordinary (non-{@code AbilityView}) inputs.
+     *
+     * <p>Mirrors the {@code allowSecondFace} pattern. Source CardViews
+     * upstream are constructed from a {@code MageObject} with full
+     * card data (name, mana cost, types, rules) by
+     * {@code CardsView.java}; this helper just routes them through
+     * the same {@link #toCardDto} path that battlefield permanents
+     * use.
+     */
+    private static WebCardView extractSource(CardView cv, boolean allowSource) {
+        if (!allowSource) return null;
+        if (!(cv instanceof AbilityView av)) return null;
+        CardView source = av.getSourceCard();
+        if (source == null) return null;
+        // The recursive call passes allowSecondFace=true (the source
+        // can be a transformable card whose back face matters) but
+        // allowSource=false (a source's source is not a meaningful
+        // concept and could otherwise loop on a misshaped upstream).
+        return toCardDto(source, null, true, false);
     }
 
     public static WebPermanentView toPermanentDto(PermanentView pv) {

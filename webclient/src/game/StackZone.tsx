@@ -123,7 +123,10 @@ export function StackZone({
       <div className="flex flex-wrap items-end gap-2">
         <AnimatePresence mode="popLayout" initial={false}>
           {entries.map((card, idx) => {
-            const tooltip = [card.typeLine, ...(card.rules ?? [])]
+            // Slice 70-Z — render source card for ability stack
+            // entries (see FocalCard for the full rationale).
+            const visualCard = card.source ?? card;
+            const tooltip = [visualCard.typeLine, ...(visualCard.rules ?? [])]
               .filter(Boolean)
               .join('\n');
             const layoutId = card.cardId ? card.cardId : undefined;
@@ -138,13 +141,13 @@ export function StackZone({
                 exit={{ opacity: 0, y: 24, scale: 0.85 }}
                 transition={slow(STACK_ENTER_EXIT)}
               >
-                <HoverCardDetail card={card}>
+                <HoverCardDetail card={visualCard}>
                   <div
                     data-testid="stack-entry"
                     className="relative"
-                    title={tooltip || card.name}
+                    title={tooltip || visualCard.name}
                   >
-                    <CardFace card={card} size="stack" />
+                    <CardFace card={visualCard} size="stack" />
                     {idx === 0 && (
                       <span
                         data-testid="stack-top-marker"
@@ -337,9 +340,14 @@ function FanCard({
   // exit-old-enter-new overlap.
   const layoutId = card.cardId ? `stack-fan-${card.cardId}` : undefined;
 
+  // Slice 70-Z / schema 1.26 — same source-swap as FocalCard so fan
+  // tiles for triggered/activated abilities also render the source
+  // card. See FocalCard for the full rationale.
+  const visualCard = card.source ?? card;
+
   // Hover preview reuses the same HoverCardDetail popover the focal
   // card uses. User directive: "keep each card hoverable."
-  const tooltip = [card.typeLine, ...(card.rules ?? [])]
+  const tooltip = [visualCard.typeLine, ...(visualCard.rules ?? [])]
     .filter(Boolean)
     .join('\n');
 
@@ -362,13 +370,13 @@ function FanCard({
         exit={{ opacity: 0, scale: tileScale * 0.85 }}
         transition={slow(STACK_ENTER_EXIT)}
       >
-        <HoverCardDetail card={card}>
+        <HoverCardDetail card={visualCard}>
           <div
             data-testid="stack-fan-entry"
             className="relative"
-            title={tooltip || card.name}
+            title={tooltip || visualCard.name}
           >
-            <CardFace card={card} size="focal" />
+            <CardFace card={visualCard} size="focal" />
           </div>
         </HoverCardDetail>
       </motion.div>
@@ -419,14 +427,27 @@ function FocalCard({
   /** Number of entries beyond the visible fan; 0 → no pill. */
   overflow: number;
 }) {
-  const tooltip = [card.typeLine, ...(card.rules ?? [])]
+  // Slice 70-Z / schema 1.26 — for ability stack objects (triggered /
+  // activated abilities), the wire carries a `source` CardView with
+  // the source card's full visual data. Render the source instead of
+  // the blank "Ability" placeholder so players can identify which
+  // permanent fired at a glance. The original `card` (the ability
+  // view itself) keeps its `id` / `cardId` for layoutId so the source
+  // permanent doesn't animate off the battlefield. Spells on the
+  // stack come through with `source === null` and render unchanged.
+  const visualCard = card.source ?? card;
+  const tooltip = [visualCard.typeLine, ...(visualCard.rules ?? [])]
     .filter(Boolean)
     .join('\n');
   // Slice 70-N UI critic C3 — focal layoutId stays on plain `cardId`
   // (no namespace) so a card animating from the hand to the stack
   // glides via the existing cross-zone layoutId track. Fan tiles use
   // a `stack-fan-` prefix to avoid collisions during a stack
-  // resolution where a fan tile promotes to focal.
+  // resolution where a fan tile promotes to focal. For ability stack
+  // entries we deliberately use the entry's own cardId (an ability-
+  // unique id), NOT the source's cardId — the source permanent isn't
+  // moving zones, so we don't want Framer animating it off the
+  // battlefield to the focal stack.
   const layoutId = card.cardId ? card.cardId : undefined;
 
   // Slice 70-Z.3 — when this cardId is mid-cinematic-cast, skip the
@@ -505,13 +526,13 @@ function FocalCard({
         style={{ ...haloStyle, zIndex: -1 }}
         aria-hidden="true"
       />
-      <HoverCardDetail card={card}>
+      <HoverCardDetail card={visualCard}>
         <div
           data-testid="stack-entry"
           className="relative"
-          title={tooltip || card.name}
+          title={tooltip || visualCard.name}
         >
-          <CardFace card={card} size="focal" />
+          <CardFace card={visualCard} size="focal" />
           {overflow > 0 && (
             // Slice 70-N UI critic N1 — pill moved to top-LEFT so it
             // doesn't compete with the focal CardFace's mana cost

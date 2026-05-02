@@ -423,6 +423,16 @@ export type WebCardView = {
    * beneath each rule. Empty for ordinary cards.
    */
   sourceLabel: string;
+  /**
+   * Schema 1.26 (slice 70-Z). Non-null when this view came through
+   * the {@code AbilityView} path — carries the FULL source CardView
+   * (image, mana cost, types, rules) so the focal stack can render
+   * the source card's actual visual instead of a blank "Ability"
+   * placeholder. Recursion is capped at one level: the source's own
+   * {@code source} is always {@code null} on the wire. {@code null}
+   * for ordinary (non-ability) card views.
+   */
+  source: WebCardView | null;
 };
 export const webCardViewSchema: z.ZodType<WebCardView> = z.lazy(() =>
   z.object({
@@ -468,6 +478,12 @@ export const webCardViewSchema: z.ZodType<WebCardView> = z.lazy(() =>
     transformed: z.boolean(),
     secondCardFace: webCardViewSchema.nullable(),
     sourceLabel: z.string().default(''),
+    // Schema 1.26 (slice 70-Z). Default null so older fixtures (and a
+    // ≤1.25 server still running mid-deploy) parse cleanly. Recursion
+    // cap is enforced server-side; the recursive z.lazy reference here
+    // permits the structure to nest arbitrarily on the type level, but
+    // the wire format never carries more than one level.
+    source: webCardViewSchema.nullable().default(null),
   }),
 );
 
