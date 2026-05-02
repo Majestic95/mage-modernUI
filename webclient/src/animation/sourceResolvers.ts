@@ -123,16 +123,26 @@ export function stubCardFromCommandList(
     name: commanderEntry.name,
     displayName: commanderEntry.name,
     expansionSetCode: commanderEntry.expansionSetCode,
-    // Slice 70-Z.3 critic IMP-4 fix — commandList exposes imageNumber
-    // (numeric) but CardFace's scryfall image lookup keys off
-    // cardNumber (string). Stringify so the card art actually
-    // renders during the 600ms glide instead of a blank gradient.
-    cardNumber: String(commanderEntry.imageNumber ?? ''),
+    // P1 audit fix — prefer the schema-1.24 string `cardNumber` over
+    // the numeric `imageNumber`. Upstream's MageObject.imageNumber
+    // defaults to 0 for ordinary cards (only tokens / face-down get
+    // explicit values), so the pre-fix
+    // `String(commanderEntry.imageNumber ?? '')` produced "0" for
+    // every commander → Scryfall 404 → blank gradient mid-glide.
+    // Same fallback chain MyHand.tsx uses for command-zone art.
+    cardNumber:
+      commanderEntry.cardNumber ||
+      (commanderEntry.imageNumber ? String(commanderEntry.imageNumber) : ''),
     manaCost: '',
     manaValue: 0,
     typeLine: '',
     supertypes: [],
-    types: ['CREATURE'],
+    // P1 audit fix — was hardcoded to ['CREATURE'], which mis-renders
+    // P/T overlays on planeswalker / partner-background commanders
+    // during the return-to-command-zone glide. Drop the hardcoded
+    // type; CardFace's battlefield-variant rendering is robust to an
+    // empty types array (no badge, just art + name).
+    types: [],
     subtypes: [],
     colors: [],
     rarity: '',
@@ -146,5 +156,6 @@ export function stubCardFromCommandList(
     transformed: false,
     secondCardFace: null,
     sourceLabel: '',
+    source: null,
   };
 }

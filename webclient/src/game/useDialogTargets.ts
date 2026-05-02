@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useGameStore } from './store';
 import type { GameStream } from './stream';
 import type { WebGameView } from '../api/schemas';
@@ -94,9 +95,26 @@ export function useDialogTargets(stream: GameStream | null): DialogTargetState {
   const pendingDialog = useGameStore((s) => s.pendingDialog);
   const gameView = useGameStore((s) => s.gameView);
 
-  if (!pendingDialog || !stream) return INACTIVE;
-  // gameChooseAbility uses a different DTO (no cardsView1); modal-only.
-  if (pendingDialog.method === 'gameChooseAbility') return INACTIVE;
+  // P1 audit fix — memoize the result so consumers (MyHand,
+  // GameDialog, BattlefieldTile, PlayerArea) don't see a fresh Set +
+  // closure on every render and re-render unnecessarily through their
+  // own memo dep arrays. Stream is captured in the closure; pendingDialog
+  // and gameView identity-change is the only legitimate trigger to
+  // recompute. INACTIVE is a stable module-level reference, so when
+  // there's no dialog or no stream we return the same instance.
+  return useMemo<DialogTargetState>(() => {
+    if (!pendingDialog || !stream) return INACTIVE;
+    // gameChooseAbility uses a different DTO (no cardsView1); modal-only.
+    if (pendingDialog.method === 'gameChooseAbility') return INACTIVE;
+    return computeDialogTargets(pendingDialog, gameView, stream);
+  }, [pendingDialog, gameView, stream]);
+}
+
+function computeDialogTargets(
+  pendingDialog: NonNullable<ReturnType<typeof useGameStore.getState>['pendingDialog']>,
+  gameView: WebGameView | null,
+  stream: GameStream,
+): DialogTargetState {
 
   const data = pendingDialog.data;
   const cardsView1 = data.cardsView1 ?? {};
