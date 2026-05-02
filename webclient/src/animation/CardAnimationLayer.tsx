@@ -272,8 +272,19 @@ export function CardAnimationLayer(): React.JSX.Element {
   // via setTimeout so the crack fires AS the creature lands (not
   // while still mid-glide), then resolve the now-mounted tile's
   // bbox via [data-card-id] and mount the GroundCrackOverlay.
+  //
+  // P0 audit fix: track every pending timer + rAF handle so the
+  // effect's cleanup can cancel them. Without this, leaving the
+  // table during the 400ms landing window fires setActiveCracks on
+  // an unmounted component (React 18 warns; the setter call still
+  // mutates the just-discarded state). The cleanup also guards
+  // against the layer remounting (e.g., StrictMode dev double-mount)
+  // queueing duplicate animations.
   useEffect(() => {
-    return on('resolve_to_board', (evt) => {
+    const pendingTimers = new Set<ReturnType<typeof setTimeout>>();
+    const pendingRafs = new Set<number>();
+    let cancelled = false;
+    const off = on('resolve_to_board', (evt) => {
       const dbg = isAnimDebug();
       if (dbg) console.log('[animDebug] resolve_to_board fired', evt);
       if (prefersReducedMotion()) {
@@ -338,6 +349,7 @@ export function CardAnimationLayer(): React.JSX.Element {
       // could be 0 if Framer hasn't mounted it cleanly. Retry up
       // to 3 times via rAF so we get a stable bbox.
       const tryCapture = (attempt: number) => {
+        if (cancelled) return;
         const bbox = resolveTileBBox(evt.cardId);
         if (dbg) console.log('[animDebug]   bbox attempt', attempt, ':', bbox);
         if (bbox && bbox.width > 0 && bbox.height > 0) {
@@ -350,17 +362,29 @@ export function CardAnimationLayer(): React.JSX.Element {
           return;
         }
         if (attempt < 3) {
-          requestAnimationFrame(() => tryCapture(attempt + 1));
+          const raf = requestAnimationFrame(() => {
+            pendingRafs.delete(raf);
+            tryCapture(attempt + 1);
+          });
+          pendingRafs.add(raf);
         } else if (dbg) {
           console.log('[animDebug]   ✗ bbox capture failed after 3 retries');
         }
       };
-      const t = setTimeout(
-        () => tryCapture(0),
-        GROUND_CRACK_LANDING_DELAY_MS,
-      );
-      void t;
+      const t = setTimeout(() => {
+        pendingTimers.delete(t);
+        tryCapture(0);
+      }, GROUND_CRACK_LANDING_DELAY_MS);
+      pendingTimers.add(t);
     });
+    return () => {
+      cancelled = true;
+      for (const t of pendingTimers) clearTimeout(t);
+      for (const r of pendingRafs) cancelAnimationFrame(r);
+      pendingTimers.clear();
+      pendingRafs.clear();
+      off();
+    };
   }, []);
 
   // commander_returned subscription — resolve the destination

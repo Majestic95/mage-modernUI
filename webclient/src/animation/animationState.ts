@@ -1,3 +1,5 @@
+import { castKindByCardId, exitKindByCardId } from './eventBus';
+
 /**
  * Slice 70-Z.3 — module-singleton state for cross-component
  * animation coordination. Currently tracks "which cardIds are
@@ -65,8 +67,20 @@ export function subscribeToAnimationState(fn: () => void): () => void {
  * Reset all in-flight animation state. Called when the game stream
  * closes or a new game starts so a player who plays two games in
  * one session doesn't see stale cinematic state.
+ *
+ * <p>P0 audit fix — also drains the eventBus's per-cardId metadata
+ * Maps ({@code castKindByCardId}, {@code exitKindByCardId}). These
+ * accumulate one entry per cast / per-permanent-leaving-battlefield
+ * across the whole game. Without the cross-game clear, a long session
+ * (e.g. best-of-three or sideboard match) leaks stale entries — by
+ * game N the Maps carry entries for cardIds that no longer exist on
+ * the wire, and a future "look up cast kind for this cardId" path
+ * could read a wrong-zone hit. Clearing here keeps the
+ * eventBus-singleton model viable for an indefinite session.
  */
 export function resetAnimationState(): void {
+  castKindByCardId.clear();
+  exitKindByCardId.clear();
   if (activeCinematicCasts.size === 0 && listeners.size === 0) return;
   activeCinematicCasts.clear();
   fireListeners();
@@ -90,4 +104,6 @@ function fireListeners(): void {
 export function __resetForTests(): void {
   activeCinematicCasts.clear();
   listeners.clear();
+  castKindByCardId.clear();
+  exitKindByCardId.clear();
 }
