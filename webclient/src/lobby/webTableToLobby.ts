@@ -31,6 +31,18 @@ export function webTableToLobby({
   webTable,
   currentUsername,
 }: MapInput): LobbyFixture {
+  // Slice L7 review fix — host detection at the table level. Compare
+  // the cleaned controllerName to the current username (both
+  // normalized). Independent of seat occupancy so the host sees their
+  // host-flavored UI before they've taken their seat.
+  const cleanedController = stripControllerSuffix(webTable.controllerName)
+    .trim()
+    .toLowerCase();
+  const normalizedUser = currentUsername.trim().toLowerCase();
+  const amIHost =
+    cleanedController !== ''
+    && normalizedUser !== ''
+    && cleanedController === normalizedUser;
   return {
     matchOptions: deriveMatchOptions(webTable),
     seats: webTable.seats.map((seat, idx) => mapSeat(seat, idx, webTable)),
@@ -40,6 +52,7 @@ export function webTableToLobby({
     selectedDeckId: LOBBY_FIXTURE.selectedDeckId,
     decks: LOBBY_FIXTURE.decks,
     currentUsername,
+    amIHost,
   };
 }
 

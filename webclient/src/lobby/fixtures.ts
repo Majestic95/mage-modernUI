@@ -83,6 +83,15 @@ export interface LobbyFixture {
   decks: LobbyDeck[];
   /** Username of the current viewer — drives the host crown / Start gating. */
   currentUsername: string;
+  /**
+   * Whether the current viewer is the table's host (controller).
+   * Slice L7 review fix — derived at the table level (controllerName
+   * === currentUsername) rather than at the seat level so the host's
+   * UI flips to "host mode" before they've taken a seat. Without this,
+   * a freshly-created table shows the host the guest "Ready Up" CTA
+   * because they have no seat row yet.
+   */
+  amIHost: boolean;
 }
 
 /** Build Scryfall image URL from card name. Fallback path until L2 wires real cardNumber. */
@@ -237,6 +246,7 @@ export const LOBBY_FIXTURE: LobbyFixture = {
   selectedDeckId: 'deck-atraxa',
   decks: [ATRAXA_DECK, URDRAGON_DECK, KARN_DECK, TROSTANI_DECK],
   currentUsername: 'Atraxa',
+  amIHost: true,
 };
 
 /** Look up a deck card image (front face) by exact card name. */

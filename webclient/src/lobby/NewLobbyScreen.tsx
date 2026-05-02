@@ -223,7 +223,11 @@ function LobbyShell({
     fixture.seats.find(
       (s) => s.playerName.trim().toLowerCase() === normalizedUsername,
     ) ?? null;
-  const isHost = localSeat?.isHost ?? false;
+  // Slice L7 review fix — host status comes from the table-level
+  // controllerName comparison (set in webTableToLobby), not from seat
+  // occupancy. The host who hasn't taken a seat yet still sees host-
+  // flavored UI (Start Game button instead of guest Ready Up).
+  const isHost = fixture.amIHost;
   const isLocalReady = localSeat?.ready ?? false;
   const readyCount = fixture.seats.filter((s) => s.occupied && s.ready).length;
   const totalSeats = fixture.matchOptions.playerCount;
@@ -427,7 +431,18 @@ function LobbyShell({
           />
           <CommanderPreviewPanel deck={selectedDeck} />
           <div className="flex flex-col items-end justify-end gap-1">
-            {isHost ? (
+            {/*
+              Slice L7 review fix — three states for the bottom-right CTA:
+              1. Local user has no seat yet → "Pick a deck to take your
+                 seat" hint (applies to host AND guest before deck pick).
+              2. Local user is host (with or without seat) → Start Game.
+                 Until they have a seat AND every other seat is ready,
+                 the button is disabled with a contextual subtitle.
+              3. Local user is non-host with seat → Ready Up.
+            */}
+            {!localSeat ? (
+              <TakeSeatHint isHost={isHost} />
+            ) : isHost ? (
               <StartGameButton
                 enabled={isHost && allReady}
                 isHost={isHost}
@@ -506,6 +521,41 @@ function LobbyShell({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Slice L7 review fix — the "you have no seat yet" CTA. Sits in the
+ * bottom-right slot where StartGameButton / ReadyButton normally
+ * render; surfaces the deck-pick = take-seat coupling that was
+ * otherwise non-obvious to first-time users (locked decision Q12 +
+ * UX-review #6 from L6).
+ */
+function TakeSeatHint({ isHost }: { isHost: boolean }) {
+  const verb = isHost ? 'host' : 'join';
+  return (
+    <div className="flex flex-col items-end gap-1.5">
+      <div
+        data-testid="take-seat-hint"
+        className="rounded-xl border px-8 py-3 text-center"
+        style={{
+          background: 'var(--color-bg-elevated)',
+          borderColor: 'var(--color-card-frame-default)',
+          color: 'var(--color-text-secondary)',
+          boxShadow: 'var(--shadow-low)',
+        }}
+      >
+        <p
+          className="text-sm font-semibold uppercase"
+          style={{ letterSpacing: '0.08em' }}
+        >
+          Take your seat
+        </p>
+        <p className="mt-1 text-xs">
+          Pick a deck below to {verb} this table
+        </p>
+      </div>
     </div>
   );
 }
