@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import type { WebCardView } from '../api/schemas';
 import { scryfallImageUrl } from './scryfall';
 import { ManaCost } from './ManaCost';
+import { renderUpstreamMarkup } from './dialogs/markupRenderer';
 
 /* ---------- card detail overlay (slice 30) ---------- */
 
@@ -52,8 +53,16 @@ function CardDetail({ card }: { card: WebCardView }) {
         )}
         {card.rules && card.rules.length > 0 && (
           <div className="space-y-1 text-zinc-300 leading-snug">
+            {/* P2 audit fix — was stripping HTML via regex, which
+                lost engine-emitted formatting (font color highlights
+                on card names, <br> line breaks). Use the shared
+                renderUpstreamMarkup which tokenizes the same set of
+                tags safely (no dangerouslySetInnerHTML, unknown tags
+                stripped) so engine-markup renders consistently here
+                AND in the search page (which previously showed raw
+                literal markup). */}
             {card.rules.map((line, i) => (
-              <p key={i}>{line.replace(/<[^>]+>/g, '')}</p>
+              <p key={i}>{renderUpstreamMarkup(line)}</p>
             ))}
           </div>
         )}

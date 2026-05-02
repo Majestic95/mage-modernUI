@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { ApiError, request } from '../api/client';
 import { webCardListingSchema, type WebCardInfo } from '../api/schemas';
 import { useAuthStore } from '../auth/store';
+import { renderUpstreamMarkup } from '../game/dialogs/markupRenderer';
 
 /**
  * Look up a single card by exact name. Hits {@code GET /api/cards}.
@@ -134,8 +135,13 @@ function CardCard({ card }: { card: WebCardInfo }) {
         )}
 
         <div className="text-sm space-y-1">
+          {/* P2 audit fix — was rendering rules as raw text, which
+              showed literal <i>...</i> / <font color=...>...</font>
+              markup the engine emits. Route through the shared
+              renderUpstreamMarkup so search results match the in-game
+              hover card detail. */}
           {card.rules.map((line, i) => (
-            <p key={i}>{line}</p>
+            <p key={i}>{renderUpstreamMarkup(line)}</p>
           ))}
         </div>
       </div>
