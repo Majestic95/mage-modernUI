@@ -85,14 +85,21 @@ export function computeStats({
     // Instant+Sorcery into one combined slot per the design doc.
     // Lands aren't in any bucket today; the four buckets in the
     // mockup are Creatures / Artifacts / Enchantments / I&S.
-    const types = card.types ?? [];
-    if (types.includes('Creature') || types.includes('Planeswalker')) {
+    //
+    // 2026-05-02 fix — wire emits UPPERCASE enum names via
+    // CardInfoMapper.toDto's `Enum::name` ('CREATURE', 'INSTANT',
+    // etc.). Earlier title-case checks ('Creature') silently
+    // matched zero cards, leaving every type bucket at 0. Compare
+    // case-insensitively so the wire shape change doesn't quietly
+    // break the deck preview again.
+    const types = (card.types ?? []).map((t) => t.toUpperCase());
+    if (types.includes('CREATURE') || types.includes('PLANESWALKER')) {
       typeCounts.creatures += entry.amount;
-    } else if (types.includes('Instant') || types.includes('Sorcery')) {
+    } else if (types.includes('INSTANT') || types.includes('SORCERY')) {
       typeCounts.instantsAndSorceries += entry.amount;
-    } else if (types.includes('Artifact')) {
+    } else if (types.includes('ARTIFACT')) {
       typeCounts.artifacts += entry.amount;
-    } else if (types.includes('Enchantment')) {
+    } else if (types.includes('ENCHANTMENT')) {
       typeCounts.enchantments += entry.amount;
     }
     // Lands and other types aren't surfaced in the four buckets —
