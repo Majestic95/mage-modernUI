@@ -8,7 +8,7 @@ import { CommanderDamageTracker } from './CommanderDamageTracker';
 import { GameLog } from './GameLog';
 import { GameDialog } from './dialogs/GameDialog';
 import { RevealToast } from './RevealToast';
-import { ManaCost } from './ManaCost';
+import { CardFace } from './CardFace';
 import { MulliganModal } from './MulliganModal';
 import { MyHand } from './MyHand';
 import { PhaseTimeline } from './PhaseTimeline';
@@ -530,25 +530,37 @@ export function GameTable({ gameId, gameView, stream }: Props) {
           sendPlayerResponse path. */}
       <MulliganModal stream={stream} gameView={gameView} />
 
-      {/* Slice 70-F — floating drag preview moved up from
-          Battlefield. Sits at the GameTable level so it can float
-          over the hand region (now a sibling) as well as the
-          battlefield. fixed + pointer-events-none so it never eats
-          clicks. */}
+      {/* Bug fix (2026-05-02 follow-up #3) — drag preview is now the
+          full hand-size CardFace (was a tiny name+manacost chip). The
+          old chip read as "system label" rather than "the thing
+          you're holding"; the user reported the gesture as broken
+          partly because the visible feedback didn't match the mental
+          model. Now: the actual card visual (Scryfall art, name
+          banner, mana cost, P/T) tracks the cursor; cursor is
+          centered on the card via the negative-half-translate so the
+          card sits naturally under the pointer. The hand-position
+          copy stays at opacity-30 (data-dragging) so the user sees
+          where the card came from and where it'll snap back if the
+          drop is invalid. fixed + pointer-events-none so it never
+          eats clicks; drop-target detection on the destination uses
+          elementFromPoint with the cursor coords, not this preview. */}
       {drag && draggedCard && (
         <div
           data-testid="drag-preview"
           className="fixed pointer-events-none z-50"
-          style={{ left: drag.x + 12, top: drag.y + 12 }}
+          style={{
+            left: drag.x,
+            top: drag.y,
+            // Center the card on the cursor + a slight tilt so it
+            // reads as "in flight" rather than rigidly attached.
+            transform:
+              'translate(-50%, -50%) rotate(-2deg)',
+            // Drop shadow lifts the card off the background so it's
+            // visibly above the hand fan and battlefield.
+            filter: 'drop-shadow(0 8px 16px rgb(0 0 0 / 0.6))',
+          }}
         >
-          <div className="inline-flex items-baseline gap-1 px-2 py-1 rounded text-xs border border-fuchsia-500 bg-zinc-900 shadow-lg">
-            <span className="font-medium text-zinc-100">
-              {draggedCard.name}
-            </span>
-            {draggedCard.manaCost && (
-              <ManaCost cost={draggedCard.manaCost} size="sm" />
-            )}
-          </div>
+          <CardFace card={draggedCard} size="hand" />
         </div>
       )}
     </div>
