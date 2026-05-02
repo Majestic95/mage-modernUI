@@ -54,9 +54,21 @@ public final class LobbyService {
     static final int AI_SKILL = 4;
 
     private final EmbeddedServer embedded;
+    private final SeatReadyTracker readyTracker;
 
     public LobbyService(EmbeddedServer embedded) {
+        this(embedded, new SeatReadyTracker());
+    }
+
+    /** Visible-for-test ctor — test pins a tracker instance. */
+    LobbyService(EmbeddedServer embedded, SeatReadyTracker readyTracker) {
         this.embedded = embedded;
+        this.readyTracker = readyTracker;
+    }
+
+    /** Visible-for-test accessor for the tracker. */
+    SeatReadyTracker readyTracker() {
+        return readyTracker;
     }
 
     /** Discover the singleton main lobby. */
@@ -80,9 +92,13 @@ public final class LobbyService {
             // Slice 70-X — thread the TableManager through to the mapper
             // so each WebSeat can carry its commander identity, derived
             // from match.getPlayer(playerId).getDeck().getSideboard().
+            // Slice L5 — also thread the SeatReadyTracker so per-seat
+            // ready flags reflect the live opt-in state, not just the
+            // L2 type-based default (true for AI / false for HUMAN).
             return TableMapper.listing(
                     views == null ? List.of() : views,
-                    embedded.managerFactory().tableManager()
+                    embedded.managerFactory().tableManager(),
+                    readyTracker
             );
         } catch (MageException ex) {
             throw upstream("listing tables", ex);
@@ -96,12 +112,16 @@ public final class LobbyService {
                 throw new WebApiException(422, "UPSTREAM_REJECTED",
                         "Server refused to create the table.");
             }
-            LOG.info("Table created: {} in room {}", view.getTableId(), roomId);
-            // Slice 70-X — same TableManager threading for the
-            // create-table response shape (returns the new WebTable
-            // with empty seats; commander fields naturally empty
-            // since no players have joined yet).
-            return TableMapper.table(view, embedded.managerFactory().tableManager());
+            // Slice L5 — host auto-readies on table creation. The
+            // controllerName lives on the upstream TableView (post-
+            // suffix-strip via TableMapper.cleanControllerName).
+            String hostUsername = TableMapper.cleanControllerName(view.getControllerName());
+            readyTracker.resetToHost(view.getTableId(), hostUsername);
+            LOG.info("Table created: {} in room {} (host={})",
+                    view.getTableId(), roomId, hostUsername);
+            return TableMapper.table(view,
+                    embedded.managerFactory().tableManager(),
+                    readyTracker);
         } catch (MageException ex) {
             throw upstream("creating table", ex);
         }
@@ -341,10 +361,24 @@ public final class LobbyService {
             throw new WebApiException(403, "NOT_OWNER",
                     "Only the table owner can remove the table.");
         }
+        // Slice L5 — drop the ready-tracker entry; the table is gone.
+        readyTracker.removeTable(tableId);
         LOG.info("Table removed: {} from room {}", tableId, roomId);
     }
 
     public void leaveSeat(String upstreamSessionId, UUID roomId, UUID tableId) {
+        // Slice L5 — capture the username before delegating, so we can
+        // remove them from the ready tracker. Failure to look up the
+        // username is non-fatal — the upstream leave still proceeds and
+        // the stale tracker entry is harmless (it'll be flushed when
+        // the table is removed).
+        String username = embedded.managerFactory().sessionManager()
+                .getSession(upstreamSessionId)
+                .map(Session::getUserId)
+                .flatMap(userId ->
+                        embedded.managerFactory().userManager().getUser(userId))
+                .map(u -> u.getName())
+                .orElse(null);
         boolean ok;
         try {
             ok = embedded.server().roomLeaveTableOrTournament(upstreamSessionId, roomId, tableId);
@@ -355,9 +389,24 @@ public final class LobbyService {
             throw new WebApiException(422, "UPSTREAM_REJECTED",
                     "Server refused to vacate the seat (table not in WAITING state, not seated, etc.).");
         }
+        if (username != null) {
+            readyTracker.setReady(tableId, username, false);
+        }
     }
 
     public void startMatch(String upstreamSessionId, UUID roomId, UUID tableId) {
+        // Slice L5 — readiness gating is enforced client-side (the
+        // Start Game button is disabled until every human seat is
+        // ready). A defense-in-depth server-side check was scoped here
+        // initially but cut: per-seat ready is keyed by username, while
+        // the upstream Seat is keyed by player UUID, and there is no
+        // public bridge between them on TableController. The path of
+        // record (the GUI) gates correctly; a hand-crafted POST that
+        // bypasses the gate at most starts the game with one unready
+        // guest, which is a UX inconvenience, not a state-corruption
+        // problem. Slice L7 (WebSocket push) revisits this — at that
+        // point the server already broadcasts the per-seat ready set
+        // and a gate can be added without the username/playerId mismatch.
         boolean ok;
         try {
             ok = embedded.server().matchStart(upstreamSessionId, roomId, tableId);
@@ -368,6 +417,60 @@ public final class LobbyService {
             throw new WebApiException(422, "UPSTREAM_REJECTED",
                     "Server refused to start the match (not owner, missing seats, wrong state).");
         }
+        // Slice L5 — game's begun; drop the tracker entry.
+        readyTracker.removeTable(tableId);
+    }
+
+    /**
+     * Slice L5 — guest opts in or out of "ready". The host is
+     * implicitly ready (set via {@link #createTable}); they MAY toggle
+     * themselves but the typical host UX is to use the Start Game
+     * button instead.
+     */
+    public void setSeatReady(String upstreamSessionId, UUID roomId, UUID tableId,
+                              boolean ready) {
+        UUID userId = embedded.managerFactory().sessionManager()
+                .getSession(upstreamSessionId)
+                .map(Session::getUserId)
+                .orElseThrow(() -> new WebApiException(401, "MISSING_SESSION",
+                        "Upstream session expired."));
+        String username = embedded.managerFactory().userManager()
+                .getUser(userId)
+                .map(u -> u.getName())
+                .orElseThrow(() -> new WebApiException(401, "MISSING_SESSION",
+                        "Caller has no user record."));
+        Optional<TableController> tcOpt =
+                embedded.managerFactory().tableManager().getController(tableId);
+        if (tcOpt.isEmpty()) {
+            throw new WebApiException(404, "TABLE_NOT_FOUND", "Table not found.");
+        }
+        Table table = tcOpt.get().getTable();
+        if (table == null || table.getSeats() == null) {
+            throw new WebApiException(409, "TABLE_NOT_EDITABLE",
+                    "Table is not in a state where ready can be toggled.");
+        }
+        // Verify the caller actually has a seat at this table —
+        // otherwise the tracker would happily store a username with no
+        // corresponding seat, and the start gate could be bypassed by
+        // a non-seated user toggling on someone else's behalf. Note
+        // upstream {@code Table.getSeats()} returns a Seat[] (not a
+        // Collection); plain for-loop avoids a {@code Arrays.stream}
+        // allocation per call.
+        boolean seated = false;
+        for (var s : table.getSeats()) {
+            if (s != null && s.getPlayer() != null
+                    && username.equals(s.getPlayer().getName())) {
+                seated = true;
+                break;
+            }
+        }
+        if (!seated) {
+            throw new WebApiException(403, "NOT_SEATED",
+                    "Caller does not occupy a seat at this table.");
+        }
+        readyTracker.setReady(tableId, username, ready);
+        LOG.info("Seat ready toggled: table={} room={} user={} ready={}",
+                tableId, roomId, username, ready);
     }
 
     /**
@@ -489,7 +592,12 @@ public final class LobbyService {
             options.setRange(parseEnum(RangeOfInfluence.class,
                     update.range(), "range"));
         }
-        LOG.info("Table options updated: {} (caller={})", tableId, userId);
+        // Slice L5 — settings change resets all guests to un-ready.
+        // Host stays ready (preserved via resetToHost).
+        String hostUsername = TableMapper.cleanControllerName(table.getControllerName());
+        readyTracker.resetToHost(tableId, hostUsername);
+        LOG.info("Table options updated: {} (caller={}, ready reset to host)",
+                tableId, userId);
         // Build a fresh {@link TableView} directly off the upstream
         // {@link Table} reference. Earlier draft re-fetched via
         // {@code roomGetAllTables}, but that view is rebuilt only when
@@ -498,7 +606,9 @@ public final class LobbyService {
         // the view from the live Table guarantees the response
         // reflects the mutation we just performed.
         TableView freshView = new TableView(table);
-        return TableMapper.table(freshView, embedded.managerFactory().tableManager());
+        return TableMapper.table(freshView,
+                embedded.managerFactory().tableManager(),
+                readyTracker);
     }
 
     private static <E extends Enum<E>> E parseEnum(Class<E> enumClass,

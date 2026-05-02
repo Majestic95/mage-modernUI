@@ -13,6 +13,7 @@ import mage.webapi.SchemaVersion;
 import mage.webapi.dto.WebSeat;
 import mage.webapi.dto.WebTable;
 import mage.webapi.dto.WebTableListing;
+import mage.webapi.lobby.SeatReadyTracker;
 
 import java.time.Instant;
 import java.util.Date;
@@ -48,33 +49,51 @@ public final class TableMapper {
     }
 
     public static WebTableListing listing(List<TableView> views) {
-        return listing(views, null);
+        return listing(views, null, null);
     }
 
     public static WebTableListing listing(List<TableView> views, TableManager tableManager) {
+        return listing(views, tableManager, null);
+    }
+
+    public static WebTableListing listing(List<TableView> views,
+                                           TableManager tableManager,
+                                           SeatReadyTracker readyTracker) {
         List<WebTable> tables = views.stream()
-                .map((TableView v) -> table(v, tableManager))
+                .map((TableView v) -> table(v, tableManager, readyTracker))
                 .toList();
         return new WebTableListing(SchemaVersion.CURRENT, tables);
     }
 
     public static WebTable table(TableView v) {
-        return table(v, null);
+        return table(v, null, null);
     }
 
     public static WebTable table(TableView v, TableManager tableManager) {
+        return table(v, tableManager, null);
+    }
+
+    public static WebTable table(TableView v,
+                                  TableManager tableManager,
+                                  SeatReadyTracker readyTracker) {
         Objects.requireNonNull(v, "TableView is null");
         Match match = lookupMatch(v.getTableId(), tableManager);
         String deckType = emptyIfNull(v.getDeckType());
         int deckSizeRequired = requiredMainboardSize(deckType);
+        // Slice L5 — host needs to be identified per-seat to drive the
+        // "host is implicitly ready" rule in seat(). cleanControllerName
+        // is idempotent; if the upstream string is already stripped
+        // (which it is post-slice 70-X.13) it's a no-op.
+        String hostUsername = cleanControllerName(v.getControllerName());
+        UUID tableId = v.getTableId();
         return new WebTable(
-                v.getTableId().toString(),
+                tableId.toString(),
                 emptyIfNull(v.getTableName()),
                 emptyIfNull(v.getGameType()),
                 deckType,
                 v.getTableState() == null ? "" : v.getTableState().name(),
                 isoOrEmpty(v.getCreateTime()),
-                cleanControllerName(v.getControllerName()),
+                hostUsername,
                 v.getSkillLevel() == null ? "" : v.getSkillLevel().name(),
                 v.isTournament(),
                 v.isPassworded(),
@@ -82,7 +101,10 @@ public final class TableMapper {
                 v.isRated(),
                 v.isLimited(),
                 v.getSeats() == null ? List.of()
-                        : v.getSeats().stream().map(s -> seat(s, match, deckSizeRequired)).toList()
+                        : v.getSeats().stream()
+                                .map(s -> seat(s, match, deckSizeRequired,
+                                        readyTracker, tableId, hostUsername))
+                                .toList()
         );
     }
 
@@ -96,7 +118,7 @@ public final class TableMapper {
      * against {@code session.username} when deciding whether to show
      * a Start button.
      */
-    static String cleanControllerName(String raw) {
+    public static String cleanControllerName(String raw) {
         if (raw == null || raw.isBlank()) {
             return "";
         }
@@ -104,7 +126,12 @@ public final class TableMapper {
         return comma >= 0 ? raw.substring(0, comma) : raw;
     }
 
-    private static WebSeat seat(SeatView s, Match match, int deckSizeRequired) {
+    private static WebSeat seat(SeatView s,
+                                 Match match,
+                                 int deckSizeRequired,
+                                 SeatReadyTracker readyTracker,
+                                 UUID tableId,
+                                 String hostUsername) {
         if (s == null) {
             return new WebSeat("", "", false, "", 0, false, "", 0, deckSizeRequired);
         }
@@ -165,11 +192,32 @@ public final class TableMapper {
                 deckSize = 0;
             }
         }
-        // Slice L2 — AI seats auto-ready on join (no human to opt in).
-        // HUMAN seats start un-ready; slice L5 wires the toggle endpoint.
-        boolean ready = occupied && type != null && type != PlayerType.HUMAN;
+        // Slice L5 — per-seat ready state:
+        //   - Empty seat: false
+        //   - AI seat: always true (auto-ready on join, no toggle)
+        //   - Host's HUMAN seat: always true (host is implicitly ready;
+        //     they hit Start when guests are ready)
+        //   - Guest's HUMAN seat: tracker-backed (default false until
+        //     they POST /seat/ready)
+        boolean ready;
+        String seatPlayerName = emptyIfNull(s.getPlayerName());
+        if (!occupied || type == null) {
+            ready = false;
+        } else if (type != PlayerType.HUMAN) {
+            ready = true;
+        } else if (hostUsername != null && !hostUsername.isBlank()
+                && hostUsername.equals(seatPlayerName)) {
+            ready = true;
+        } else if (readyTracker != null && tableId != null) {
+            ready = readyTracker.isReady(tableId, seatPlayerName);
+        } else {
+            // No tracker available (e.g. tests using the legacy
+            // listing(views, tableManager) overload). Fall back to
+            // the L2 behavior: HUMAN guests are un-ready by default.
+            ready = false;
+        }
         return new WebSeat(
-                emptyIfNull(s.getPlayerName()),
+                seatPlayerName,
                 type == null ? "" : type.name(),
                 occupied,
                 commanderName,

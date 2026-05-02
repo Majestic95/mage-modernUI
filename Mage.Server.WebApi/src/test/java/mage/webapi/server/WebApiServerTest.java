@@ -603,6 +603,119 @@ class WebApiServerTest {
         assertEquals("BAD_REQUEST", JSON.readTree(r.body()).get("code").asText());
     }
 
+    /* ---------- slice L5: per-seat ready toggle ---------- */
+
+    @Test
+    void seatReady_bySeatedUser_returns204() throws Exception {
+        // Create a 2-seat table, fill seat 1 with AI, host /joins seat 0
+        // with their session username — only then are they "seated" and
+        // permitted to toggle ready. The /seat/ready endpoint round-
+        // trips both off and on without error.
+        String e2eToken = freshAnonBearer();
+        String username = JSON.readTree(
+                getWithToken(e2eToken, "/api/session/me").body())
+                .get("username").asText();
+        String roomId = mainRoomId();
+        String tableId = createTableWith(e2eToken, roomId,
+                "Two Player Duel", "Constructed - Vintage", 1,
+                List.of("HUMAN", "COMPUTER_MONTE_CARLO"));
+        // Fill the AI seat
+        postJsonWithToken(e2eToken,
+                "/api/rooms/" + roomId + "/tables/" + tableId + "/ai",
+                "{\"playerType\":\"COMPUTER_MONTE_CARLO\"}");
+        // Host /joins their own seat with the username (matches
+        // production webclient behavior — username is the player name).
+        String deckJson = buildForestDeckJson(60);
+        String joinBody = String.format(
+                "{\"name\":\"%s\",\"skill\":1,\"deck\":%s}", username, deckJson);
+        HttpResponse<String> join = postJsonWithToken(e2eToken,
+                "/api/rooms/" + roomId + "/tables/" + tableId + "/join", joinBody);
+        assertEquals(204, join.statusCode(), join.body());
+
+        // Now toggle: off, then on. Both must succeed.
+        HttpResponse<String> off = postJsonWithToken(e2eToken,
+                "/api/rooms/" + roomId + "/tables/" + tableId + "/seat/ready",
+                "{\"ready\":false}");
+        assertEquals(204, off.statusCode(), off.body());
+
+        HttpResponse<String> on = postJsonWithToken(e2eToken,
+                "/api/rooms/" + roomId + "/tables/" + tableId + "/seat/ready",
+                "{\"ready\":true}");
+        assertEquals(204, on.statusCode(), on.body());
+
+        // Cleanup
+        HTTP.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create("http://localhost:" + server.port()
+                                + "/api/rooms/" + roomId + "/tables/" + tableId))
+                        .header("Authorization", "Bearer " + e2eToken)
+                        .timeout(Duration.ofSeconds(5))
+                        .DELETE()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
+    @Test
+    void seatReady_unknownTable_returns404() throws Exception {
+        String roomId = mainRoomId();
+        String fakeTable = "00000000-0000-0000-0000-000000000000";
+        HttpResponse<String> r = postJsonAuthed(
+                "/api/rooms/" + roomId + "/tables/" + fakeTable + "/seat/ready",
+                "{\"ready\":true}");
+        assertEquals(404, r.statusCode(), r.body());
+        assertEquals("TABLE_NOT_FOUND", JSON.readTree(r.body()).get("code").asText());
+    }
+
+    @Test
+    void seatReady_callerNotSeated_returns403() throws Exception {
+        // Host creates the table; a different anon user (no seat) tries
+        // to toggle ready and gets 403 NOT_SEATED.
+        String ownerToken = freshAnonBearer();
+        String roomId = mainRoomId();
+        String tableId = createTableWith(ownerToken, roomId,
+                "Two Player Duel", "Constructed - Vintage", 1,
+                List.of("HUMAN", "HUMAN"));
+
+        String otherToken = freshAnonBearer();
+        HttpResponse<String> r = postJsonWithToken(otherToken,
+                "/api/rooms/" + roomId + "/tables/" + tableId + "/seat/ready",
+                "{\"ready\":true}");
+        assertEquals(403, r.statusCode(), r.body());
+        assertEquals("NOT_SEATED", JSON.readTree(r.body()).get("code").asText());
+
+        // Cleanup
+        HTTP.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create("http://localhost:" + server.port()
+                                + "/api/rooms/" + roomId + "/tables/" + tableId))
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .timeout(Duration.ofSeconds(5))
+                        .DELETE()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
+    @Test
+    void seatReady_missingReadyField_returns400() throws Exception {
+        String roomId = mainRoomId();
+        String tableId = createTestTable(roomId);
+        HttpResponse<String> r = postJsonAuthed(
+                "/api/rooms/" + roomId + "/tables/" + tableId + "/seat/ready",
+                "{}");
+        assertEquals(400, r.statusCode(), r.body());
+        assertEquals("BAD_REQUEST", JSON.readTree(r.body()).get("code").asText());
+    }
+
+    @Test
+    void seatReady_malformedTableId_returns400() throws Exception {
+        String roomId = mainRoomId();
+        HttpResponse<String> r = postJsonAuthed(
+                "/api/rooms/" + roomId + "/tables/not-a-uuid/seat/ready",
+                "{\"ready\":true}");
+        assertEquals(400, r.statusCode(), r.body());
+        assertEquals("BAD_REQUEST", JSON.readTree(r.body()).get("code").asText());
+    }
+
     /* ---------- slice 13: deck submit ---------- */
 
     @Test

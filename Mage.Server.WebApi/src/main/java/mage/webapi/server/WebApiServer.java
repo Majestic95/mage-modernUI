@@ -20,6 +20,7 @@ import mage.webapi.dto.WebError;
 import mage.webapi.dto.WebHealth;
 import mage.webapi.dto.WebJoinTableRequest;
 import mage.webapi.dto.WebMatchOptionsUpdate;
+import mage.webapi.dto.WebSeatReadyRequest;
 import mage.webapi.dto.WebSessionRequest;
 import mage.webapi.embed.EmbeddedServer;
 import mage.webapi.lobby.DeckValidationService;
@@ -263,6 +264,22 @@ public final class WebApiServer {
             SessionEntry session = sessionFrom(ctx);
             ctx.json(lobbyService.updateMatchOptions(
                     session.upstreamSessionId(), roomId, tableId, req));
+        });
+        // Slice L5 (new-lobby-window) — per-seat ready toggle. Caller
+        // must occupy a seat at the table; AI seats are auto-ready
+        // and never reach this endpoint.
+        app.post("/api/rooms/{roomId}/tables/{tableId}/seat/ready", ctx -> {
+            UUID roomId = parseUuid(ctx.pathParam("roomId"), "roomId");
+            UUID tableId = parseUuid(ctx.pathParam("tableId"), "tableId");
+            WebSeatReadyRequest req = parseBody(ctx.body(), WebSeatReadyRequest.class);
+            if (req.ready() == null) {
+                throw new WebApiException(400, "BAD_REQUEST",
+                        "ready field is required.");
+            }
+            SessionEntry session = sessionFrom(ctx);
+            lobbyService.setSeatReady(session.upstreamSessionId(), roomId,
+                    tableId, req.ready());
+            ctx.status(204);
         });
         app.delete("/api/rooms/{roomId}/tables/{tableId}/seat", ctx -> {
             UUID roomId = parseUuid(ctx.pathParam("roomId"), "roomId");

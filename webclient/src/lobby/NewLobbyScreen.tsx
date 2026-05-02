@@ -15,7 +15,7 @@
  * <p>Reference: docs/design/new-lobby-window.md
  */
 import { useEffect, useState } from 'react';
-import { request } from '../api/client';
+import { ApiError, request } from '../api/client';
 import { webRoomRefSchema, type WebTable } from '../api/schemas';
 import { useAuthStore } from '../auth/store';
 import { CommanderPreviewPanel } from './CommanderPreviewPanel';
@@ -26,6 +26,7 @@ import { LOBBY_FIXTURE, type LobbyFixture } from './fixtures';
 import { LobbyHeader } from './LobbyHeader';
 import { LobbyTopBar } from './LobbyTopBar';
 import { MyDecksPanel } from './MyDecksPanel';
+import { ReadyButton } from './ReadyButton';
 import { SeatRow } from './SeatRow';
 import { StartGameButton } from './StartGameButton';
 import { useLobbyTable } from './useLobbyTable';
@@ -172,15 +173,54 @@ function LobbyShell({
   roomId: string | null;
   editInitial: EditableInitial;
 }) {
+  const session = useAuthStore((s) => s.session);
   const [editOpen, setEditOpen] = useState(false);
+  const [readySubmitting, setReadySubmitting] = useState(false);
+  const [readyError, setReadyError] = useState<string | null>(null);
   const selectedDeck =
     fixture.decks.find((d) => d.id === fixture.selectedDeckId) ?? null;
-  const isHost =
-    fixture.seats.find((s) => s.playerName === fixture.currentUsername)
-      ?.isHost ?? false;
+  const localSeat =
+    fixture.seats.find((s) => s.playerName === fixture.currentUsername) ?? null;
+  const isHost = localSeat?.isHost ?? false;
+  const isLocalReady = localSeat?.ready ?? false;
   const readyCount = fixture.seats.filter((s) => s.occupied && s.ready).length;
   const totalSeats = fixture.matchOptions.playerCount;
   const allReady = readyCount === totalSeats;
+  const isFixture = tableId === 'fixture' || roomId === null;
+
+  const toggleReady = async () => {
+    if (isFixture) {
+      // Fixture path — visual-only; no wire call.
+      return;
+    }
+    if (!session) {
+      setReadyError('Session expired — please reload.');
+      return;
+    }
+    setReadySubmitting(true);
+    setReadyError(null);
+    try {
+      await request(
+        `/api/rooms/${roomId}/tables/${tableId}/seat/ready`,
+        null,
+        {
+          method: 'POST',
+          token: session.token,
+          body: { ready: !isLocalReady },
+        },
+      );
+      // Slice L5 — successful toggle. The next 5s poll will re-emit
+      // the seat with the updated ready flag; the wire is the source
+      // of truth. L7 swaps polling for WS push so the change is
+      // reflected <100ms.
+    } catch (err) {
+      setReadyError(
+        err instanceof ApiError ? err.message : 'Failed to toggle ready.',
+      );
+    } finally {
+      setReadySubmitting(false);
+    }
+  };
 
   return (
     <div
@@ -252,12 +292,29 @@ function LobbyShell({
           />
           <DeckPreviewPanel deck={selectedDeck} />
           <CommanderPreviewPanel deck={selectedDeck} />
-          <div className="flex items-end justify-end">
-            <StartGameButton
-              enabled={isHost && allReady}
-              isHost={isHost}
-              allReady={allReady}
-            />
+          <div className="flex flex-col items-end justify-end gap-1">
+            {isHost ? (
+              <StartGameButton
+                enabled={isHost && allReady}
+                isHost={isHost}
+                allReady={allReady}
+              />
+            ) : (
+              <ReadyButton
+                ready={isLocalReady}
+                disabled={readySubmitting || !localSeat}
+                onToggle={() => void toggleReady()}
+              />
+            )}
+            {readyError && (
+              <p
+                role="alert"
+                data-testid="ready-error"
+                className="text-xs text-status-danger"
+              >
+                {readyError}
+              </p>
+            )}
           </div>
         </section>
       </main>
