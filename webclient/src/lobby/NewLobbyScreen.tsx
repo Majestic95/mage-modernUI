@@ -326,6 +326,27 @@ function LobbyShell({
   const allReady = readyCount === totalSeats;
   const isFixture = tableId === 'fixture' || roomId === null;
 
+  // 2026-05-02 — when a guest joins via JoinTableModal (legacy table-
+  // list path), the modal submits the deck and routes them into this
+  // lobby with localSelectedDeckId=null. Their wire seat IS populated
+  // (deckName, deckSize from upstream), but the bottom-row DeckPreview
+  // / CommanderPreview read from `localSelectedDeckId` and show empty
+  // because we never told them which deck they picked. Sync local
+  // selection from the wire seat's deckName by matching against the
+  // user's saved-deck list (one-time, gated on localSelectedDeckId
+  // still being null).
+  const allSavedDecks = useDecksStore((s) => s.decks);
+  useEffect(() => {
+    if (localSelectedDeckId !== null) return;
+    const wireDeckName = localSeat?.deckName?.trim();
+    if (!wireDeckName) return;
+    const match = allSavedDecks.find((d) => d.name === wireDeckName);
+    if (match) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setLocalSelectedDeckId(match.id);
+    }
+  }, [localSelectedDeckId, localSeat?.deckName, allSavedDecks]);
+
   // 2026-05-02 — optimistic host-seat override. The wire echoes a
   // seat's commanderName / colorIdentity / deckSize from the deck
   // upstream actually loaded; if the user picked a deck whose
