@@ -79,6 +79,7 @@ export function CastingPoseOverlay({
     <motion.div
       data-testid="casting-pose-overlay"
       data-card-id={card.cardId}
+      data-essential-motion="true"
       layoutId={card.cardId}
       // 1.5× scale per user direction — the focal "casting pose"
       // reads larger than its eventual stack-focal resting size so

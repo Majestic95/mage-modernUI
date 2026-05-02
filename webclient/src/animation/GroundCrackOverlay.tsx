@@ -92,6 +92,7 @@ export function GroundCrackOverlay({
     <div
       data-testid="ground-crack-overlay"
       data-card-id={cardId}
+      data-essential-motion="true"
       aria-hidden="true"
       className="pointer-events-none fixed"
       style={{

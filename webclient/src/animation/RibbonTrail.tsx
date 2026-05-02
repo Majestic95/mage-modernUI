@@ -109,6 +109,7 @@ export function RibbonTrail({
     <svg
       data-testid="ribbon-trail"
       data-card-id={cardId}
+      data-essential-motion="true"
       aria-hidden="true"
       width={w}
       height={h}

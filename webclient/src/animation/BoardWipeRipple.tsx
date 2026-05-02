@@ -49,6 +49,7 @@ export function BoardWipeRipple({
   return (
     <div
       data-testid="board-wipe-ripple"
+      data-essential-motion="true"
       aria-hidden="true"
       className="pointer-events-none fixed rounded-full"
       style={{

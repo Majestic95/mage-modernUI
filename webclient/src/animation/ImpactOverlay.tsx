@@ -61,6 +61,7 @@ export function ImpactOverlay({
     <div
       data-testid={kind === 'dust' ? 'tile-dust-overlay' : 'tile-exile-overlay'}
       data-card-id={cardId}
+      data-essential-motion="true"
       aria-hidden="true"
       className="pointer-events-none fixed"
       style={{

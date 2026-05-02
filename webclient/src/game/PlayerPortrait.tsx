@@ -424,6 +424,16 @@ function CircularHalo({
     <div
       aria-hidden="true"
       data-testid="player-portrait-halo-stack"
+      // P2 audit fix — `data-essential-motion` on the halo wrapper so
+      // the rotation + pulse keyframes survive prefers-reduced-motion.
+      // The active-player halo is strategic information ("whose turn
+      // is it?"), and the multicolor rotating ring conveys commander
+      // color identity at a glance — both classify as "spec-essential
+      // card-zone movement that conveys game state" per slice 70-B's
+      // reduced-motion contract. The descendant exclusion in the CSS
+      // rule means a single attribute on the wrapper covers both
+      // child layers (bloom + ring).
+      data-essential-motion="true"
       className={'pointer-events-none absolute inset-0 ' + parentAnim}
     >
       {/* Bloom layer — blurred copy of the conic-gradient

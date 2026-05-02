@@ -492,6 +492,12 @@ function FocalCard({
       data-stack-glow={haloBackground}
       data-halo-multicolor={haloIsMulticolor || undefined}
       data-layout-id={layoutId}
+      // P2 audit fix — focal stack rendering (cross-zone glide,
+      // halo rotation, focal-spotlight sweep) is game-state-conveying:
+      // the focal card IS the next-resolving stack object, and the
+      // multicolor rotation conveys color identity. Mark the wrapper
+      // essential so the keyframes survive prefers-reduced-motion.
+      data-essential-motion="true"
       initial={{ opacity: 0, y: -18, scale: 0.85 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 18, scale: 0.85 }}

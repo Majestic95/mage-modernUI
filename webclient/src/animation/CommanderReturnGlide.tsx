@@ -60,6 +60,7 @@ export function CommanderReturnGlide({
     <motion.div
       data-testid="commander-return-glide"
       data-card-id={cardId}
+      data-essential-motion="true"
       layoutId={cardId}
       // Tween override — slower than LAYOUT_GLIDE's spring would
       // settle by default. Tween easing reads as "deliberate flight"
