@@ -9,6 +9,7 @@ import mage.view.AbilityView;
 import mage.view.CardView;
 import mage.view.CounterView;
 import mage.view.PermanentView;
+import mage.view.StackAbilityView;
 import mage.webapi.dto.stream.WebCardView;
 import mage.webapi.dto.stream.WebPermanentView;
 
@@ -168,27 +169,44 @@ public final class CardViewMapper {
     }
 
     /**
-     * For an {@link AbilityView}, return a full {@link WebCardView} of
-     * the source card so the focal stack can render the source's
+     * For an ability-shaped CardView, return a full {@link WebCardView}
+     * of the source card so the focal stack can render the source's
      * actual visual (image, mana cost, types, rules) instead of a
      * blank "Ability" placeholder. Schema 1.26 / slice 70-Z.
+     *
+     * <p>Two upstream classes carry a {@code getSourceCard()}:
+     * <ul>
+     *   <li>{@link AbilityView} — used by the trigger-order picker
+     *       and by {@code CardsView}'s ability-from-permanent path.</li>
+     *   <li>{@link StackAbilityView} — used for triggered AND
+     *       activated abilities ACTUALLY ON THE STACK (per
+     *       {@code GameView.java:109-126}). This is the path
+     *       Quirion Sentinel's ETB trigger / Soul Warden's ETB / etc.
+     *       flow through. The two classes are siblings (both extend
+     *       {@code CardView} directly), not a hierarchy, so we must
+     *       check both.</li>
+     * </ul>
      *
      * <p>Recursion-capped: when {@code allowSource} is false (the
      * recursive call mapping the source itself), this returns null so
      * the wire never carries a source-of-source chain. Returns null
-     * for ordinary (non-{@code AbilityView}) inputs.
+     * for ordinary (non-ability) inputs.
      *
      * <p>Mirrors the {@code allowSecondFace} pattern. Source CardViews
      * upstream are constructed from a {@code MageObject} with full
      * card data (name, mana cost, types, rules) by
-     * {@code CardsView.java}; this helper just routes them through
-     * the same {@link #toCardDto} path that battlefield permanents
-     * use.
+     * {@code CardsView.java} / {@code GameView.java}; this helper just
+     * routes them through the same {@link #toCardDto} path that
+     * battlefield permanents use.
      */
     private static WebCardView extractSource(CardView cv, boolean allowSource) {
         if (!allowSource) return null;
-        if (!(cv instanceof AbilityView av)) return null;
-        CardView source = av.getSourceCard();
+        CardView source = null;
+        if (cv instanceof AbilityView av) {
+            source = av.getSourceCard();
+        } else if (cv instanceof StackAbilityView sav) {
+            source = sav.getSourceCard();
+        }
         if (source == null) return null;
         // The recursive call passes allowSecondFace=true (the source
         // can be a transformable card whose back face matters) but

@@ -192,6 +192,41 @@ class CardViewMapperTest {
     }
 
     @Test
+    void cardView_stackAbilityView_populatesSource() throws Exception {
+        // Slice 70-Z bug fix — the focal stack failed to render the
+        // source for triggered/activated abilities ACTUALLY ON THE
+        // STACK because those use StackAbilityView (not AbilityView).
+        // Both classes extend CardView directly; both have a
+        // getSourceCard() method; the mapper must check both. The
+        // user reported the bug after a Quirion Sentinel ETB trigger
+        // showed as a blank "Ability" placeholder despite the slice
+        // 70-Z deploy.
+        java.util.UUID sourceId = java.util.UUID.fromString(
+                "44444444-4444-4444-4444-444444444444");
+        mage.view.CardView sourceCv = new mage.view.CardView(true);
+        sourceCv.overrideId(sourceId);
+        java.lang.reflect.Field nameField =
+                mage.view.CardView.class.getDeclaredField("name");
+        nameField.setAccessible(true);
+        nameField.set(sourceCv, "Quirion Sentinel");
+
+        mage.view.StackAbilityView stackAv = newStackAbilityView(
+                java.util.UUID.fromString(
+                        "55555555-5555-5555-5555-555555555555"),
+                sourceCv);
+
+        WebCardView dto = CardViewMapper.toCardDto(stackAv);
+
+        org.junit.jupiter.api.Assertions.assertNotNull(dto.source(),
+                "StackAbilityView must populate source — this is the "
+                        + "actual stack path for triggered/activated abilities");
+        assertEquals("Quirion Sentinel", dto.source().name());
+        assertEquals(sourceId.toString(), dto.source().id());
+        org.junit.jupiter.api.Assertions.assertNull(dto.source().source(),
+                "source must not chain — recursion capped");
+    }
+
+    @Test
     void cardView_abilityView_populatesSourceAndCapsRecursion() throws Exception {
         // Slice 70-Z / schema 1.26 — for an upstream AbilityView the
         // mapper populates `source` with a full WebCardView of the
@@ -288,5 +323,43 @@ class CardViewMapperTest {
         java.lang.reflect.Field f = cls.getDeclaredField(name);
         f.setAccessible(true);
         f.set(target, value);
+    }
+
+    /**
+     * Construct a {@link mage.view.StackAbilityView} via reflection
+     * bypass — its public constructor requires Game + StackAbility +
+     * MageObject, none of which are available in a unit test scope.
+     * Same pattern as {@link #newAbilityView}.
+     */
+    @SuppressWarnings("unused")
+    private static mage.view.StackAbilityView newStackAbilityView(
+            java.util.UUID id, mage.view.CardView sourceCard) throws Exception {
+        sun.reflect.ReflectionFactory rf =
+                sun.reflect.ReflectionFactory.getReflectionFactory();
+        java.lang.reflect.Constructor<Object> objCtor =
+                Object.class.getDeclaredConstructor();
+        java.lang.reflect.Constructor<?> savCtor =
+                rf.newConstructorForSerialization(
+                        mage.view.StackAbilityView.class, objCtor);
+        mage.view.StackAbilityView sav =
+                (mage.view.StackAbilityView) savCtor.newInstance();
+        // Mirror StackAbilityView's constructor field-init enough that
+        // the mapper's accessors don't NPE.
+        setField(mage.view.SimpleCardView.class, sav, "id", id);
+        setField(mage.view.CardView.class, sav, "name", "Ability");
+        setField(mage.view.CardView.class, sav, "displayName", "Ability");
+        setField(mage.view.CardView.class, sav, "rules", new java.util.ArrayList<String>());
+        setField(mage.view.CardView.class, sav, "power", "");
+        setField(mage.view.CardView.class, sav, "toughness", "");
+        setField(mage.view.CardView.class, sav, "loyalty", "");
+        setField(mage.view.CardView.class, sav, "defense", "");
+        setField(mage.view.CardView.class, sav, "cardTypes", new java.util.ArrayList<>());
+        setField(mage.view.CardView.class, sav, "subTypes", new mage.util.SubTypes());
+        setField(mage.view.CardView.class, sav, "superTypes", new java.util.ArrayList<>());
+        setField(mage.view.CardView.class, sav, "color", new mage.ObjectColor());
+        setField(mage.view.CardView.class, sav, "manaCostLeftStr", new java.util.ArrayList<String>());
+        setField(mage.view.CardView.class, sav, "manaCostRightStr", new java.util.ArrayList<String>());
+        setField(mage.view.StackAbilityView.class, sav, "sourceCard", sourceCard);
+        return sav;
     }
 }
