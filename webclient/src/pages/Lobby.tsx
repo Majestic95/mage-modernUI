@@ -237,7 +237,16 @@ export function Lobby({ onEnterLobby }: Props = {}) {
           tableId={joinTarget.tableId}
           tableName={joinTarget.tableName}
           onClose={() => setJoinTarget(null)}
-          onJoined={requestImmediateRefresh}
+          onJoined={() => {
+            // Slice L9-prep — guests who join an existing table from
+            // the legacy table list now get routed into the new full-
+            // page lobby, mirroring the host's PreLobbyModal flow.
+            // Without this they stay stuck on this table-list screen
+            // (per user repro).
+            requestImmediateRefresh();
+            const id = joinTarget.tableId;
+            onEnterLobby?.(id);
+          }}
         />
       )}
 
