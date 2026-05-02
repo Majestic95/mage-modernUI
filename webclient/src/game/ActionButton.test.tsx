@@ -244,7 +244,7 @@ describe('ActionButton — ellipsis menu', () => {
     ).toHaveTextContent('Pass to Next Turn');
     expect(
       screen.getByTestId(
-        'action-menu-PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE',
+        'action-menu-PASS_PRIORITY_UNTIL_MY_NEXT_TURN',
       ),
     ).toHaveTextContent('Pass to Your Turn');
     expect(
@@ -373,18 +373,21 @@ describe('ActionButton — hotkeys', () => {
     );
   });
 
-  it('F6 dispatches "Pass to Your Turn" (next-main-phase)', () => {
-    // Slice 70-M critic IMPORTANT-6 fix — F6 was claimed in the
-    // hotkey set but had no test covering its dispatch. Added
-    // explicitly so a future refactor that drops F6 fails this
-    // assertion.
+  it('F6 dispatches "Pass to Your Turn" (until my next turn)', () => {
+    // Bug fix — F6 was previously mapped to UNTIL_NEXT_MAIN_PHASE
+    // (which advances only to the next main phase, could be the
+    // same turn's main 2 or an opponent's main on their turn). The
+    // label "Pass to Your Turn" specifically means "skip until it's
+    // MY turn again" — UNTIL_MY_NEXT_TURN is the correct engine
+    // action. Lock the new mapping so a future refactor doesn't
+    // regress.
     setGame();
     authState.session = { username: 'alice' };
     const stream = makeStream();
     render(<ActionButton stream={stream} />);
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F6' }));
     expect(stream.sendPlayerAction).toHaveBeenCalledWith(
-      'PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE',
+      'PASS_PRIORITY_UNTIL_MY_NEXT_TURN',
     );
   });
 

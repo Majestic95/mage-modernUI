@@ -71,9 +71,17 @@ const MENU_ITEMS: MenuItem[] = [
   },
   {
     label: 'Pass to Your Turn',
-    action: 'PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE',
+    // Bug fix — was PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE which only
+    // advances to the next main phase (could be the SAME turn's
+    // post-combat main, or the opponent's main during their turn).
+    // The label "Pass to Your Turn" semantically means "skip until
+    // it's MY turn again" — useful when waiting through an
+    // opponent's turn. The correct action is
+    // PASS_PRIORITY_UNTIL_MY_NEXT_TURN per the engine's PlayerAction
+    // enum (Mage/src/main/java/mage/constants/PlayerAction.java:11).
+    action: 'PASS_PRIORITY_UNTIL_MY_NEXT_TURN',
     hotkey: 'F6',
-    title: 'Pass priority until your next main phase',
+    title: 'Pass priority until your next turn begins',
   },
   {
     label: 'Resolve Stack',
