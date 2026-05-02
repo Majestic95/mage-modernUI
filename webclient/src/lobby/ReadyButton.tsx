@@ -28,18 +28,21 @@ export function ReadyButton({ ready, disabled = false, onToggle }: Props) {
         data-ready={ready || undefined}
         disabled={!enabled}
         onClick={onToggle}
-        className="relative rounded-xl px-10 py-3 text-xl font-semibold uppercase tracking-wide transition-all"
+        className="relative rounded-xl px-10 py-3 text-xl font-semibold uppercase tracking-wide transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
         style={{
           background: ready
             ? 'var(--color-surface-card)'
             : enabled
               ? 'linear-gradient(180deg, #5BB872 0%, #3F9159 100%)'
-              : 'var(--color-surface-card)',
+              : 'var(--color-bg-elevated)',
+          // Slice L6 polish — disabled state uses text-secondary (not
+          // text-muted) so the label stays legible against the dim
+          // surface. WCAG AA-compliant contrast.
           color: ready
             ? 'var(--color-text-secondary)'
             : enabled
               ? '#0A2412'
-              : 'var(--color-text-muted)',
+              : 'var(--color-text-secondary)',
           boxShadow: ready
             ? 'var(--shadow-low)'
             : enabled
@@ -52,6 +55,7 @@ export function ReadyButton({ ready, disabled = false, onToggle }: Props) {
               : '1px solid var(--color-card-frame-default)',
           cursor: enabled ? 'pointer' : 'not-allowed',
           letterSpacing: '0.04em',
+          opacity: enabled ? 1 : 0.85,
         }}
       >
         {ready ? 'Cancel Ready' : 'Ready Up'}

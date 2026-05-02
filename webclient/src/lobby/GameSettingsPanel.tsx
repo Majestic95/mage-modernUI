@@ -67,7 +67,7 @@ export function GameSettingsPanel({ options, isHost, onEditSettings }: Props) {
 function SettingRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col gap-0.5">
-      <dt className="text-xs uppercase text-text-muted" style={{ letterSpacing: '0.08em' }}>
+      <dt className="text-xs uppercase text-text-secondary" style={{ letterSpacing: '0.08em' }}>
         {label}
       </dt>
       <dd className="font-medium text-text-primary">{value}</dd>

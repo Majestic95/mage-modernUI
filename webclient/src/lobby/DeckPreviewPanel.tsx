@@ -18,7 +18,7 @@ export function DeckPreviewPanel({ deck }: Props) {
     return (
       <section
         data-testid="deck-preview-panel"
-        className="flex flex-col items-center justify-center gap-2 rounded-xl border border-card-frame-default/60 p-5 text-text-muted"
+        className="flex flex-col items-center justify-center gap-2 rounded-xl border border-card-frame-default/60 p-5 text-text-secondary"
         style={{ background: 'rgba(21, 34, 41, 0.85)' }}
       >
         <p className="text-sm">No deck selected</p>
@@ -177,7 +177,7 @@ function CardCountBlock({
           {count}/{required}
         </span>
         <span
-          className="text-[10px] uppercase text-text-muted"
+          className="text-[10px] uppercase text-text-secondary"
           style={{ letterSpacing: '0.12em' }}
         >
           Cards

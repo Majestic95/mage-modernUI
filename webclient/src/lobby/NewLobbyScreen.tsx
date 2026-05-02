@@ -188,6 +188,8 @@ function LobbyShell({
   );
   const [deckSubmitting, setDeckSubmitting] = useState(false);
   const [deckError, setDeckError] = useState<string | null>(null);
+  const [startSubmitting, setStartSubmitting] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
   // Live-mode deck data (slice L6). Fixture mode uses fixture.decks
   // unchanged. The hook always runs (rules-of-hooks); when not in
   // live mode, useLiveDecksHook=false and we ignore the result.
@@ -257,6 +259,40 @@ function LobbyShell({
       );
     } finally {
       setDeckSubmitting(false);
+    }
+  };
+
+  // Slice L7-prep — wire the orange Start Game CTA to the existing
+  // POST /tables/{t}/start endpoint. Without this the button looked
+  // active but did nothing. Server-side already gates on owner; the
+  // client gate prevents the click when not all seats are ready.
+  const onStartGame = async () => {
+    if (tableId === 'fixture' || roomId === null) {
+      // Fixture path — no wire call. The 'Start' click is visual-only.
+      return;
+    }
+    if (!session) {
+      setStartError('Session expired — please reload.');
+      return;
+    }
+    setStartSubmitting(true);
+    setStartError(null);
+    try {
+      await request(
+        `/api/rooms/${roomId}/tables/${tableId}/start`,
+        null,
+        { method: 'POST', token: session.token },
+      );
+      // Slice L8 will route into the game window when the lobby
+      // sees state=DUELING. For now the polling hook will pick up
+      // the new state on the next tick and the UI naturally
+      // transitions when activeGameId is set elsewhere.
+    } catch (err) {
+      setStartError(
+        err instanceof ApiError ? err.message : 'Failed to start the match.',
+      );
+    } finally {
+      setStartSubmitting(false);
     }
   };
 
@@ -372,6 +408,8 @@ function LobbyShell({
                 enabled={isHost && allReady}
                 isHost={isHost}
                 allReady={allReady}
+                submitting={startSubmitting}
+                onStart={() => void onStartGame()}
               />
             ) : (
               <ReadyButton
@@ -396,6 +434,15 @@ function LobbyShell({
                 className="text-xs text-status-danger"
               >
                 {deckError}
+              </p>
+            )}
+            {startError && (
+              <p
+                role="alert"
+                data-testid="start-error"
+                className="text-xs text-status-danger"
+              >
+                {startError}
               </p>
             )}
           </div>

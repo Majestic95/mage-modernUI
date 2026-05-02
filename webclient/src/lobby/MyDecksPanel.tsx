@@ -50,7 +50,7 @@ export function MyDecksPanel({
         {decks.length === 0 && (
           <li
             data-testid="my-decks-empty"
-            className="px-2 py-3 text-xs text-text-muted"
+            className="px-2 py-3 text-xs text-text-secondary"
           >
             No saved decks yet. Build one from the Decks tab.
           </li>
@@ -94,7 +94,13 @@ function DeckRow({
       data-selected={selected || undefined}
       data-disabled={disabled || undefined}
       role={onSelect ? 'button' : undefined}
-      tabIndex={onSelect && !disabled ? 0 : undefined}
+      // Slice L6 polish — keep rows in the tab order regardless of
+      // selected/disabled state so keyboard nav doesn't drop focus to
+      // <body> mid-list. Rely on aria-disabled / aria-current to
+      // communicate state, not removal from the tab sequence.
+      tabIndex={onSelect ? 0 : undefined}
+      aria-disabled={disabled || undefined}
+      aria-current={selected ? 'true' : undefined}
       onClick={() => {
         if (onSelect && !disabled && !selected) onSelect(deck.id);
       }}
@@ -107,6 +113,7 @@ function DeckRow({
       }}
       className={
         'flex items-center gap-2 rounded-md border p-1.5 transition-colors '
+        + 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring '
         + (disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer')
         + (onSelect && !disabled && !selected
           ? ' hover:bg-surface-card-hover'

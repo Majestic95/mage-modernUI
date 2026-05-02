@@ -64,6 +64,12 @@
    * inline borderColor. The token already exists in tokens.css; this
    * just mirrors it into @theme. */
   --color-card-frame-default: #2A3640;
+
+  /* Focus ring — slice L6 polish — exposes the existing
+   * --color-focus-ring token to Tailwind so form controls can use
+   * `focus-visible:ring-focus-ring` for a consistent keyboard-focus
+   * affordance. */
+  --color-focus-ring: rgba(168, 85, 247, 0.9);
 }
 
 /* Project-wide CSS custom properties go here. Theme palette per
@@ -80,6 +86,30 @@
 body {
   margin: 0;
   min-height: 100svh;
+}
+
+/*
+ * Slice L6 review polish — explicitly theme the native form-control
+ * surfaces that don't fully follow `color-scheme: dark` on every
+ * browser/OS combination. The new lobby's modals expose several
+ * <select> dropdowns, number inputs, and checkboxes; without these
+ * rules the dropdown panel and spinners render with browser-default
+ * white chrome against the dark canvas.
+ */
+select,
+input[type="text"],
+input[type="number"],
+input[type="password"],
+textarea {
+  background-color: var(--color-surface-card);
+  color: var(--color-text-primary);
+}
+select option {
+  background-color: var(--color-bg-elevated);
+  color: var(--color-text-primary);
+}
+input[type="checkbox"] {
+  accent-color: var(--color-accent-primary);
 }
 
 /*

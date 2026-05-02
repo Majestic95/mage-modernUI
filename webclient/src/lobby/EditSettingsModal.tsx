@@ -9,7 +9,7 @@
  * so the rest of the lobby can dim itself behind the modal backdrop
  * without prop-drilling.
  */
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { request, ApiError } from '../api/client';
 import {
   webTableSchema,
@@ -112,6 +112,21 @@ export function EditSettingsModal({
   const [values, setValues] = useState<InitialValues>(initial);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const firstFieldRef = useRef<HTMLInputElement | null>(null);
+
+  // Slice L6 polish — Esc closes the modal; first input gets focus
+  // on mount so the user lands somewhere actionable.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    firstFieldRef.current?.focus();
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
 
   const isFixture = tableId === 'fixture' || roomId === null;
 
@@ -149,9 +164,13 @@ export function EditSettingsModal({
       className="fixed inset-0 z-50 flex items-center justify-center"
       style={{ background: 'var(--color-bg-overlay)' }}
       onClick={onClose}
+      role="presentation"
     >
       <div
         data-testid="edit-settings-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Edit lobby settings"
         className="flex max-h-[90vh] w-full max-w-xl flex-col gap-4 overflow-y-auto rounded-xl border p-6"
         style={{
           background: 'var(--color-bg-elevated)',
@@ -181,6 +200,7 @@ export function EditSettingsModal({
         <div className="grid grid-cols-2 gap-4">
           <Field label="Password">
             <input
+              ref={firstFieldRef}
               type="text"
               data-testid="edit-settings-password"
               value={values.password}
@@ -321,7 +341,7 @@ function Field({
   return (
     <label className="flex flex-col gap-1">
       <span
-        className="text-xs uppercase text-text-muted"
+        className="text-xs uppercase text-text-secondary"
         style={{ letterSpacing: '0.08em' }}
       >
         {label}
@@ -405,7 +425,9 @@ function CloseIcon() {
 }
 
 function inputClass(): string {
-  return 'rounded-md border px-3 py-2 text-sm text-text-primary outline-none transition-colors focus:border-accent-primary';
+  // Slice L6 polish — explicit border + bg + focus-ring tokens so
+  // native form controls don't fall back to OS chrome on dark mode.
+  return 'rounded-md border border-card-frame-default/80 bg-surface-card px-3 py-2 text-sm text-text-primary outline-none transition-colors focus-visible:border-accent-primary focus-visible:ring-2 focus-visible:ring-focus-ring';
 }
 
 function clampInt(raw: string, min: number, max: number): number {

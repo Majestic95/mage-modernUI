@@ -20,7 +20,7 @@
  * <p>The legacy {@link CreateTableModal} stays in the codebase
  * untouched until slice L9 retires it, in case rollback is needed.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ApiError, request } from '../api/client';
 import { webTableSchema, type WebServerState } from '../api/schemas';
 import { useAuthStore } from '../auth/store';
@@ -75,6 +75,18 @@ export function PreLobbyModal({
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Slice L6 polish — Esc closes the modal.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
 
   // When the gameType changes the player-count bounds shift —
   // clamp the current value into the new range.
@@ -170,9 +182,13 @@ export function PreLobbyModal({
       className="fixed inset-0 z-50 flex items-center justify-center"
       style={{ background: 'var(--color-bg-overlay)' }}
       onClick={onClose}
+      role="presentation"
     >
       <div
         data-testid="pre-lobby-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Create game"
         className="flex w-full max-w-md flex-col gap-5 rounded-xl border p-6"
         style={{
           background: 'var(--color-bg-elevated)',
@@ -306,7 +322,7 @@ function Field({
   return (
     <label className="flex flex-col gap-1">
       <span
-        className="text-xs uppercase text-text-muted"
+        className="text-xs uppercase text-text-secondary"
         style={{ letterSpacing: '0.08em' }}
       >
         {label}
@@ -317,7 +333,11 @@ function Field({
 }
 
 function inputClass(): string {
-  return 'rounded-md border px-3 py-2 text-sm text-text-primary outline-none transition-colors focus:border-accent-primary';
+  // Slice L6 polish — explicit border + bg + focus-ring tokens so
+  // native form controls don't fall back to OS chrome on dark mode.
+  // The global rules in index.css set background/text; this adds
+  // the per-element border + focus state.
+  return 'rounded-md border border-card-frame-default/80 bg-surface-card px-3 py-2 text-sm text-text-primary outline-none transition-colors focus-visible:border-accent-primary focus-visible:ring-2 focus-visible:ring-focus-ring';
 }
 
 function clamp(n: number, min: number, max: number): number {
