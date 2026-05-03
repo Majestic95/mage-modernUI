@@ -52,6 +52,7 @@ export function PlayerFrameRedesigned({
   eligibleTargetIds,
   canAct,
   onObjectClick,
+  chipsLayout = 'horizontal',
 }: {
   player: WebPlayerView;
   perspective: 'self' | 'opponent';
@@ -61,6 +62,7 @@ export function PlayerFrameRedesigned({
   eligibleTargetIds?: Set<string>;
   canAct?: boolean;
   onObjectClick?: (id: string) => void;
+  chipsLayout?: 'horizontal' | 'vertical';
 }) {
   const eliminated = player.hasLeft;
   const disconnected =
@@ -365,6 +367,7 @@ export function PlayerFrameRedesigned({
       <PlayerFrameInfoCluster
         player={player}
         perspective={perspective}
+        layout={chipsLayout}
         eligibleTargetIds={eligibleTargetIds}
         canAct={canAct}
         onObjectClick={onObjectClick}
@@ -434,12 +437,14 @@ export function PlayerFrameRedesigned({
 function PlayerFrameInfoCluster({
   player,
   perspective,
+  layout = 'horizontal',
   eligibleTargetIds,
   canAct,
   onObjectClick,
 }: {
   player: WebPlayerView;
   perspective: 'self' | 'opponent';
+  layout?: 'horizontal' | 'vertical';
   eligibleTargetIds?: Set<string>;
   canAct?: boolean;
   onObjectClick?: (id: string) => void;
@@ -464,14 +469,33 @@ function PlayerFrameInfoCluster({
     // chips from wrapping into a second row at narrow viewports.
     <div
       data-testid={`player-frame-info-${perspective}`}
+      data-chip-layout={layout}
       // Slice 70-Z polish round 21 (user direction 2026-04-30) —
       // cluster font bumped text-[11px] → text-[13px] for legibility
       // alongside the bigger commander name. Hierarchy preserved:
       // player name (text-base ≈ 16px, font-medium) > commander
       // (text-sm 14px) > cluster (text-[13px]).
-      className="absolute top-full left-1/2 -translate-x-1/2 mt-1
-        flex items-center gap-2 text-[13px] text-text-secondary
-        whitespace-nowrap"
+      //
+      // 2026-05-03 — vertical layout option for asymmetric T's narrow
+      // (140px) opponent gutter. Horizontal cluster overflowed the
+      // gutter and bled into the lane's lands/creatures sub-rows;
+      // vertical stacks chips top-to-bottom under the portrait so
+      // they stay inside the gutter column.
+      className={
+        'text-[13px] text-text-secondary ' +
+        (layout === 'vertical'
+          ? // In-flow stacked column: render as a normal flex child
+            // of the PlayerFrame so the chip stack lives INSIDE the
+            // gutter column. Avoids the absolute-positioned overflow
+            // that horizontal mode dangles past the parent bbox.
+            'mt-2 flex flex-col items-center gap-1'
+          : // Horizontal mode (default) keeps slice-70-P's
+            // absolute-below-portrait placement so PlayerFrame's bbox
+            // stays at portrait+name height — that contract is load-
+            // bearing for the side-pod and corner-mount layouts.
+            'absolute top-full left-1/2 -translate-x-1/2 mt-1 ' +
+            'flex items-center gap-2 whitespace-nowrap')
+      }
     >
       <ZoneIcon
         zone="library"

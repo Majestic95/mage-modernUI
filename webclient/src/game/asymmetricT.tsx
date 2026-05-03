@@ -196,7 +196,15 @@ export function AsymmetricTLayout({
       {REDESIGN && me && (
         <div
           data-testid="local-player-frame-corner"
-          className="absolute bottom-12 right-10 z-40 pointer-events-auto"
+          // 2026-05-03 — shifted right-10 → right-32 so the
+          // horizontal chip cluster (Lib / Hand / Grave / Exile),
+          // which is centered absolutely beneath the portrait, has
+          // enough clearance from the battlefield's right edge to
+          // render fully without being clipped by overflow-hidden /
+          // hidden behind the side-panel boundary. The Exile chip
+          // was previously partially obscured, breaking the always-
+          // accessible-zones contract.
+          className="absolute bottom-12 right-32 z-40 pointer-events-auto"
         >
           <PlayerArea
             player={me}
@@ -324,6 +332,7 @@ function OpponentLane({
           player={opponent}
           perspective="opponent"
           position="left"
+          chipsLayout="vertical"
           onPlayerClick={onObjectClick}
           targetable={eligibleTargetIds.has(opponent.playerId)}
           eligibleTargetIds={eligibleTargetIds}

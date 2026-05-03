@@ -93,6 +93,16 @@ interface Props {
   canAct?: boolean;
   /** Routes a click on an eligible zone-card back to the dialog handler. */
   onObjectClick?: (id: string) => void;
+  /**
+   * 2026-05-03 — chip-cluster orientation. {@code 'horizontal'} (default)
+   * lays Lib / Hand / Grave / Exile chips in a single row beneath the
+   * portrait — the slice-70-P legacy. {@code 'vertical'} stacks them
+   * top-to-bottom for cases where the host slot is tall + narrow
+   * (asymmetric T's 140px opponent gutter), so the cluster fits
+   * within its column instead of overflowing horizontally into
+   * neighboring zones. REDESIGN-only; legacy branch ignores it.
+   */
+  chipsLayout?: 'horizontal' | 'vertical';
 }
 
 export function PlayerFrame({
@@ -104,6 +114,7 @@ export function PlayerFrame({
   eligibleTargetIds,
   canAct,
   onObjectClick,
+  chipsLayout,
 }: Props) {
   // Bug fix (2026-05-01) — colorIdentity snapshot fallback for the
   // legacy HaloRing. Same root cause as the redesigned PlayerPortrait
@@ -132,6 +143,7 @@ export function PlayerFrame({
         eligibleTargetIds={eligibleTargetIds}
         canAct={canAct}
         onObjectClick={onObjectClick}
+        chipsLayout={chipsLayout}
       />
     );
   }
