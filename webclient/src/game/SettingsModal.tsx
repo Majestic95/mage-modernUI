@@ -1,4 +1,5 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
+import { useDraggable } from '../util/useDraggable';
 import { useModalA11y } from '../util/useModalA11y';
 import { playChime } from './audioCues';
 import { useAudioSettings } from './audioSettingsStore';
@@ -47,7 +48,9 @@ export function SettingsModal({
    */
   onLeave: () => void;
 }) {
-  const dialogRef = useRef<HTMLDivElement>(null);
+  const { ref: dialogRef, containerProps, style: dragStyle } = useDraggable({
+    placement: { kind: 'center' },
+  });
   useModalA11y(dialogRef, { onClose });
 
   // Two-step concede gesture. confirmingConcede=true swaps the
@@ -57,13 +60,10 @@ export function SettingsModal({
   const [confirmingConcede, setConfirmingConcede] = useState(false);
 
   return (
-    <div
-      data-testid="settings-modal-root"
-      className="fixed inset-0 z-50 flex items-center justify-center"
-    >
+    <div data-testid="settings-modal-root" className="contents">
       <div
         data-testid="settings-modal-backdrop"
-        className="absolute inset-0 bg-black/60"
+        className="fixed inset-0 z-50 bg-black/60"
         onClick={onClose}
         aria-hidden="true"
       />
@@ -73,9 +73,14 @@ export function SettingsModal({
         aria-modal="true"
         aria-label="Game settings"
         data-testid="settings-modal"
-        className="relative bg-bg-elevated border border-zinc-800 rounded-lg shadow-2xl p-5 w-[min(90vw,400px)] space-y-4"
+        className="z-50 bg-bg-elevated border border-zinc-800 rounded-lg shadow-2xl p-5 w-[min(90vw,400px)] space-y-4"
+        style={dragStyle}
+        {...containerProps}
       >
-        <header className="flex items-baseline justify-between">
+        <header
+          data-drag-handle
+          className="flex items-baseline justify-between cursor-move select-none"
+        >
           <h2 className="text-sm font-semibold text-text-primary uppercase tracking-wider">
             Settings
           </h2>

@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as RPointerEvent } from 'react';
+import { type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import type { WebCardView } from '../api/schemas';
+import { useDraggable } from '../util/useDraggable';
 import { useModalA11y } from '../util/useModalA11y';
 import { CardFace } from './CardFace';
 import { HoverCardDetail } from './HoverCardDetail';
@@ -59,80 +60,12 @@ export function ZoneBrowser({
   onObjectClick?: (id: string) => void;
   onClose: () => void;
 }) {
-  const dialogRef = useRef<HTMLDivElement>(null);
+  const { ref: dialogRef, containerProps, style: dragStyle } = useDraggable({
+    placement: { kind: 'center' },
+  });
   useModalA11y(dialogRef, { onClose });
 
-  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
-  const dragStateRef = useRef<{
-    pointerId: number;
-    startX: number;
-    startY: number;
-    originX: number;
-    originY: number;
-  } | null>(null);
-
-  const onHeaderPointerDown = (e: RPointerEvent<HTMLDivElement>) => {
-    // Skip drag when the click landed on a button inside the header
-    // (e.g. close button) so the button still behaves like a button.
-    if ((e.target as HTMLElement).closest('button')) return;
-    e.preventDefault();
-    const rect = dialogRef.current?.getBoundingClientRect();
-    const originX = pos?.x ?? (rect ? rect.left : 0);
-    const originY = pos?.y ?? (rect ? rect.top : 0);
-    dragStateRef.current = {
-      pointerId: e.pointerId,
-      startX: e.clientX,
-      startY: e.clientY,
-      originX,
-      originY,
-    };
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-  };
-
-  const onHeaderPointerMove = (e: RPointerEvent<HTMLDivElement>) => {
-    const drag = dragStateRef.current;
-    if (!drag || drag.pointerId !== e.pointerId) return;
-    const dx = e.clientX - drag.startX;
-    const dy = e.clientY - drag.startY;
-    setPos({ x: drag.originX + dx, y: drag.originY + dy });
-  };
-
-  const onHeaderPointerUp = (e: RPointerEvent<HTMLDivElement>) => {
-    const drag = dragStateRef.current;
-    if (!drag || drag.pointerId !== e.pointerId) return;
-    dragStateRef.current = null;
-    try {
-      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-    } catch {
-      // best-effort
-    }
-  };
-
-  // Center the dialog on first paint; once the user drags, switch to
-  // the absolute-position coordinates they chose. Without this initial
-  // measurement the dialog renders at top:0/left:0 and snaps when the
-  // drag handler later sets coords.
-  useEffect(() => {
-    if (pos !== null) return;
-    const el = dialogRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    setPos({
-      x: Math.max(8, (window.innerWidth - rect.width) / 2),
-      y: Math.max(8, (window.innerHeight - rect.height) / 2),
-    });
-  }, [pos]);
-
   const entries = Object.values(cards);
-
-  const dialogStyle: CSSProperties = {
-    position: 'fixed',
-    left: pos?.x ?? 0,
-    top: pos?.y ?? 0,
-    // Hidden until pos is computed so the dialog doesn't flash at
-    // (0,0) before the centering effect runs.
-    visibility: pos === null ? 'hidden' : 'visible',
-  };
 
   // Portal target — render to document.body so the modal escapes any
   // ancestor with a transform/filter/will-change (which otherwise
@@ -157,20 +90,18 @@ export function ZoneBrowser({
         aria-label={title}
         className="bg-zinc-900 border border-zinc-700 rounded-lg shadow-2xl flex flex-col pointer-events-auto"
         style={{
-          ...dialogStyle,
+          ...dragStyle,
           // Mulligan-sized: full card images, comfortable width so
           // ~5 cards fit per row at 130px each.
           width: 'min(90vw, 880px)',
           maxHeight: '85vh',
         }}
+        {...containerProps}
       >
         <header
           data-testid="zone-browser-header"
+          data-drag-handle
           className="flex items-baseline justify-between px-4 py-2 border-b border-zinc-800 cursor-move select-none"
-          onPointerDown={onHeaderPointerDown}
-          onPointerMove={onHeaderPointerMove}
-          onPointerUp={onHeaderPointerUp}
-          onPointerCancel={onHeaderPointerUp}
         >
           <h2 className="text-sm font-semibold text-zinc-100 capitalize">
             {title}{' '}

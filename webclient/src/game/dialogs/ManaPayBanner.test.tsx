@@ -115,14 +115,30 @@ describe('ManaPayBanner', () => {
     // a no-op. New banner intentionally omits it.
   });
 
-  it('positioner is pointer-events-none so the board stays clickable', () => {
+  it('banner confines pointer events to its own bounding box; the rest of the board stays clickable', () => {
     setManaPayDialog('gamePlayMana', 'Pay {R}');
     render(<ManaPayBanner stream={fakeStream()} />);
-    expect(
-      screen.getByTestId('mana-pay-banner-positioner').className,
-    ).toContain('pointer-events-none');
+    // Banner positions itself via {@link useDraggable}; no
+    // enclosing positioner div, so click-through behind the
+    // banner is preserved by the banner's small bounding box.
     expect(
       screen.getByTestId('mana-pay-banner').className,
     ).toContain('pointer-events-auto');
+    expect(screen.queryByTestId('mana-pay-banner-positioner')).toBeNull();
+  });
+
+  it('halo spotlight is rendered for visual attention', () => {
+    setManaPayDialog('gamePlayMana', 'Pay {R}');
+    render(<ManaPayBanner stream={fakeStream()} />);
+    const halo = screen.getByTestId('mana-pay-banner-halo');
+    expect(halo.className).toContain('animate-banner-halo-rotate');
+  });
+
+  it('drag handle attribute is set so useDraggable can pick it up', () => {
+    setManaPayDialog('gamePlayMana', 'Pay {R}');
+    render(<ManaPayBanner stream={fakeStream()} />);
+    const banner = screen.getByTestId('mana-pay-banner');
+    expect(banner.hasAttribute('data-drag-handle')).toBe(true);
+    expect(banner.className).toContain('cursor-move');
   });
 });

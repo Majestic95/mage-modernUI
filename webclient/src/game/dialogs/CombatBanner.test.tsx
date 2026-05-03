@@ -183,14 +183,30 @@ describe('CombatBanner — defensive', () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it('positioner is pointer-events-none so creature clicks pass through', () => {
+  it('banner confines pointer events to its own bounding box; creature clicks elsewhere pass through', () => {
     setCombatDialog('Select attackers', { possibleAttackers: ['a-1'] });
     render(<CombatBanner stream={fakeStream()} isAttackers />);
-    expect(
-      screen.getByTestId('combat-banner-positioner').className,
-    ).toContain('pointer-events-none');
+    // Banner positions itself via {@link useDraggable}; no
+    // enclosing positioner div, so click-through behind the banner
+    // is preserved by the banner's small bounding box.
     expect(
       screen.getByTestId('combat-banner').className,
     ).toContain('pointer-events-auto');
+    expect(screen.queryByTestId('combat-banner-positioner')).toBeNull();
+  });
+
+  it('halo spotlight is rendered for visual attention', () => {
+    setCombatDialog('Select attackers', { possibleAttackers: ['a-1'] });
+    render(<CombatBanner stream={fakeStream()} isAttackers />);
+    const halo = screen.getByTestId('combat-banner-halo');
+    expect(halo.className).toContain('animate-banner-halo-rotate');
+  });
+
+  it('drag handle attribute is set so useDraggable can pick it up', () => {
+    setCombatDialog('Select attackers', { possibleAttackers: ['a-1'] });
+    render(<CombatBanner stream={fakeStream()} isAttackers />);
+    const banner = screen.getByTestId('combat-banner');
+    expect(banner.hasAttribute('data-drag-handle')).toBe(true);
+    expect(banner.className).toContain('cursor-move');
   });
 });

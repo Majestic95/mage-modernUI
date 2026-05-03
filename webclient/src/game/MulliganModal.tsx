@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import type { WebGameView } from '../api/schemas';
 import type { GameStream } from './stream';
 import { useGameStore } from './store';
+import { useDraggable } from '../util/useDraggable';
 import { useModalA11y } from '../util/useModalA11y';
 import { CardFace } from './CardFace';
 import { HoverCardDetail } from './HoverCardDetail';
@@ -93,7 +94,12 @@ export function MulliganModal({ stream, gameView }: Props) {
   // Critic Tech-I4 / UX-4 — focus trap + initial-focus management.
   // useModalA11y owns ESC + focus trap; we pass onClose=undefined so
   // ESC is a no-op (mulligan choice is mandatory per spec).
-  const dialogRef = useRef<HTMLDivElement>(null);
+  // {@link useDraggable} owns position state + the pointer handlers
+  // for the modal box; the inner `<header>` is marked
+  // `data-drag-handle` so dragging from there moves the modal.
+  const { ref: dialogRef, containerProps, style: dragStyle } = useDraggable({
+    placement: { kind: 'center' },
+  });
   const keepRef = useRef<HTMLButtonElement>(null);
   useModalA11y(dialogRef, {});
   // Initial focus on Keep — the safe default. Runs once when the
@@ -111,16 +117,26 @@ export function MulliganModal({ stream, gameView }: Props) {
   }
 
   return (
-    <div
-      ref={dialogRef}
-      role="dialog"
-      aria-modal="true"
-      aria-label="Mulligan decision"
-      data-testid="mulligan-modal"
-      className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4"
-    >
-      <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-6 max-w-6xl w-full space-y-4 shadow-2xl">
-        <header className="space-y-1">
+    <>
+      <div
+        data-testid="mulligan-modal-backdrop"
+        aria-hidden="true"
+        className="fixed inset-0 z-50 bg-black/70"
+      />
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Mulligan decision"
+        data-testid="mulligan-modal"
+        className="z-50 w-[min(95vw,1152px)] bg-zinc-900 border border-zinc-700 rounded-lg p-6 space-y-4 shadow-2xl"
+        style={dragStyle}
+        {...containerProps}
+      >
+        <header
+          data-drag-handle
+          className="space-y-1 cursor-move select-none"
+        >
           <h2 className="text-lg font-semibold text-text-primary">
             Mulligan
           </h2>
@@ -187,7 +203,7 @@ export function MulliganModal({ stream, gameView }: Props) {
           </button>
         </div>
       </div>
-    </div>
+    </>
   );
 }
 

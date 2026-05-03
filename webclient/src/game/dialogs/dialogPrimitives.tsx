@@ -40,15 +40,28 @@ export function Header({
   title: string;
   onClose?: () => void;
 }) {
+  // The `data-drag-handle` attribute lets the wrapping
+  // {@link useDraggable} hook recognise this region as a drag
+  // surface (every game-dialog wrapper participates). `cursor-move`
+  // + `select-none` give the visual + selection-suppression
+  // affordance. Inner buttons (× close) are still clickable —
+  // the hook bails on `closest('button, …')` before initiating drag.
   if (!onClose) {
     return (
-      <h2 className="text-lg font-semibold text-zinc-100" data-testid="dialog-title">
+      <h2
+        data-drag-handle
+        className="text-lg font-semibold text-zinc-100 cursor-move select-none"
+        data-testid="dialog-title"
+      >
         {title}
       </h2>
     );
   }
   return (
-    <header className="flex items-baseline justify-between">
+    <header
+      data-drag-handle
+      className="flex items-baseline justify-between cursor-move select-none"
+    >
       <h2 className="text-lg font-semibold text-zinc-100" data-testid="dialog-title">
         {title}
       </h2>

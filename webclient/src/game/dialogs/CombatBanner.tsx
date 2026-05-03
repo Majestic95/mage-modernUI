@@ -1,4 +1,6 @@
+import { useDraggable } from '../../util/useDraggable';
 import { useGameStore } from '../store';
+import { BannerSpotlightHalo } from './BannerSpotlightHalo';
 import { renderUpstreamMarkup } from './markupRenderer';
 import type { GameStream } from '../stream';
 
@@ -56,6 +58,9 @@ interface CombatBannerProps {
 
 export function CombatBanner({ stream, isAttackers }: CombatBannerProps) {
   const dialog = useGameStore((s) => s.pendingDialog);
+  const { ref, containerProps, style } = useDraggable({
+    placement: { kind: 'bottom-center', bottomMargin: 196 },
+  });
 
   if (!dialog) return null;
   if (dialog.method !== 'gameSelect') return null;
@@ -92,52 +97,51 @@ export function CombatBanner({ stream, isAttackers }: CombatBannerProps) {
 
   return (
     <div
-      className="pointer-events-none fixed left-1/2 -translate-x-1/2 z-40"
-      style={{ bottom: 'calc(var(--hand-area-height, 180px) + 16px)' }}
-      data-testid="combat-banner-positioner"
+      ref={ref}
+      role="status"
+      aria-live="polite"
+      data-testid="combat-banner"
+      data-combat-phase={isAttackers ? 'attackers' : 'blockers'}
+      data-drag-handle
+      className={
+        'relative pointer-events-auto inline-flex items-center gap-3 rounded-lg ' +
+        'bg-zinc-900/95 border border-amber-400/60 shadow-xl ' +
+        'px-4 py-2 text-zinc-100 backdrop-blur-sm cursor-move select-none z-40'
+      }
+      style={style}
+      {...containerProps}
     >
-      <div
-        role="status"
-        aria-live="polite"
-        data-testid="combat-banner"
-        data-combat-phase={isAttackers ? 'attackers' : 'blockers'}
-        className={
-          'pointer-events-auto inline-flex items-center gap-3 rounded-lg ' +
-          'bg-zinc-900/95 border border-amber-400/60 shadow-xl ' +
-          'px-4 py-2 text-zinc-100 backdrop-blur-sm'
-        }
+      <BannerSpotlightHalo testId="combat-banner-halo" />
+      <span
+        className="text-xs uppercase tracking-wider text-amber-300 font-semibold"
+        data-testid="combat-banner-title"
       >
-        <span
-          className="text-xs uppercase tracking-wider text-amber-300 font-semibold"
-          data-testid="combat-banner-title"
-        >
-          {isAttackers ? 'Combat — attackers' : 'Combat — blockers'}
-        </span>
-        <span className="text-sm" data-testid="combat-banner-message">
-          {renderUpstreamMarkup(message)}
-        </span>
-        <span className="text-xs text-zinc-500 italic">
-          Click creatures on the board to toggle
-        </span>
-        {showAllAttack && (
-          <button
-            type="button"
-            onClick={sendAllAttack}
-            data-testid="combat-banner-all-attack"
-            className="px-3 py-1 rounded text-sm font-medium bg-amber-700/70 hover:bg-amber-700 text-amber-50 transition"
-          >
-            {allAttackLabel}
-          </button>
-        )}
+        {isAttackers ? 'Combat — attackers' : 'Combat — blockers'}
+      </span>
+      <span className="text-sm" data-testid="combat-banner-message">
+        {renderUpstreamMarkup(message)}
+      </span>
+      <span className="text-xs text-zinc-500 italic">
+        Click creatures on the board to toggle
+      </span>
+      {showAllAttack && (
         <button
           type="button"
-          onClick={sendDone}
-          data-testid="combat-banner-done"
-          className="px-3 py-1 rounded text-sm font-medium bg-amber-500 hover:bg-amber-400 text-zinc-950 transition"
+          onClick={sendAllAttack}
+          data-testid="combat-banner-all-attack"
+          className="px-3 py-1 rounded text-sm font-medium bg-amber-700/70 hover:bg-amber-700 text-amber-50 transition"
         >
-          Done
+          {allAttackLabel}
         </button>
-      </div>
+      )}
+      <button
+        type="button"
+        onClick={sendDone}
+        data-testid="combat-banner-done"
+        className="px-3 py-1 rounded text-sm font-medium bg-amber-500 hover:bg-amber-400 text-zinc-950 transition"
+      >
+        Done
+      </button>
     </div>
   );
 }

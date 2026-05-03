@@ -260,6 +260,20 @@ input[type="checkbox"] {
 }
 
 /*
+ * Banner spotlight (DialogBanner / ManaPayBanner / CombatBanner) —
+ * golden-white sweep drawing immediate attention to the banner the
+ * player is being asked to act on. Same conic-gradient + mask trick
+ * as the focal-card spotlight, just slower because the banner
+ * perimeter is much longer than a card edge — matching focal speed
+ * (1875ms) over a ~1000px perimeter would feel frantic. 4500ms
+ * keeps the linear sweep speed in the same ballpark while reading
+ * as a steady "look here" rather than an emergency.
+ */
+.animate-banner-halo-rotate {
+  animation: halo-rotate 4500ms linear infinite;
+}
+
+/*
  * Slice 70-Z.4 — impact-tier (C) keyframes. Three flavors:
  * dust-crumple (creature death), bright-dissolve (exile), and the
  * shared particle-drift used by both. Each is consumed inline by

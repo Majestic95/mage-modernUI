@@ -1,6 +1,7 @@
 import type { GameStream } from '../stream';
 import type { WebGameClientMessage } from '../../api/schemas';
 import { deriveInteractionMode } from '../interactionMode';
+import { useDraggable } from '../../util/useDraggable';
 import { useGameStore, type PendingDialog } from '../store';
 import { YesNoDialog } from './AskDialog';
 import { TargetDialog } from './TargetDialog';
@@ -35,6 +36,13 @@ interface Props {
 export function GameDialog({ stream }: Props) {
   const dialog = useGameStore((s) => s.pendingDialog);
   const clearDialog = useGameStore((s) => s.clearDialog);
+  // Two draggable wrappers — one for the centered modal branch (the
+  // common case) and one for the bottom-right hidden-zone-target
+  // branch (Demonic Tutor library search). Hooks are unconditional
+  // so they're always called per the rules of hooks; only one ref
+  // is actually mounted into the DOM per render.
+  const centered = useDraggable({ placement: { kind: 'center' } });
+  const bottomRight = useDraggable({ placement: { kind: 'bottom-right' } });
   // Slice 70-Y.1 — when click-resolution is active, the relevant
   // cards pulse in their existing zone and the banner replaces the
   // modal. Hook returns active=false unless: flag on, dialog is a
@@ -150,14 +158,20 @@ export function GameDialog({ stream }: Props) {
     }
     // Case 2 — modal with card grid (Demonic Tutor etc.) when the
     // cards live in HIDDEN zones (library search). On-board target
-    // dispatch is handled by Case 3 above.
+    // dispatch is handled by Case 3 above. Width is fixed (was
+    // {@code max-w-sm w-full} inside a flex container; the hook
+    // makes the dialog {@code position: fixed} so a percentage width
+    // would resolve against the viewport — concrete clamp instead).
     return (
       <div
+        ref={bottomRight.ref}
         role="dialog"
         aria-modal="false"
         data-testid="game-dialog"
         data-method={dialog.method}
-        className="fixed bottom-4 right-[calc(var(--side-panel-width,0px)+1rem)] z-40 max-w-sm w-full bg-zinc-900 border border-zinc-700 rounded-lg p-5 space-y-3 shadow-2xl"
+        className="z-40 w-[min(90vw,384px)] bg-zinc-900 border border-zinc-700 rounded-lg p-5 space-y-3 shadow-2xl"
+        style={bottomRight.style}
+        {...bottomRight.containerProps}
       >
         <DialogContent dialog={dialog} stream={stream} clearDialog={clearDialog} />
       </div>
@@ -173,18 +187,32 @@ export function GameDialog({ stream }: Props) {
     return <ManaPayBanner stream={stream} />;
   }
 
+  // Default centered branch — backdrop scrim is a separate sibling
+  // div so the dialog box itself can be positioned by the
+  // {@link useDraggable} hook (the hook owns left/top via fixed
+  // positioning; `flex items-center justify-center` would fight it).
+  // Backdrop is aria-hidden / decorative — the role=dialog and
+  // aria-modal markers stay on the actual dialog box.
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      data-testid="game-dialog"
-      data-method={dialog.method}
-      className="fixed inset-0 z-40 bg-black/70 flex items-center justify-center p-4"
-    >
-      <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-6 max-w-lg w-full space-y-4 shadow-2xl">
+    <>
+      <div
+        data-testid="game-dialog-backdrop"
+        aria-hidden="true"
+        className="fixed inset-0 z-40 bg-black/70"
+      />
+      <div
+        ref={centered.ref}
+        role="dialog"
+        aria-modal="true"
+        data-testid="game-dialog"
+        data-method={dialog.method}
+        className="z-40 w-[min(90vw,512px)] bg-zinc-900 border border-zinc-700 rounded-lg p-6 space-y-4 shadow-2xl"
+        style={centered.style}
+        {...centered.containerProps}
+      >
         <DialogContent dialog={dialog} stream={stream} clearDialog={clearDialog} />
       </div>
-    </div>
+    </>
   );
 }
 

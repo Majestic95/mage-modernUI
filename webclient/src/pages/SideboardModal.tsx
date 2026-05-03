@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { ApiError, request } from '../api/client';
 import { useAuthStore } from '../auth/store';
 import { useGameStore } from '../game/store';
+import { useDraggable } from '../util/useDraggable';
 import { useModalA11y } from '../util/useModalA11y';
 import type { WebSideboardInfo, WebSimpleCardView } from '../api/schemas';
 
@@ -75,7 +76,11 @@ function SideboardModalImpl({
   // Modal a11y: focus trap + initial focus + focus restoration. ESC
   // intentionally does NOT close — sideboarding is submission-only;
   // the engine auto-submits at timeout. So we omit {@code onClose}.
-  const modalRootRef = useRef<HTMLDivElement>(null);
+  // {@link useDraggable} owns the dialog box's position; the inline
+  // header is the drag handle.
+  const { ref: modalRootRef, containerProps, style: dragStyle } = useDraggable({
+    placement: { kind: 'center' },
+  });
   useModalA11y(modalRootRef, {});
 
   // Live countdown. The server sends {@code time} (seconds remaining
@@ -172,19 +177,30 @@ function SideboardModalImpl({
   };
 
   return (
-    <div
-      ref={modalRootRef}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="sideboard-heading"
-      data-testid="sideboard-modal"
-      className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4"
-    >
-      <form
-        onSubmit={onSubmit}
-        className="bg-zinc-900 border border-zinc-800 rounded-lg p-6 max-w-3xl w-full max-h-[90vh] flex flex-col"
+    <>
+      <div
+        aria-hidden="true"
+        data-testid="sideboard-modal-backdrop"
+        className="fixed inset-0 z-50 bg-black/70"
+      />
+      <div
+        ref={modalRootRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="sideboard-heading"
+        data-testid="sideboard-modal"
+        className="z-50 w-[min(95vw,768px)] max-h-[90vh] bg-zinc-900 border border-zinc-800 rounded-lg p-6 flex flex-col"
+        style={dragStyle}
+        {...containerProps}
       >
-        <header className="flex items-baseline justify-between mb-3">
+        <form
+          onSubmit={onSubmit}
+          className="flex-1 min-h-0 flex flex-col"
+        >
+          <header
+            data-drag-handle
+            className="flex items-baseline justify-between mb-3 cursor-move select-none"
+          >
           <h2 id="sideboard-heading" className="text-xl font-semibold">Sideboard</h2>
           <span className="text-xs text-zinc-500">
             {pending.time > 0 ? (
@@ -248,8 +264,9 @@ function SideboardModalImpl({
             {submitting ? 'Submitting…' : 'Submit deck'}
           </button>
         </footer>
-      </form>
-    </div>
+        </form>
+      </div>
+    </>
   );
 }
 

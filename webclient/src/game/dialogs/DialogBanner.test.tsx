@@ -140,7 +140,7 @@ describe('DialogBanner', () => {
     expect(screen.queryByTestId('dialog-banner-cancel')).toBeNull();
   });
 
-  it('positioner is pointer-events-none so cards behind stay clickable', () => {
+  it('banner is pointer-events-auto on its own bounding box; cards outside the banner remain clickable', () => {
     render(
       <DialogBanner
         message="Pick"
@@ -151,9 +151,44 @@ describe('DialogBanner', () => {
         onCancel={null}
       />,
     );
-    const positioner = screen.getByTestId('dialog-banner-positioner');
-    expect(positioner.className).toContain('pointer-events-none');
+    // The banner now positions itself via {@link useDraggable} —
+    // there's no enclosing positioner div. The banner's own
+    // {@code pointer-events-auto} confines interactivity to its
+    // bounding box; the rest of the viewport is unaffected because
+    // no full-viewport sibling intercepts pointer events.
     const banner = screen.getByTestId('dialog-banner');
     expect(banner.className).toContain('pointer-events-auto');
+    expect(screen.queryByTestId('dialog-banner-positioner')).toBeNull();
+  });
+
+  it('halo spotlight is rendered for visual attention', () => {
+    render(
+      <DialogBanner
+        message="Pick"
+        pickedCount={0}
+        min={1}
+        max={1}
+        onDone={() => {}}
+        onCancel={null}
+      />,
+    );
+    const halo = screen.getByTestId('dialog-banner-halo');
+    expect(halo.className).toContain('animate-banner-halo-rotate');
+  });
+
+  it('drag handle attribute is set on the banner so useDraggable can pick it up', () => {
+    render(
+      <DialogBanner
+        message="Pick"
+        pickedCount={0}
+        min={1}
+        max={1}
+        onDone={() => {}}
+        onCancel={null}
+      />,
+    );
+    const banner = screen.getByTestId('dialog-banner');
+    expect(banner.hasAttribute('data-drag-handle')).toBe(true);
+    expect(banner.className).toContain('cursor-move');
   });
 });

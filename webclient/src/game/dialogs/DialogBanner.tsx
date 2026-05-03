@@ -1,3 +1,5 @@
+import { useDraggable } from '../../util/useDraggable';
+import { BannerSpotlightHalo } from './BannerSpotlightHalo';
 import { renderUpstreamMarkup } from './markupRenderer';
 
 /**
@@ -59,66 +61,71 @@ export function DialogBanner({
   const isSinglePick = min === 1 && max === 1;
   const submittable = pickedCount >= min && pickedCount <= max;
   const unboundedMax = max >= 99;
+  // Initial bottom margin matches the legacy positioner's
+  // `calc(var(--hand-area-height, 180px) + 16px)` — 196px clears the
+  // hand fan on first paint. After the user drags, the hook owns
+  // position absolutely.
+  const { ref, containerProps, style } = useDraggable({
+    placement: { kind: 'bottom-center', bottomMargin: 196 },
+  });
 
   return (
     <div
-      // Fixed positioner; stays out of click flow except for the inner banner.
-      className="pointer-events-none fixed left-1/2 -translate-x-1/2 z-40"
-      style={{ bottom: 'calc(var(--hand-area-height, 180px) + 16px)' }}
-      data-testid="dialog-banner-positioner"
+      ref={ref}
+      role="status"
+      aria-live="polite"
+      data-testid="dialog-banner"
+      data-drag-handle
+      className={
+        'relative pointer-events-auto inline-flex items-center gap-3 rounded-lg ' +
+        'bg-zinc-900/95 border border-fuchsia-500/40 shadow-xl ' +
+        'px-4 py-2 text-zinc-100 backdrop-blur-sm cursor-move select-none z-40'
+      }
+      style={style}
+      {...containerProps}
     >
-      <div
-        role="status"
-        aria-live="polite"
-        data-testid="dialog-banner"
-        className={
-          'pointer-events-auto inline-flex items-center gap-3 rounded-lg ' +
-          'bg-zinc-900/95 border border-fuchsia-500/40 shadow-xl ' +
-          'px-4 py-2 text-zinc-100 backdrop-blur-sm'
-        }
-      >
-        <span className="text-sm" data-testid="dialog-banner-message">
-          {renderUpstreamMarkup(message)}
+      <BannerSpotlightHalo testId="dialog-banner-halo" />
+      <span className="text-sm" data-testid="dialog-banner-message">
+        {renderUpstreamMarkup(message)}
+      </span>
+      {!isSinglePick && (
+        <span
+          className="text-xs text-zinc-400 font-mono"
+          data-testid="dialog-banner-progress"
+        >
+          {min === max
+            ? `${pickedCount}/${max}`
+            : unboundedMax
+              ? `${pickedCount}`
+              : `${pickedCount}/${max}`}
         </span>
-        {!isSinglePick && (
-          <span
-            className="text-xs text-zinc-400 font-mono"
-            data-testid="dialog-banner-progress"
-          >
-            {min === max
-              ? `${pickedCount}/${max}`
-              : unboundedMax
-                ? `${pickedCount}`
-                : `${pickedCount}/${max}`}
-          </span>
-        )}
-        {!isSinglePick && (
-          <button
-            type="button"
-            onClick={onDone}
-            disabled={!submittable}
-            data-testid="dialog-banner-done"
-            className={
-              'px-3 py-1 rounded text-sm font-medium transition ' +
-              (submittable
-                ? 'bg-fuchsia-500 hover:bg-fuchsia-400 text-zinc-950'
-                : 'bg-zinc-800 text-zinc-500 cursor-not-allowed')
-            }
-          >
-            Done
-          </button>
-        )}
-        {onCancel && (
-          <button
-            type="button"
-            onClick={onCancel}
-            data-testid="dialog-banner-cancel"
-            className="px-3 py-1 rounded text-sm text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition"
-          >
-            Skip
-          </button>
-        )}
-      </div>
+      )}
+      {!isSinglePick && (
+        <button
+          type="button"
+          onClick={onDone}
+          disabled={!submittable}
+          data-testid="dialog-banner-done"
+          className={
+            'px-3 py-1 rounded text-sm font-medium transition ' +
+            (submittable
+              ? 'bg-fuchsia-500 hover:bg-fuchsia-400 text-zinc-950'
+              : 'bg-zinc-800 text-zinc-500 cursor-not-allowed')
+          }
+        >
+          Done
+        </button>
+      )}
+      {onCancel && (
+        <button
+          type="button"
+          onClick={onCancel}
+          data-testid="dialog-banner-cancel"
+          className="px-3 py-1 rounded text-sm text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition"
+        >
+          Skip
+        </button>
+      )}
     </div>
   );
 }

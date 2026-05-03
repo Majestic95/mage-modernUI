@@ -1,5 +1,5 @@
-import { useRef } from 'react';
 import type { WebGameEndView } from '../api/schemas';
+import { useDraggable } from '../util/useDraggable';
 import { useModalA11y } from '../util/useModalA11y';
 import { useGameStore } from './store';
 
@@ -115,26 +115,46 @@ export function GameEndOverlay({
 
   if (gameOverPending) {
     return (
-      <div
-        data-testid="game-over-banner"
-        className="fixed inset-x-0 top-16 z-40 flex justify-center pointer-events-none"
-      >
-        <div className="bg-zinc-900/95 border border-amber-700/60 rounded-lg px-6 py-3 shadow-xl text-center">
-          <p className="text-amber-300 font-semibold">Game over</p>
-          {lastWrapped?.message && (
-            <p className="text-sm text-zinc-300 mt-1">
-              {lastWrapped.message.replace(/<[^>]+>/g, '')}
-            </p>
-          )}
-          <p className="text-xs text-zinc-500 mt-1">
-            Waiting for the next game…
-          </p>
-        </div>
-      </div>
+      <GameOverPendingBanner
+        message={lastWrapped?.message}
+      />
     );
   }
 
   return null;
+}
+
+/**
+ * Top-center "Game over — waiting for next game" banner. Extracted
+ * so the {@link useDraggable} hook can mount on a stable component
+ * (the parent's branching would break hook order if it ran inline).
+ * Pointer-events scoped to the banner itself so the underlying
+ * board stays clickable even though the banner is mid-screen.
+ */
+function GameOverPendingBanner({ message }: { message?: string }) {
+  const { ref, containerProps, style } = useDraggable({
+    placement: { kind: 'top-center', topMargin: 64 },
+  });
+  return (
+    <div
+      ref={ref}
+      data-testid="game-over-banner"
+      data-drag-handle
+      className="z-40 cursor-move select-none bg-zinc-900/95 border border-amber-700/60 rounded-lg px-6 py-3 shadow-xl text-center pointer-events-auto"
+      style={style}
+      {...containerProps}
+    >
+      <p className="text-amber-300 font-semibold">Game over</p>
+      {message && (
+        <p className="text-sm text-zinc-300 mt-1">
+          {message.replace(/<[^>]+>/g, '')}
+        </p>
+      )}
+      <p className="text-xs text-zinc-500 mt-1">
+        Waiting for the next game…
+      </p>
+    </div>
+  );
 }
 
 /**
@@ -157,7 +177,9 @@ function GameEndDialog({
   gameLogCount: number;
   onLeave: () => void;
 }) {
-  const dialogRef = useRef<HTMLDivElement>(null);
+  const { ref: dialogRef, containerProps, style: dragStyle } = useDraggable({
+    placement: { kind: 'center' },
+  });
   useModalA11y(dialogRef, {});
 
   const noLog = gameLogCount === 0;
@@ -187,19 +209,27 @@ function GameEndDialog({
     downloadJson(buildGameLogFilename(gameId, exportedAt), payload);
   };
   return (
-    <div
-      ref={dialogRef}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="game-end-heading"
-      data-testid="game-end-modal"
-      className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-6"
-    >
-      <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-8 max-w-md w-full space-y-4 shadow-2xl text-center">
+    <>
+      <div
+        aria-hidden="true"
+        data-testid="game-end-backdrop"
+        className="fixed inset-0 z-50 bg-black/80"
+      />
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="game-end-heading"
+        data-testid="game-end-modal"
+        className="z-50 w-[min(90vw,448px)] bg-zinc-900 border border-zinc-700 rounded-lg p-8 space-y-4 shadow-2xl text-center"
+        style={dragStyle}
+        {...containerProps}
+      >
         <h2
           id="game-end-heading"
+          data-drag-handle
           className={
-            'text-2xl font-semibold ' +
+            'text-2xl font-semibold cursor-move select-none ' +
             (gameEnd.won ? 'text-emerald-300' : 'text-red-300')
           }
         >
@@ -249,6 +279,6 @@ function GameEndDialog({
           </button>
         </div>
       </div>
-    </div>
+    </>
   );
 }

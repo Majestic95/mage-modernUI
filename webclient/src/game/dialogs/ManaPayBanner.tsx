@@ -1,4 +1,6 @@
+import { useDraggable } from '../../util/useDraggable';
 import { useGameStore } from '../store';
+import { BannerSpotlightHalo } from './BannerSpotlightHalo';
 import { renderUpstreamMarkup } from './markupRenderer';
 import type { GameStream } from '../stream';
 
@@ -62,6 +64,11 @@ interface ManaPayBannerProps {
 export function ManaPayBanner({ stream }: ManaPayBannerProps) {
   const dialog = useGameStore((s) => s.pendingDialog);
   const clearDialog = useGameStore((s) => s.clearDialog);
+  // Initial bottom margin matches DialogBanner — clears the hand fan
+  // (180px) plus a 16px gap. Hook owns position after first drag.
+  const { ref, containerProps, style } = useDraggable({
+    placement: { kind: 'bottom-center', bottomMargin: 196 },
+  });
 
   // Defensive: this component should only mount when pendingDialog
   // is gamePlayMana / gamePlayXMana (gated by GameDialog's branch).
@@ -100,58 +107,55 @@ export function ManaPayBanner({ stream }: ManaPayBannerProps) {
 
   return (
     <div
-      // Fixed positioner; stays out of click flow except for the
-      // inner banner. Same shape as DialogBanner.
-      className="pointer-events-none fixed left-1/2 -translate-x-1/2 z-40"
-      style={{ bottom: 'calc(var(--hand-area-height, 180px) + 16px)' }}
-      data-testid="mana-pay-banner-positioner"
+      ref={ref}
+      role="status"
+      aria-live="polite"
+      data-testid="mana-pay-banner"
+      data-drag-handle
+      className={
+        'relative pointer-events-auto inline-flex items-center gap-3 rounded-lg ' +
+        'bg-zinc-900/95 border border-amber-500/50 shadow-xl ' +
+        'px-4 py-2 text-zinc-100 backdrop-blur-sm cursor-move select-none z-40'
+      }
+      style={style}
+      {...containerProps}
     >
-      <div
-        role="status"
-        aria-live="polite"
-        data-testid="mana-pay-banner"
-        className={
-          'pointer-events-auto inline-flex items-center gap-3 rounded-lg ' +
-          'bg-zinc-900/95 border border-amber-500/50 shadow-xl ' +
-          'px-4 py-2 text-zinc-100 backdrop-blur-sm'
-        }
+      <BannerSpotlightHalo testId="mana-pay-banner-halo" />
+      <span
+        className="text-xs uppercase tracking-wider text-amber-300 font-semibold"
+        data-testid="mana-pay-banner-title"
       >
-        <span
-          className="text-xs uppercase tracking-wider text-amber-300 font-semibold"
-          data-testid="mana-pay-banner-title"
-        >
-          Pay
-        </span>
-        <span className="text-sm" data-testid="mana-pay-banner-message">
-          {renderUpstreamMarkup(data.message ?? '')}
-        </span>
-        <span className="text-xs text-zinc-500 italic">
-          Click a mana source or pool orb
-        </span>
-        {/* Special: convoke / improvise / delve. Always available
-            during mana pay — engine returns an empty menu via
-            ChoiceDialog if no special actions apply, which is mildly
-            ugly UX but server-correct. A future wire-format addition
-            could surface "specials available" so we conditionally
-            render this; out of scope for 70-Y.3. */}
-        <button
-          type="button"
-          onClick={requestSpecial}
-          data-testid="mana-pay-banner-special"
-          title="Convoke / Improvise / Delve"
-          className="px-3 py-1 rounded text-sm bg-amber-700/40 hover:bg-amber-700/70 text-amber-200 border border-amber-700/50 transition"
-        >
-          Special…
-        </button>
-        <button
-          type="button"
-          onClick={cancel}
-          data-testid="mana-pay-banner-cancel"
-          className="px-3 py-1 rounded text-sm text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition"
-        >
-          Cancel
-        </button>
-      </div>
+        Pay
+      </span>
+      <span className="text-sm" data-testid="mana-pay-banner-message">
+        {renderUpstreamMarkup(data.message ?? '')}
+      </span>
+      <span className="text-xs text-zinc-500 italic">
+        Click a mana source or pool orb
+      </span>
+      {/* Special: convoke / improvise / delve. Always available
+          during mana pay — engine returns an empty menu via
+          ChoiceDialog if no special actions apply, which is mildly
+          ugly UX but server-correct. A future wire-format addition
+          could surface "specials available" so we conditionally
+          render this; out of scope for 70-Y.3. */}
+      <button
+        type="button"
+        onClick={requestSpecial}
+        data-testid="mana-pay-banner-special"
+        title="Convoke / Improvise / Delve"
+        className="px-3 py-1 rounded text-sm bg-amber-700/40 hover:bg-amber-700/70 text-amber-200 border border-amber-700/50 transition"
+      >
+        Special…
+      </button>
+      <button
+        type="button"
+        onClick={cancel}
+        data-testid="mana-pay-banner-cancel"
+        className="px-3 py-1 rounded text-sm text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition"
+      >
+        Cancel
+      </button>
     </div>
   );
 }
