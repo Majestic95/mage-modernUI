@@ -280,12 +280,17 @@ describe('PlayerArea — REDESIGN battlefield composition (slice 70-Z.1)', () =>
         for (const row of rows) {
           expect(row.dataset['orientation']).toBe('vertical');
         }
-        // Artifact zone for left/right is the perpendicular bottom
-        // strip, so its inner row uses HORIZONTAL orientation.
+        // Layout 2026-05-03 — for left/right pods the artifact zone
+        // now stacks IN the same vertical column as creatures + lands
+        // (pre-fix it was a perpendicular bottom strip with cards
+        // going horizontally). Inner row matches the rest of the
+        // column and uses VERTICAL orientation. Driven by the user
+        // direction "All zones should be stacking vertically instead
+        // of horizontally for left and right player zones."
         const artifactRow = screen
           .getAllByTestId('battlefield-row')
           .find((r) => r.dataset['row'] === 'artifacts');
-        expect(artifactRow?.dataset['orientation']).toBe('horizontal');
+        expect(artifactRow?.dataset['orientation']).toBe('vertical');
       },
     );
   });

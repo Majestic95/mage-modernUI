@@ -245,13 +245,18 @@ export function PlayerArea({
     // PlayerFrame and the lands row. Bottom pod is unaffected — it
     // uses slotPart='rows'/'frame' splitting in Battlefield.tsx, so
     // this flexClass only fires for the no-slotPart fallback.
+    // Side-pod gap (2026-05-03): bumped from gap-3 (12px) to gap-8
+    // (32px) so battlefield rows can't visually crowd or overlap the
+    // commander portrait. The portrait halo + life badge already
+    // extend past the strict frame bounding box; the prior 12px gap
+    // wasn't enough to clear them at busy boards.
     const flexClass = isVertical
       ? position === 'top'
         ? 'flex flex-col gap-10'
         : 'flex flex-col gap-3'
       : position === 'right'
-        ? 'flex flex-row-reverse gap-3'
-        : 'flex flex-row gap-3';
+        ? 'flex flex-row-reverse gap-8'
+        : 'flex flex-row gap-8';
     // Drop-target ring stays as the only visible chrome on the pod
     // wrapper — it's a transient interaction state, not background
     // chrome, so it doesn't violate the "pods float" principle.
@@ -287,23 +292,29 @@ export function PlayerArea({
     // Cards inside each region shrink uniformly when count grows
     // (BattlefieldRowGroup contract); zone dimensions never
     // change.
+    // Per-row card orientation is unchanged: top/bottom pods lay
+    // cards left→right inside each row; side pods stack cards
+    // top→bottom inside each row. The 2026-05-03 fix is at the
+    // ROW-OF-ROWS level, not within a row.
     const rowsOrientation: 'horizontal' | 'vertical' = isVertical
       ? 'horizontal'
       : 'vertical';
     const artifactsOrientation: 'horizontal' | 'vertical' = isVertical
       ? 'vertical'
-      : 'horizontal';
+      : 'vertical';
 
-    // Main rows wrapper — direction depends on pod axis. For
-    // right opponent the rows order is reversed via flex-row-reverse
-    // so lands sit at the right (screen edge) and creatures at the
-    // left (toward focal); the `rowOrder('opponent')` array is
-    // ['lands', 'creatures'] regardless.
+    // Layout 2026-05-03 (user direction "All zones should be stacking
+    // vertically instead of horizontally for left and right player
+    // zones"). Side pods previously placed the creatures row and the
+    // lands row as TWO SIDE-BY-SIDE COLUMNS (flex-row), spreading
+    // permanents across the pod's horizontal axis. They now stack
+    // vertically (flex-col) so the side pod is one tall narrow
+    // region with cards going strictly DOWN. row-reverse is no
+    // longer meaningful for side pods (single column has no
+    // left/right orientation).
     const mainRowsClass = isVertical
       ? 'flex flex-col gap-1.5 flex-1 min-w-0 min-h-0'
-      : position === 'right'
-        ? 'flex flex-row-reverse gap-1.5 flex-1 min-w-0 min-h-0'
-        : 'flex flex-row gap-1.5 flex-1 min-w-0 min-h-0';
+      : 'flex flex-col gap-2 flex-1 min-w-0 min-h-0';
     // Slice 70-Z.1 critic Tech IMP-2 — when both main buckets are
     // empty (e.g. an artifacts-only opening hand: turn-1 Mox), skip
     // the wrapper entirely so the artifact box doesn't sit next to
@@ -355,6 +366,12 @@ export function PlayerArea({
     // narrower than self, contributing to the "right pod cards
     // are smaller than mine" complaint.
     const artifactBoxAcrossAxis = 'calc(var(--card-size-medium) * 7 / 5)';
+    // Layout 2026-05-03 — for side pods (left/right), the artifact
+    // box is now another vertical-orientation row in the same single
+    // column as creatures + lands. Drop the fixed cross-axis height
+    // and let the cards' intrinsic stacked height flow within the
+    // parent flex-col. Top/bottom pods keep the fixed-width column
+    // sidecar (catalog §2.1.0).
     const artifactsBoxRedesign =
       rows.artifacts.length > 0 ? (
         <div
@@ -367,7 +384,7 @@ export function PlayerArea({
           style={
             isVertical
               ? { width: artifactBoxAcrossAxis }
-              : { height: artifactBoxAcrossAxis }
+              : undefined
           }
         >
           <BattlefieldRowGroup
