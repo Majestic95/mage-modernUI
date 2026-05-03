@@ -1,9 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
-import { LayoutGroup, MotionConfig } from 'framer-motion';
+import { useEffect, useState } from 'react';
 import { useAuthStore } from './auth/store';
 import { useGameStore } from './game/store';
-import { GameTable } from './game/GameTable';
-import { buildDemoGameView } from './game/devFixtures';
+import { DemoGame } from './pages/DemoGame';
 import { NewLobbyScreen } from './lobby/NewLobbyScreen';
 import { CardSearch } from './pages/CardSearch';
 import { Decks } from './pages/Decks';
@@ -471,38 +469,6 @@ function DevOpenGame({ onOpen }: { onOpen: (id: string) => void }) {
         </button>
       </div>
     </section>
-  );
-}
-
-/**
- * Dev fixture renderer — no auth, no server, no WebSocket. Renders
- * GameTable with a stress-tested 4-player Commander view from
- * {@code buildDemoGameView}. Used for layout iteration where
- * standing up a real game would be slow / require AI bots / etc.
- *
- * <p>Wrapped in MotionConfig + LayoutGroup the same way Game.tsx
- * does in production so motion components don't warn. {@code stream}
- * is intentionally null — no priority dispatch, no responses; this
- * is a STATIC view for layout review. Click affordances render but
- * do nothing actionable beyond local state (ZoneBrowser modals,
- * hover tooltips, etc.).
- */
-function DemoGame() {
-  const gameView = useMemo(() => buildDemoGameView(), []);
-  // Mirror Game.tsx's outer chrome — h-screen + overflow-hidden is
-  // load-bearing: GameTable uses h-full which collapses to 0 without
-  // a parent that has a defined height. Pre-fix the demo route let
-  // the body scroll vertically because the GameTable content
-  // overflowed an undefined-height root, violating the battlefield's
-  // "no scroll wheel" rule.
-  return (
-    <MotionConfig reducedMotion="user">
-      <LayoutGroup>
-        <div className="h-screen flex flex-col bg-zinc-950 text-zinc-100 overflow-hidden">
-          <GameTable gameId="demo-fixture" gameView={gameView} stream={null} />
-        </div>
-      </LayoutGroup>
-    </MotionConfig>
   );
 }
 

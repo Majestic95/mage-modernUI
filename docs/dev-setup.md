@@ -163,6 +163,20 @@ What this does:
 - The auth token persists in `localStorage` between reloads — you stay logged in across browser refreshes.
 - Login as **guest** (blank user/pass on the Login screen) for the fastest path; no registration needed.
 
+### `?variant=<name>` URL knob — layout-variant picker (dev fixture only)
+
+`webclient/src/layoutVariants.ts` defines a runtime variant registry that lets you iterate on multiple layout candidates side-by-side without rebuilds. Today only `'current'` (the existing REDESIGN-mode behavior, byte-for-byte) is registered. Adding a variant = extend the `LAYOUT_VARIANTS` tuple, drop a sibling component file, branch inside the consuming component via `useLayoutVariant()`.
+
+The fixture page (`?game=fixture`) mounts a small `<VariantSwitcher>` button row at the top-right. Clicking a button swaps the variant in React state AND rewrites the URL via `history.replaceState` (so the back button doesn't pollute and a shared link reproduces the chosen variant). Hidden in production builds via `import.meta.env.DEV`.
+
+Example:
+```
+http://localhost:5173/?game=fixture                    → 'current'
+http://localhost:5173/?game=fixture&variant=current    → 'current' (explicit)
+```
+
+Unknown variant names fall back to `'current'` and warn once to the console — typo-friendly without spam. The variant param is independent of `?slowmo=N`; combine freely.
+
 ### `?slowmo=N` URL knob — animation debugging
 
 `webclient/src/animation/debug.ts` reads a `slowmo` query param at module load. Multiplying it scales every Framer Motion transition by N×, preserving the spring damping ratio so the animation's *shape* stays identical and only the time axis stretches.
