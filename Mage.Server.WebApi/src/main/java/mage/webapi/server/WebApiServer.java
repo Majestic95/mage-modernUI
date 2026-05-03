@@ -60,6 +60,20 @@ public final class WebApiServer {
 
     static final int PRINTINGS_LIMIT_DEFAULT = 50;
     static final int PRINTINGS_LIMIT_MAX = 200;
+    /**
+     * Card-search query minimum length. Anything shorter would match
+     * tens of thousands of names ("a" hits the entire dictionary) and
+     * pointlessly hammers the SQLite. Mirrors the client-side gate.
+     */
+    static final int CARD_SEARCH_MIN_QUERY_LENGTH = 2;
+    /**
+     * Card-search oversample factor — we ask the DB for {@code limit *
+     * OVERSAMPLE} raw rows then dedupe by name. Each card has 1-50
+     * printings; 6× covers the typical case while bounding the worst
+     * case via {@link #CARD_SEARCH_RAW_CAP}.
+     */
+    static final int CARD_SEARCH_OVERSAMPLE = 6;
+    static final int CARD_SEARCH_RAW_CAP = 600;
 
     /**
      * Default CORS allow-list — Vite dev + Vite preview only.
@@ -269,6 +283,52 @@ public final class WebApiServer {
             var printings = CardRepository.instance.findCards(name, limit);
             boolean truncated = printings.size() == limit;
             ctx.json(CardInfoMapper.many(printings, truncated));
+        });
+        // Substring card-name search for the deck-editor "add cards"
+        // panel. Uses CardCriteria.nameContains (SQL LIKE %q%), then
+        // dedupes by name in-memory to return one representative
+        // printing per card. Min query length avoids hammering the
+        // database with overly-broad matches.
+        app.get("/api/cards/search", ctx -> {
+            String q = requireParam(ctx.queryParam("q"), "q").trim();
+            if (q.length() < CARD_SEARCH_MIN_QUERY_LENGTH) {
+                throw new BadRequestResponse(
+                        "q must be at least " + CARD_SEARCH_MIN_QUERY_LENGTH
+                                + " characters");
+            }
+            int limit = clampLimit(ctx.queryParam("limit"));
+            int rawCap = Math.min(limit * CARD_SEARCH_OVERSAMPLE, CARD_SEARCH_RAW_CAP);
+            var raw = CardRepository.instance.findCards(
+                    new mage.cards.repository.CardCriteria()
+                            .nameContains(q)
+                            .count((long) rawCap));
+            // Dedupe by name preserving DB order (first-seen printing).
+            // Stop once we have `limit` distinct names. Track whether
+            // we processed every raw row vs. broke early — both signals
+            // feed the truncated flag below.
+            var seen = new java.util.LinkedHashMap<String, mage.cards.repository.CardInfo>();
+            boolean processedAllRaw = true;
+            for (var ci : raw) {
+                if (ci == null || ci.getName() == null) continue;
+                if (seen.containsKey(ci.getName())) continue;
+                seen.put(ci.getName(), ci);
+                if (seen.size() >= limit) {
+                    // Processed only PART of the raw set — there may
+                    // be more distinct names hiding in the unprocessed
+                    // rows, so flag truncated.
+                    if (raw.indexOf(ci) < raw.size() - 1) {
+                        processedAllRaw = false;
+                    }
+                    break;
+                }
+            }
+            // truncated when (a) raw query itself hit the DB cap (more
+            // matches exist beyond what we even fetched), or (b) we
+            // filled `limit` before exhausting raw (more distinct names
+            // exist in the unprocessed tail).
+            boolean truncated = raw.size() >= rawCap || !processedAllRaw;
+            ctx.json(CardInfoMapper.many(
+                    new java.util.ArrayList<>(seen.values()), truncated));
         });
 
         // Protected — lobby + tables (slice 6, ADR 0006)

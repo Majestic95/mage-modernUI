@@ -296,6 +296,53 @@ class WebApiServerTest {
     }
 
     @Test
+    void getCardsSearch_substringMatch_dedupesByName() throws Exception {
+        // "Forest" matches Forest + Forest Bear + several others; the
+        // search endpoint must dedupe so the deck-editor sees ONE row
+        // per card name, not every printing of every match.
+        HttpResponse<String> resp =
+                getAuthed("/api/cards/search?q=Forest&limit=5");
+        assertEquals(200, resp.statusCode());
+        JsonNode body = JSON.readTree(resp.body());
+        JsonNode cards = body.get("cards");
+        assertTrue(cards.size() > 0, "expected at least one match");
+        assertTrue(cards.size() <= 5, "must respect limit");
+        // Every returned name unique.
+        java.util.Set<String> names = new java.util.HashSet<>();
+        for (JsonNode card : cards) {
+            assertTrue(names.add(card.get("name").asText()),
+                    "duplicate name in search results: " + card.get("name").asText());
+        }
+    }
+
+    @Test
+    void getCardsSearch_shortQuery_returns400() throws Exception {
+        HttpResponse<String> resp = getAuthed("/api/cards/search?q=a");
+        assertEquals(400, resp.statusCode());
+        JsonNode body = JSON.readTree(resp.body());
+        assertEquals("BAD_REQUEST", body.get("code").asText());
+    }
+
+    @Test
+    void getCardsSearch_missingQ_returns400() throws Exception {
+        HttpResponse<String> resp = getAuthed("/api/cards/search");
+        assertEquals(400, resp.statusCode());
+    }
+
+    @Test
+    void getCardsSearch_truncatedFlag_setWhenLimitHit() throws Exception {
+        // "Goblin" matches many distinct card names — limit=2 will
+        // cap, leaving more distinct names in the unprocessed tail,
+        // so truncated should be true.
+        HttpResponse<String> resp =
+                getAuthed("/api/cards/search?q=Goblin&limit=2");
+        assertEquals(200, resp.statusCode());
+        JsonNode body = JSON.readTree(resp.body());
+        assertEquals(2, body.get("cards").size());
+        assertTrue(body.get("truncated").asBoolean());
+    }
+
+    @Test
     void unknownRoute_returns404WithEnvelope() throws Exception {
         HttpResponse<String> resp = getAuthed("/api/does-not-exist");
         assertEquals(404, resp.statusCode());

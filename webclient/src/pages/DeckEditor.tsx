@@ -21,6 +21,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { WebCardInfo, WebDeckCardInfo } from '../api/schemas';
 import { ArtPickerModal } from '../decks/ArtPickerModal';
+import { CardSearchPanel } from '../decks/CardSearchPanel';
 import { useDeckCardData } from '../decks/useDeckCardData';
 import { useDecksStore } from '../decks/store';
 
@@ -171,6 +172,39 @@ export function DeckEditor({ deckId, onClose }: Props) {
     updateDeck(deck.id, { [lane]: updated });
   };
 
+  // Add a card from the search panel into the mainboard. Bumps an
+  // existing entry's qty if the same printing is already there;
+  // otherwise inserts a new entry with amount=1. Reads fresh state
+  // via getState so a cross-tab mutation between search-render and
+  // add-click doesn't get clobbered.
+  const addFromSearch = (card: WebCardInfo) => {
+    const fresh = useDecksStore.getState().decks.find((d) => d.id === deck.id);
+    if (!fresh) return;
+    const existingIdx = fresh.cards.findIndex(
+      (c) =>
+        c.cardName === card.name
+        && c.setCode === card.setCode
+        && c.cardNumber === card.cardNumber,
+    );
+    let updated: WebDeckCardInfo[];
+    if (existingIdx >= 0) {
+      updated = fresh.cards.map((c, i) =>
+        i === existingIdx ? { ...c, amount: c.amount + 1 } : c,
+      );
+    } else {
+      updated = [
+        ...fresh.cards,
+        {
+          cardName: card.name,
+          setCode: card.setCode,
+          cardNumber: card.cardNumber,
+          amount: 1,
+        },
+      ];
+    }
+    updateDeck(deck.id, { cards: updated });
+  };
+
   return (
     <div className="space-y-4">
       <header className="flex items-baseline justify-between gap-3">
@@ -220,6 +254,8 @@ export function DeckEditor({ deckId, onClose }: Props) {
           sideboard
         </p>
       </header>
+
+      <CardSearchPanel onAdd={addFromSearch} />
 
       {loading && (
         <p

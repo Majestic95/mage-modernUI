@@ -302,6 +302,93 @@ describe('DeckEditor', () => {
   });
 });
 
+describe('DeckEditor — add via search', () => {
+  beforeEach(() => {
+    useAuthStore.setState({
+      session: ANON_SESSION,
+      loading: false,
+      error: null,
+      verifying: false,
+    });
+    useDecksStore.getState().clear();
+    _resetDeckCardDataCache();
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('adding a brand-new card via search inserts it with amount=1', async () => {
+    const user = userEvent.setup();
+    const deck = useDecksStore.getState().add('Test Deck', [
+      { cardName: 'Forest', setCode: 'M21', cardNumber: '281', amount: 4 },
+    ]);
+
+    vi.stubGlobal(
+      'fetch',
+      makeRouter({
+        '/api/cards/search': () =>
+          jsonResponse(200, {
+            schemaVersion: '1.29',
+            cards: [cardInfo('Lightning Bolt', ['INSTANT'], 1, 'M21', '162')],
+            truncated: false,
+          }),
+        'name=Forest': () => cardListing([cardInfo('Forest', ['LAND'], 0)]),
+        'name=Lightning%20Bolt': () =>
+          cardListing([cardInfo('Lightning Bolt', ['INSTANT'], 1)]),
+      }),
+    );
+
+    render(<DeckEditor deckId={deck.id} onClose={() => {}} />);
+    await user.type(screen.getByTestId('card-search-input'), 'Bolt');
+    await screen.findByTestId('card-search-result');
+    await user.click(screen.getByTestId('card-search-add'));
+
+    const after = useDecksStore.getState().decks[0]?.cards;
+    expect(after).toHaveLength(2);
+    expect(after).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          cardName: 'Lightning Bolt',
+          setCode: 'M21',
+          cardNumber: '162',
+          amount: 1,
+        }),
+      ]),
+    );
+  });
+
+  it('adding a card that matches existing printing bumps amount instead of duplicating', async () => {
+    const user = userEvent.setup();
+    const deck = useDecksStore.getState().add('Test Deck', [
+      { cardName: 'Forest', setCode: 'M21', cardNumber: '281', amount: 24 },
+    ]);
+
+    vi.stubGlobal(
+      'fetch',
+      makeRouter({
+        '/api/cards/search': () =>
+          jsonResponse(200, {
+            schemaVersion: '1.29',
+            cards: [cardInfo('Forest', ['LAND'], 0, 'M21', '281')],
+            truncated: false,
+          }),
+        'name=Forest': () => cardListing([cardInfo('Forest', ['LAND'], 0)]),
+      }),
+    );
+
+    render(<DeckEditor deckId={deck.id} onClose={() => {}} />);
+    await user.type(screen.getByTestId('card-search-input'), 'Forest');
+    await screen.findByTestId('card-search-result');
+    await user.click(screen.getByTestId('card-search-add'));
+
+    const after = useDecksStore.getState().decks[0]?.cards;
+    expect(after).toHaveLength(1);
+    expect(after?.[0]?.amount).toBe(25);
+  });
+});
+
 describe('end-to-end printing identity through deck submission', () => {
   beforeEach(() => {
     useDecksStore.getState().clear();
