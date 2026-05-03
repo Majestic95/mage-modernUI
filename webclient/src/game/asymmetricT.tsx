@@ -201,34 +201,32 @@ export function AsymmetricTLayout({
         </div>
       )}
 
-      {/* Floating local mana pool — sits directly above the local
-          portrait so the orbs are glanceable next to the player's
-          identity (user direction 2026-05-03). Was previously
-          mounted in MyHand at top-right of the hand region; that
-          position lived inside the hand stacking context (z-30)
-          and was visually buried under the asymmetric T's local
-          PlayerFrame at z-40, plus far from the portrait. Mounted
-          here as a sibling of the corner mount with the same z-40,
-          positioned just above the frame's top edge. Renders only
-          when the pool has mana (catalog §2.3 "Empty pool: Don't
-          render anything"). */}
+      {/* Floating local mana pool — sits to the RIGHT of the local
+          portrait, stacked VERTICALLY (user direction 2026-05-03).
+          Earlier iterations parked the pool above the portrait
+          (right-32, calc(3rem+11rem)) but that put a horizontal row
+          on top of the portrait stack. With 5 colors a horizontal
+          row would crowd into the player's name / chip cluster; a
+          vertical column slots cleanly into the gap between the
+          portrait and the side panel.
+          Position: bottom-12 matches the local-player-frame-corner's
+          vertical anchor so the orbs share its baseline; right-4
+          tucks them just inside the asymmetric T container's right
+          edge (the side panel sits OUTSIDE this container so there's
+          no risk of overlap with COMMANDER DAMAGE / Next Phase). z-40
+          matches the corner so both render on the same layer.
+          Renders only when the pool has mana (catalog §2.3 "Empty
+          pool: Don't render anything"). */}
       {REDESIGN && me && hasAnyMana(me.manaPool) && (
         <div
           data-testid="local-mana-pool-floating"
-          // bottom = local-player-frame-corner's `bottom-12` (3rem)
-          // + portrait + name + chip cluster height + small gap.
-          // 11rem clears the portrait stack reliably; if the cluster
-          // ever grows taller, bump this constant rather than letting
-          // the orbs collide with the portrait.
-          // right = same as the corner (`right-32`) so the orbs
-          // align over the portrait column.
-          className="absolute right-32 z-40 pointer-events-auto"
-          style={{ bottom: 'calc(3rem + 11rem)' }}
+          className="absolute right-4 bottom-12 z-40 pointer-events-auto"
         >
           <ManaPool
             player={me}
             size="medium"
             glow
+            layout="vertical"
             onSpend={onSpendMana ?? undefined}
           />
         </div>

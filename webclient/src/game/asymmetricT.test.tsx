@@ -139,7 +139,7 @@ describe('AsymmetricTLayout', () => {
   // local PlayerFrame at z-40 buried, and was far from the portrait
   // anyway. User directive: "display floating mana by the local
   // player's portrait."
-  it('renders the floating local mana pool when the local pool has mana', () => {
+  it('renders the floating local mana pool to the right of the portrait, stacked vertically', () => {
     const gv = buildDemoGameView();
     const baseMe = gv.players.find((p) => p.playerId === gv.myPlayerId)!;
     const me = {
@@ -148,11 +148,17 @@ describe('AsymmetricTLayout', () => {
     };
     renderLayout({ me });
     const pool = screen.getByTestId('local-mana-pool-floating');
-    // Positioned above the portrait corner mount (right-32) at the
-    // same z as the portrait so it isn't buried by the asymmetric T
-    // local-player-frame-corner.
-    expect(pool.className).toMatch(/right-32/);
+    // User direction 2026-05-03: orbs to the right of the portrait
+    // (right-4 = 16px from container right edge), stacked vertically
+    // so 5 colors don't crowd into the side panel. z-40 puts them on
+    // the same layer as the local-player-frame-corner.
+    expect(pool.className).toMatch(/right-4/);
+    expect(pool.className).toMatch(/bottom-12/);
     expect(pool.className).toMatch(/z-40/);
+    // Vertical stacking: ManaPool's wrapper span gets flex-col when
+    // layout="vertical".
+    const orbWrapper = pool.querySelector('span');
+    expect(orbWrapper?.className).toMatch(/flex-col/);
   });
 
   it('does not render the floating local mana pool when the pool is empty', () => {

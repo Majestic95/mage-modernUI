@@ -24,6 +24,7 @@ export function ManaPool({
   player,
   size = 'medium',
   glow = false,
+  layout = 'horizontal',
   onSpend,
 }: {
   player: WebPlayerView;
@@ -40,6 +41,15 @@ export function ManaPool({
    * inline mounts leave it false to keep the cluster low-key.
    */
   glow?: boolean;
+  /**
+   * 2026-05-03 (user direction) — orientation of the orb cluster.
+   * {@code 'horizontal'} (default) keeps slice-70-C's row layout
+   * for opponent + legacy mounts. {@code 'vertical'} stacks orbs
+   * one-per-row for the local floating cluster beside the portrait,
+   * where vertical real estate is plentiful but horizontal is not
+   * (orbs share the gap between the portrait and the side panel).
+   */
+  layout?: 'horizontal' | 'vertical';
   /**
    * Slice 70-X.10 (user feedback 2026-04-30) — when provided, each
    * orb renders as a clickable button that invokes this callback
@@ -58,8 +68,12 @@ export function ManaPool({
     ['G', pool.green],
     ['C', pool.colorless],
   ];
+  const wrapperClass =
+    layout === 'vertical'
+      ? 'flex flex-col gap-1 items-center'
+      : 'flex gap-1 items-center';
   return (
-    <span className="flex gap-1 items-center">
+    <span className={wrapperClass}>
       <AnimatePresence mode="popLayout" initial={false}>
         {cells
           .filter(([, n]) => n > 0)
