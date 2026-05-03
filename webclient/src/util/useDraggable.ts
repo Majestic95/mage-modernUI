@@ -252,8 +252,19 @@ export function useDraggable(opts: UseDraggableOptions): UseDraggableResult {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    // Deps include `pos` so the effect re-runs after each setPos
+    // (the early-return guards against repeated work). `placement`
+    // is typically a fresh object literal at the call site so it
+    // changes every render — that's the signal that lets the effect
+    // re-fire when the host component flips from rendering null to
+    // rendering the dialog (e.g. MulliganModal first appears with
+    // `pendingDialog === null`, then a later render attaches the
+    // ref to a freshly-mounted dialog div). With `[]` deps the
+    // effect would only run on the component's first mount, when
+    // ref.current is still null, and never re-run when the div
+    // actually appears — leaving `pos` null forever and the dialog
+    // stuck at `visibility: hidden`.
+  }, [pos, placement, clamp]);
 
   // Re-clamp on window resize so a shrinking viewport doesn't leave
   // the dialog stranded off-screen. Skip when dialog hasn't measured

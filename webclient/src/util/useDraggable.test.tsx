@@ -168,6 +168,45 @@ describe('useDraggable', () => {
     expect(el.style.left).toBe(beforeLeft);
   });
 
+  it('positions correctly when the host returns null first, then later mounts the dialog', () => {
+    // Regression for the b7faafd6→a5330b3d audit-fix bug: when the
+    // useLayoutEffect's deps were `[]`, the effect ran once on the
+    // host's first mount (where the dialog DIV wasn't in the DOM
+    // yet, so ref.current === null and the effect early-returned)
+    // and then never re-ran — the dialog stayed `visibility:hidden`
+    // forever once the host later mounted the div. MulliganModal
+    // tripped this every game start because it gates rendering on
+    // `pendingDialog`. Lock the fixed deps so an "every render"
+    // re-run still happens until pos is set.
+    function ToggleHarness({ show }: { show: boolean }) {
+      const { ref, containerProps, style } = useDraggable({
+        placement: { kind: 'center' },
+      });
+      if (!show) return null;
+      return (
+        <div
+          ref={ref}
+          data-testid="harness"
+          style={{ ...style, width: 200, height: 100 }}
+          {...containerProps}
+        >
+          <header data-drag-handle>drag me</header>
+        </div>
+      );
+    }
+    const { rerender } = render(<ToggleHarness show={false} />);
+    // Initial render returns null — no harness in DOM.
+    expect(screen.queryByTestId('harness')).toBeNull();
+    // Now flip the host to render the dialog. The hook must
+    // observe the freshly-mounted div and place it.
+    rerender(<ToggleHarness show={true} />);
+    const el = screen.getByTestId('harness');
+    expect(el.style.position).toBe('fixed');
+    expect(el.style.visibility).toBe('visible');
+    expect(el.style.left).not.toBe('0px');
+    expect(el.style.top).not.toBe('0px');
+  });
+
   it('clamps the dialog inside the viewport when dragged off-edge', () => {
     render(<CenteredHarness />);
     const el = screen.getByTestId('harness');
