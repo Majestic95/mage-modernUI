@@ -89,6 +89,35 @@ describe('AsymmetricTLayout', () => {
     expect(pod.querySelector('[data-zone="lands"]')).toBeTruthy();
   });
 
+  it('every layout zone clips its overflow (user direction: nothing bleeds outside its zone)', () => {
+    renderLayout();
+    // Layout shells that hold cards / player chrome — none of them
+    // should let content paint past their bounding box. Locks the
+    // overflow-hidden contract end-to-end so a future child whose
+    // intrinsic size exceeds the zone gets clipped, not bled.
+    const ids = [
+      'asymmetric-t-layout',
+      'opponent-lanes',
+      'opponent-lane-0',
+      'opponent-lane-0-gutter',
+      'opponent-lane-0-battlefield',
+      'opponent-lane-1',
+      'opponent-lane-1-gutter',
+      'opponent-lane-1-battlefield',
+      'opponent-lane-2',
+      'opponent-lane-2-gutter',
+      'opponent-lane-2-battlefield',
+      'local-pod',
+      'local-pod-rows',
+    ];
+    for (const id of ids) {
+      const el = screen.getByTestId(id);
+      expect(el.className, `zone "${id}" must include overflow-hidden`).toMatch(
+        /overflow-hidden/,
+      );
+    }
+  });
+
   it('local pod has no white halo border (user direction 2026-05-03)', () => {
     // Opponent lanes still carry the white halo + breathing
     // active-glow; the local pod doesn't need framing because the

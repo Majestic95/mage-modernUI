@@ -116,12 +116,12 @@ export function AsymmetricTLayout({
   return (
     <div
       data-testid="asymmetric-t-layout"
-      className="flex-1 min-h-0 grid relative"
+      className="flex-1 min-h-0 grid relative overflow-hidden"
       style={{ gridTemplateRows: '55% 45%', gridTemplateColumns: '1fr' }}
     >
       <div
         data-testid="opponent-lanes"
-        className="relative grid min-h-0 min-w-0"
+        className="relative grid min-h-0 min-w-0 overflow-hidden"
         style={{ gridTemplateRows: lanesGridRows, gap: '4px', padding: '4px' }}
       >
         {laneSlots.map((opp, idx) => (
@@ -143,7 +143,7 @@ export function AsymmetricTLayout({
 
       <div
         data-testid="local-pod"
-        className="relative min-h-0 min-w-0"
+        className="relative min-h-0 min-w-0 overflow-hidden"
         style={{ padding: '4px', paddingBottom: '14rem' }}
       >
         {me ? (
@@ -303,7 +303,7 @@ function OpponentLane({
       <div
         data-testid={`opponent-lane-${laneIndex}`}
         data-empty="true"
-        className="rounded-md border border-dashed border-zinc-800/60 bg-zinc-950/40 flex items-center justify-center"
+        className="rounded-md border border-dashed border-zinc-800/60 bg-zinc-950/40 flex items-center justify-center overflow-hidden min-h-0 min-w-0"
       >
         <span className="text-[10px] uppercase tracking-wider text-zinc-700">
           Empty seat
@@ -329,7 +329,7 @@ function OpponentLane({
         onClick={onFocus}
         style={STATIC_HALO_STYLE}
         className={
-          'rounded border bg-zinc-900/40 flex items-center gap-3 px-3 hover:bg-zinc-900/70 transition-colors text-left' +
+          'rounded border bg-zinc-900/40 flex items-center gap-3 px-3 hover:bg-zinc-900/70 transition-colors text-left min-h-0 min-w-0 overflow-hidden' +
           activeAnim
         }
       >
@@ -366,7 +366,14 @@ function OpponentLane({
         // breathing room. items-center keeps the portrait stack +
         // chip cluster horizontally centered in the gutter rather
         // than pinned to the left edge.
-        className="flex-shrink-0 w-[170px] flex flex-col items-center p-2 border-r border-zinc-800/60 relative"
+        //
+        // 2026-05-03 (user direction) — nothing overflows outside
+        // its zone. `min-h-0 overflow-hidden` keeps the portrait
+        // stack + name + chip cluster clipped to this gutter's
+        // share of the lane row even on short viewports, so the
+        // gutter never bleeds into the lane below or visually
+        // crowds the battlefield's sub-rows on the right.
+        className="flex-shrink-0 w-[170px] min-h-0 flex flex-col items-center p-2 border-r border-zinc-800/60 relative overflow-hidden"
       >
         <button
           type="button"
@@ -399,7 +406,7 @@ function OpponentLane({
           engines are each glanceable without overlap. */}
       <div
         data-testid={`opponent-lane-${laneIndex}-battlefield`}
-        className="flex-1 flex flex-col min-w-0 min-h-0 gap-2 p-2"
+        className="flex-1 flex flex-col min-w-0 min-h-0 gap-2 p-2 overflow-hidden"
       >
         <SubRowZone
           label="Lands"
@@ -413,7 +420,7 @@ function OpponentLane({
           eligibleCombatIds={eligibleCombatIds}
           combatRoles={combatRoles}
         />
-        <div className="flex-1 flex flex-row gap-2 min-h-0 min-w-0">
+        <div className="flex-1 flex flex-row gap-2 min-h-0 min-w-0 overflow-hidden">
           <SubRowZone
             label="Creatures"
             zone="creatures"
@@ -494,7 +501,7 @@ function LocalPod({
       // tells the player where the card will land while a hand drag
       // is in flight.
       className={
-        'flex flex-col gap-2 min-w-0 min-h-0 h-full p-2 transition-colors ' +
+        'flex flex-col gap-2 min-w-0 min-h-0 h-full p-2 transition-colors overflow-hidden ' +
         (isDropTarget
           ? 'rounded border ring-2 ring-fuchsia-500/40 outline outline-dashed outline-fuchsia-500 border-transparent'
           : '')
