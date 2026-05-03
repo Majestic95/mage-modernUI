@@ -19,6 +19,43 @@ minor mismatches.
 
 ---
 
+## Documented invariants (no version bump)
+
+These are wire-format guarantees that have always held, but were not
+explicitly written down. Documenting them here so a future refactor on
+either side of the wire can't silently violate them.
+
+### `stack` map iteration order — newest-first
+
+The `WebGameView.stack` field is a JSON object keyed by stack-object
+UUID. Its iteration order is **newest-first**: the FIRST key is the
+topmost / next-to-resolve spell or ability; the LAST key is the oldest
+entry on the stack.
+
+Provenance: upstream `mage.view.GameView` iterates the engine's
+`SpellStack` (an `ArrayDeque` pushed at the head, so head-to-tail
+iteration yields newest-first) into a `LinkedHashMap`. Our
+`CardViewMapper.toStackMap` copies that map into another
+`LinkedHashMap`, preserving the order. Jackson serializes
+`LinkedHashMap` keys in iteration order. UUID keys are non-integer
+strings, so JS preserves insertion order through `JSON.parse` and
+zod's `z.record(...)` on the client side.
+
+Locked by `CardViewMapperTest#toStackMap_preservesInsertionOrder_newestFirstSurvivesToJson`,
+which asserts both the in-memory map order AND the serialized JSON
+field order. The client treats `Object.values(stack)[0]` as the focal
+/ topmost entry in `webclient/src/game/StackZone.tsx`.
+
+History note: from slice 70-N's initial landing through 2026-05-03 the
+client mistakenly carried a `Object.values(stack).reverse()`, treating
+the wire as oldest-first. That made the focal render the OLDEST stack
+entry while the most-recently-cast spell ended up at the back of the
+fan. Corrected without a wire-format change — the server has always
+emitted newest-first; only the client interpretation was wrong. No
+`schemaVersion` bump.
+
+---
+
 ## 1.30 — 2026-05-02 — Per-player skip-priority state on WebPlayerView
 
 Adds one additive field — `WebPlayerView.skipState: string` — so the

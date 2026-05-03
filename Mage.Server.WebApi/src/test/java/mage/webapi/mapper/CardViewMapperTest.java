@@ -167,6 +167,67 @@ class CardViewMapperTest {
     }
 
     @Test
+    void toStackMap_preservesInsertionOrder_newestFirstSurvivesToJson() throws Exception {
+        // Wire invariant — the upstream GameView constructor (see
+        // mage.view.GameView, "for (StackObject stackObject : state.getStack()) ...")
+        // iterates the engine's SpellStack head-to-tail and inserts into
+        // a LinkedHashMap. SpellStack is an ArrayDeque pushed at the head,
+        // so head→tail iteration yields newest-first order — the topmost
+        // (next-to-resolve) spell is the FIRST entry. The mapper must
+        // preserve that order all the way through to the wire JSON: the
+        // client treats Object.values(stack)[0] as the focal / topmost
+        // entry, so any re-sort here misrenders every multi-spell stack
+        // and leaks back to the playtester as "the spell I just cast
+        // ended up at the back of the fan." Locks both the in-memory
+        // map iteration order AND the Jackson-serialized JSON field
+        // order. See docs/schema/CHANGELOG.md "Documented invariants".
+        java.util.UUID newest = java.util.UUID.fromString(
+                "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+        java.util.UUID middle = java.util.UUID.fromString(
+                "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+        java.util.UUID oldest = java.util.UUID.fromString(
+                "cccccccc-cccc-cccc-cccc-cccccccccccc");
+
+        mage.view.CardView newestCv = new mage.view.CardView(true);
+        newestCv.overrideId(newest);
+        mage.view.CardView middleCv = new mage.view.CardView(true);
+        middleCv.overrideId(middle);
+        mage.view.CardView oldestCv = new mage.view.CardView(true);
+        oldestCv.overrideId(oldest);
+
+        java.util.LinkedHashMap<java.util.UUID, mage.view.CardView> input =
+                new java.util.LinkedHashMap<>();
+        input.put(newest, newestCv);
+        input.put(middle, middleCv);
+        input.put(oldest, oldestCv);
+
+        Map<String, WebCardView> out =
+                CardViewMapper.toStackMap(input, Map.of());
+
+        java.util.List<String> keysInOrder =
+                new java.util.ArrayList<>(out.keySet());
+        assertEquals(
+                List.of(newest.toString(), middle.toString(), oldest.toString()),
+                keysInOrder,
+                "toStackMap must preserve LinkedHashMap iteration order — "
+                        + "the client treats Object.values(stack)[0] as the "
+                        + "topmost / next-to-resolve spell.");
+
+        String json = JSON.writeValueAsString(out);
+        JsonNode tree = JSON.readTree(json);
+        java.util.List<String> jsonKeys = new java.util.ArrayList<>();
+        tree.fieldNames().forEachRemaining(jsonKeys::add);
+        assertEquals(
+                List.of(newest.toString(), middle.toString(), oldest.toString()),
+                jsonKeys,
+                "Jackson JSON serialization must preserve the LinkedHashMap "
+                        + "key order so the wire emits newest-first. UUID keys "
+                        + "are non-integer strings, so JS Object insertion "
+                        + "order is preserved through JSON.parse and zod's "
+                        + "z.record on the client.");
+    }
+
+    @Test
     void mappers_nullInputs_throw() {
         assertThrows(IllegalArgumentException.class,
                 () -> CardViewMapper.toCardDto(null));

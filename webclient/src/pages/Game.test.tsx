@@ -892,9 +892,15 @@ describe('Game page', () => {
       types: ['INSTANT'],
       subtypes: [],
     });
-    // Server preserves insertion order (LinkedHashMap) — oldest
-    // first on the wire, newest first in the UI.
-    gv.stack = { [oldest.id]: oldest, [newest.id]: newest };
+    // Server emits the stack newest-first per the wire contract
+    // (CardViewMapper.toStackMap copies upstream's GameView.stack
+    // LinkedHashMap, which iterates SpellStack head-to-tail; the head
+    // is the most-recently-pushed / next-to-resolve entry). The UI
+    // walks Object.values(stack) in that order, so entries[0] is the
+    // newest. Locking this fixture to match the real wire avoids the
+    // 2026-05-03 regression where the client read the wire as
+    // oldest-first and rendered the focal card backwards.
+    gv.stack = { [newest.id]: newest, [oldest.id]: oldest };
     act(() => {
       useGameStore.setState({ connection: 'open', gameView: gv });
     });

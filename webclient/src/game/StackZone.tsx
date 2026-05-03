@@ -99,7 +99,18 @@ export function StackZone({
    */
   combat?: readonly WebCombatGroupView[];
 }) {
-  const entries = Object.values(stack).reverse();
+  // Wire contract: the server emits the stack as a LinkedHashMap with
+  // newest-first iteration order (the topmost / next-to-resolve spell
+  // is the FIRST key — see WebGameView.stack Javadoc and
+  // CardViewMapper.toStackMap). UUID keys are non-integer strings so
+  // JS Object insertion order is preserved through JSON.parse and
+  // zod's z.record. Therefore Object.values(stack)[0] is the topmost.
+  // The earlier `.reverse()` here was an inverted reading of the
+  // server contract: it made entries[0] the OLDEST entry, so the
+  // focal CardFace rendered the wrong spell while the most-recently-
+  // cast card ended up at the back of the fan. See docs/schema/
+  // CHANGELOG.md "Documented invariants" for the locked contract.
+  const entries = Object.values(stack);
 
   if (REDESIGN) {
     return (

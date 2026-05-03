@@ -56,8 +56,12 @@ function makeCard(overrides: Partial<WebCardView> = {}): WebCardView {
 }
 
 function makeStack(cards: WebCardView[]): Record<string, WebCardView> {
-  // Order preserved by Object.values + reversed inside StackZone, so
-  // the LAST card in the input array is the topmost (resolves first).
+  // Wire contract (see CardViewMapper.toStackMap + WebGameView.stack
+  // Javadoc): the server emits the stack newest-first — the FIRST key
+  // is the topmost / next-to-resolve spell. This helper inserts in
+  // input order, so the FIRST card in the input array becomes the
+  // topmost (focal). Tests that need a specific top/fan layout should
+  // pass the topmost card first.
   const out: Record<string, WebCardView> = {};
   for (const c of cards) {
     out[c.id] = c;
@@ -352,6 +356,44 @@ describe('StackZone — REDESIGN focal mode (picture-catalog §3.1)', () => {
     ]);
   });
 
+  it('renders the most-recently-cast spell as the focal (newest = top of stack)', () => {
+    // Regression for the bug where a stale .reverse() on the entries
+    // list flipped the focal to the OLDEST stack entry. Cast order:
+    // alpha (cast first, oldest, resolves LAST) → beta → gamma (cast
+    // last, newest, resolves FIRST). Server wire-order convention:
+    // newest = first key. Focal must be gamma; fan must be [beta,
+    // alpha] in that order (newer fan tile closer to the focal).
+    const alpha = makeCard({
+      id: 'spell-alpha',
+      cardId: 'spell-alpha',
+      name: 'Alpha',
+    });
+    const beta = makeCard({
+      id: 'spell-beta',
+      cardId: 'spell-beta',
+      name: 'Beta',
+    });
+    const gamma = makeCard({
+      id: 'spell-gamma',
+      cardId: 'spell-gamma',
+      name: 'Gamma',
+    });
+    render(
+      <StackZone stack={makeStack([gamma, beta, alpha])} combat={[]} />,
+    );
+    const focal = screen.getByTestId('stack-focal-card');
+    expect(focal.textContent).toContain('Gamma');
+    expect(focal.textContent).not.toContain('Alpha');
+    // Fan ordering: distance 1 (closest to focal) = beta (2nd-newest);
+    // distance 2 (further out) = alpha (oldest visible).
+    const fans = screen.getAllByTestId('stack-fan-card');
+    const byDistance = new Map(
+      fans.map((f) => [Number(f.dataset['fanDistance']), f.textContent ?? '']),
+    );
+    expect(byDistance.get(1)).toContain('Beta');
+    expect(byDistance.get(2)).toContain('Alpha');
+  });
+
   it('exposes data-stack-count for e2e diagnostics', () => {
     const cards = Array.from({ length: 4 }, (_, i) =>
       makeCard({ id: `spell-${i}`, cardId: `spell-${i}` }),
@@ -591,7 +633,11 @@ describe('StackZone — ability source-card swap (slice 70-Z)', () => {
       name: 'Ability',
       source: sourceCard,
     });
-    render(<StackZone stack={makeStack([fanAbility, top])} combat={[]} />);
+    // Server wire-order: newest = first key. The spell `top` is the
+    // newest stack entry (focal); `fanAbility` was on the stack first
+    // and is now the lone fan tile. Pass [top, fanAbility] so the
+    // focal renders Lightning Bolt and the fan renders Soul Warden.
+    render(<StackZone stack={makeStack([top, fanAbility])} combat={[]} />);
     // Top is the spell, fan is the ability whose visual must be Soul
     // Warden.
     const fan = screen.getByTestId('stack-fan-card');
