@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as RPointerEvent } from 'react';
+import { createPortal } from 'react-dom';
 import type { WebCardView } from '../api/schemas';
 import { useModalA11y } from '../util/useModalA11y';
 import { CardFace } from './CardFace';
@@ -24,6 +25,15 @@ import { CardFace } from './CardFace';
  * INTENTIONALLY not a close affordance here — the modal is draggable
  * and a user might click "outside" the modal area expecting the
  * modal to stay; we use an explicit close button instead.
+ *
+ * <p>Rendered via a React portal to document.body so it escapes any
+ * transformed ancestor. Without the portal, ANY ancestor with
+ * {@code transform} / {@code filter} / {@code will-change} (e.g.
+ * PlayerFrameRedesigned's {@code -translate-x-1/2}) creates a new
+ * containing block for {@code position: fixed} descendants, and the
+ * modal is positioned relative to that ancestor instead of the
+ * viewport — typically off-screen or hidden behind game chrome,
+ * making the open button appear to do nothing.
  */
 export function ZoneBrowser({
   title,
@@ -123,7 +133,14 @@ export function ZoneBrowser({
     visibility: pos === null ? 'hidden' : 'visible',
   };
 
-  return (
+  // Portal target — render to document.body so the modal escapes any
+  // ancestor with a transform/filter/will-change (which otherwise
+  // turns this fixed-positioned modal into one positioned relative
+  // to that ancestor instead of the viewport). PlayerFrameRedesigned
+  // uses -translate-x-1/2 which triggers exactly that gotcha.
+  if (typeof document === 'undefined') return null;
+
+  const tree = (
     <div
       data-testid="zone-browser"
       // Wrapper covers the viewport ONLY to host the modal; we
@@ -221,4 +238,6 @@ export function ZoneBrowser({
       </div>
     </div>
   );
+
+  return createPortal(tree, document.body);
 }
