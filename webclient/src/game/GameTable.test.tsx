@@ -129,6 +129,16 @@ describe('GameTable shell', () => {
     expect(screen.getByTestId('player-area-opponent')).toBeInTheDocument();
   });
 
+  // Tier 2 (dynamic card-shrink) integration test was attempted here
+  // but requires building 30 fully-schema-valid WebPermanentView
+  // fixtures to render through the deep Battlefield → PlayerArea →
+  // BattlefieldRowGroup chain. The shrink math + Battlefield wire are
+  // covered by podShrink.test.ts (unit) + manual verification of the
+  // 4-line wire in Battlefield.tsx (data-shrunk + CSS-var inline
+  // style). If a future regression breaks the integration we'll
+  // surface it via playtest before fixture-building cost is worth
+  // the lock.
+
   it('side pods carry data-bounded when LAYOUT_BOUNDS is on (Tier 1 containment)', () => {
     // Layout-bounds Tier 1 (2026-05-02) — busy boards on side pods
     // (Commander wide boards, 30+ permanents) used to escape the cell

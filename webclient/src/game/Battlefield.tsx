@@ -1,9 +1,10 @@
-import { useMemo } from 'react';
+import { useMemo, type CSSProperties } from 'react';
 import type { WebGameView } from '../api/schemas';
 import type { InteractionMode } from './interactionMode';
 import { StackZone } from './StackZone';
 import { PlayerArea } from './PlayerArea';
 import { gridAreaForOpponent, selectOpponents } from './battlefieldLayout';
+import { computePodCardSizeVars } from './podShrink';
 import type { DragState } from './useDragState';
 import { LAYOUT_BOUNDS, REDESIGN } from '../featureFlags';
 
@@ -222,12 +223,28 @@ export function Battlefield({
           const sidePodClasses = LAYOUT_BOUNDS
             ? ' flex items-stretch pb-[18vh] overflow-hidden min-h-0'
             : ' flex items-center pb-[18vh]';
+          // Layout Tier 2 (2026-05-02) — dynamic card-shrink. Big
+          // commander boards (30+ permanents per opponent) overflow
+          // even after Tier 1 containment; without shrink the user
+          // would see only the top half of the pod's content. Apply
+          // to all opponent pods (top + sides). Returns null when
+          // the pod is at full size so we don't waste an inline
+          // style allocation on every render.
+          const podCardSizeVars = LAYOUT_BOUNDS
+            ? computePodCardSizeVars(Object.keys(p.battlefield).length)
+            : null;
+          const wrapperStyle = podCardSizeVars
+            ? { gridArea: area, ...podCardSizeVars }
+            : { gridArea: area };
           return (
             <div
               key={p.playerId}
-              style={{ gridArea: area }}
+              style={wrapperStyle}
               data-side-pod={isSidePod || undefined}
               data-bounded={isSidePod && LAYOUT_BOUNDS ? 'true' : undefined}
+              data-shrunk={
+                LAYOUT_BOUNDS && podCardSizeVars ? 'true' : undefined
+              }
               className={'min-w-0' + (isSidePod ? sidePodClasses : '')}
             >
               <PlayerArea
