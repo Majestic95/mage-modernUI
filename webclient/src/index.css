@@ -157,6 +157,28 @@ input[type="checkbox"] {
 }
 
 /*
+ * 2026-05-03 — active-player lane glow. Mirrors the portrait
+ * halo's breathing rhythm but expressed as a box-shadow pulse on
+ * the lane wrapper (asymmetric T layout). At rest the lane carries
+ * a static white halo; when isActive flips to true this animation
+ * intensifies the inner ring + outer bloom on the same 1900ms
+ * cadence as `player-active-halo` so portrait + lane breathe in
+ * sync.
+ */
+@keyframes lane-active-glow {
+  0%, 100% {
+    box-shadow:
+      0 0 0 1px rgb(255 255 255 / 0.40),
+      0 0 16px 2px rgb(255 255 255 / 0.22);
+  }
+  50% {
+    box-shadow:
+      0 0 0 2px rgb(255 255 255 / 0.95),
+      0 0 32px 6px rgb(255 255 255 / 0.55);
+  }
+}
+
+/*
  * Slice 70-F (ADR 0011 D5) — ambient particle-drift backdrop for
  * the battlefield. Radial-gradient blobs on an oversized
  * background-image, with the GRADIENT ORIGIN drifting via
@@ -474,6 +496,12 @@ input[type="checkbox"] {
 
 .animate-card-targeted-pulse {
   animation: card-targeted-pulse 1000ms cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+.animate-lane-active-glow {
+  /* Same 1900ms period as `animate-player-active-halo` so the lane
+   * border breathes in sync with the portrait halo. */
+  animation: lane-active-glow 1900ms cubic-bezier(0.45, 0, 0.55, 1) infinite;
 }
 
 /*
