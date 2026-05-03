@@ -37,8 +37,14 @@ import {
 /**
  * Registry of valid variant names. Extend this tuple to add a variant
  * — TypeScript narrows {@link LayoutVariant} accordingly.
+ *
+ * <p><b>Per-variant living-map docs</b> live under
+ * {@code docs/design/variant-<name>.md} (e.g.
+ * {@code docs/design/variant-tabletop.md}). Update both this tuple
+ * and the matching doc when a variant lands; the doc is the spec
+ * authority, this tuple is the runtime registry.
  */
-export const LAYOUT_VARIANTS = ['current'] as const;
+export const LAYOUT_VARIANTS = ['current', 'tabletop'] as const;
 
 export type LayoutVariant = (typeof LAYOUT_VARIANTS)[number];
 

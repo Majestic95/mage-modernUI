@@ -125,8 +125,14 @@ describe('setVariantInUrl', () => {
     expect(window.history.length).toBe(before);
   });
 
-  // Slice B (when a non-default variant is added) will exercise the
-  // `params.set(VARIANT_PARAM, variant)` branch directly. Today only
-  // 'current' (== DEFAULT_VARIANT) exists, so the type system can't
-  // express a non-default LayoutVariant here.
+  it('sets ?variant= when setting a non-default variant', () => {
+    setVariantInUrl('tabletop');
+    const search = new URLSearchParams(window.location.search);
+    expect(search.get('variant')).toBe('tabletop');
+  });
+
+  it('round-trips through getActiveVariant (set then read)', () => {
+    setVariantInUrl('tabletop');
+    expect(getActiveVariant(window.location.search)).toBe('tabletop');
+  });
 });
