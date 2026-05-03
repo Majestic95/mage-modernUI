@@ -106,7 +106,18 @@ public final class ThreadUtils {
             // server game
             return true;
         } else if (name.startsWith(THREAD_PREFIX_AI_SIMULATION_MAD)) {
-            // ai simulation
+            // ai simulation (MAD)
+            return true;
+        } else if (name.startsWith(THREAD_PREFIX_AI_SIMULATION_MCTS)) {
+            // ai simulation (MCTS) — upstream oversight: the constant
+            // THREAD_PREFIX_AI_SIMULATION_MCTS was declared but never
+            // matched here, so any MCTS expansion that called game-
+            // related code through ensureRunInGameThread() crashed
+            // with "Wrong code usage: game related code must run in
+            // GAME thread, but it used in AI-SIM-MCTS-N". User repro
+            // (2026-05-02): Computer - monte carlo bots crashed every
+            // Commander 4p table on T1.UP from MCTSNode.expand:129.
+            // Symmetric fix to the MAD branch above.
             return true;
         } else if (name.equals("main")) {
             // unit test
