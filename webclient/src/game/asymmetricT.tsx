@@ -37,43 +37,36 @@ const SPOTLIGHT_GRADIENT =
   'transparent 360deg)';
 
 function LaneSpotlightHalo() {
+  // Mirror the focal-card stack spotlight (StackZone.tsx) exactly:
+  // a single mask-carved perimeter ring with a rotating white-gold
+  // sweep. The "glow/bloom" reads visually from the bright color
+  // stops on the ring itself plus a `drop-shadow` filter — both
+  // bloom AND streak share the same painted shape, so they cannot
+  // drift out of sync (they ARE the same shape). The earlier two-
+  // layer attempt put a blurred full-area conic gradient under the
+  // streak, which flooded the lane's interior with gold; the focal
+  // card achieves its glow purely from this single ring layer.
   return (
     <div
       data-testid="lane-spotlight-halo"
       aria-hidden="true"
-      className="animate-lane-spotlight absolute inset-0 rounded-md pointer-events-none"
-    >
-      {/* Soft bloom layer — full-circle blurred conic gradient.
-          Reads `var(--halo-angle)` from the parent's animation, so
-          it rotates in exact lockstep with the streak below. */}
-      <div
-        data-testid="lane-spotlight-bloom"
-        aria-hidden="true"
-        className="absolute -inset-2 rounded-md"
-        style={{
-          background: SPOTLIGHT_GRADIENT,
-          filter: 'blur(10px)',
-          opacity: 0.55,
-        }}
-      />
-      {/* Sharp gold streak — same gradient, mask-carved into a thin
-          perimeter ring so only the lane edge paints. Rotates in
-          lockstep with the bloom (same `--halo-angle` source). */}
-      <div
-        data-testid="lane-spotlight-streak"
-        aria-hidden="true"
-        className="absolute -inset-[2px] rounded-md"
-        style={{
-          background: SPOTLIGHT_GRADIENT,
-          WebkitMask:
-            'linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)',
-          WebkitMaskComposite: 'xor',
-          mask: 'linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)',
-          maskComposite: 'exclude',
-          padding: '3px',
-        }}
-      />
-    </div>
+      className="animate-lane-spotlight absolute -inset-[2px] rounded-md pointer-events-none"
+      style={{
+        background: SPOTLIGHT_GRADIENT,
+        WebkitMask:
+          'linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)',
+        WebkitMaskComposite: 'xor',
+        mask: 'linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)',
+        maskComposite: 'exclude',
+        padding: '3px',
+        // Soft outward bloom that follows the bright ring — same
+        // glowing-edge feel the focal card gets from its color-
+        // identity halo, except here the drop-shadow is bound to
+        // the painted ring shape itself, so the glow co-rotates
+        // perfectly with the gold streak.
+        filter: 'drop-shadow(0 0 6px rgba(255, 215, 100, 0.55))',
+      }}
+    />
   );
 }
 
