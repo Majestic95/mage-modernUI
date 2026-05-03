@@ -317,18 +317,14 @@ function OpponentLane({
     >
       <div
         data-testid={`opponent-lane-${laneIndex}-gutter`}
-        // 2026-05-03 — narrowed 140 → 120px (and items-center so
-        // the portrait stack is horizontally centered between the
-        // viewport edge and the battlefield region's left edge,
-        // not pinned left). The 20px reclaimed goes back to the
-        // battlefield sub-rows on the right. PlayerFrame inside is
-        // already `flex flex-col items-center`, so its children
-        // were already centered — but the gutter's own flex-col
-        // would stretch PlayerFrame to full width by default
-        // (cross-axis stretch). items-center keeps PlayerFrame
-        // intrinsic-width and centered, which makes the chip
-        // stack inherit the same center alignment.
-        className="flex-shrink-0 w-[120px] flex flex-col items-center p-2 border-r border-zinc-800/60 relative"
+        // 2026-05-03 — gutter width 170px. Earlier 120px clipped
+        // the Grave + Exile chip buttons (each chip is "Grave [N]"
+        // ≈ 70px wide; two side-by-side with gap-2 + padding needs
+        // ~166px). 170px fits both buttons fully and leaves ~4px
+        // breathing room. items-center keeps the portrait stack +
+        // chip cluster horizontally centered in the gutter rather
+        // than pinned to the left edge.
+        className="flex-shrink-0 w-[170px] flex flex-col items-center p-2 border-r border-zinc-800/60 relative"
       >
         <button
           type="button"
@@ -537,7 +533,12 @@ function SubRowZone({
       className="flex-1 min-h-0 min-w-0 border border-zinc-800/30 rounded relative overflow-hidden"
     >
       <span
-        className="absolute top-0 left-1 text-[10px] uppercase tracking-wider text-zinc-700 pointer-events-none z-[1]"
+        // 2026-05-03 — labels read white/cream (was text-zinc-700,
+        // ~#3F3F46, which faded into the panel bg and was barely
+        // legible). Now text-zinc-200 (~#E4E4E7) with the existing
+        // pointer-events-none + z-[1] so it stays a non-interactive
+        // overlay above the cards.
+        className="absolute top-0 left-1 text-[10px] uppercase tracking-wider text-zinc-200 pointer-events-none z-[1]"
         aria-hidden="true"
       >
         {label}
