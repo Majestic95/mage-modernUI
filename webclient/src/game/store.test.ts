@@ -478,7 +478,7 @@ describe('useGameStore', () => {
       // 2026-05-03 directive — log filter requires either a card-name
       // highlight or a life-change pattern. Use the highlighted form
       // here (the engine emits this format on plays/casts).
-      message: 'alice plays <font color=#ffff00>Forest</font>',
+      message: "alice plays <font color='#90EE90' object_id='card-1'>Forest</font>",
       targets: [],
       cardsView1: {},
       min: 0,
@@ -491,7 +491,7 @@ describe('useGameStore', () => {
     expect(log).toHaveLength(1);
     expect(log[0]).toMatchObject({
       id: 17,
-      message: 'alice plays <font color=#ffff00>Forest</font>',
+      message: "alice plays <font color='#90EE90' object_id='card-1'>Forest</font>",
       turn: 3,
       phase: 'PRECOMBAT_MAIN',
     });
@@ -537,7 +537,7 @@ describe('useGameStore', () => {
     for (let i = 0; i < 510; i++) {
       const wrap = webGameClientMessageSchema.parse({
         gameView: null,
-        message: `<font color=#ffff00>event ${i}</font>`,
+        message: `<font color='#90EE90' object_id='card-${i}'>event ${i}</font>`,
         targets: [],
         cardsView1: {},
         min: 0,
@@ -551,9 +551,11 @@ describe('useGameStore', () => {
     expect(log).toHaveLength(500);
     // Oldest 10 evicted; head should be event 10. (font tags wrap
     // each message to satisfy the filter.)
-    expect(log[0]?.message).toBe('<font color=#ffff00>event 10</font>');
+    expect(log[0]?.message).toBe(
+      "<font color='#90EE90' object_id='card-10'>event 10</font>",
+    );
     expect(log[log.length - 1]?.message).toBe(
-      '<font color=#ffff00>event 509</font>',
+      "<font color='#90EE90' object_id='card-509'>event 509</font>",
     );
   });
 
@@ -561,8 +563,9 @@ describe('useGameStore', () => {
     const wrap = webGameClientMessageSchema.parse({
       gameView: null,
       // Filter requires highlighted card OR life pattern; use the
-      // highlighted form to land an entry that reset() then clears.
-      message: '<font color=#ffff00>something</font>',
+      // highlighted form WITH object_id to land an entry that reset()
+      // then clears (engine-realistic font format).
+      message: "<font color='#90EE90' object_id='card-1'>something</font>",
       targets: [],
       cardsView1: {},
       min: 0,
@@ -598,7 +601,7 @@ describe('useGameStore', () => {
   it('keeps gameInform that contains a font-color highlight', () => {
     const wrap = webGameClientMessageSchema.parse({
       gameView: null,
-      message: 'alice plays <font color=#ffff00>Forest</font>',
+      message: "alice plays <font color='#90EE90' object_id='card-1'>Forest</font>",
       targets: [],
       cardsView1: {},
       min: 0,
@@ -638,7 +641,7 @@ describe('useGameStore', () => {
     // it lands in cardsByName lowercased.
     const wrap = webGameClientMessageSchema.parse({
       gameView: gv,
-      message: 'alice plays <font color=#ffff00>Forest</font>',
+      message: "alice plays <font color='#90EE90' object_id='card-1'>Forest</font>",
       targets: [],
       cardsView1: {},
       min: 0,
@@ -651,6 +654,113 @@ describe('useGameStore', () => {
     expect(entry).toBeDefined();
     expect(entry!.cardsByName.forest).toBeDefined();
     expect(entry!.cardsByName.forest!.name).toBe('Forest');
+  });
+
+  it('drops gameInform whose only font tag is a player-name highlight (no object_id)', () => {
+    // Audit fix 2026-05-03 — engine wraps every player name in a
+    // teal font tag. The prior {@code /<font\s/} filter let those
+    // pass, polluting the log with "alice draws", "alice scries 2",
+    // etc. The tightened filter requires {@code object_id}, which
+    // engine attaches ONLY to card highlights via
+    // {@code GameLog.injectPopupSupport}.
+    const playerOnly = "<font color='#20B2AA'>alice</font> draws a card";
+    const wrap = webGameClientMessageSchema.parse({
+      gameView: null,
+      message: playerOnly,
+      targets: [],
+      cardsView1: {},
+      min: 0,
+      max: 0,
+      flag: false,
+      choice: null,
+    });
+    useGameStore.getState().applyFrame(frame('gameInform', wrap, 9), wrap);
+    expect(useGameStore.getState().gameLog).toHaveLength(0);
+  });
+
+  it('keeps gameInform combining a player highlight + card highlight (with object_id)', () => {
+    const playAndPlayer =
+      "<font color='#20B2AA'>alice</font> puts " +
+      "<font color='#B0C4DE' object_id='3d2'>Mountain</font> [3d2] from hand onto the Battlefield";
+    const wrap = webGameClientMessageSchema.parse({
+      gameView: null,
+      message: playAndPlayer,
+      targets: [],
+      cardsView1: {},
+      min: 0,
+      max: 0,
+      flag: false,
+      choice: null,
+    });
+    useGameStore.getState().applyFrame(frame('gameInform', wrap, 10), wrap);
+    expect(useGameStore.getState().gameLog).toHaveLength(1);
+  });
+
+  it('snapshots commanders from commandList into cardsByName when the commander is in the command zone', () => {
+    // Audit fix 2026-05-03 — commanders living in the command zone
+    // never appear in any of the `WebCardView` zones (battlefield /
+    // graveyard / etc.) on the wire. A WebCommandObjectView is the
+    // only handle. buildCardsByName synthesizes a partial WebCardView
+    // for `kind=commander` entries so the hover popover at least
+    // renders the art + name + rules.
+    const me = webPlayerViewSchema.parse({
+      playerId: '22222222-2222-2222-2222-222222222222',
+      name: 'alice',
+      life: 40, wins: 0, winsNeeded: 1, libraryCount: 99, handCount: 7,
+      graveyard: {}, exile: {}, sideboard: {}, battlefield: {},
+      manaPool: { red: 0, green: 0, blue: 0, white: 0, black: 0, colorless: 0 },
+      controlled: true, isHuman: true, isActive: true, hasPriority: true,
+      hasLeft: false, monarch: false, initiative: false, designationNames: [],
+      commandList: [
+        {
+          id: 'cmdr-1',
+          kind: 'commander',
+          name: 'Atraxa, Praetors\' Voice',
+          expansionSetCode: 'C16',
+          imageFileName: '',
+          imageNumber: 28,
+          cardNumber: '28',
+          rules: ['Flying, vigilance, deathtouch, lifelink'],
+        },
+      ],
+    });
+    const gv = webGameViewSchema.parse({
+      turn: 1,
+      phase: 'PRECOMBAT_MAIN',
+      step: 'PRECOMBAT_MAIN',
+      activePlayerName: 'alice',
+      priorityPlayerName: 'alice',
+      special: false,
+      rollbackTurnsAllowed: false,
+      totalErrorsCount: 0,
+      totalEffectsCount: 0,
+      gameCycle: 0,
+      myPlayerId: me.playerId,
+      myHand: {},
+      stack: {},
+      combat: [],
+      players: [me],
+    });
+    const wrap = webGameClientMessageSchema.parse({
+      gameView: gv,
+      message:
+        "alice casts <font color='#90EE90' object_id='cmdr-1'>Atraxa, Praetors' Voice</font>",
+      targets: [],
+      cardsView1: {},
+      min: 0,
+      max: 0,
+      flag: false,
+      choice: null,
+    });
+    useGameStore.getState().applyFrame(frame('gameInform', wrap, 11), wrap);
+    const entry = useGameStore.getState().gameLog[0];
+    expect(entry).toBeDefined();
+    const synthesized = entry!.cardsByName["atraxa, praetors' voice"];
+    expect(synthesized).toBeDefined();
+    expect(synthesized!.name).toBe("Atraxa, Praetors' Voice");
+    expect(synthesized!.expansionSetCode).toBe('C16');
+    expect(synthesized!.cardNumber).toBe('28');
+    expect(synthesized!.rules).toEqual(['Flying, vigilance, deathtouch, lifelink']);
   });
 
   /* ---------- slice 19: game-over banner state ---------- */

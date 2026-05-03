@@ -80,8 +80,16 @@ const MENU_ITEMS: MenuItem[] = [
     // opponent's turn. The correct action is
     // PASS_PRIORITY_UNTIL_MY_NEXT_TURN per the engine's PlayerAction
     // enum (Mage/src/main/java/mage/constants/PlayerAction.java:11).
+    //
+    // Audit fix 2026-05-03 — hotkey changed F6 → F9 to match the
+    // legacy desktop xmage convention (engine's PlayerImpl.
+    // sendPlayerAction comment-tags this action as F9). F6 belongs
+    // to PASS_PRIORITY_UNTIL_NEXT_TURN_SKIP_STACK, which the
+    // webclient currently doesn't expose as a menu item; the prior
+    // F6 binding silently overrode the skip-stack semantics a
+    // returning xmage user would expect.
     action: 'PASS_PRIORITY_UNTIL_MY_NEXT_TURN',
-    hotkey: 'F6',
+    hotkey: 'F9',
     title: 'Pass priority until your next turn begins',
   },
   {
@@ -333,6 +341,19 @@ export function ActionButton({ stream }: Props) {
   const dispatchMenuItem = (item: MenuItem) => {
     setMenuOpen(false);
     if (!stream) return;
+    // Audit fix 2026-05-03 — clicking an ARMED skip item should
+    // CANCEL the skip, not re-arm it. The engine's
+    // sendPlayerAction(PASS_PRIORITY_UNTIL_*) calls
+    // resetPlayerPassedActions() then sets the boolean, so a
+    // re-dispatch is a no-op-then-arm again. Detect armed state
+    // and route to PASS_PRIORITY_CANCEL_ALL_ACTIONS instead.
+    const itemSkipState = ACTION_TO_SKIP_STATE[item.action];
+    const armed =
+      itemSkipState !== undefined && itemSkipState === mySkipState;
+    if (armed) {
+      stream.sendPlayerAction('PASS_PRIORITY_CANCEL_ALL_ACTIONS');
+      return;
+    }
     stream.sendPlayerAction(item.action);
   };
 
@@ -470,15 +491,22 @@ export function ActionButton({ stream }: Props) {
                 // render an "ARMED" affordance + amber background so
                 // the user can see what's running and click to
                 // cancel without remembering Esc.
+                //
+                // Audit fix 2026-05-03 — items that map to a skip
+                // state get role="menuitemcheckbox" so aria-checked
+                // is valid ARIA (plain menuitem doesn't support
+                // aria-checked; SR users get no signal). aria-checked
+                // is always present on those items ("true" / "false")
+                // per the menuitemcheckbox contract.
                 const itemSkipState = ACTION_TO_SKIP_STATE[item.action];
-                const armed =
-                  itemSkipState !== undefined && itemSkipState === mySkipState;
+                const isCheckable = itemSkipState !== undefined;
+                const armed = isCheckable && itemSkipState === mySkipState;
                 return (
                   <li key={item.action} role="none">
                     <button
                       type="button"
-                      role="menuitem"
-                      aria-checked={armed || undefined}
+                      role={isCheckable ? 'menuitemcheckbox' : 'menuitem'}
+                      aria-checked={isCheckable ? armed : undefined}
                       data-testid={`action-menu-${item.action}`}
                       data-armed={armed || undefined}
                       onClick={() => dispatchMenuItem(item)}

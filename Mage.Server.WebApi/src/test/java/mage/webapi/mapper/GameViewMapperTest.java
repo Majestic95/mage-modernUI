@@ -156,11 +156,64 @@ class GameViewMapperTest {
                         + ".default('').");
     }
 
-    // Note: deriveSkipState mapping coverage is exercised via the
-    // shape-lock test above + a webclient-side roundtrip (the
-    // game-store's WebPlayerView parsing test), since PlayerView is
-    // a concrete class with a Game-dependent constructor and the
-    // dynamic-proxy stub pattern only works for interfaces.
+    // Audit fix 2026-05-03 — per-mapping unit tests for
+    // {@link GameViewMapper#deriveSkipStateFromBooleans}. Lifts the
+    // boolean-priority logic out of the PlayerView dependency so we
+    // can verify every enum value without a Game graph.
+
+    @Test
+    void deriveSkipStateFromBooleans_allFalse_returnsEmpty() {
+        assertEquals("", GameViewMapper.deriveSkipStateFromBooleans(
+                false, false, false, false, false, false));
+    }
+
+    @Test
+    void deriveSkipStateFromBooleans_passedAllTurns_returnsAllTurns() {
+        assertEquals("ALL_TURNS", GameViewMapper.deriveSkipStateFromBooleans(
+                true, false, false, false, false, false));
+    }
+
+    @Test
+    void deriveSkipStateFromBooleans_passedTurn_returnsNextTurn() {
+        assertEquals("NEXT_TURN", GameViewMapper.deriveSkipStateFromBooleans(
+                false, true, false, false, false, false));
+    }
+
+    @Test
+    void deriveSkipStateFromBooleans_passedUntilEndOfTurn_returnsEndOfTurn() {
+        assertEquals("END_OF_TURN", GameViewMapper.deriveSkipStateFromBooleans(
+                false, false, true, false, false, false));
+    }
+
+    @Test
+    void deriveSkipStateFromBooleans_passedUntilNextMain_returnsNextMain() {
+        assertEquals("NEXT_MAIN", GameViewMapper.deriveSkipStateFromBooleans(
+                false, false, false, true, false, false));
+    }
+
+    @Test
+    void deriveSkipStateFromBooleans_passedUntilStackResolved_returnsStackResolved() {
+        assertEquals("STACK_RESOLVED", GameViewMapper.deriveSkipStateFromBooleans(
+                false, false, false, false, true, false));
+    }
+
+    @Test
+    void deriveSkipStateFromBooleans_passedUntilEndStepBeforeMyTurn_returnsEndStep() {
+        assertEquals("END_STEP_BEFORE_MY_TURN",
+                GameViewMapper.deriveSkipStateFromBooleans(
+                        false, false, false, false, false, true));
+    }
+
+    @Test
+    void deriveSkipStateFromBooleans_multipleSet_picksMostAggressive() {
+        // Engine guarantees only one boolean is set at a time
+        // (resetPlayerPassedActions runs before each PASS_* dispatch),
+        // but the helper's priority order is the safety net if that
+        // ever breaks. ALL_TURNS is the most aggressive ("until I
+        // get to take another turn") so it wins.
+        assertEquals("ALL_TURNS", GameViewMapper.deriveSkipStateFromBooleans(
+                true, true, true, true, true, true));
+    }
 
     @Test
     void shouldIncludePlayer_nullFilter_keepsEveryone() {

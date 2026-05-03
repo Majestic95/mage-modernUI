@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, type ReactNode } from 'react';
 import type { WebCardView, WebPlayerView } from '../api/schemas';
 import { REDESIGN } from '../featureFlags';
+import { tokenizeUpstreamMarkup } from './dialogs/markupRenderer';
 import { HoverCardDetail } from './HoverCardDetail';
 import { PlayerPortrait } from './PlayerPortrait';
 import { useGameStore } from './store';
@@ -147,24 +148,26 @@ function renderLogMarkup(
   text: string,
   cardsByName: Record<string, WebCardView>,
 ): ReactNode {
-  const tokenRe =
-    /<font\s+color=(#[0-9a-fA-F]{3,6})>([\s\S]*?)<\/font>|<br\s*\/?>|<[^>]+>/g;
   const parts: ReactNode[] = [];
-  let lastIdx = 0;
   let key = 0;
-  let match: RegExpExecArray | null;
-  while ((match = tokenRe.exec(text)) !== null) {
-    if (match.index > lastIdx) {
-      parts.push(text.slice(lastIdx, match.index));
-    }
-    if (match[0].toLowerCase().startsWith('<br')) {
+  for (const token of tokenizeUpstreamMarkup(text)) {
+    if (token.kind === 'text') {
+      parts.push(token.text);
+    } else if (token.kind === 'br') {
       parts.push(<br key={`br-${key++}`} />);
-    } else if (match[0].toLowerCase().startsWith('<font')) {
-      const color = match[1]!;
-      const inner = match[2] ?? '';
-      const card = lookupCard(inner, cardsByName);
-      const colored = (
-        <span style={{ color }}>{stripTags(inner)}</span>
+    } else {
+      // font — wrap with HoverCardDetail when the inner text resolves
+      // to a known card. Use objectId for precise card-vs-player
+      // discrimination (engine emits object_id ONLY on card highlights;
+      // see mage.util.GameLog.injectPopupSupport).
+      const inner = token.inner;
+      const card =
+        token.objectId !== null ? lookupCard(inner, cardsByName) : null;
+      const innerNode = renderLogMarkup(inner, cardsByName);
+      const colored = token.color ? (
+        <span style={{ color: token.color }}>{innerNode}</span>
+      ) : (
+        innerNode
       );
       if (card) {
         parts.push(
@@ -182,21 +185,16 @@ function renderLogMarkup(
         parts.push(<span key={`f-${key++}`}>{colored}</span>);
       }
     }
-    // Any other tag (the third arm of the regex) is intentionally
-    // dropped — strips out unhandled markup without leaking it.
-    lastIdx = match.index + match[0].length;
-  }
-  if (lastIdx < text.length) {
-    parts.push(text.slice(lastIdx));
   }
   return parts.length === 1 ? parts[0] : <>{parts}</>;
 }
 
 /**
  * Resolve a highlighted card name against the entry's frozen
- * cards-by-name index. Tries the stripped form (no nested tags, no
- * trailing parenthesized suffix) first, then a few permutations
- * because engine log names occasionally include them.
+ * cards-by-name index. Tries the stripped form first; falls back to
+ * a parenthesized-suffix-stripped form ONLY if the original miss
+ * (so cards whose actual name ends in {@code (...)}, like Un-set
+ * "B.F.M. (Big Furry Monster)", aren't accidentally re-keyed).
  */
 function lookupCard(
   rawInner: string,
@@ -207,10 +205,12 @@ function lookupCard(
   if (!plain) return null;
   const lower = plain.toLowerCase();
   if (cardsByName[lower]) return cardsByName[lower];
-  // Try stripping a trailing " (a)" / " (b)" disambiguator (common
-  // when the engine emits a token-vs-source distinction).
+  // Strip a trailing parenthesized suffix and retry — handles engine
+  // disambiguators like " (a)" / " (b)" on token-vs-source. Skip the
+  // fallback when the trim doesn't actually shorten the name (no
+  // suffix to strip).
   const noParen = lower.replace(/\s*\([^)]*\)\s*$/, '');
-  if (cardsByName[noParen]) return cardsByName[noParen];
+  if (noParen !== lower && cardsByName[noParen]) return cardsByName[noParen];
   return null;
 }
 

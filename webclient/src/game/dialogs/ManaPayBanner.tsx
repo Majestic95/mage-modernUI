@@ -64,10 +64,15 @@ interface ManaPayBannerProps {
 export function ManaPayBanner({ stream }: ManaPayBannerProps) {
   const dialog = useGameStore((s) => s.pendingDialog);
   const clearDialog = useGameStore((s) => s.clearDialog);
-  // Initial bottom margin matches DialogBanner — clears the hand fan
-  // (180px) plus a 16px gap. Hook owns position after first drag.
+  // Initial bottom margin tracks `--hand-area-height` + 16px gap so
+  // the banner clears the hand fan regardless of its dynamic
+  // height. Hook owns position after first drag.
   const { ref, containerProps, style } = useDraggable({
-    placement: { kind: 'bottom-center', bottomMargin: 196 },
+    placement: {
+      kind: 'bottom-center',
+      bottomMargin: 16,
+      bottomMarginVar: 'hand-area-height',
+    },
   });
 
   // Defensive: this component should only mount when pendingDialog

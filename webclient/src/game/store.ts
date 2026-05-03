@@ -141,24 +141,33 @@ export interface GameLogEntry {
 }
 
 /**
- * Filter — only entries that mention a card (any {@code <font>}
- * highlight) or a life change ({@code "gains N life"} /
+ * Filter — keep entries that mention a CARD (a {@code <font>} tag
+ * carrying {@code object_id} — engine emits that attribute only on
+ * card highlights via {@code mage.util.GameLog.injectPopupSupport};
+ * player-name highlights via {@code getColoredPlayerName} carry
+ * only {@code color}) or a life change ({@code "gains N life"} /
  * {@code "loses N life"}, the two patterns
  * {@link mage.players.PlayerImpl#gainLife} /
- * {@link mage.players.PlayerImpl#loseLife} emit) survive. Phase /
- * step / turn-boundary informs ("alice's turn", "Beginning of
- * upkeep", "End of turn") have neither and are dropped — they were
- * documented log noise per the user's "I want it to tell me who
- * played what card and report life gain or life lost" directive.
+ * {@link mage.players.PlayerImpl#loseLife} emit). Phase / step /
+ * turn-boundary informs and noise like "alice draws a card" or
+ * "alice scries 2" are dropped — they wrap the player name in a
+ * font tag but never reference a card object_id.
+ *
+ * <p>2026-05-03 audit fix — the prior filter used {@code /<font\s/i}
+ * which matched any font tag, including the player-name wrappers
+ * present on roughly every engine inform. Net effect was 90% pass-
+ * through (untap, draw, scry, mulligan, etc. all survived). The
+ * tightened {@code object_id} signal is precise: engine code path
+ * shows ONLY card / token / face-down highlights carry it.
  *
  * <p>Damage to a player is converted to life loss via
  * {@code damagePlayerOrPlaneswalker} → {@code loseLife}, so the
  * "loses N life" pattern catches combat damage too.
  */
-const CARD_HIGHLIGHT_RE = /<font\s/i;
+const CARD_OBJECT_RE = /<font\b[^>]*\bobject_id\s*=/i;
 const LIFE_CHANGE_RE = /\b(?:gains|loses)\s+\d+\s+life\b/i;
 function shouldKeepGameLogEntry(message: string): boolean {
-  return CARD_HIGHLIGHT_RE.test(message) || LIFE_CHANGE_RE.test(message);
+  return CARD_OBJECT_RE.test(message) || LIFE_CHANGE_RE.test(message);
 }
 
 /**
@@ -192,8 +201,65 @@ function buildCardsByName(gv: WebGameView | null): Record<string, WebCardView> {
     ingest(p.graveyard);
     ingest(p.exile);
     ingest(p.sideboard);
+    // 2026-05-03 audit fix — commanders sitting in the command zone
+    // are the most-cared-about cards in EDH but have no WebCardView
+    // on the wire (only a smaller WebCommandObjectView). Synthesize
+    // a partial WebCardView so the hover preview can at least render
+    // the commander's art (via Scryfall + expansionSetCode/cardNumber)
+    // and rules text. Battlefield casts already cover the in-play
+    // case; this fills the command-zone gap.
+    for (const cmd of p.commandList ?? []) {
+      if (cmd.kind !== 'commander' || !cmd.name) continue;
+      const lower = cmd.name.toLowerCase();
+      // Skip if a real WebCardView for the commander is already in
+      // the index (e.g. it's currently on the battlefield) — the
+      // full view has more data.
+      if (out[lower]) continue;
+      out[lower] = synthesizeCommanderCardView(cmd);
+    }
   }
   return out;
+}
+
+/**
+ * Build a minimal {@link WebCardView} from a {@link WebCommandObjectView}
+ * so the hover preview has enough fields to render the card art +
+ * name + rules. Most {@code WebCardView} fields don't exist on the
+ * command-object shape (mana cost, types, P/T, color identity, etc.) —
+ * fill with empty defaults. The Scryfall image URL builder only
+ * needs name + expansionSetCode + cardNumber, so the popover renders
+ * the right art even on a partial.
+ */
+function synthesizeCommanderCardView(
+  cmd: WebCommandObjectView,
+): WebCardView {
+  return {
+    id: cmd.id,
+    cardId: cmd.id,
+    name: cmd.name,
+    displayName: cmd.name,
+    expansionSetCode: cmd.expansionSetCode,
+    cardNumber: cmd.cardNumber,
+    manaCost: '',
+    manaValue: 0,
+    typeLine: 'Legendary Creature',
+    supertypes: ['Legendary'],
+    types: [],
+    subtypes: [],
+    colors: [],
+    rarity: '',
+    power: '',
+    toughness: '',
+    startingLoyalty: '',
+    rules: cmd.rules,
+    faceDown: false,
+    counters: {},
+    transformable: false,
+    transformed: false,
+    secondCardFace: null,
+    sourceLabel: '',
+    source: null,
+  };
 }
 
 interface GameState {

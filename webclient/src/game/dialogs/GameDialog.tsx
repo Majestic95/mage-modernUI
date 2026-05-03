@@ -42,7 +42,13 @@ export function GameDialog({ stream }: Props) {
   // so they're always called per the rules of hooks; only one ref
   // is actually mounted into the DOM per render.
   const centered = useDraggable({ placement: { kind: 'center' } });
-  const bottomRight = useDraggable({ placement: { kind: 'bottom-right' } });
+  // Audit fix 2026-05-03 — read --side-panel-width so the hidden-zone
+  // dialog (Demonic Tutor library search) clears the side panel
+  // instead of spawning underneath it. Legacy code did the same via
+  // Tailwind's `right-[calc(var(--side-panel-width,0px)+1rem)]`.
+  const bottomRight = useDraggable({
+    placement: { kind: 'bottom-right', rightMarginVar: 'side-panel-width' },
+  });
   // Slice 70-Y.1 — when click-resolution is active, the relevant
   // cards pulse in their existing zone and the banner replaces the
   // modal. Hook returns active=false unless: flag on, dialog is a

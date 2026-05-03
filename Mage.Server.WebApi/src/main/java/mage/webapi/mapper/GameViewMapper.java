@@ -285,12 +285,37 @@ public final class GameViewMapper {
      * regression), the more-restrictive state wins the wire emit.
      */
     static String deriveSkipState(PlayerView pv) {
-        if (pv.isPassedAllTurns()) return WebPlayerView.SKIP_STATE_ALL_TURNS;
-        if (pv.isPassedTurn()) return WebPlayerView.SKIP_STATE_NEXT_TURN;
-        if (pv.isPassedUntilEndOfTurn()) return WebPlayerView.SKIP_STATE_END_OF_TURN;
-        if (pv.isPassedUntilNextMain()) return WebPlayerView.SKIP_STATE_NEXT_MAIN;
-        if (pv.isPassedUntilStackResolved()) return WebPlayerView.SKIP_STATE_STACK_RESOLVED;
-        if (pv.isPassedUntilEndStepBeforeMyTurn()) return WebPlayerView.SKIP_STATE_END_STEP_BEFORE_MY_TURN;
+        return deriveSkipStateFromBooleans(
+                pv.isPassedAllTurns(),
+                pv.isPassedTurn(),
+                pv.isPassedUntilEndOfTurn(),
+                pv.isPassedUntilNextMain(),
+                pv.isPassedUntilStackResolved(),
+                pv.isPassedUntilEndStepBeforeMyTurn());
+    }
+
+    /**
+     * Visible-for-test extraction of the boolean-priority logic so a
+     * unit test can exercise every enum-value mapping without needing
+     * a real {@link PlayerView} (whose constructor pulls a Player +
+     * GameState + Game graph). The audit-fix unit tests
+     * {@code deriveSkipStateFromBooleans_*} in
+     * {@code GameViewMapperTest} cover all 6 enum values + the empty
+     * default.
+     */
+    static String deriveSkipStateFromBooleans(
+            boolean passedAllTurns,
+            boolean passedTurn,
+            boolean passedUntilEndOfTurn,
+            boolean passedUntilNextMain,
+            boolean passedUntilStackResolved,
+            boolean passedUntilEndStepBeforeMyTurn) {
+        if (passedAllTurns) return WebPlayerView.SKIP_STATE_ALL_TURNS;
+        if (passedTurn) return WebPlayerView.SKIP_STATE_NEXT_TURN;
+        if (passedUntilEndOfTurn) return WebPlayerView.SKIP_STATE_END_OF_TURN;
+        if (passedUntilNextMain) return WebPlayerView.SKIP_STATE_NEXT_MAIN;
+        if (passedUntilStackResolved) return WebPlayerView.SKIP_STATE_STACK_RESOLVED;
+        if (passedUntilEndStepBeforeMyTurn) return WebPlayerView.SKIP_STATE_END_STEP_BEFORE_MY_TURN;
         return WebPlayerView.SKIP_STATE_NONE;
     }
 

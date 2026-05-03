@@ -159,7 +159,8 @@ describe('GameLog — legacy (REDESIGN=false)', () => {
   it('renders the highlighted card name with the upstream color', () => {
     storeState.gameLog = [
       makeEntry({
-        message: 'alice plays <font color=#ffff00>Blood Crypt</font>',
+        message:
+          "alice plays <font color='#90EE90' object_id='card-1'>Blood Crypt</font>",
       }),
     ];
     render(<GameLog />);
@@ -236,7 +237,8 @@ describe('GameLog — REDESIGN flag on (slice 70-L)', () => {
     flagState.redesign = true;
     storeState.gameLog = [
       makeEntry({
-        message: 'alice plays <font color=#ffff00>Blood Crypt</font>',
+        message:
+          "alice plays <font color='#90EE90' object_id='card-1'>Blood Crypt</font>",
       }),
     ];
     render(<GameLog players={[makePlayer({ name: 'alice' })]} />);
@@ -244,7 +246,7 @@ describe('GameLog — REDESIGN flag on (slice 70-L)', () => {
     // Card name renders as a styled span — find it by content.
     const cardName = within(entry).getByText('Blood Crypt');
     expect(cardName.tagName).toBe('SPAN');
-    expect(cardName).toHaveStyle({ color: '#ffff00' });
+    expect(cardName).toHaveStyle({ color: '#90EE90' });
   });
 
   it('renders a placeholder gutter when actor cannot be resolved', () => {
@@ -313,7 +315,8 @@ describe('GameLog — card-hover wrapping (2026-05-03)', () => {
   it('wraps highlighted card names that are present in cardsByName with a hover trigger', () => {
     storeState.gameLog = [
       makeEntry({
-        message: 'alice plays <font color=#ffff00>Blood Crypt</font>',
+        message:
+          "alice plays <font color='#90EE90' object_id='card-1'>Blood Crypt</font>",
         cardsByName: { 'blood crypt': makeCard('Blood Crypt') },
       }),
     ];
@@ -326,7 +329,8 @@ describe('GameLog — card-hover wrapping (2026-05-03)', () => {
   it('renders highlighted names without a hover wrapper when not in cardsByName', () => {
     storeState.gameLog = [
       makeEntry({
-        message: 'alice plays <font color=#ffff00>Blood Crypt</font>',
+        message:
+          "alice plays <font color='#90EE90' object_id='card-1'>Blood Crypt</font>",
         cardsByName: {},
       }),
     ];
@@ -336,10 +340,26 @@ describe('GameLog — card-hover wrapping (2026-05-03)', () => {
     expect(screen.getByTestId('game-log-entry')).toHaveTextContent('Blood Crypt');
   });
 
+  it('does NOT wrap player-name highlights even when their name happens to be in cardsByName', () => {
+    // Audit fix 2026-05-03: hover discrimination is by object_id
+    // attribute (engine emits it ONLY on card highlights). Player
+    // names get color but no object_id — so a card named "alice"
+    // wouldn't accidentally hover-wrap the player's name token.
+    storeState.gameLog = [
+      makeEntry({
+        message: "<font color='#20B2AA'>alice</font> plays Forest",
+        cardsByName: { alice: makeCard('alice') },
+      }),
+    ];
+    render(<GameLog />);
+    expect(screen.queryByTestId('game-log-card-hover')).toBeNull();
+  });
+
   it('case-insensitively resolves card names to the cardsByName index', () => {
     storeState.gameLog = [
       makeEntry({
-        message: 'alice plays <font color=#ffff00>BLOOD CRYPT</font>',
+        message:
+          "alice plays <font color='#90EE90' object_id='card-1'>BLOOD CRYPT</font>",
         cardsByName: { 'blood crypt': makeCard('Blood Crypt') },
       }),
     ];
@@ -352,7 +372,8 @@ describe('GameLog — card-hover wrapping (2026-05-03)', () => {
   it('strips a trailing parenthesized disambiguator before lookup', () => {
     storeState.gameLog = [
       makeEntry({
-        message: 'alice plays <font color=#ffff00>Forest (a)</font>',
+        message:
+          "alice plays <font color='#90EE90' object_id='card-1'>Forest (a)</font>",
         cardsByName: { forest: makeCard('Forest') },
       }),
     ];
@@ -360,5 +381,60 @@ describe('GameLog — card-hover wrapping (2026-05-03)', () => {
     expect(
       screen.getByTestId('game-log-card-hover').getAttribute('data-card-name'),
     ).toBe('Forest');
+  });
+});
+
+describe('GameLog — filter (audit fix 2026-05-03)', () => {
+  // The store-level filter is exercised in store.test.ts; these
+  // tests verify the renderer side handles the realistic engine
+  // markup variants — single-quoted color, named colors, and
+  // outer wrapper fonts (e.g. `<font color='White'>...</font>`)
+  // — without rendering raw markup or losing card hover.
+
+  it("parses single-quoted engine font format ('#90EE90' + object_id)", () => {
+    storeState.gameLog = [
+      makeEntry({
+        message:
+          "<font color='#20B2AA'>alice</font> plays <font color='#90EE90' object_id='card-1'>Forest</font>",
+        cardsByName: { forest: makeCard('Forest') },
+      }),
+    ];
+    render(<GameLog />);
+    expect(screen.getByTestId('game-log-entry')).toHaveTextContent(
+      /alice plays Forest/,
+    );
+    // Card hover must wire (object_id present)
+    expect(screen.getByTestId('game-log-card-hover')).toBeTruthy();
+    // No raw markup leaked into the DOM
+    expect(
+      screen.getByTestId('game-log-entry').querySelector('font'),
+    ).toBeNull();
+  });
+
+  it('handles a nested font wrapper without leaking raw </font> tags', () => {
+    storeState.gameLog = [
+      makeEntry({
+        message:
+          "<font color='White'><font color='#20B2AA'>alice</font> plays <font color='#90EE90' object_id='card-1'>Forest</font></font>",
+        cardsByName: { forest: makeCard('Forest') },
+      }),
+    ];
+    render(<GameLog />);
+    const entry = screen.getByTestId('game-log-entry');
+    expect(entry).toHaveTextContent(/alice plays Forest/);
+    expect(entry.innerHTML).not.toContain('&lt;');
+    expect(entry.innerHTML).not.toContain('</font>');
+  });
+
+  it('drops a font tag with no recognised attributes (third-arm catch-all)', () => {
+    storeState.gameLog = [
+      makeEntry({
+        message: 'alice plays <font>Forest</font>',
+        cardsByName: { forest: makeCard('Forest') },
+      }),
+    ];
+    render(<GameLog />);
+    // <font> with no attrs still tokenises; objectId is null so no hover.
+    expect(screen.queryByTestId('game-log-card-hover')).toBeNull();
   });
 });

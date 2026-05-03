@@ -380,22 +380,30 @@ describe('ActionButton — hotkeys', () => {
     );
   });
 
-  it('F6 dispatches "Pass to Your Turn" (until my next turn)', () => {
-    // Bug fix — F6 was previously mapped to UNTIL_NEXT_MAIN_PHASE
-    // (which advances only to the next main phase, could be the
-    // same turn's main 2 or an opponent's main on their turn). The
-    // label "Pass to Your Turn" specifically means "skip until it's
-    // MY turn again" — UNTIL_MY_NEXT_TURN is the correct engine
-    // action. Lock the new mapping so a future refactor doesn't
-    // regress.
+  it('F9 dispatches "Pass to Your Turn" (until my next turn)', () => {
+    // Audit fix 2026-05-03 — hotkey is F9 (not F6, which the engine
+    // reserves for PASS_PRIORITY_UNTIL_NEXT_TURN_SKIP_STACK and the
+    // legacy desktop xmage muscle memory). The action stays
+    // UNTIL_MY_NEXT_TURN — that's the right engine call for the
+    // "skip until it's MY turn again" semantics the menu label
+    // promises.
+    setGame();
+    authState.session = { username: 'alice' };
+    const stream = makeStream();
+    render(<ActionButton stream={stream} />);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F9' }));
+    expect(stream.sendPlayerAction).toHaveBeenCalledWith(
+      'PASS_PRIORITY_UNTIL_MY_NEXT_TURN',
+    );
+  });
+
+  it('F6 (now unbound after audit fix) does not dispatch any action', () => {
     setGame();
     authState.session = { username: 'alice' };
     const stream = makeStream();
     render(<ActionButton stream={stream} />);
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F6' }));
-    expect(stream.sendPlayerAction).toHaveBeenCalledWith(
-      'PASS_PRIORITY_UNTIL_MY_NEXT_TURN',
-    );
+    expect(stream.sendPlayerAction).not.toHaveBeenCalled();
   });
 
   it('F8 dispatches "Resolve Stack"', () => {
@@ -549,6 +557,57 @@ describe('ActionButton — schema 1.30 skip-state visuals', () => {
       'action-menu-PASS_PRIORITY_UNTIL_STACK_RESOLVED',
     );
     expect(stackItem.getAttribute('data-armed')).toBeNull();
+  });
+
+  it('uses role="menuitemcheckbox" with aria-checked for skip menu items (audit fix)', async () => {
+    const user = userEvent.setup();
+    setGame({
+      players: [{ playerId: 'p-alice', skipState: 'NEXT_TURN' }],
+      myPlayerId: 'p-alice',
+    });
+    authState.session = { username: 'alice' };
+    render(<ActionButton stream={makeStream()} />);
+    await user.click(screen.getByTestId('action-button-ellipsis'));
+    const armed = screen.getByTestId(
+      'action-menu-PASS_PRIORITY_UNTIL_NEXT_TURN',
+    );
+    expect(armed.getAttribute('role')).toBe('menuitemcheckbox');
+    expect(armed.getAttribute('aria-checked')).toBe('true');
+    const notArmed = screen.getByTestId(
+      'action-menu-PASS_PRIORITY_UNTIL_STACK_RESOLVED',
+    );
+    expect(notArmed.getAttribute('role')).toBe('menuitemcheckbox');
+    expect(notArmed.getAttribute('aria-checked')).toBe('false');
+    // Non-skip menuitems (Stop Skipping, Undo) keep the plain
+    // menuitem role and have no aria-checked.
+    const undo = screen.getByTestId('action-menu-UNDO');
+    expect(undo.getAttribute('role')).toBe('menuitem');
+    expect(undo.getAttribute('aria-checked')).toBeNull();
+  });
+
+  it('clicking an ARMED menu item dispatches CANCEL_ALL_ACTIONS, not the same arm action', async () => {
+    // Audit fix 2026-05-03 — re-dispatching the SAME PASS_PRIORITY_*
+    // call would call resetPlayerPassedActions then re-arm. The
+    // user-intent on clicking an armed item is "stop skipping"; the
+    // dispatch must route to PASS_PRIORITY_CANCEL_ALL_ACTIONS.
+    const user = userEvent.setup();
+    setGame({
+      players: [{ playerId: 'p-alice', skipState: 'NEXT_TURN' }],
+      myPlayerId: 'p-alice',
+    });
+    authState.session = { username: 'alice' };
+    const stream = makeStream();
+    render(<ActionButton stream={stream} />);
+    await user.click(screen.getByTestId('action-button-ellipsis'));
+    await user.click(
+      screen.getByTestId('action-menu-PASS_PRIORITY_UNTIL_NEXT_TURN'),
+    );
+    expect(stream.sendPlayerAction).toHaveBeenCalledWith(
+      'PASS_PRIORITY_CANCEL_ALL_ACTIONS',
+    );
+    expect(stream.sendPlayerAction).not.toHaveBeenCalledWith(
+      'PASS_PRIORITY_UNTIL_NEXT_TURN',
+    );
   });
 
   it('does not crash when gv has no players (edge case during early frame)', () => {

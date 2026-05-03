@@ -10,8 +10,34 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProp
 export type DraggablePlacement =
   | { kind: 'center' }
   | { kind: 'top-center'; topMargin?: number }
-  | { kind: 'bottom-center'; bottomMargin?: number }
-  | { kind: 'bottom-right'; bottomMargin?: number; rightMargin?: number };
+  | {
+      kind: 'bottom-center';
+      bottomMargin?: number;
+      /**
+       * CSS custom property name (without `--`) added to
+       * {@code bottomMargin} when measuring initial position. Used
+       * by the in-game banners so they sit above the hand fan
+       * regardless of its dynamic height
+       * ({@code --hand-area-height}); the legacy positioner read it
+       * via {@code calc(var(--hand-area-height, 180px) + 16px)}.
+       */
+      bottomMarginVar?: string;
+    }
+  | {
+      kind: 'bottom-right';
+      bottomMargin?: number;
+      rightMargin?: number;
+      /**
+       * CSS custom property name (without the `--` prefix) to add
+       * to {@code rightMargin} when measuring initial position. Used
+       * to keep `bottom-right` dialogs clear of a side panel of
+       * dynamic width — the legacy GameDialog hidden-zone branch
+       * read {@code --side-panel-width} via Tailwind's `right-[calc(...)]`,
+       * and dropping it on the drag refactor caused the dialog to
+       * spawn underneath the side panel on every Demonic Tutor cast.
+       */
+      rightMarginVar?: string;
+    };
 
 export interface UseDraggableOptions {
   placement: DraggablePlacement;
@@ -63,8 +89,32 @@ export interface UseDraggableResult {
 }
 
 const DEFAULT_HANDLE_SELECTOR = '[data-drag-handle]';
+// Elements whose pointerdown should NOT initiate a drag even when
+// inside the drag handle. {@code label} stays here because clicking
+// label text forwards the click to a contained {@code input} —
+// stealing pointerdown into a drag would suppress the implicit
+// click-forward and break checkbox / radio toggles. (Today no drag
+// handle wraps a label; the rule is defence-in-depth for future
+// callers.)
 const INTERACTIVE_DESCENDANT_SELECTOR =
   'button, input, select, textarea, a, [role="button"], [role="slider"], label';
+
+/**
+ * Read a CSS custom property registered on {@code documentElement}
+ * and parse it as a pixel length. Returns 0 when the var is unset
+ * or unparseable. Used by {@code bottom-right} placement so a
+ * dialog clears a dynamically-sized side panel
+ * ({@code --side-panel-width}) instead of spawning underneath it.
+ */
+function readCssLengthVar(name: string): number {
+  if (typeof document === 'undefined') return 0;
+  const raw = getComputedStyle(document.documentElement)
+    .getPropertyValue(`--${name}`)
+    .trim();
+  if (!raw) return 0;
+  const parsed = parseFloat(raw);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
 
 /**
  * Reusable drag-to-move hook for modal/banner surfaces. Extracted
@@ -129,35 +179,81 @@ export function useDraggable(opts: UseDraggableOptions): UseDraggableResult {
   // Initial placement: measure the dialog after first paint and set
   // pos based on the chosen mode. useLayoutEffect runs synchronously
   // before browser paint so we don't see a (0,0) flash.
+  //
+  // Audit fix 2026-05-03 — when content inside the dialog loads
+  // async (CardFace tiles in MulliganModal, ZoneBrowser grid before
+  // images decode), getBoundingClientRect returns 0×0 on the first
+  // tick. Computing the centre on a zero rect produces (vw/2, vh/2)
+  // — the dialog renders top-left-anchored at viewport centre, not
+  // visually centred. Fix: place once with whatever the rect is now
+  // (so the dialog is visible immediately and DOM queries work) and
+  // schedule up to ~5 rAF-spaced re-measures. Each retry that finds
+  // a non-zero rect refines the position; the dialog visibly snaps
+  // into place once content has laid out. If the rect is non-zero
+  // on the first measure (the common case + every test fixture
+  // declaring explicit dimensions), no retries fire.
   useLayoutEffect(() => {
     if (pos !== null) return;
     const el = ref.current;
     if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    let x = 0;
-    let y = 0;
-    switch (placement.kind) {
-      case 'center':
-        x = (vw - rect.width) / 2;
-        y = (vh - rect.height) / 2;
-        break;
-      case 'top-center':
-        x = (vw - rect.width) / 2;
-        y = placement.topMargin ?? 64;
-        break;
-      case 'bottom-center':
-        x = (vw - rect.width) / 2;
-        y = vh - rect.height - (placement.bottomMargin ?? 16);
-        break;
-      case 'bottom-right':
-        x = vw - rect.width - (placement.rightMargin ?? 16);
-        y = vh - rect.height - (placement.bottomMargin ?? 16);
-        break;
-    }
-    setPos(clamp(x, y, rect.width, rect.height));
-  }, [pos, placement, clamp]);
+    let cancelled = false;
+    let attemptsLeft = 5;
+    const measureAndPlace = () => {
+      if (cancelled) return;
+      const rect = el.getBoundingClientRect();
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      let x = 0;
+      let y = 0;
+      switch (placement.kind) {
+        case 'center':
+          x = (vw - rect.width) / 2;
+          y = (vh - rect.height) / 2;
+          break;
+        case 'top-center':
+          x = (vw - rect.width) / 2;
+          y = placement.topMargin ?? 64;
+          break;
+        case 'bottom-center': {
+          const baseBottom = placement.bottomMargin ?? 16;
+          const varOffset = placement.bottomMarginVar
+            ? readCssLengthVar(placement.bottomMarginVar)
+            : 0;
+          x = (vw - rect.width) / 2;
+          y = vh - rect.height - baseBottom - varOffset;
+          break;
+        }
+        case 'bottom-right': {
+          const baseRight = placement.rightMargin ?? 16;
+          const varOffset = placement.rightMarginVar
+            ? readCssLengthVar(placement.rightMarginVar)
+            : 0;
+          x = vw - rect.width - baseRight - varOffset;
+          y = vh - rect.height - (placement.bottomMargin ?? 16);
+          break;
+        }
+      }
+      setPos(clamp(x, y, rect.width, rect.height));
+      // Schedule a refinement pass when the rect was degenerate —
+      // covers the async-content case (MulliganModal CardFace tiles,
+      // ZoneBrowser grid pre-decode). 5 frames @60fps ≈ 83ms; each
+      // pass calls setPos again so the dialog visibly snaps once
+      // content lays out.
+      if (
+        (rect.width === 0 || rect.height === 0) &&
+        attemptsLeft > 0 &&
+        typeof requestAnimationFrame !== 'undefined'
+      ) {
+        attemptsLeft -= 1;
+        requestAnimationFrame(measureAndPlace);
+      }
+    };
+    measureAndPlace();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Re-clamp on window resize so a shrinking viewport doesn't leave
   // the dialog stranded off-screen. Skip when dialog hasn't measured

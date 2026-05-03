@@ -59,7 +59,11 @@ interface CombatBannerProps {
 export function CombatBanner({ stream, isAttackers }: CombatBannerProps) {
   const dialog = useGameStore((s) => s.pendingDialog);
   const { ref, containerProps, style } = useDraggable({
-    placement: { kind: 'bottom-center', bottomMargin: 196 },
+    placement: {
+      kind: 'bottom-center',
+      bottomMargin: 16,
+      bottomMarginVar: 'hand-area-height',
+    },
   });
 
   if (!dialog) return null;

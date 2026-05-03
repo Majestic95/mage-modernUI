@@ -32,4 +32,24 @@ class LobbyServiceTest {
                         + "ComputerPlayer7.java:119); skill > 4 trades wall time for depth "
                         + "we do not need.");
     }
+
+    /**
+     * Audit fix 2026-05-03 — pin the per-aiType skill split. MAD
+     * (the minimax AI) needs the slice-47 mitigation cliff; MCTS
+     * (Monte Carlo) does not, and benefits from a much lower think-
+     * time budget for testing. This test catches a silent merge of
+     * the constants without the dispatch site noticing.
+     */
+    @Test
+    void aiSkill_madVsMonteCarlo_split() {
+        assertEquals(4, LobbyService.AI_SKILL_MAD,
+                "AI_SKILL_MAD remains 4 (slice-47 cliff for ComputerPlayer7).");
+        assertEquals(1, LobbyService.AI_SKILL_MONTE_CARLO,
+                "AI_SKILL_MONTE_CARLO is 1 — MCTS skill * 2.0s per priority "
+                        + "decision; skill=1 → 2s/decision. Higher values produce "
+                        + "30-60s AI turns (verified Mage.Player.AIMCTS/ComputerPlayerMCTS).");
+        assertEquals(LobbyService.AI_SKILL_MAD, LobbyService.AI_SKILL,
+                "AI_SKILL alias must equal AI_SKILL_MAD so the legacy slice-47 "
+                        + "test continues to pin the same value.");
+    }
 }

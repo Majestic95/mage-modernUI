@@ -61,12 +61,17 @@ export function DialogBanner({
   const isSinglePick = min === 1 && max === 1;
   const submittable = pickedCount >= min && pickedCount <= max;
   const unboundedMax = max >= 99;
-  // Initial bottom margin matches the legacy positioner's
-  // `calc(var(--hand-area-height, 180px) + 16px)` — 196px clears the
-  // hand fan on first paint. After the user drags, the hook owns
-  // position absolutely.
+  // Initial bottom margin tracks the hand-fan height via the
+  // `--hand-area-height` CSS var (default 180px when unset) plus a
+  // 16px gap, exactly matching the legacy `calc(var(...) + 16px)`
+  // positioner. After the user drags, the hook owns position
+  // absolutely.
   const { ref, containerProps, style } = useDraggable({
-    placement: { kind: 'bottom-center', bottomMargin: 196 },
+    placement: {
+      kind: 'bottom-center',
+      bottomMargin: 16,
+      bottomMarginVar: 'hand-area-height',
+    },
   });
 
   return (
