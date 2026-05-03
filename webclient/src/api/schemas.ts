@@ -249,6 +249,14 @@ export const webSeatSchema = z.object({
   deckName: z.string().default(''),
   deckSize: z.number().default(0),
   deckSizeRequired: z.number().default(0),
+  // Schema 1.28 — color identity of this seat's commander as upper-case
+  // single-letter codes (W/U/B/R/G), populated server-side from
+  // Card.getColorIdentity(). Empty for non-Commander formats or seats
+  // without a submitted deck. Drives the lobby seat halo / pip color
+  // rendering for non-self seats; without it every other player's seat
+  // fell back to a hardcoded 6-commander client stub. Default [] keeps
+  // forward-compat with 1.27 servers during a rolling upgrade.
+  colorIdentity: z.array(z.string()).default(() => []),
 });
 export type WebSeat = z.infer<typeof webSeatSchema>;
 

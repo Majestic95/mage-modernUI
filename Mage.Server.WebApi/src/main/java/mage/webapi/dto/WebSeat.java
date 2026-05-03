@@ -1,5 +1,7 @@
 package mage.webapi.dto;
 
+import java.util.List;
+
 /**
  * One seat at a table. Empty seats have {@code occupied=false} and
  * empty {@code playerName} / {@code playerType}.
@@ -23,6 +25,12 @@ package mage.webapi.dto;
  * registered deck on the upstream {@link mage.game.match.Match}; if
  * no deck is registered yet (pre-submit) all three default to
  * {@code ""} / {@code 0}.
+ *
+ * <p>Schema 1.28 — added {@code colorIdentity} so non-self seats
+ * render the correct halo color in the new lobby. Without it the
+ * client could only color the local user's seat (via the saved-
+ * deck local override); every other seat fell back to a hardcoded
+ * 6-commander stub and rendered a neutral team-ring.
  *
  * @param playerName            seated player's display name; empty when unoccupied
  * @param playerType            upstream {@code PlayerType} enum name
@@ -50,6 +58,10 @@ package mage.webapi.dto;
  *     constructed, 100 for Commander, 40 for limited). Derived from
  *     the table's {@code deckType} string. {@code 0} if it cannot be
  *     determined.
+ * @param colorIdentity         color identity of this seat's first
+ *     commander as upper-case single-letter codes ("W","U","B","R","G").
+ *     Empty list when no commander or non-Commander format. Read by
+ *     the new lobby's seat halo / pip rendering.
  */
 public record WebSeat(
         String playerName,
@@ -60,6 +72,7 @@ public record WebSeat(
         boolean ready,
         String deckName,
         int deckSize,
-        int deckSizeRequired
+        int deckSizeRequired,
+        List<String> colorIdentity
 ) {
 }

@@ -116,6 +116,13 @@ export function App() {
   const [activeLobbyId, setActiveLobbyIdState] = useState<string | null>(
     () => readInitialLobbyId(),
   );
+  // 2026-05-02 polish — when a guest joins a passworded table the
+  // password is collected by Lobby's PasswordPromptModal and threaded
+  // through here so NewLobbyScreen can attach it to the first
+  // PUT /seat/deck. Not persisted — a reload of a passworded-table
+  // lobby will require the user to re-enter the password (acceptable
+  // — passwords in localStorage would be a worse trade).
+  const [joinPassword, setJoinPassword] = useState<string | undefined>(undefined);
 
   // Wrap setter so every transition writes localStorage.
   const setActiveGameId = (id: string | null) => {
@@ -127,12 +134,13 @@ export function App() {
   // entry would force fixture mode after a reload even when the
   // user wanted to leave). L8 — persist alongside the username so a
   // login-as-different-user doesn't inherit the stale lobbyId.
-  const setActiveLobbyId = (id: string | null) => {
+  const setActiveLobbyId = (id: string | null, password?: string) => {
     persistLobbyId(
       id === 'fixture' ? null : id,
       session?.username,
     );
     setActiveLobbyIdState(id);
+    setJoinPassword(password);
   };
 
   useEffect(() => {
@@ -248,6 +256,7 @@ export function App() {
     return (
       <NewLobbyScreen
         tableId={activeLobbyId}
+        joinPassword={joinPassword}
         onLeave={() => setActiveLobbyId(null)}
       />
     );

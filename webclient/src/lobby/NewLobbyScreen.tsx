@@ -33,8 +33,9 @@ import { StartGameButton } from './StartGameButton';
 import { useLiveDecks } from './useLiveDecks';
 import { useTableStream } from './useTableStream';
 import { webTableToLobby } from './webTableToLobby';
-import type { WebDeckCardInfo } from '../api/schemas';
+import type { WebDeckCardInfo, WebDeckValidationError } from '../api/schemas';
 import { useDecksStore } from '../decks/store';
+import { ValidationErrorList } from '../decks/ValidationErrorList';
 import { GameStream } from '../game/stream';
 
 interface EditableInitial {
@@ -101,6 +102,16 @@ interface Props {
    */
   tableId: string;
   /**
+   * 2026-05-02 polish — when a guest joins a passworded table the
+   * password collected by Lobby's PasswordPromptModal is threaded
+   * here so the first {@code PUT /seat/deck} can attach it. Wrong
+   * passwords surface as a 422 from that PUT (handled in onSelectDeck
+   * below) — there's no server endpoint that pre-flights a password
+   * without taking a seat. {@code undefined} for non-passworded
+   * tables and the host's own create flow.
+   */
+  joinPassword?: string;
+  /**
    * Slice L8 — called when the user confirms leaving the lobby.
    * The parent (App.tsx) clears activeLobbyId; this screen just
    * fires the appropriate server-side teardown (host: DELETE table,
@@ -109,7 +120,7 @@ interface Props {
   onLeave?: () => void;
 }
 
-export function NewLobbyScreen({ tableId, onLeave }: Props) {
+export function NewLobbyScreen({ tableId, joinPassword, onLeave }: Props) {
   if (tableId === 'fixture') {
     return (
       <LobbyShell
@@ -121,14 +132,22 @@ export function NewLobbyScreen({ tableId, onLeave }: Props) {
       />
     );
   }
-  return <LiveLobby tableId={tableId} onLeave={onLeave} />;
+  return (
+    <LiveLobby
+      tableId={tableId}
+      joinPassword={joinPassword}
+      onLeave={onLeave}
+    />
+  );
 }
 
 function LiveLobby({
   tableId,
+  joinPassword,
   onLeave,
 }: {
   tableId: string;
+  joinPassword?: string;
   onLeave?: () => void;
 }) {
   const session = useAuthStore((s) => s.session);
@@ -212,6 +231,7 @@ function LiveLobby({
       roomId={roomId}
       editInitial={initialFromTable(table)}
       useLiveDecksHook
+      joinPassword={joinPassword}
       onLeave={onLeave}
     />
   );
@@ -253,6 +273,7 @@ function LobbyShell({
   roomId,
   editInitial,
   useLiveDecksHook = false,
+  joinPassword,
   onLeave,
 }: {
   data: LobbyFixture;
@@ -260,6 +281,7 @@ function LobbyShell({
   roomId: string | null;
   editInitial: EditableInitial;
   useLiveDecksHook?: boolean;
+  joinPassword?: string;
   onLeave?: () => void;
 }) {
   const session = useAuthStore((s) => s.session);
@@ -277,6 +299,14 @@ function LobbyShell({
   );
   const [deckSubmitting, setDeckSubmitting] = useState(false);
   const [deckError, setDeckError] = useState<string | null>(null);
+  // Structured per-card breakdown surfaced when the server returns
+  // 422 DECK_INVALID on the first take-seat. Same display contract as
+  // the pre-flight on the Decks page (shared ValidationErrorList).
+  // Pre-2026-05-02 this lived in JoinTableModal; the modal is gone
+  // and the deck-pick path is the only first-take surface now.
+  const [deckValidationErrors, setDeckValidationErrors] = useState<
+    readonly WebDeckValidationError[] | null
+  >(null);
   const [startSubmitting, setStartSubmitting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
   // Slice L8 — back button leave/close. Host gets a confirm modal
@@ -326,15 +356,17 @@ function LobbyShell({
   const allReady = readyCount === totalSeats;
   const isFixture = tableId === 'fixture' || roomId === null;
 
-  // 2026-05-02 — when a guest joins via JoinTableModal (legacy table-
-  // list path), the modal submits the deck and routes them into this
-  // lobby with localSelectedDeckId=null. Their wire seat IS populated
-  // (deckName, deckSize from upstream), but the bottom-row DeckPreview
-  // / CommanderPreview read from `localSelectedDeckId` and show empty
-  // because we never told them which deck they picked. Sync local
+  // 2026-05-02 — reload-mid-lobby sync. When a user reloads the page
+  // while seated (or returns to a persisted activeLobbyId), they re-
+  // enter this screen with localSelectedDeckId=null but their wire
+  // seat is already populated (deckName, deckSize from upstream). The
+  // bottom-row DeckPreview / CommanderPreview read localSelectedDeckId
+  // and would show empty until the user re-clicks. Sync the local
   // selection from the wire seat's deckName by matching against the
   // user's saved-deck list (one-time, gated on localSelectedDeckId
-  // still being null).
+  // still being null). Pre-2026-05-02 this also covered the legacy
+  // JoinTableModal flow; that flow is gone and guests now pick deck
+  // inline like the host.
   const allSavedDecks = useDecksStore((s) => s.decks);
   useEffect(() => {
     if (localSelectedDeckId !== null) return;
@@ -430,9 +462,14 @@ function LobbyShell({
     setLocalSelectedDeckId(deckId);
     setDeckSubmitting(true);
     setDeckError(null);
+    setDeckValidationErrors(null);
     try {
       const cards: WebDeckCardInfo[] = saved.cards;
       const sideboard: WebDeckCardInfo[] = saved.sideboard;
+      // Include joinPassword on first-take-seat for passworded tables.
+      // Server's swapDeck → joinTable consumes it on the first-take
+      // path; ignored on the in-place deck-swap path. Empty string is
+      // the same as omitted from the server's POV (existing convention).
       await request(
         `/api/rooms/${roomId}/tables/${tableId}/seat/deck`,
         null,
@@ -442,6 +479,7 @@ function LobbyShell({
           body: {
             name: session.username,
             skill: 1,
+            password: joinPassword ?? '',
             deck: {
               name: saved.name,
               author: session.username,
@@ -453,9 +491,15 @@ function LobbyShell({
       );
     } catch (err) {
       setLocalSelectedDeckId(previous);
-      setDeckError(
-        err instanceof ApiError ? err.message : 'Failed to submit deck.',
-      );
+      if (err instanceof ApiError) {
+        setDeckError(err.message);
+        setDeckValidationErrors(
+          err.code === 'DECK_INVALID' ? err.validationErrors : null,
+        );
+      } else {
+        setDeckError('Failed to submit deck.');
+        setDeckValidationErrors(null);
+      }
     } finally {
       setDeckSubmitting(false);
     }
@@ -730,13 +774,23 @@ function LobbyShell({
               </p>
             )}
             {deckError && (
-              <p
+              <div
                 role="alert"
                 data-testid="deck-error"
-                className="text-xs text-status-danger"
+                className="flex w-72 max-w-full flex-col gap-1 text-xs text-status-danger"
               >
-                {deckError}
-              </p>
+                {deckValidationErrors && deckValidationErrors.length > 0 ? (
+                  <>
+                    <p className="font-medium">Deck not legal:</p>
+                    <ValidationErrorList
+                      errors={deckValidationErrors}
+                      ariaLabel="Deck submission failed — validation errors"
+                    />
+                  </>
+                ) : (
+                  <p>{deckError}</p>
+                )}
+              </div>
             )}
             {startError && (
               <p

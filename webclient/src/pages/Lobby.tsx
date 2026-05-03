@@ -11,7 +11,7 @@ import {
 } from '../api/schemas';
 import { useAuthStore } from '../auth/store';
 import { PreLobbyModal } from '../lobby/PreLobbyModal';
-import { JoinTableModal } from './JoinTableModal';
+import { PasswordPromptModal } from './PasswordPromptModal';
 
 const POLL_INTERVAL_MS = 5_000;
 
@@ -22,8 +22,15 @@ interface Props {
    * into the new full-page lobby screen. Without this prop the
    * button still works but the legacy table-list flow is the only
    * post-create state.
+   *
+   * <p>2026-05-02 (post-L9 polish) — guests Join the same way: clicking
+   * Join on a non-passworded table calls this directly with no deck
+   * pre-pick, mirroring the host's PreLobbyModal flow. They pick deck
+   * inside the lobby. Passworded tables route through a slim password
+   * modal first; the entered password is threaded as the second arg
+   * so the lobby's first {@code PUT /seat/deck} can include it.
    */
-  onEnterLobby?: (tableId: string) => void;
+  onEnterLobby?: (tableId: string, joinPassword?: string) => void;
 }
 
 /**
@@ -231,22 +238,21 @@ export function Lobby({ onEnterLobby }: Props = {}) {
         />
       )}
 
-      {joinTarget && (
-        <JoinTableModal
-          roomId={room.roomId}
-          tableId={joinTarget.tableId}
+      {joinTarget && joinTarget.passworded && (
+        // 2026-05-02 polish — passworded tables prompt for password
+        // first; non-passworded tables skip this entirely (Join button
+        // routes directly into the lobby below). Deck selection happens
+        // inside the lobby for both, matching the host's PreLobbyModal
+        // flow. Wrong passwords surface as a 422 on the first
+        // PUT /seat/deck inside the lobby — there's no server endpoint
+        // that pre-flights a password without also taking a seat.
+        <PasswordPromptModal
           tableName={joinTarget.tableName}
-          passworded={joinTarget.passworded}
           onClose={() => setJoinTarget(null)}
-          onJoined={() => {
-            // Slice L9-prep — guests who join an existing table from
-            // the legacy table list now get routed into the new full-
-            // page lobby, mirroring the host's PreLobbyModal flow.
-            // Without this they stay stuck on this table-list screen
-            // (per user repro).
+          onSubmit={(pw) => {
             requestImmediateRefresh();
             const id = joinTarget.tableId;
-            onEnterLobby?.(id);
+            onEnterLobby?.(id, pw);
           }}
         />
       )}
@@ -334,7 +340,20 @@ export function Lobby({ onEnterLobby }: Props = {}) {
                   {canJoin && (
                     <button
                       type="button"
-                      onClick={() => setJoinTarget(t)}
+                      // 2026-05-02 polish — non-passworded tables skip
+                      // the join modal entirely; the user enters the
+                      // new lobby with no seat and picks a deck inline
+                      // (mirrors the host's PreLobbyModal flow).
+                      // Passworded tables route through the password
+                      // prompt first.
+                      onClick={() => {
+                        if (t.passworded) {
+                          setJoinTarget(t);
+                        } else {
+                          requestImmediateRefresh();
+                          onEnterLobby?.(t.tableId);
+                        }
+                      }}
                       className="bg-fuchsia-600 hover:bg-fuchsia-500 text-white text-sm font-medium rounded px-3 py-1.5"
                     >
                       Join

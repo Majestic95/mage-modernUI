@@ -19,7 +19,7 @@ import type {
 } from './fixtures';
 import { LOBBY_FIXTURE } from './fixtures';
 
-const COMMANDER_COLOR_FROM_NAME = COMMANDER_NAME_TO_COLORS();
+const VALID_COLORS: ReadonlySet<LobbyColor> = new Set(['W', 'U', 'B', 'R', 'G']);
 
 interface MapInput {
   webTable: WebTable;
@@ -111,7 +111,13 @@ function mapSeat(
   const hostName = normalizeName(stripControllerSuffix(webTable.controllerName));
   const seatName = normalizeName(webSeat.playerName);
   const isHost = webSeat.occupied && seatName === hostName && seatName !== '';
-  const colorIdentity = inferColorIdentity(webSeat.commanderName);
+  // Schema 1.28 — server emits colorIdentity per seat, derived from
+  // the commander's Card.getColorIdentity(). Filter against the WUBRG
+  // alphabet to defend against any future server-side oddity. Empty
+  // list = neutral team-ring (no commander or non-Commander format).
+  const colorIdentity = (webSeat.colorIdentity ?? []).filter(
+    (c): c is LobbyColor => VALID_COLORS.has(c as LobbyColor),
+  );
   const artUrl = webSeat.commanderName
     ? scryfallByName(webSeat.commanderName, 'art_crop')
     : null;
@@ -147,30 +153,6 @@ function subtitleFromCommanderName(commanderName: string): string {
   if (!commanderName) return '';
   const comma = commanderName.indexOf(', ');
   return comma >= 0 ? commanderName.substring(comma + 2) : '';
-}
-
-/**
- * Slice L2 stub — server's commander color identity isn't on the
- * wire today (only commanderName + commanderImageNumber). L6 will
- * compute color identity client-side from the deck cards. For now
- * we look up a small known-commanders table for the L2 happy path
- * (lets the halo render correctly during testing); unknown
- * commanders fall back to an empty identity (neutral team ring).
- */
-function inferColorIdentity(commanderName: string): LobbyColor[] {
-  if (!commanderName) return [];
-  return COMMANDER_COLOR_FROM_NAME[commanderName] ?? [];
-}
-
-function COMMANDER_NAME_TO_COLORS(): Record<string, LobbyColor[]> {
-  return {
-    "Atraxa, Praetors' Voice": ['W', 'U', 'B', 'G'],
-    'Nicol Bolas, Dragon-God': ['U', 'B', 'R'],
-    'Kenrith, the Returned King': ['W', 'U', 'B', 'R', 'G'],
-    'The Ur-Dragon': ['W', 'U', 'B', 'R', 'G'],
-    'Karn, Scion of Urza': [],
-    "Trostani, Selesnya's Voice": ['W', 'G'],
-  };
 }
 
 /**

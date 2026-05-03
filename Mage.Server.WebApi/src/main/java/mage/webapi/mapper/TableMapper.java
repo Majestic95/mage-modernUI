@@ -2,6 +2,7 @@ package mage.webapi.mapper;
 
 import mage.cards.Card;
 import mage.cards.decks.Deck;
+import mage.filter.FilterMana;
 import mage.game.Table;
 import mage.game.match.Match;
 import mage.game.match.MatchPlayer;
@@ -16,6 +17,7 @@ import mage.webapi.dto.WebTableListing;
 import mage.webapi.lobby.SeatReadyTracker;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Objects;
@@ -193,7 +195,8 @@ public final class TableMapper {
                 full.ready(),
                 "",   // deckName redacted
                 0,    // deckSize redacted
-                full.deckSizeRequired()
+                full.deckSizeRequired(),
+                List.of()  // colorIdentity redacted
         );
     }
 
@@ -242,7 +245,8 @@ public final class TableMapper {
                                  UUID tableId,
                                  String hostUsername) {
         if (s == null) {
-            return new WebSeat("", "", false, "", 0, false, "", 0, deckSizeRequired);
+            return new WebSeat("", "", false, "", 0, false, "", 0,
+                    deckSizeRequired, List.of());
         }
         boolean occupied = s.getPlayerId() != null;
         PlayerType type = s.getPlayerType();
@@ -278,6 +282,7 @@ public final class TableMapper {
         int commanderImageNumber = 0;
         String deckName = "";
         int deckSize = 0;
+        List<String> colorIdentity = List.of();
         if (occupied && match != null) {
             try {
                 MatchPlayer mp = match.getPlayer(s.getPlayerId());
@@ -290,6 +295,7 @@ public final class TableMapper {
                         commanderName = emptyIfNull(commander.getName());
                         commanderImageNumber =
                                 parseCardNumber(commander.getCardNumber());
+                        colorIdentity = colorIdentityCodes(commander);
                     }
                 }
             } catch (RuntimeException ex) {
@@ -299,6 +305,7 @@ public final class TableMapper {
                 commanderImageNumber = 0;
                 deckName = "";
                 deckSize = 0;
+                colorIdentity = List.of();
             }
         }
         // Slice L5 — per-seat ready state:
@@ -334,8 +341,35 @@ public final class TableMapper {
                 ready,
                 deckName,
                 deckSize,
-                deckSizeRequired
+                deckSizeRequired,
+                colorIdentity
         );
+    }
+
+    /**
+     * Schema 1.28 — translate a Card's {@link FilterMana} colorIdentity
+     * into upper-case single-letter codes ("W","U","B","R","G") in WUBRG
+     * order. Mirrors the client's {@code LobbyColor} alphabet so the
+     * lobby halo renders without any client-side translation.
+     *
+     * <p>Defensive: nulls or any thrown exception fall back to an
+     * empty list — the seat still renders, just with the neutral
+     * team-ring halo.
+     */
+    private static List<String> colorIdentityCodes(Card commander) {
+        try {
+            FilterMana fm = commander.getColorIdentity();
+            if (fm == null) return List.of();
+            List<String> out = new ArrayList<>(5);
+            if (fm.isWhite()) out.add("W");
+            if (fm.isBlue())  out.add("U");
+            if (fm.isBlack()) out.add("B");
+            if (fm.isRed())   out.add("R");
+            if (fm.isGreen()) out.add("G");
+            return out;
+        } catch (RuntimeException ex) {
+            return List.of();
+        }
     }
 
     /**

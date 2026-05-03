@@ -34,6 +34,7 @@ function baseTable(overrides: Partial<WebTable> = {}): WebTable {
         deckName: 'Proliferate Control',
         deckSize: 100,
         deckSizeRequired: 100,
+        colorIdentity: ['W', 'U', 'B', 'G'],
       },
       {
         playerName: 'bob',
@@ -45,6 +46,7 @@ function baseTable(overrides: Partial<WebTable> = {}): WebTable {
         deckName: 'Bolas Control',
         deckSize: 99,
         deckSizeRequired: 100,
+        colorIdentity: ['U', 'B', 'R'],
       },
       {
         playerName: '',
@@ -56,6 +58,7 @@ function baseTable(overrides: Partial<WebTable> = {}): WebTable {
         deckName: '',
         deckSize: 0,
         deckSizeRequired: 100,
+        colorIdentity: [],
       },
     ],
     ...overrides,
@@ -150,7 +153,11 @@ describe('webTableToLobby', () => {
     expect(data.seats[2]?.commanderCardImageUrl).toBeNull();
   });
 
-  it('infers color identity for known commanders, empty for unknown', () => {
+  it('passes wire colorIdentity through, filtering invalid codes', () => {
+    // Schema 1.28 — server emits colorIdentity per seat from
+    // Card.getColorIdentity(). Mapper passes it through for occupied
+    // seats and filters anything outside WUBRG (defensive against
+    // future server-side oddity).
     const data = webTableToLobby({
       webTable: baseTable({
         seats: [
@@ -164,6 +171,7 @@ describe('webTableToLobby', () => {
             deckName: 'Atraxa',
             deckSize: 100,
             deckSizeRequired: 100,
+            colorIdentity: ['W', 'U', 'B', 'G', 'X'],
           },
           {
             playerName: 'bob',
@@ -175,13 +183,13 @@ describe('webTableToLobby', () => {
             deckName: 'Mystery',
             deckSize: 100,
             deckSizeRequired: 100,
+            colorIdentity: [],
           },
         ],
       }),
       currentUsername: 'alice',
     });
     expect(data.seats[0]?.colorIdentity).toEqual(['W', 'U', 'B', 'G']);
-    // Unknown commander falls back to empty (neutral team ring).
     expect(data.seats[1]?.colorIdentity).toEqual([]);
   });
 
