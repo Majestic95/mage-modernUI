@@ -46,12 +46,31 @@ public final class LobbyService {
     private static final Logger LOG = LoggerFactory.getLogger(LobbyService.class);
 
     /**
-     * Skill level passed to upstream when adding an AI seat. See the comment
-     * block in {@link #addAi} for why 4 (slice 47 mitigation, not cure).
-     * Package-private + visible-for-test so {@code LobbyServiceTest} can
+     * Skill level for the {@code COMPUTER_MAD} (minimax) AI. See the comment
+     * block in {@link #addAi} for why 4 — slice 47 mitigation for the
+     * {@code ComputerPlayer7.calculateActions} empty-tree bug (skill must
+     * land on the cliff that bumps {@code maxThinkTimeSecs} 3→12 so the
+     * simulation tree builder produces children before the empty-tree
+     * edge case fires).
+     * <p>Package-private + visible-for-test so {@code LobbyServiceTest} can
      * pin the wired value without a mock framework.
      */
-    static final int AI_SKILL = 4;
+    static final int AI_SKILL_MAD = 4;
+    /**
+     * Skill level for the {@code COMPUTER_MONTE_CARLO} AI. MCTS doesn't
+     * have the empty-tree bug — its skill maps directly to
+     * {@code maxThinkTime = skill * 2} seconds per priority decision
+     * ({@code ComputerPlayerMCTS.java:44}). At {@code skill = 4} the AI
+     * spent 8s on declare-attackers / declare-blockers / its own main-phase
+     * priorities and 4s elsewhere, producing 30–60s AI turns that made
+     * iterative testing impossible. Skill=1 gives a 2s budget (1s for
+     * non-combat priorities, 0s when the search tree is mid-saturated) —
+     * an order of magnitude faster, with the only cost being weaker AI
+     * play, which is acceptable for UI/UX validation runs.
+     */
+    static final int AI_SKILL_MONTE_CARLO = 1;
+    /** Alias kept for tests that still reference the old constant name. */
+    static final int AI_SKILL = AI_SKILL_MAD;
 
     private final EmbeddedServer embedded;
     private final SeatReadyTracker readyTracker;
@@ -352,11 +371,20 @@ public final class LobbyService {
         //     the tree builder produce children before the empty-tree edge
         //     case fires. Mitigation, not cure — the upstream TODO is the
         //     real bug, and this slice deliberately doesn't touch it.
+        // Per-AI skill split — see AI_SKILL_MAD / AI_SKILL_MONTE_CARLO
+        // doc comments at the top of the class. MCTS gets a much lower
+        // skill (1) so its per-priority think budget shrinks from 8s to
+        // 2s, keeping AI turns inside ~10s during testing. The empty-
+        // tree bug we mitigate with skill=4 lives in ComputerPlayer7,
+        // not MCTS, so dropping MCTS skill here is safe.
+        int aiSkill = aiType == PlayerType.COMPUTER_MONTE_CARLO
+                ? AI_SKILL_MONTE_CARLO
+                : AI_SKILL_MAD;
         boolean ok;
         try {
             ok = embedded.server().roomJoinTable(
                     upstreamSessionId, roomId, tableId,
-                    aiType.toString(), aiType, AI_SKILL, fallbackDeck, /* password */ ""
+                    aiType.toString(), aiType, aiSkill, fallbackDeck, /* password */ ""
             );
         } catch (MageException ex) {
             throw upstream("adding AI", ex);
