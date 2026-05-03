@@ -9,6 +9,36 @@ import { BattlefieldRowGroup } from './BattlefieldRowGroup';
 import { bucketBattlefield } from './battlefieldRows';
 import { REDESIGN } from '../featureFlags';
 
+/**
+ * 2026-05-03 — per-seat halo palette. Each player's board carries a
+ * distinct hue so the boundaries between lanes are unmistakable at
+ * a glance (the previous zinc-on-zinc borders blurred together,
+ * especially when two opponents had busy boards). Mapping is fixed
+ * by seat position, NOT commander color identity, so two green
+ * decks don't end up with identical halos. Order:
+ *   [0] local pod (cyan)
+ *   [1] top opponent lane (amber)
+ *   [2] middle opponent lane (violet)
+ *   [3] bottom opponent lane (emerald)
+ *
+ * Hex values chosen for high mutual contrast at low saturation
+ * (the halo is decoration, not a primary surface — it should read
+ * as a glow, not a billboard).
+ */
+const SEAT_HALO_COLORS: readonly string[] = [
+  '#22d3ee', // cyan-400 — local
+  '#f59e0b', // amber-500 — opp 0
+  '#a855f7', // violet-500 — opp 1
+  '#10b981', // emerald-500 — opp 2
+];
+
+function haloStyle(hex: string): CSSProperties {
+  return {
+    borderColor: `${hex}99`,
+    boxShadow: `0 0 0 1px ${hex}55, 0 0 16px 2px ${hex}33`,
+  };
+}
+
 /* =====================================================================
  * 2026-05-03 — Asymmetric T layout (Slices 1 / 2 / 3 / 4).
  *
@@ -100,6 +130,7 @@ export function AsymmetricTLayout({
             key={opp?.playerId ?? `empty-${idx}`}
             opponent={opp}
             laneIndex={idx}
+            haloColor={SEAT_HALO_COLORS[idx + 1]!}
             collapsed={focusedOpponentId != null && opp?.playerId !== focusedOpponentId}
             focused={opp?.playerId === focusedOpponentId}
             onFocus={() => opp && onLaneFocus(opp.playerId)}
@@ -120,6 +151,7 @@ export function AsymmetricTLayout({
         {me ? (
           <LocalPod
             me={me}
+            haloColor={SEAT_HALO_COLORS[0]!}
             canAct={canAct}
             onObjectClick={onObjectClick}
             onBoardDrop={onBoardDrop}
@@ -210,6 +242,7 @@ export function AsymmetricTLayout({
 function OpponentLane({
   opponent,
   laneIndex,
+  haloColor,
   collapsed,
   focused,
   onFocus,
@@ -221,6 +254,7 @@ function OpponentLane({
 }: {
   opponent: WebPlayerView | null;
   laneIndex: number;
+  haloColor: string;
   collapsed: boolean;
   focused: boolean;
   onFocus: () => void;
@@ -252,7 +286,8 @@ function OpponentLane({
         data-player-id={opponent.playerId}
         data-collapsed="true"
         onClick={onFocus}
-        className="rounded border border-zinc-800/60 bg-zinc-900/40 flex items-center gap-3 px-3 hover:bg-zinc-900/70 transition-colors text-left"
+        style={haloStyle(haloColor)}
+        className="rounded border bg-zinc-900/40 flex items-center gap-3 px-3 hover:bg-zinc-900/70 transition-colors text-left"
       >
         <span className="text-xs font-semibold text-zinc-200">{opponent.name}</span>
         <span className="text-xs text-zinc-400">{opponent.life} life</span>
@@ -271,7 +306,8 @@ function OpponentLane({
       data-testid={`opponent-lane-${laneIndex}`}
       data-player-id={opponent.playerId}
       data-focused={focused || undefined}
-      className="rounded-md border border-zinc-800/60 bg-zinc-900/30 flex min-h-0 min-w-0 overflow-hidden"
+      style={haloStyle(haloColor)}
+      className="rounded-md border bg-zinc-900/30 flex min-h-0 min-w-0 overflow-hidden"
     >
       <div
         data-testid={`opponent-lane-${laneIndex}-gutter`}
@@ -363,6 +399,7 @@ function OpponentLane({
  * -------------------------------------------------------------------*/
 function LocalPod({
   me,
+  haloColor,
   canAct,
   onObjectClick,
   onBoardDrop,
@@ -372,6 +409,7 @@ function LocalPod({
   combatRoles,
 }: {
   me: WebPlayerView;
+  haloColor: string;
   canAct: boolean;
   onObjectClick: (id: string) => void;
   onBoardDrop: () => void;
@@ -390,10 +428,15 @@ function LocalPod({
       data-droppable="board"
       data-drop-target={isDropTarget || undefined}
       onPointerUp={onBoardDrop}
+      // Drop-target ring overrides the seat halo while a hand drag
+      // is in flight (the dashed fuchsia ring is the higher-priority
+      // affordance — the player needs to know where the card will
+      // land, not which seat owns the pod they already control).
+      style={isDropTarget ? undefined : { ...haloStyle(haloColor), borderRadius: '0.375rem' }}
       className={
-        'flex flex-col gap-2 min-w-0 min-h-0 h-full p-2 transition-colors ' +
+        'flex flex-col gap-2 min-w-0 min-h-0 h-full p-2 border transition-colors ' +
         (isDropTarget
-          ? 'rounded ring-2 ring-fuchsia-500/40 outline outline-dashed outline-fuchsia-500'
+          ? 'rounded ring-2 ring-fuchsia-500/40 outline outline-dashed outline-fuchsia-500 border-transparent'
           : '')
       }
     >
