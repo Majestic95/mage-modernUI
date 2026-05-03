@@ -152,11 +152,36 @@ export function PlayerFrameRedesigned({
           §2.0) and the PriorityTag (floats above-right per spec
           §Player states / picture-catalog §2.4). */}
       <div className="relative" data-testid="player-portrait-wrapper">
-        <PlayerPortrait
-          player={player}
-          size={portraitSize}
-          haloVariant="circular"
-        />
+        {/* When targetable (e.g. "choose starting player" prompt
+            with this player in targets[]), wrap the portrait in a
+            button so a click on the COMMANDER ART itself fires the
+            target dispatch. Pre-fix only the name-text below was
+            clickable, so users who tried to click their own portrait
+            (the more obvious affordance) saw nothing happen.
+            Decorative button in the non-targetable case so the
+            portrait still reads as a portrait, not a control. */}
+        {nameIsTargetable ? (
+          <button
+            type="button"
+            data-testid={`target-player-portrait-${perspective}`}
+            onClick={() => onPlayerClick(player.playerId)}
+            aria-label={`Target ${player.name || 'player'}`}
+            title="Click to target this player"
+            className="block rounded-full cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-400"
+          >
+            <PlayerPortrait
+              player={player}
+              size={portraitSize}
+              haloVariant="circular"
+            />
+          </button>
+        ) : (
+          <PlayerPortrait
+            player={player}
+            size={portraitSize}
+            haloVariant="circular"
+          />
+        )}
         {/* Slice 70-Z polish round 22 (user direction 2026-04-30) —
             Hearthstone-style floating life badge: a circular black
             disc sits at the bottom-center of the portrait, half-
