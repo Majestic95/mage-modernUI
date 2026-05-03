@@ -262,6 +262,9 @@ export function PlayerArea({
         position={position}
         onPlayerClick={onObjectClick}
         targetable={targetable}
+        eligibleTargetIds={eligibleTargetIds}
+        canAct={canAct}
+        onObjectClick={onObjectClick}
       />
     );
 
@@ -531,6 +534,9 @@ export function PlayerArea({
         perspective={perspective}
         onPlayerClick={onObjectClick}
         targetable={targetable}
+        eligibleTargetIds={eligibleTargetIds}
+        canAct={canAct}
+        onObjectClick={onObjectClick}
       />
       {battlefieldRows}
       <CommandZone entries={player.commandList} />

@@ -81,6 +81,18 @@ interface Props {
    * target. Drives the underlined-clickable name affordance.
    */
   targetable: boolean;
+  /**
+   * IDs the engine has flagged as legal targets for the active dialog
+   * — forwarded to the graveyard / exile chips so cards in those
+   * zones surface a click-to-target affordance for abilities like
+   * Scavenging Ooze. Optional; defaults to no eligibility (browse
+   * only).
+   */
+  eligibleTargetIds?: Set<string>;
+  /** Whether the local player has priority + a target dialog open. */
+  canAct?: boolean;
+  /** Routes a click on an eligible zone-card back to the dialog handler. */
+  onObjectClick?: (id: string) => void;
 }
 
 export function PlayerFrame({
@@ -89,6 +101,9 @@ export function PlayerFrame({
   position = 'bottom',
   onPlayerClick,
   targetable,
+  eligibleTargetIds,
+  canAct,
+  onObjectClick,
 }: Props) {
   // Bug fix (2026-05-01) — colorIdentity snapshot fallback for the
   // legacy HaloRing. Same root cause as the redesigned PlayerPortrait
@@ -114,6 +129,9 @@ export function PlayerFrame({
         position={position}
         onPlayerClick={onPlayerClick}
         targetable={targetable}
+        eligibleTargetIds={eligibleTargetIds}
+        canAct={canAct}
+        onObjectClick={onObjectClick}
       />
     );
   }
@@ -246,6 +264,9 @@ export function PlayerFrame({
             playerName={player.name}
             cards={player.graveyard}
             variant={perspective}
+            eligibleTargetIds={eligibleTargetIds}
+            canAct={canAct}
+            onObjectClick={onObjectClick}
           />
           <ZoneIcon
             label="Exile"
@@ -253,6 +274,9 @@ export function PlayerFrame({
             playerName={player.name}
             cards={player.exile}
             variant={perspective}
+            eligibleTargetIds={eligibleTargetIds}
+            canAct={canAct}
+            onObjectClick={onObjectClick}
           />
           <ManaPool player={player} />
         </div>

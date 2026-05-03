@@ -49,12 +49,18 @@ export function PlayerFrameRedesigned({
   position,
   onPlayerClick,
   targetable,
+  eligibleTargetIds,
+  canAct,
+  onObjectClick,
 }: {
   player: WebPlayerView;
   perspective: 'self' | 'opponent';
   position: 'top' | 'left' | 'right' | 'bottom';
   onPlayerClick: (id: string) => void;
   targetable: boolean;
+  eligibleTargetIds?: Set<string>;
+  canAct?: boolean;
+  onObjectClick?: (id: string) => void;
 }) {
   const eliminated = player.hasLeft;
   const disconnected =
@@ -334,6 +340,9 @@ export function PlayerFrameRedesigned({
       <PlayerFrameInfoCluster
         player={player}
         perspective={perspective}
+        eligibleTargetIds={eligibleTargetIds}
+        canAct={canAct}
+        onObjectClick={onObjectClick}
       />
 
       {/* Eliminated slash overlay — picture-catalog §2.4. Today
@@ -400,9 +409,15 @@ export function PlayerFrameRedesigned({
 function PlayerFrameInfoCluster({
   player,
   perspective,
+  eligibleTargetIds,
+  canAct,
+  onObjectClick,
 }: {
   player: WebPlayerView;
   perspective: 'self' | 'opponent';
+  eligibleTargetIds?: Set<string>;
+  canAct?: boolean;
+  onObjectClick?: (id: string) => void;
 }) {
   // Slice 70-P critic Tech-IMP-1 cleanup — schema-tied empty check
   // beats the 6-field repeat. ManaPool already filters non-zero
@@ -457,12 +472,18 @@ function PlayerFrameInfoCluster({
         cards={player.graveyard}
         playerName={player.name}
         variant={perspective}
+        eligibleTargetIds={eligibleTargetIds}
+        canAct={canAct}
+        onObjectClick={onObjectClick}
       />
       <ZoneIcon
         zone="exile"
         cards={player.exile}
         playerName={player.name}
         variant={perspective}
+        eligibleTargetIds={eligibleTargetIds}
+        canAct={canAct}
+        onObjectClick={onObjectClick}
       />
       {opponentPoolNonEmpty && (
         // Slice 70-P critic UI/UX-I3 fix — opponent cluster uses

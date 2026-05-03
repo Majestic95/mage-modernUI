@@ -1430,9 +1430,11 @@ describe('Game page', () => {
       'aria-label',
       expect.stringContaining('graveyard'),
     );
-    expect(screen.getByTestId('zone-browser-card')).toHaveTextContent(
-      'Lightning Bolt',
-    );
+    // 2026-05-02 — modal redesign uses card-id-suffixed testids so
+    // multi-card zones can be addressed individually. Match by id.
+    expect(
+      screen.getByTestId(`zone-browser-card-${lightning.id}`),
+    ).toBeInTheDocument();
   });
 
   it('Esc closes the zone browser without firing ActionPanel hotkeys', async () => {
@@ -1464,7 +1466,11 @@ describe('Game page', () => {
     expect(screen.queryByTestId('zone-browser')).toBeNull();
   });
 
-  it('clicking the backdrop closes the zone browser', async () => {
+  it('clicking the close button closes the zone browser', async () => {
+    // 2026-05-02 — backdrop is no longer a close target. The modal
+    // is draggable, doesn't render a scrim, and clicks outside it
+    // pass through to the underlying battlefield. Only the close
+    // button + Esc dismiss it.
     const userEvent = (await import('@testing-library/user-event')).default;
     const user = userEvent.setup();
     render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
@@ -1489,7 +1495,7 @@ describe('Game page', () => {
       .find((el) => el.tagName === 'BUTTON')!;
     await user.click(myButton);
     expect(screen.getByTestId('zone-browser')).toBeInTheDocument();
-    await user.click(screen.getByTestId('zone-browser-backdrop'));
+    await user.click(screen.getByTestId('zone-browser-close'));
     expect(screen.queryByTestId('zone-browser')).toBeNull();
   });
 

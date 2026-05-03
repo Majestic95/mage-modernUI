@@ -54,6 +54,18 @@ interface Props {
    * modal. Local-player chips keep the click-to-modal behavior.
    */
   variant?: 'self' | 'opponent';
+  /**
+   * IDs in this zone the engine has flagged as legal targets for
+   * the active dialog. Forwarded to the modal for the
+   * Scavenging-Ooze-style "click a graveyard card to target" flow.
+   * Optional — defaults to none, in which case the modal renders
+   * cards as static.
+   */
+  eligibleTargetIds?: Set<string>;
+  /** Whether the local player has priority + a target dialog open. */
+  canAct?: boolean;
+  /** Routes a click on an eligible card back to the dialog handler. */
+  onObjectClick?: (id: string) => void;
 }
 
 const DEFAULT_LABELS: Record<Props['zone'], string> = {
@@ -76,6 +88,9 @@ export function ZoneIcon({
   playerName,
   label,
   variant = 'self',
+  eligibleTargetIds,
+  canAct,
+  onObjectClick,
 }: Props) {
   const displayLabel = label ?? DEFAULT_LABELS[zone];
   if (zone === 'library' || zone === 'hand') {
@@ -102,6 +117,9 @@ export function ZoneIcon({
       playerName={playerName}
       label={displayLabel}
       variant={variant}
+      eligibleTargetIds={eligibleTargetIds}
+      canAct={canAct}
+      onObjectClick={onObjectClick}
     />
   );
 }
@@ -131,12 +149,18 @@ function PublicZoneIcon({
   playerName,
   label,
   variant,
+  eligibleTargetIds,
+  canAct,
+  onObjectClick,
 }: {
   zone: 'graveyard' | 'exile';
   cards: Record<string, WebCardView>;
   playerName: string;
   label: string;
   variant: 'self' | 'opponent';
+  eligibleTargetIds?: Set<string>;
+  canAct?: boolean;
+  onObjectClick?: (id: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const cardList = Object.values(cards);
@@ -216,6 +240,12 @@ function PublicZoneIcon({
         <ZoneBrowser
           title={`${playerName}'s ${zone}`}
           cards={cards}
+          eligibleIds={eligibleTargetIds}
+          canAct={canAct}
+          onObjectClick={(id) => {
+            if (onObjectClick) onObjectClick(id);
+            setOpen(false);
+          }}
           onClose={() => setOpen(false)}
         />
       )}

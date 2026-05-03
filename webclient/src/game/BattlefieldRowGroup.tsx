@@ -95,6 +95,8 @@ export function BattlefieldRowGroup({
   // is square so a tap-rotated card fits within the same bounds).
   // --card-size-medium = 80px → slot = 112px. Single source of
   // truth for every pod regardless of perspective.
+  // Param accepted for back-compat but no longer drives sizing.
+  void perspective;
   const tileSize = 'calc(var(--card-size-medium) * 7 / 5)';
   // Slice 70-Y / Bug 3 — group attachments under host before render.
   // Pure derivation from the row's perms. Empty attachments arrays
@@ -134,9 +136,15 @@ export function BattlefieldRowGroup({
       data-row={row}
       data-orientation={orientation}
       className={
+        // 2026-05-02 — replace overflow-(x|y)-auto with flex-wrap so
+        // rows expand into a second line/column instead of triggering
+        // a native scrollbar in the corner of the pod. User direction:
+        // "no scroll wheels triggered on one row of cards." The pod's
+        // outer flex layout absorbs the extra height/width, sharing
+        // the available space with neighboring rows.
         isVertical
-          ? 'flex flex-col gap-2 min-h-0 min-w-[16px] h-full items-center overflow-y-auto'
-          : 'flex flex-row gap-2 min-w-0 min-h-[16px] justify-center overflow-x-auto'
+          ? 'flex flex-col flex-wrap content-start gap-2 min-h-0 min-w-[16px] h-full items-center'
+          : 'flex flex-row flex-wrap content-start gap-2 min-w-0 min-h-[16px] justify-center'
       }
     >
       <AnimatePresence mode="popLayout" initial={false}>
