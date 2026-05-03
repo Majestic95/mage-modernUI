@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import type { WebCardView } from '../api/schemas';
 import { useModalA11y } from '../util/useModalA11y';
 import { CardFace } from './CardFace';
+import { HoverCardDetail } from './HoverCardDetail';
 
 /**
  * Modal panel listing every card in a public zone (graveyard / exile /
@@ -205,31 +206,37 @@ export function ZoneBrowser({
               const clickable = canAct && eligible && !!onObjectClick;
               return (
                 <li key={card.id}>
-                  <button
-                    type="button"
-                    data-testid={`zone-browser-card-${card.id}`}
-                    data-eligible={eligible || undefined}
-                    onClick={
-                      clickable
-                        ? () => onObjectClick(card.id)
-                        : undefined
-                    }
-                    disabled={!clickable}
-                    className={
-                      'block w-full rounded transition focus:outline-none ' +
-                      'focus-visible:ring-2 focus-visible:ring-fuchsia-400 ' +
-                      (clickable
-                        ? 'cursor-pointer hover:brightness-110 animate-card-targeted-pulse'
-                        : 'cursor-default')
-                    }
-                    aria-label={
-                      clickable
-                        ? `${card.name} — click to select`
-                        : card.name
-                    }
-                  >
-                    <CardFace card={card} size="hand" />
-                  </button>
+                  {/* Hover-to-zoom — same pattern as the in-game hand
+                      hover. The popover is rendered via portal at
+                      pointer-events:none, so eligible-target clicks
+                      still pass through to the button below. */}
+                  <HoverCardDetail card={card}>
+                    <button
+                      type="button"
+                      data-testid={`zone-browser-card-${card.id}`}
+                      data-eligible={eligible || undefined}
+                      onClick={
+                        clickable
+                          ? () => onObjectClick(card.id)
+                          : undefined
+                      }
+                      disabled={!clickable}
+                      className={
+                        'block w-full rounded transition focus:outline-none ' +
+                        'focus-visible:ring-2 focus-visible:ring-fuchsia-400 ' +
+                        (clickable
+                          ? 'cursor-pointer hover:brightness-110 animate-card-targeted-pulse'
+                          : 'cursor-default')
+                      }
+                      aria-label={
+                        clickable
+                          ? `${card.name} — click to select`
+                          : card.name
+                      }
+                    >
+                      <CardFace card={card} size="hand" />
+                    </button>
+                  </HoverCardDetail>
                 </li>
               );
             })}
