@@ -13,22 +13,69 @@ import type { ManaOrbColor } from './ManaOrb';
 import { REDESIGN } from '../featureFlags';
 
 /**
- * 2026-05-03 — uniform white halo for every player's lane. Earlier
- * iteration tried per-seat hues (cyan / amber / violet / emerald)
- * for at-a-glance delineation, but the user prefers a single
- * neutral border so commander color identity stays the only
- * meaningful color signal on the board.
+ * 2026-05-03 (user direction) — active-player lane spotlight. The
+ * lane of the player whose turn it is gets the focal-card-style
+ * effect: a white-and-gold gradient with a sharp gold streak that
+ * rotates around the perimeter, a soft bloom that rotates in
+ * lockstep with it, and a breathing opacity pulse layered on top.
+ * Inactive opponent lanes have NO halo at all (was: a constant
+ * static white border + soft glow on every lane).
  *
- * Active-player turn signal: lane border BREATHES via the
- * `animate-lane-active-glow` keyframe (1900ms period, matches the
- * portrait halo's `animate-player-active-halo` rhythm so portrait
- * + lane pulse in lockstep).
+ * <p>Why both layers share `var(--halo-angle)`: the parent
+ * component owns the rotation animation (animates the registered
+ * `@property --halo-angle`) and both children inherit the var via
+ * the cascade, so the streak and the bloom can never drift out of
+ * sync — there's literally one source of truth for the angle.
  */
-const STATIC_HALO_STYLE: CSSProperties = {
-  borderColor: 'rgba(255, 255, 255, 0.55)',
-  boxShadow:
-    '0 0 0 1px rgba(255, 255, 255, 0.30), 0 0 14px 2px rgba(255, 255, 255, 0.18)',
-};
+const SPOTLIGHT_GRADIENT =
+  'conic-gradient(from var(--halo-angle, 0deg), ' +
+  'transparent 0deg, ' +
+  'rgba(255, 240, 180, 0.95) 35deg, ' +
+  'rgba(255, 215, 100, 1.0) 70deg, ' +
+  'rgba(255, 240, 180, 0.95) 105deg, ' +
+  'transparent 140deg, ' +
+  'transparent 360deg)';
+
+function LaneSpotlightHalo() {
+  return (
+    <div
+      data-testid="lane-spotlight-halo"
+      aria-hidden="true"
+      className="animate-lane-spotlight absolute inset-0 rounded-md pointer-events-none"
+    >
+      {/* Soft bloom layer — full-circle blurred conic gradient.
+          Reads `var(--halo-angle)` from the parent's animation, so
+          it rotates in exact lockstep with the streak below. */}
+      <div
+        data-testid="lane-spotlight-bloom"
+        aria-hidden="true"
+        className="absolute -inset-2 rounded-md"
+        style={{
+          background: SPOTLIGHT_GRADIENT,
+          filter: 'blur(10px)',
+          opacity: 0.55,
+        }}
+      />
+      {/* Sharp gold streak — same gradient, mask-carved into a thin
+          perimeter ring so only the lane edge paints. Rotates in
+          lockstep with the bloom (same `--halo-angle` source). */}
+      <div
+        data-testid="lane-spotlight-streak"
+        aria-hidden="true"
+        className="absolute -inset-[2px] rounded-md"
+        style={{
+          background: SPOTLIGHT_GRADIENT,
+          WebkitMask:
+            'linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)',
+          WebkitMaskComposite: 'xor',
+          mask: 'linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)',
+          maskComposite: 'exclude',
+          padding: '3px',
+        }}
+      />
+    </div>
+  );
+}
 
 /* =====================================================================
  * 2026-05-03 — Asymmetric T layout (Slices 1 / 2 / 3 / 4).
@@ -312,11 +359,12 @@ function OpponentLane({
     );
   }
 
-  // Active-player turn signal — lane border breathes via CSS
-  // animation while opponent.isActive is true. Class drives the
-  // box-shadow keyframe (overrides the inline static halo style).
+  // Active-player turn signal — the active lane gets the LaneSpotlightHalo
+  // overlay (rotating gold streak + co-rotating bloom + breathing
+  // pulse, mounted as the first child below). Inactive lanes render
+  // with no halo at all (was: static white border + soft glow on every
+  // lane, replaced 2026-05-03 per user direction).
   const isActive = opponent.isActive;
-  const activeAnim = isActive ? ' animate-lane-active-glow' : '';
 
   if (collapsed) {
     return (
@@ -327,12 +375,9 @@ function OpponentLane({
         data-collapsed="true"
         data-active={isActive || undefined}
         onClick={onFocus}
-        style={STATIC_HALO_STYLE}
-        className={
-          'rounded border bg-zinc-900/40 flex items-center gap-3 px-3 hover:bg-zinc-900/70 transition-colors text-left min-h-0 min-w-0 overflow-hidden' +
-          activeAnim
-        }
+        className="relative rounded border border-zinc-800/60 bg-zinc-900/40 flex items-center gap-3 px-3 hover:bg-zinc-900/70 transition-colors text-left min-h-0 min-w-0 overflow-hidden"
       >
+        {isActive && <LaneSpotlightHalo />}
         <span className="text-xs font-semibold text-zinc-200">{opponent.name}</span>
         <span className="text-xs text-zinc-400">{opponent.life} life</span>
         <span className="ml-auto text-[10px] text-zinc-500 italic">
@@ -351,12 +396,9 @@ function OpponentLane({
       data-player-id={opponent.playerId}
       data-focused={focused || undefined}
       data-active={isActive || undefined}
-      style={STATIC_HALO_STYLE}
-      className={
-        'rounded-md border bg-zinc-900/30 flex min-h-0 min-w-0 overflow-hidden' +
-        activeAnim
-      }
+      className="relative rounded-md border border-zinc-800/60 bg-zinc-900/30 flex min-h-0 min-w-0 overflow-hidden"
     >
+      {isActive && <LaneSpotlightHalo />}
       <div
         data-testid={`opponent-lane-${laneIndex}-gutter`}
         // 2026-05-03 — gutter width 170px. Earlier 120px clipped

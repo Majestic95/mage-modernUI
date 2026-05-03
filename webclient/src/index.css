@@ -274,6 +274,45 @@ input[type="checkbox"] {
 }
 
 /*
+ * Active-player lane spotlight (2026-05-03 user direction). The
+ * active opponent's lane gets a white-and-gold rotating spotlight
+ * with a co-rotating soft bloom plus a breathing pulse — the same
+ * effect family as the top-of-stack focal card, but applied to a
+ * lane perimeter instead of a card edge.
+ *
+ * <p>Single rotation source: this class animates the registered
+ * `--halo-angle` `@property`, and BOTH the sharp gold streak and
+ * the blurred bloom layer read `var(--halo-angle)` in their conic-
+ * gradient `from` clause. Sharing the var via inheritance means
+ * the bloom and the streak rotate frame-by-frame in lockstep —
+ * impossible to drift even if the children were animated
+ * independently.
+ *
+ * <p>Period 6000ms is slower than the banners (4500ms) and the
+ * focal card (1875ms) because the lane perimeter is the longest
+ * of the three; matching the focal card's linear sweep speed (~3
+ * px/ms) at lane perimeter (~2000px) lands around 6500ms — 6000ms
+ * keeps the cadence steady-attention rather than urgent.
+ *
+ * <p>Breathing: a co-mounted opacity pulse at 1900ms, matching the
+ * portrait halo + the legacy lane-active-glow cadence so the
+ * portrait's halo and the lane's spotlight breathe in lockstep.
+ * This animation runs ALONGSIDE halo-rotate (CSS animation list)
+ * — both hit the same element, both progress independently, and
+ * the angle interpolation continues smoothly through opacity dips.
+ */
+@keyframes halo-breathe {
+  0%, 100% { opacity: 0.6; }
+  50%      { opacity: 1; }
+}
+
+.animate-lane-spotlight {
+  animation:
+    halo-rotate 6000ms linear infinite,
+    halo-breathe 1900ms cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+/*
  * Slice 70-Z.4 — impact-tier (C) keyframes. Three flavors:
  * dust-crumple (creature death), bright-dissolve (exile), and the
  * shared particle-drift used by both. Each is consumed inline by

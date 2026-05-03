@@ -119,24 +119,94 @@ describe('AsymmetricTLayout', () => {
   });
 
   it('local pod has no white halo border (user direction 2026-05-03)', () => {
-    // Opponent lanes still carry the white halo + breathing
-    // active-glow; the local pod doesn't need framing because the
-    // floating portrait + mana pool + hand fan are its identity
-    // affordances. Only the drop-target ring renders a border on
-    // the local pod, and only while a hand drag is in flight.
+    // The local pod doesn't need framing — the floating portrait +
+    // mana pool + hand fan are its identity affordances. Only the
+    // drop-target ring renders a border on the local pod, and only
+    // while a hand drag is in flight.
     renderLayout();
     const pod = screen.getByTestId('local-pod-rows');
     expect(pod.className).not.toMatch(/animate-lane-active-glow/);
+    expect(pod.className).not.toMatch(/animate-lane-spotlight/);
     // No `border` utility class either (drop-target adds it
     // dynamically; idle state has none).
     expect(pod.className).not.toMatch(/\bborder\b/);
-    // Opponent lanes keep their halo: pick lane 0 and check.
-    const oppLane = screen.getByTestId('opponent-lane-0');
-    // The lane wrapper carries STATIC_HALO_STYLE inline, which sets
-    // an rgba(255,255,255,0.55) border-color. Read the inline style.
-    expect(oppLane.getAttribute('style') ?? '').toMatch(
-      /border-color:\s*rgba\(255,\s*255,\s*255/,
+  });
+
+  // 2026-05-03 (user direction) — only the active opponent's lane
+  // carries the spotlight halo (rotating gold streak + co-rotating
+  // bloom + breathing pulse, mimicking the focal-card spotlight).
+  // Inactive opponent lanes have no halo at all; the prior static
+  // white border + soft glow on every lane has been dropped.
+  it('inactive opponent lanes render no halo overlay', () => {
+    renderLayout();
+    // buildDemoGameView marks the FIRST opponent as active; the
+    // second + third are inactive. Verify both inactive lanes have
+    // no spotlight and no white border.
+    for (const id of ['opponent-lane-1', 'opponent-lane-2']) {
+      const lane = screen.getByTestId(id);
+      expect(lane.querySelector('[data-testid="lane-spotlight-halo"]')).toBeNull();
+      expect(lane.getAttribute('style') ?? '').not.toMatch(
+        /border-color:\s*rgba\(255,\s*255,\s*255/,
+      );
+    }
+  });
+
+  it('the active opponent lane mounts the spotlight halo with bloom + streak children that share --halo-angle', () => {
+    const gv = buildDemoGameView();
+    // Promote opponent-1 to active (override the demo fixture).
+    const opponents = gv.players.filter((p) => p.playerId !== gv.myPlayerId);
+    const activeOpponent = { ...opponents[1]!, isActive: true };
+    const otherOpponents = opponents
+      .filter((_, idx) => idx !== 1)
+      .map((p) => ({ ...p, isActive: false }));
+    const me = gv.players.find((p) => p.playerId === gv.myPlayerId)!;
+    render(
+      <MotionConfig reducedMotion="always">
+        <LayoutGroup>
+          <div style={{ height: '720px', width: '1280px' }}>
+            <AsymmetricTLayout
+              me={{ ...me, isActive: false }}
+              opponents={[otherOpponents[0]!, activeOpponent, otherOpponents[1]!]}
+              stack={gv.stack}
+              combat={gv.combat}
+              mode={{ kind: 'idle' } as InteractionMode}
+              canAct
+              onObjectClick={() => {}}
+              onSpendMana={null}
+              onBoardDrop={() => {}}
+              drag={null}
+              eligibleTargetIds={new Set()}
+              eligibleCombatIds={new Set()}
+              combatRoles={new Map()}
+            />
+          </div>
+        </LayoutGroup>
+      </MotionConfig>,
     );
+    const halo = screen.getByTestId('lane-spotlight-halo');
+    expect(halo.className).toMatch(/animate-lane-spotlight/);
+    // Both layers render. Single source of truth for rotation —
+    // the parent owns `--halo-angle` via `animate-lane-spotlight`,
+    // children read `var(--halo-angle, 0deg)` in their conic-gradient.
+    const bloom = screen.getByTestId('lane-spotlight-bloom');
+    const streak = screen.getByTestId('lane-spotlight-streak');
+    expect(bloom.style.background).toContain(
+      'conic-gradient(from var(--halo-angle, 0deg)',
+    );
+    expect(streak.style.background).toContain(
+      'conic-gradient(from var(--halo-angle, 0deg)',
+    );
+    // Bloom is blurred; streak is not.
+    expect(bloom.style.filter).toContain('blur');
+    expect(streak.style.filter).toBe('');
+    // Streak mask carves a perimeter ring — `padding: 3px` is what
+    // gives the ring its thickness.
+    expect(streak.style.padding).toBe('3px');
+  });
+
+  it('only one opponent lane has the spotlight at a time', () => {
+    renderLayout();
+    expect(screen.queryAllByTestId('lane-spotlight-halo').length).toBeLessThanOrEqual(1);
   });
 
   it('clicking an opponent lane focus button collapses the other lanes', () => {
