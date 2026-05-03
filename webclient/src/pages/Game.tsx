@@ -10,6 +10,7 @@ import { resetAnimationState } from '../animation/animationState';
 import { GameHeader } from '../game/GameHeader';
 import { GameTable } from '../game/GameTable';
 import { Waiting } from '../game/Waiting';
+import { useAudioCues } from '../game/useAudioCues';
 
 interface Props {
   gameId: string;
@@ -37,6 +38,12 @@ export function Game({ gameId, onLeave }: Props) {
   const protocolError = useGameStore((s) => s.protocolError);
   const gameView = useGameStore((s) => s.gameView);
   const reset = useGameStore((s) => s.reset);
+
+  // 2026-05-02 — priority + turn audio cues. Hook is store-subscriber
+  // based, so it doesn't trigger re-renders on every game-frame
+  // update; it only plays a chime on the rising edge of the local
+  // player's hasPriority / isActive.
+  useAudioCues();
 
   // Memoized so children that need to send (ActionPanel, GameDialog)
   // get a stable reference. useMemo computes pre-render so the

@@ -1,5 +1,7 @@
 import { useRef, useState } from 'react';
 import { useModalA11y } from '../util/useModalA11y';
+import { playChime } from './audioCues';
+import { useAudioSettings } from './audioSettingsStore';
 
 /**
  * Slice 70-O (picture-catalog §1.3) — settings modal launched from
@@ -88,11 +90,7 @@ export function SettingsModal({
           </button>
         </header>
 
-        <p className="text-xs text-text-secondary">
-          Theme, animation, and accessibility toggles will appear here
-          in a future update. For now the panel hosts game-level
-          actions.
-        </p>
+        <AudioCueSettings />
 
         <div className="border-t border-zinc-800 pt-4 space-y-3">
           {/* Concede — two-step confirm to prevent stray clicks
@@ -172,6 +170,119 @@ export function SettingsModal({
             Leave game
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Audio cues — two independent toggles + 0-1 volume sliders, plus a
+ * "test" button per cue so the user can preview their chosen volume
+ * before committing. Both default OFF; a fresh login is silent until
+ * the user opts in.
+ */
+function AudioCueSettings() {
+  const priorityEnabled = useAudioSettings((s) => s.priorityEnabled);
+  const priorityVolume = useAudioSettings((s) => s.priorityVolume);
+  const turnEnabled = useAudioSettings((s) => s.turnEnabled);
+  const turnVolume = useAudioSettings((s) => s.turnVolume);
+  const setPriorityEnabled = useAudioSettings((s) => s.setPriorityEnabled);
+  const setPriorityVolume = useAudioSettings((s) => s.setPriorityVolume);
+  const setTurnEnabled = useAudioSettings((s) => s.setTurnEnabled);
+  const setTurnVolume = useAudioSettings((s) => s.setTurnVolume);
+
+  return (
+    <section
+      data-testid="settings-audio-section"
+      className="space-y-3 border-t border-zinc-800 pt-4"
+    >
+      <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
+        Audio cues
+      </h3>
+      <CueRow
+        label="Priority chime"
+        description="Plays when you gain priority."
+        enabled={priorityEnabled}
+        volume={priorityVolume}
+        testId="priority"
+        onToggle={setPriorityEnabled}
+        onVolume={setPriorityVolume}
+        onTest={() => playChime('priority', priorityVolume)}
+      />
+      <CueRow
+        label="Turn chime"
+        description="Plays when your turn begins."
+        enabled={turnEnabled}
+        volume={turnVolume}
+        testId="turn"
+        onToggle={setTurnEnabled}
+        onVolume={setTurnVolume}
+        onTest={() => playChime('turn', turnVolume)}
+      />
+    </section>
+  );
+}
+
+function CueRow({
+  label,
+  description,
+  enabled,
+  volume,
+  testId,
+  onToggle,
+  onVolume,
+  onTest,
+}: {
+  label: string;
+  description: string;
+  enabled: boolean;
+  volume: number;
+  testId: 'priority' | 'turn';
+  onToggle: (v: boolean) => void;
+  onVolume: (v: number) => void;
+  onTest: () => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <label className="flex items-center gap-2 text-xs text-text-primary cursor-pointer">
+        <input
+          type="checkbox"
+          data-testid={`settings-audio-${testId}-toggle`}
+          checked={enabled}
+          onChange={(e) => onToggle(e.target.checked)}
+          className="h-3.5 w-3.5 accent-fuchsia-500"
+        />
+        <span className="font-medium">{label}</span>
+        <span className="text-text-secondary text-[11px] font-normal">
+          {description}
+        </span>
+      </label>
+      <div className="flex items-center gap-2 pl-5.5">
+        <input
+          type="range"
+          data-testid={`settings-audio-${testId}-volume`}
+          min={0}
+          max={1}
+          step={0.05}
+          value={volume}
+          onChange={(e) => onVolume(Number(e.target.value))}
+          disabled={!enabled}
+          className="flex-1 accent-fuchsia-500 disabled:opacity-40"
+          aria-label={`${label} volume`}
+        />
+        <span className="text-[10px] text-text-secondary tabular-nums w-8 text-right">
+          {Math.round(volume * 100)}%
+        </span>
+        <button
+          type="button"
+          data-testid={`settings-audio-${testId}-test`}
+          onClick={onTest}
+          disabled={!enabled}
+          className="px-2 py-0.5 rounded text-[11px] bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed"
+          aria-label={`Test ${label}`}
+        >
+          Test
+        </button>
       </div>
     </div>
   );
