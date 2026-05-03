@@ -133,17 +133,44 @@ export function AsymmetricTLayout({
         )}
       </div>
 
-      {/* Stack overlay floats at viewport center so it does not
-          compete with player regions for layout. */}
-      <div
-        data-testid="central-focal-zone"
-        className="absolute inset-0 flex items-center justify-center pointer-events-none"
-        style={{ zIndex: 5 }}
-      >
-        <div className="pointer-events-auto">
-          <StackZone stack={stack} combat={combat} />
+      {/* Stack dock — anchored to the top of the local pod (bottom
+          edge at the 55% seam, panel extending UPWARD into the
+          opponent rail). Wrapped in a translucent backdrop-blurred
+          panel so the focal card reads clearly without fully
+          obscuring whatever opponent row sits behind it. Only
+          renders when the stack is non-empty; collapses to nothing
+          otherwise so the local pod's first row never has reserved
+          dead space.
+
+          Combat arrows render separately as a full-viewport overlay
+          (below) — they need to span attacker pod → defender pod
+          and would lose meaning confined to the dock. */}
+      {Object.keys(stack).length > 0 && (
+        <div
+          data-testid="stack-dock"
+          className="absolute left-1/2 pointer-events-auto"
+          style={{
+            top: '55%',
+            transform: 'translate(-50%, -100%)',
+            zIndex: 10,
+          }}
+        >
+          <div className="rounded-lg border border-zinc-700/60 bg-zinc-900/85 backdrop-blur-md px-4 py-3 shadow-2xl">
+            <StackZone stack={stack} combat={combat} />
+          </div>
         </div>
-      </div>
+      )}
+      {Object.keys(stack).length === 0 && combat.length > 0 && (
+        <div
+          data-testid="central-focal-zone"
+          className="absolute inset-0 flex items-center justify-center pointer-events-none"
+          style={{ zIndex: 5 }}
+        >
+          <div className="pointer-events-auto">
+            <StackZone stack={stack} combat={combat} />
+          </div>
+        </div>
+      )}
 
       {/* Local PlayerFrame mounts at the corner via the existing
           REDESIGN slotPart='frame' channel so chips stay glanceable
@@ -238,10 +265,6 @@ function OpponentLane({
 
   const battlefield = Object.values(opponent.battlefield);
   const rows = bucketBattlefield(battlefield);
-  // Non-Land sub-row combines creatures + artifacts/enchants. Lands
-  // get their own row so mana state is glanceable independent of
-  // the threat surface.
-  const nonLand: WebPermanentView[] = [...rows.creatures, ...rows.artifacts];
 
   return (
     <div
@@ -275,6 +298,13 @@ function OpponentLane({
         />
       </div>
 
+      {/* Two sub-rows. Lands fill the top row (full width). Bottom
+          row is a 50/50 horizontal split: Creatures on the left,
+          Artifacts & Enchants on the right. Avoids adding a third
+          row (which would shrink each row's height too far on a
+          1080p viewport) while still giving artifacts their own
+          dedicated zone — opponent's mana, threats, and value
+          engines are each glanceable without overlap. */}
       <div
         data-testid={`opponent-lane-${laneIndex}-battlefield`}
         className="flex-1 flex flex-col min-w-0 min-h-0 gap-2 p-2"
@@ -291,18 +321,32 @@ function OpponentLane({
           eligibleCombatIds={eligibleCombatIds}
           combatRoles={combatRoles}
         />
-        <SubRowZone
-          label="Non-Land"
-          zone="non-land"
-          row="creatures"
-          permanents={nonLand}
-          perspective="opponent"
-          canAct={canAct}
-          onObjectClick={onObjectClick}
-          eligibleTargetIds={eligibleTargetIds}
-          eligibleCombatIds={eligibleCombatIds}
-          combatRoles={combatRoles}
-        />
+        <div className="flex-1 flex flex-row gap-2 min-h-0 min-w-0">
+          <SubRowZone
+            label="Creatures"
+            zone="creatures"
+            row="creatures"
+            permanents={rows.creatures}
+            perspective="opponent"
+            canAct={canAct}
+            onObjectClick={onObjectClick}
+            eligibleTargetIds={eligibleTargetIds}
+            eligibleCombatIds={eligibleCombatIds}
+            combatRoles={combatRoles}
+          />
+          <SubRowZone
+            label="Artifacts & Enchants"
+            zone="artifacts"
+            row="artifacts"
+            permanents={rows.artifacts}
+            perspective="opponent"
+            canAct={canAct}
+            onObjectClick={onObjectClick}
+            eligibleTargetIds={eligibleTargetIds}
+            eligibleCombatIds={eligibleCombatIds}
+            combatRoles={combatRoles}
+          />
+        </div>
       </div>
     </div>
   );

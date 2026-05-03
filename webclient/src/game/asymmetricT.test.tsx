@@ -58,6 +58,12 @@ describe('AsymmetricTLayout', () => {
     expect(screen.getByTestId('local-pod')).toBeInTheDocument();
   });
 
+  it('renders the stack dock when the stack is non-empty', () => {
+    // Demo fixture seeds Lightning Bolt on the stack.
+    renderLayout();
+    expect(screen.getByTestId('stack-dock')).toBeInTheDocument();
+  });
+
   it('renders three opponent lanes for a 4-player game', () => {
     renderLayout();
     expect(screen.getByTestId('opponent-lane-0')).toBeInTheDocument();
@@ -65,12 +71,13 @@ describe('AsymmetricTLayout', () => {
     expect(screen.getByTestId('opponent-lane-2')).toBeInTheDocument();
   });
 
-  it('each opponent lane has an identity gutter + a battlefield with Lands and Non-Land sub-rows', () => {
+  it('each opponent lane has an identity gutter + a battlefield with Lands, Artifacts, and Creatures sub-rows', () => {
     renderLayout();
     expect(screen.getByTestId('opponent-lane-0-gutter')).toBeInTheDocument();
     const battlefield = screen.getByTestId('opponent-lane-0-battlefield');
     expect(battlefield.querySelector('[data-zone="lands"]')).toBeTruthy();
-    expect(battlefield.querySelector('[data-zone="non-land"]')).toBeTruthy();
+    expect(battlefield.querySelector('[data-zone="artifacts"]')).toBeTruthy();
+    expect(battlefield.querySelector('[data-zone="creatures"]')).toBeTruthy();
   });
 
   it('local pod renders three labelled sub-rows (Creatures / Artifacts / Lands)', () => {

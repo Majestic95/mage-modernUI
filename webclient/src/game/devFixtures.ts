@@ -244,7 +244,12 @@ export function buildDemoGameView(): WebGameView {
       }
       return hand;
     })(),
-    stack: {},
+    stack: (() => {
+      const stack: Record<string, ReturnType<typeof makeCard>> = {};
+      const lightning = makeCard('Lightning Bolt', 'CREATURE', 'M21', '162');
+      stack[lightning.id] = lightning;
+      return stack;
+    })(),
     combat: [],
     players: [me, goat, momur, alloc],
   });
