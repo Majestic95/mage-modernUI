@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { GameStream } from './stream';
+import {
+  GameStream,
+  clearPersistedLastMessageId,
+  persistLastMessageId,
+  readPersistedLastMessageId,
+} from './stream';
 import { useGameStore } from './store';
 
 /**
@@ -68,10 +73,12 @@ describe('GameStream', () => {
   beforeEach(() => {
     FakeWebSocket.reset();
     useGameStore.getState().reset();
+    clearPersistedLastMessageId(FAKE_GAME_ID);
   });
 
   afterEach(() => {
     FakeWebSocket.reset();
+    clearPersistedLastMessageId(FAKE_GAME_ID);
   });
 
   it('open() builds the ws:// URL and sets connecting state', () => {
@@ -721,5 +728,121 @@ describe('GameStream', () => {
     const before = FakeWebSocket.instances.length;
     stream.manualReconnect();
     expect(FakeWebSocket.instances.length).toBe(before + 1);
+  });
+});
+
+describe('GameStream — page-refresh resume (2026-05-03)', () => {
+  beforeEach(() => {
+    FakeWebSocket.reset();
+    useGameStore.getState().reset();
+    clearPersistedLastMessageId(FAKE_GAME_ID);
+  });
+
+  afterEach(() => {
+    FakeWebSocket.reset();
+    clearPersistedLastMessageId(FAKE_GAME_ID);
+  });
+
+  it('open() reads persisted lastMessageId from localStorage and includes it in ?since on the very first connect', () => {
+    // Simulate a page refresh: a prior session persisted lastMessageId=42,
+    // then the page reloaded so the store is fresh (lastMessageId=0).
+    persistLastMessageId(FAKE_GAME_ID, 42);
+    expect(useGameStore.getState().lastMessageId).toBe(0);
+    const stream = new GameStream({
+      gameId: FAKE_GAME_ID,
+      token: 'tok-1',
+      webSocketCtor: FakeWebSocket as unknown as typeof WebSocket,
+    });
+    stream.open();
+    expect(FakeWebSocket.lastUrl).toContain('since=42');
+  });
+
+  it('open() omits ?since when no value is persisted and the store is fresh', () => {
+    const stream = new GameStream({
+      gameId: FAKE_GAME_ID,
+      token: 'tok-1',
+      webSocketCtor: FakeWebSocket as unknown as typeof WebSocket,
+    });
+    stream.open();
+    expect(FakeWebSocket.lastUrl).not.toContain('since=');
+  });
+
+  it('open() picks the larger of live store and persisted lastMessageId', () => {
+    persistLastMessageId(FAKE_GAME_ID, 50);
+    useGameStore.setState({ lastMessageId: 100 });
+    const stream = new GameStream({
+      gameId: FAKE_GAME_ID,
+      token: 'tok-1',
+      webSocketCtor: FakeWebSocket as unknown as typeof WebSocket,
+    });
+    stream.open();
+    expect(FakeWebSocket.lastUrl).toContain('since=100');
+  });
+
+  it('persists lastMessageId to localStorage on each store advance', () => {
+    const stream = new GameStream({
+      gameId: FAKE_GAME_ID,
+      token: 'tok-1',
+      webSocketCtor: FakeWebSocket as unknown as typeof WebSocket,
+    });
+    stream.open();
+    const sock = FakeWebSocket.instances[0]!;
+    sock._open();
+    sock._message(
+      JSON.stringify({
+        schemaVersion: '1.15',
+        method: 'gameUpdate',
+        messageId: 12,
+        objectId: FAKE_GAME_ID,
+        data: {},
+      }),
+    );
+    expect(readPersistedLastMessageId(FAKE_GAME_ID)).toBe(12);
+    sock._message(
+      JSON.stringify({
+        schemaVersion: '1.15',
+        method: 'gameUpdate',
+        messageId: 25,
+        objectId: FAKE_GAME_ID,
+        data: {},
+      }),
+    );
+    expect(readPersistedLastMessageId(FAKE_GAME_ID)).toBe(25);
+  });
+
+  it('clears the persistence subscription on close()', () => {
+    // Use a unique gameId for THIS test so any subscriptions leaked
+    // by prior tests (which may not call close()) write to different
+    // localStorage keys and don't pollute our assertion.
+    const isolatedGameId = '99999999-9999-9999-9999-999999999999';
+    clearPersistedLastMessageId(isolatedGameId);
+    const stream = new GameStream({
+      gameId: isolatedGameId,
+      token: 'tok-1',
+      webSocketCtor: FakeWebSocket as unknown as typeof WebSocket,
+    });
+    stream.open();
+    const sock = FakeWebSocket.instances[0]!;
+    sock._open();
+    stream.close();
+    // Mutate the store after close — THIS stream's persistence
+    // subscription should not fire. Other streams from prior tests
+    // (if leaked) write to FAKE_GAME_ID, not isolatedGameId.
+    useGameStore.setState({ lastMessageId: 999 });
+    expect(readPersistedLastMessageId(isolatedGameId)).toBe(0);
+    clearPersistedLastMessageId(isolatedGameId);
+  });
+
+  it('readPersistedLastMessageId tolerates malformed values', () => {
+    localStorage.setItem('xmage.lastMessageId.' + FAKE_GAME_ID, 'not-a-number');
+    expect(readPersistedLastMessageId(FAKE_GAME_ID)).toBe(0);
+    localStorage.setItem('xmage.lastMessageId.' + FAKE_GAME_ID, '-42');
+    expect(readPersistedLastMessageId(FAKE_GAME_ID)).toBe(0);
+  });
+
+  it('persistLastMessageId ignores non-positive values', () => {
+    persistLastMessageId(FAKE_GAME_ID, 0);
+    persistLastMessageId(FAKE_GAME_ID, -5);
+    expect(readPersistedLastMessageId(FAKE_GAME_ID)).toBe(0);
   });
 });

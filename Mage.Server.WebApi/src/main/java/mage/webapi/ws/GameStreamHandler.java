@@ -240,7 +240,7 @@ public final class GameStreamHandler implements Consumer<WsConfig> {
         // wrong gameId, etc.) the call is a no-op upstream-side.
         joinGameUpstream(gameId, session);
 
-        replayBufferIfRequested(ctx, handler.get());
+        replayOrSnapshot(ctx, handler.get(), gameId);
     }
 
     // userIsInGame + resolveSessionUserId removed in slice 63 fixer
@@ -280,27 +280,59 @@ public final class GameStreamHandler implements Consumer<WsConfig> {
 
     /**
      * Honor {@code ?since=<n>} on the upgrade URL — replay buffered
-     * frames whose {@code messageId > n}. Cold buffer (no qualifying
-     * frames) silently no-ops and the client falls through to live
-     * frames; the next {@code gameUpdate} restores state. Slice 4 may
-     * tag this gap with an explicit {@code resync} marker (ADR D8).
+     * frames whose {@code messageId > n}, falling through to a
+     * synthesized {@code gameUpdate} snapshot when replay yields
+     * nothing.
+     *
+     * <p>2026-05-03 — added the snapshot fallback. Pre-fix the cold
+     * buffer / stale-since path silently no-op'd, and the client
+     * sat on "Waiting for game state…" forever after a page refresh
+     * (the webclient only sends {@code ?since=} on RECONNECT
+     * attempts, so the FIRST open after refresh got no replay AND
+     * no fresh state until something changed server-side). Now: if
+     * the buffer can't satisfy the resume, we build a fresh
+     * {@code gameUpdate} from the live engine state (scoped to this
+     * recipient player) so every reconnect bootstraps the
+     * gameView regardless of buffer contents.
+     *
+     * <p>The {@code since} param is now optional: missing / blank
+     * is treated as {@code 0} (replay everything in the buffer).
+     * Pre-fix only the literal {@code ?since=} variant requested
+     * replay; that asymmetry is the source of the "Waiting for game
+     * state" hang on a fresh boot, since the webclient drops the
+     * param on its very first open.
      */
-    private static void replayBufferIfRequested(WsConnectContext ctx,
-                                                 WebSocketCallbackHandler handler) {
+    private static void replayOrSnapshot(WsConnectContext ctx,
+                                         WebSocketCallbackHandler handler,
+                                         UUID gameId) {
         String sinceRaw = ctx.queryParam("since");
-        if (sinceRaw == null || sinceRaw.isBlank()) {
+        int since = 0;
+        if (sinceRaw != null && !sinceRaw.isBlank()) {
+            try {
+                since = Integer.parseInt(sinceRaw.trim());
+            } catch (NumberFormatException ex) {
+                sendError(ctx, "BAD_REQUEST",
+                        "since must be an integer messageId: " + sinceRaw);
+                return;
+            }
+        }
+        var frames = handler.framesSince(since);
+        if (!frames.isEmpty()) {
+            for (var frame : frames) {
+                ctx.send(frame);
+            }
             return;
         }
-        int since;
-        try {
-            since = Integer.parseInt(sinceRaw.trim());
-        } catch (NumberFormatException ex) {
-            sendError(ctx, "BAD_REQUEST",
-                    "since must be an integer messageId: " + sinceRaw);
-            return;
-        }
-        for (var frame : handler.framesSince(since)) {
-            ctx.send(frame);
+        // Buffer can't satisfy the resume. Synthesize a fresh
+        // gameUpdate from the live engine state so the client
+        // bootstraps the gameView and exits its waiting state.
+        // Returns null when the live Game can't be resolved (game
+        // ended, user not in this game) — fall through silently in
+        // that case; clients will surface the closed connection or
+        // a downstream gameOver.
+        WebStreamFrame snapshot = handler.buildReconnectSnapshot(gameId);
+        if (snapshot != null) {
+            ctx.send(snapshot);
         }
     }
 

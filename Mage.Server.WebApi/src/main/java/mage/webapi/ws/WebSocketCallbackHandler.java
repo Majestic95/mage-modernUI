@@ -1215,6 +1215,70 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
     }
 
     /**
+     * 2026-05-03 — build a fresh {@code gameUpdate} frame from the
+     * live game state, scoped to this user's recipient player. Used
+     * by the reconnect path: when a {@code ?since=N} replay yields
+     * no frames (cold buffer / stale since / page refresh), the
+     * client otherwise hangs on "Waiting for game state…" until
+     * something changes server-side. This bootstraps the gameView
+     * directly from the engine.
+     *
+     * <p>Returns {@code null} when the live {@code Game} can't be
+     * resolved (game ended, user not in this game, embedded
+     * reference absent in tests). The reconnect path then
+     * gracefully falls through to live frames — same degraded
+     * behaviour as the pre-snapshot world, but now confined to
+     * cases where snapshot synthesis is actually impossible.
+     *
+     * <p>The synthetic frame is NOT appended to the buffer — it
+     * exists only on the wire to this one reconnecting socket.
+     * Real upstream frames continue to fill the buffer with their
+     * own ids; if a future reconnect arrives before any real frame
+     * fires, we just synthesize a fresh snapshot again. Idempotent.
+     */
+    public WebStreamFrame buildReconnectSnapshot(UUID gameId) {
+        Game liveGame = resolveLiveGame(gameId);
+        if (liveGame == null) {
+            return null;
+        }
+        UUID recipientPlayerId = resolveRecipientPlayerId(gameId);
+        if (recipientPlayerId == null) {
+            return null;
+        }
+        // GameView ctor is synchronous and reads engine state;
+        // resolveLiveGame is the same path the live frame pipeline
+        // uses, and the engine's GameController.updateGame() lock is
+        // not held here — but neither is it held when ordinary
+        // ccGameUpdate callbacks arrive at this handler. The
+        // resulting wire DTO is a snapshot regardless of whether the
+        // engine mutates after; subsequent gameUpdate frames will
+        // overwrite. Same consistency model as the live path.
+        mage.view.GameView upstreamView = new mage.view.GameView(
+                liveGame.getState(), liveGame, recipientPlayerId, null);
+        Map<UUID, UUID> stackHint = StackCardIdHint.extract(liveGame);
+        MultiplayerFrameContext mpCtx = MultiplayerFrameContext.extract(liveGame);
+        if (authService != null) {
+            final UUID self = recipientPlayerId;
+            final UUID frameGameId = gameId;
+            mpCtx = mpCtx.withConnectionTracker(playerId -> {
+                if (self.equals(playerId)) {
+                    return mage.webapi.dto.stream.WebPlayerView
+                            .CONNECTION_STATE_CONNECTED;
+                }
+                return authService.connectionStateFor(frameGameId, playerId);
+            });
+        }
+        Set<UUID> playersInRange = MultiplayerFrameContext.playersInRange(
+                liveGame, recipientPlayerId);
+        return new WebStreamFrame(
+                SchemaVersion.CURRENT,
+                "gameUpdate",
+                nextSyntheticMessageId(),
+                gameId.toString(),
+                GameViewMapper.toDto(upstreamView, stackHint, mpCtx, playersInRange));
+    }
+
+    /**
      * Slice 70-H.5 — reduced fan-out path used for synthesized
      * frames that have no triggering {@link ClientCallback}. Reuses
      * the route-kind filter (so dialogClear delivers only to player

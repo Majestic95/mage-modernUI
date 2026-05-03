@@ -35,6 +35,55 @@ import { useAuthStore } from '../auth/store';
 const DEFAULT_BASE_URL = 'http://localhost:18080';
 
 /**
+ * 2026-05-03 — persist {@code lastMessageId} per-gameId across page
+ * refreshes so the FIRST open after a reload can request a replay
+ * via {@code ?since=N}. Pre-fix the resume query was only sent on
+ * RECONNECT attempts ({@code reconnectAttempt > 0}); after a refresh
+ * the new GameStream had {@code reconnectAttempt = 0} and the store's
+ * {@code lastMessageId} was reset to 0, so the client never asked
+ * for replay. Combined with the server's pre-fix "missing since means
+ * no replay" behaviour, this left users on "Waiting for game state…"
+ * indefinitely after refresh.
+ *
+ * <p>Per-gameId keying so two games in sequence can't bleed
+ * messageIds into each other (the server's session counter resets
+ * per-game, so cross-game ids are not directly comparable).
+ *
+ * <p>Reads / writes are best-effort: a localStorage QuotaExceeded
+ * silently no-ops (the worst case is the user falls back to the
+ * server-side reconnect snapshot, which already handles this path).
+ */
+const LAST_MESSAGE_ID_PREFIX = 'xmage.lastMessageId.';
+
+export function readPersistedLastMessageId(gameId: string): number {
+  try {
+    const raw = localStorage.getItem(LAST_MESSAGE_ID_PREFIX + gameId);
+    if (!raw) return 0;
+    const parsed = parseInt(raw, 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+  } catch {
+    return 0;
+  }
+}
+
+export function persistLastMessageId(gameId: string, id: number): void {
+  if (id <= 0) return;
+  try {
+    localStorage.setItem(LAST_MESSAGE_ID_PREFIX + gameId, String(id));
+  } catch {
+    // QuotaExceeded / private mode — degrade gracefully.
+  }
+}
+
+export function clearPersistedLastMessageId(gameId: string): void {
+  try {
+    localStorage.removeItem(LAST_MESSAGE_ID_PREFIX + gameId);
+  } catch {
+    // ignore
+  }
+}
+
+/**
  * Handshake protocol version this client speaks. Slice 69a (ADR 0010
  * v2 D12) introduced server-side {@code ?protocolVersion=} validation.
  * v2 is the multiplayer surface: N-player layout, eliminated-player
@@ -205,6 +254,14 @@ export class GameStream {
    * OS (mobile backgrounding) or suspended by the browser.
    */
   private visibilityHandler: (() => void) | null = null;
+  /**
+   * 2026-05-03 — store-subscription handle for persisting
+   * {@code lastMessageId} to localStorage on every store update. The
+   * persisted value is read back on the next {@code open()} so a
+   * page-refresh reconnect can request the right replay window.
+   * Detached on {@code close()}.
+   */
+  private unsubscribeLastMessageId: (() => void) | null = null;
 
   constructor(options: GameStreamOptions) {
     this.gameId = options.gameId;
@@ -233,6 +290,20 @@ export class GameStream {
     // handler self-guards against duplicate triggers (already-open
     // sockets are no-op via the early return at the top of open()).
     this.installVisibilityHandler();
+    // 2026-05-03 — subscribe to lastMessageId so every store bump
+    // is mirrored to localStorage. Read back on the next open() to
+    // satisfy the server's `?since=N` resume on page refresh.
+    // Game endpoint only — rooms have no replay buffer.
+    if (this.endpoint === 'game' && !this.unsubscribeLastMessageId) {
+      const gameId = this.gameId;
+      this.unsubscribeLastMessageId = useGameStore.subscribe(
+        (state, prev) => {
+          if (state.lastMessageId !== prev.lastMessageId) {
+            persistLastMessageId(gameId, state.lastMessageId);
+          }
+        },
+      );
+    }
     const wsBase = toWsBase(httpBase);
     const path = this.endpoint === 'room' ? 'rooms' : 'games';
     // Resume from the last seen messageId on the game endpoint —
@@ -240,10 +311,19 @@ export class GameStream {
     // late updates aren't lost across the disconnect window. The
     // room endpoint has no replay buffer, so the param is harmless
     // there but skipped to avoid noise in server logs.
+    //
+    // 2026-05-03 — pre-fix this only fired on `reconnectAttempt > 0`,
+    // missing the page-refresh case (fresh GameStream, attempt = 0,
+    // store also reset to 0). Now we ALSO read a persisted value
+    // from localStorage so the very first open after a refresh can
+    // resume. The server's reconnect snapshot path covers the case
+    // where neither the live store nor localStorage has anything
+    // useful (cold buffer, stale since).
+    const liveSince = useGameStore.getState().lastMessageId;
+    const persistedSince =
+      this.endpoint === 'game' ? readPersistedLastMessageId(this.gameId) : 0;
     const since =
-      this.endpoint === 'game' && this.reconnectAttempt > 0
-        ? useGameStore.getState().lastMessageId
-        : 0;
+      this.endpoint === 'game' ? Math.max(liveSince, persistedSince) : 0;
     const sinceQuery = since > 0 ? `&since=${since}` : '';
     // Slice 69a — ADR 0010 v2 D12: the webclient pins itself to v2 of
     // the handshake protocol. Server validates against
@@ -334,6 +414,10 @@ export class GameStream {
     this.cancelReconnect();
     this.cancelKeepalive();
     this.removeVisibilityHandler();
+    if (this.unsubscribeLastMessageId) {
+      this.unsubscribeLastMessageId();
+      this.unsubscribeLastMessageId = null;
+    }
     // Null out our reference *before* requesting the OS close. A
     // subsequent open() in the same tick (StrictMode double-mount)
     // can then proceed without short-circuiting on `this.socket`.
