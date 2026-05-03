@@ -76,6 +76,20 @@ import java.util.Map;
  *     {@code hasLeft} (terminal) — disconnected is recoverable.
  *     Added in schema 1.23 (ADR 0011 D3 / ADR 0010 v2 D11(e)
  *     deferred work, slice 70-H).
+ * @param skipState       which {@code PASS_PRIORITY_UNTIL_*} skip
+ *     mode this player has armed, if any. Empty string when no skip
+ *     active. The engine sets exactly one of {@code passedAllTurns},
+ *     {@code passedTurn}, {@code passedUntilEndOfTurn},
+ *     {@code passedUntilNextMain}, {@code passedUntilStackResolved},
+ *     {@code passedUntilEndStepBeforeMyTurn} (each PASS action calls
+ *     {@code resetPlayerPassedActions()} first), so emit a single
+ *     enum value rather than 6 booleans. Drives the ActionPanel's
+ *     active-button visual + the global skip-status pill.
+ *     Values: {@link #SKIP_STATE_NONE} ({@code ""}),
+ *     {@link #SKIP_STATE_ALL_TURNS}, {@link #SKIP_STATE_NEXT_TURN},
+ *     {@link #SKIP_STATE_END_OF_TURN}, {@link #SKIP_STATE_NEXT_MAIN},
+ *     {@link #SKIP_STATE_STACK_RESOLVED},
+ *     {@link #SKIP_STATE_END_STEP_BEFORE_MY_TURN}. Added in schema 1.30.
  */
 public record WebPlayerView(
         String playerId,
@@ -101,7 +115,8 @@ public record WebPlayerView(
         List<WebCommandObjectView> commandList,
         String teamId,
         List<String> colorIdentity,
-        String connectionState
+        String connectionState,
+        String skipState
 ) {
 
     /** {@link #connectionState} — player has ≥1 active game-stream socket. */
@@ -111,4 +126,23 @@ public record WebPlayerView(
      *  may still reconnect. {@code hasLeft} is the terminal state;
      *  this is the recoverable intermediate. */
     public static final String CONNECTION_STATE_DISCONNECTED = "disconnected";
+
+    /** {@link #skipState} — no PASS_PRIORITY_UNTIL_* skip is armed. */
+    public static final String SKIP_STATE_NONE = "";
+    /** {@link #skipState} — F9 / passedAllTurns. Skips every priority
+     *  window until the player's NEXT untap. Most aggressive. */
+    public static final String SKIP_STATE_ALL_TURNS = "ALL_TURNS";
+    /** {@link #skipState} — F4 / passedTurn. Skips priority windows
+     *  until the next turn (any player's). */
+    public static final String SKIP_STATE_NEXT_TURN = "NEXT_TURN";
+    /** {@link #skipState} — F5 / passedUntilEndOfTurn. */
+    public static final String SKIP_STATE_END_OF_TURN = "END_OF_TURN";
+    /** {@link #skipState} — F7 / passedUntilNextMain. */
+    public static final String SKIP_STATE_NEXT_MAIN = "NEXT_MAIN";
+    /** {@link #skipState} — F8 / passedUntilStackResolved. Auto-passes
+     *  until the current stack object resolves. */
+    public static final String SKIP_STATE_STACK_RESOLVED = "STACK_RESOLVED";
+    /** {@link #skipState} — F11 / passedUntilEndStepBeforeMyTurn. */
+    public static final String SKIP_STATE_END_STEP_BEFORE_MY_TURN =
+            "END_STEP_BEFORE_MY_TURN";
 }

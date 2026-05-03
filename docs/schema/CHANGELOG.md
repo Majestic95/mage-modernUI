@@ -19,6 +19,36 @@ minor mismatches.
 
 ---
 
+## 1.30 — 2026-05-02 — Per-player skip-priority state on WebPlayerView
+
+Adds one additive field — `WebPlayerView.skipState: string` — so the
+client can render whether each player has armed an `F4 / F5 / F7 /
+F8 / F9 / F11` skip-priority mode. Engine-side (`PlayerImpl.
+sendPlayerAction`) every `PASS_PRIORITY_UNTIL_*` action calls
+`resetPlayerPassedActions()` first then sets exactly one of the 6
+booleans on `PlayerView`, so this collapses cleanly into a single
+enum string instead of 6 wire fields.
+
+```diff
+   "connectionState": "connected",
++  "skipState": "NEXT_TURN"
+ }
+```
+
+Values:
+- `""` — no skip armed (the common case)
+- `"ALL_TURNS"` — F9 / `passedAllTurns`
+- `"NEXT_TURN"` — F4 / `passedTurn`
+- `"END_OF_TURN"` — F5 / `passedUntilEndOfTurn`
+- `"NEXT_MAIN"` — F7 / `passedUntilNextMain`
+- `"STACK_RESOLVED"` — F8 / `passedUntilStackResolved`
+- `"END_STEP_BEFORE_MY_TURN"` — F11
+
+Drives the ActionPanel's per-button "active" visual + the global
+skip-status pill so users can see at a glance which skip mode they
+armed (and click to cancel without remembering the Esc shortcut).
+Default `""` keeps forward-compat with 1.29 servers.
+
 ## 1.29 — 2026-05-02 — Per-seat commander printing (post-audit fix)
 
 Adds two additive fields — `WebSeat.commanderSetCode` and

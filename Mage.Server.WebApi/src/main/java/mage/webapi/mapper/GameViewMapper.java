@@ -266,8 +266,32 @@ public final class GameViewMapper {
                 // path: WebSocketCallbackHandler.mapGameView builds
                 // a route-filtered socket-count oracle around
                 // AuthService; test / legacy path: EVERY_PLAYER_CONNECTED).
-                effective.connectionStateFor(pv.getPlayerId())
+                effective.connectionStateFor(pv.getPlayerId()),
+                // Schema 1.30 — collapse the 6 mutually-exclusive
+                // PlayerView skip-priority booleans into a single
+                // enum string for the wire. Engine guarantees only
+                // one is set at a time (each PASS action calls
+                // resetPlayerPassedActions() first); empty string
+                // means no skip is armed.
+                deriveSkipState(pv)
         );
+    }
+
+    /**
+     * Schema 1.30 — translate PlayerView's 6 PASS_PRIORITY_UNTIL_*
+     * booleans into one of the {@link WebPlayerView#SKIP_STATE_*}
+     * enum strings. Priority order matches "most aggressive first" so
+     * if ever the engine accidentally sets two simultaneously (a
+     * regression), the more-restrictive state wins the wire emit.
+     */
+    static String deriveSkipState(PlayerView pv) {
+        if (pv.isPassedAllTurns()) return WebPlayerView.SKIP_STATE_ALL_TURNS;
+        if (pv.isPassedTurn()) return WebPlayerView.SKIP_STATE_NEXT_TURN;
+        if (pv.isPassedUntilEndOfTurn()) return WebPlayerView.SKIP_STATE_END_OF_TURN;
+        if (pv.isPassedUntilNextMain()) return WebPlayerView.SKIP_STATE_NEXT_MAIN;
+        if (pv.isPassedUntilStackResolved()) return WebPlayerView.SKIP_STATE_STACK_RESOLVED;
+        if (pv.isPassedUntilEndStepBeforeMyTurn()) return WebPlayerView.SKIP_STATE_END_STEP_BEFORE_MY_TURN;
+        return WebPlayerView.SKIP_STATE_NONE;
     }
 
     /**

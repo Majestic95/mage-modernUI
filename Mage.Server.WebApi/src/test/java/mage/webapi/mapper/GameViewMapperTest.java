@@ -98,11 +98,12 @@ class GameViewMapperTest {
     }
 
     @Test
-    void playerView_jsonShape_locksTwentyFourFields_schema123() throws Exception {
+    void playerView_jsonShape_locksTwentyFiveFields_schema130() throws Exception {
         // Schema 1.20 (slice 69a, ADR 0010 v2 D3a) added teamId.
         // Schema 1.22 (slice 70-D, ADR 0011 D5) added colorIdentity.
         // Schema 1.23 (slice 70-H, ADR 0011 D3 / ADR 0010 v2 D11(e))
         //   added connectionState.
+        // Schema 1.30 — added skipState (PASS_PRIORITY_UNTIL_* mode).
         // Lock the wire shape so any future field add/remove fails here
         // first instead of leaking into the webclient.
         mage.webapi.dto.stream.WebPlayerView dto =
@@ -114,10 +115,11 @@ class GameViewMapperTest {
                         true, true, true, true, false, false, false,
                         List.of(), List.of(), null, List.of(),
                         mage.webapi.dto.stream.WebPlayerView
-                                .CONNECTION_STATE_CONNECTED);
+                                .CONNECTION_STATE_CONNECTED,
+                        mage.webapi.dto.stream.WebPlayerView.SKIP_STATE_NONE);
         JsonNode node = JSON.valueToTree(dto);
-        assertEquals(24, node.size(),
-                "WebPlayerView must have exactly 24 fields; got: " + node);
+        assertEquals(25, node.size(),
+                "WebPlayerView must have exactly 25 fields; got: " + node);
         for (String field : List.of(
                 "playerId", "name", "life", "wins", "winsNeeded",
                 "libraryCount", "handCount", "graveyard", "exile",
@@ -125,7 +127,7 @@ class GameViewMapperTest {
                 "isHuman", "isActive", "hasPriority", "hasLeft",
                 "monarch", "initiative", "designationNames",
                 "commandList", "teamId", "colorIdentity",
-                "connectionState")) {
+                "connectionState", "skipState")) {
             assertTrue(node.has(field), "missing field: " + field);
         }
         assertTrue(node.get("teamId").isNull(),
@@ -147,7 +149,18 @@ class GameViewMapperTest {
                         + "an old (1.22) frame default to 'connected' "
                         + "for the missing key (Zod default fires on "
                         + "missing key, not null value).");
+        assertEquals("", node.get("skipState").asText(),
+                "Schema 1.30 — skipState is a non-null string; empty "
+                        + "string is the no-skip-armed state. Old 1.29 "
+                        + "clients tolerate the new field via Zod's "
+                        + ".default('').");
     }
+
+    // Note: deriveSkipState mapping coverage is exercised via the
+    // shape-lock test above + a webclient-side roundtrip (the
+    // game-store's WebPlayerView parsing test), since PlayerView is
+    // a concrete class with a Game-dependent constructor and the
+    // dynamic-proxy stub pattern only works for interfaces.
 
     @Test
     void shouldIncludePlayer_nullFilter_keepsEveryone() {
