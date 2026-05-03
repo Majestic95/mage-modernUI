@@ -470,6 +470,7 @@ describe('Game page', () => {
             message: 'Mulligan <font color=#ffff00>down to 6</font>',
             turn: 1,
             phase: '',
+            cardsByName: {},
           },
         ],
       });

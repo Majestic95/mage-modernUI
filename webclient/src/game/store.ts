@@ -10,6 +10,7 @@
 import { create } from 'zustand';
 import type {
   WebAbilityPickerView,
+  WebCardView,
   WebChatMessage,
   WebCommandObjectView,
   WebDialogClear,
@@ -123,6 +124,76 @@ export interface GameLogEntry {
   turn: number;
   /** Phase / step label, e.g. "PRECOMBAT_MAIN". Empty if unavailable. */
   phase: string;
+  /**
+   * Snapshot of every card present in any visible zone at the moment
+   * this entry was added, keyed by lowercased card name. Frozen on the
+   * entry so the GameLog hover preview keeps working even after the
+   * referenced card has moved zones (or the player has left and
+   * rejoined). Built from {@code gameView} battlefield + stack + every
+   * player's graveyard / exile / sideboard (and the local player's
+   * hand). Empty when the gameInform arrived without an attached
+   * gameView snapshot. ADR 0008 §B3 follow-up — the engine doesn't
+   * carry structured card-id metadata on inform events, so the
+   * webclient resolves names against the snapshot at emit-time. Misses
+   * (rare) fall back to plain styled text without hover.
+   */
+  cardsByName: Record<string, WebCardView>;
+}
+
+/**
+ * Filter — only entries that mention a card (any {@code <font>}
+ * highlight) or a life change ({@code "gains N life"} /
+ * {@code "loses N life"}, the two patterns
+ * {@link mage.players.PlayerImpl#gainLife} /
+ * {@link mage.players.PlayerImpl#loseLife} emit) survive. Phase /
+ * step / turn-boundary informs ("alice's turn", "Beginning of
+ * upkeep", "End of turn") have neither and are dropped — they were
+ * documented log noise per the user's "I want it to tell me who
+ * played what card and report life gain or life lost" directive.
+ *
+ * <p>Damage to a player is converted to life loss via
+ * {@code damagePlayerOrPlaneswalker} → {@code loseLife}, so the
+ * "loses N life" pattern catches combat damage too.
+ */
+const CARD_HIGHLIGHT_RE = /<font\s/i;
+const LIFE_CHANGE_RE = /\b(?:gains|loses)\s+\d+\s+life\b/i;
+function shouldKeepGameLogEntry(message: string): boolean {
+  return CARD_HIGHLIGHT_RE.test(message) || LIFE_CHANGE_RE.test(message);
+}
+
+/**
+ * Build the {@code cardsByName} index for a fresh game-log entry from
+ * the gameView snapshot the gameInform carried. Walks every zone we
+ * have read access to:
+ * <ul>
+ *   <li>Battlefield + stack — public to all players.</li>
+ *   <li>Each player's graveyard / exile / sideboard / commandList — public.</li>
+ *   <li>Local player's hand — visible via {@code myHand}.</li>
+ * </ul>
+ *
+ * <p>Multiple cards with the same name (e.g. four Forests) collapse
+ * onto one entry — the hover preview only needs the printing's art +
+ * oracle text, not a unique identity, and any of the duplicates is
+ * a correct preview. Last-write-wins on collisions.
+ */
+function buildCardsByName(gv: WebGameView | null): Record<string, WebCardView> {
+  const out: Record<string, WebCardView> = {};
+  if (!gv) return out;
+  const ingest = (cards: Record<string, WebCardView> | undefined) => {
+    if (!cards) return;
+    for (const c of Object.values(cards)) {
+      if (c.name) out[c.name.toLowerCase()] = c;
+    }
+  };
+  ingest(gv.myHand);
+  ingest(gv.stack);
+  for (const p of gv.players ?? []) {
+    ingest(p.battlefield);
+    ingest(p.graveyard);
+    ingest(p.exile);
+    ingest(p.sideboard);
+  }
+  return out;
 }
 
 interface GameState {
@@ -539,20 +610,35 @@ function reduceGameInformOrOver(
   // these for state-only updates) don't add log noise.
   let nextLog = state.gameLog;
   let nextReveals = state.recentReveals;
+  // 2026-05-03 — game log directive: filter to "who played what
+  // card" + "life gain / life loss" only. Phase boundary informs
+  // ("alice's turn", "Beginning of upkeep") are dropped because
+  // they have no card highlight and don't match the life-change
+  // pattern. shouldKeepGameLogEntry encodes that filter.
+  const isGameOver = frame.method === 'gameOver';
   if (wrapped.message && wrapped.message.length > 0) {
-    const entry: GameLogEntry = {
-      id: frame.messageId,
-      message: wrapped.message,
-      turn: nextGv?.turn ?? 0,
-      phase: nextGv?.step || nextGv?.phase || '',
-    };
-    nextLog = nextLog.length >= GAME_LOG_CAP
-      ? [...nextLog.slice(nextLog.length - GAME_LOG_CAP + 1), entry]
-      : [...nextLog, entry];
+    // gameOver always reaches the log — the final "alice has won the
+    // game" line is the closing record of the match, regardless of
+    // the card-played / life-change filter.
+    if (isGameOver || shouldKeepGameLogEntry(wrapped.message)) {
+      const entry: GameLogEntry = {
+        id: frame.messageId,
+        message: wrapped.message,
+        turn: nextGv?.turn ?? 0,
+        phase: nextGv?.step || nextGv?.phase || '',
+        cardsByName: buildCardsByName(nextGv),
+      };
+      nextLog = nextLog.length >= GAME_LOG_CAP
+        ? [...nextLog.slice(nextLog.length - GAME_LOG_CAP + 1), entry]
+        : [...nextLog, entry];
+    }
     // Bug fix (2026-05-02) — detect reveal lines (PlayerImpl.revealCards
     // emits "<player> reveals <card>" / "<player> reveals her hand: ...").
     // Per CR 701.16a reveal is momentary, not a persistent zone, so we
     // queue rather than store; the toast component dismisses by TTL.
+    // Reveal toast lives outside the game-log filter — a reveal might
+    // get filtered out of the log (e.g. if the wording changes to drop
+    // the highlight) but should still surface as a toast.
     if (REVEAL_DETECTOR.test(wrapped.message)) {
       const reveal = {
         id: frame.messageId,
@@ -565,7 +651,6 @@ function reduceGameInformOrOver(
         : grown;
     }
   }
-  const isGameOver = frame.method === 'gameOver';
   return {
     lastWrapped: wrapped,
     gameView: nextGv,

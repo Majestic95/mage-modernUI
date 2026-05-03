@@ -11,7 +11,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import type { GameLogEntry } from './store';
 import {
+  webCardViewSchema,
   webPlayerViewSchema,
+  type WebCardView,
   type WebCommandObjectView,
   type WebPlayerView,
 } from '../api/schemas';
@@ -100,8 +102,37 @@ function makeEntry(overrides: Partial<GameLogEntry> = {}): GameLogEntry {
     message: 'alice plays Forest',
     turn: 1,
     phase: 'PRECOMBAT_MAIN',
+    cardsByName: {},
     ...overrides,
   };
+}
+
+function makeCard(name: string, overrides: Partial<WebCardView> = {}): WebCardView {
+  return webCardViewSchema.parse({
+    id: `card-${name.toLowerCase().replace(/\s+/g, '-')}`,
+    name,
+    displayName: name,
+    expansionSetCode: 'M21',
+    cardNumber: '1',
+    manaCost: '',
+    manaValue: 0,
+    typeLine: 'Land',
+    supertypes: [],
+    types: ['LAND'],
+    subtypes: [],
+    colors: [],
+    rarity: 'common',
+    power: '',
+    toughness: '',
+    startingLoyalty: '',
+    rules: [],
+    faceDown: false,
+    counters: {},
+    transformable: false,
+    transformed: false,
+    secondCardFace: null,
+    ...overrides,
+  });
 }
 
 afterEach(() => {
@@ -117,23 +148,21 @@ describe('GameLog — legacy (REDESIGN=false)', () => {
     expect(screen.getByText('No events yet.')).toBeInTheDocument();
   });
 
-  it('renders entries with the T<turn>·<phase> prefix', () => {
+  it('does NOT render a T<turn>·<phase> prefix (2026-05-03 directive)', () => {
     storeState.gameLog = [
       makeEntry({ turn: 3, phase: 'PRECOMBAT_MAIN' }),
     ];
     render(<GameLog />);
-    expect(screen.getByText(/T3·PREC/)).toBeInTheDocument();
+    expect(screen.queryByText(/T3·PREC/)).toBeNull();
   });
 
-  it('strips HTML tags from the message', () => {
+  it('renders the highlighted card name with the upstream color', () => {
     storeState.gameLog = [
       makeEntry({
         message: 'alice plays <font color=#ffff00>Blood Crypt</font>',
       }),
     ];
     render(<GameLog />);
-    // Legacy strips ALL tags, so "Blood Crypt" appears as plain text
-    // alongside "alice plays".
     const entry = screen.getByTestId('game-log-entry');
     expect(entry).toHaveTextContent(/alice plays.*Blood Crypt/);
   });
@@ -264,5 +293,72 @@ describe('GameLog — REDESIGN flag on (slice 70-L)', () => {
     render(<GameLog />);
     const entry = screen.getByTestId('game-log-entry');
     expect(within(entry).queryByTestId('player-portrait')).toBeNull();
+  });
+
+  it('does NOT render the T<turn>·<phase> prefix on redesigned entries', () => {
+    flagState.redesign = true;
+    storeState.gameLog = [
+      makeEntry({
+        turn: 5,
+        phase: 'PRECOMBAT_MAIN',
+        message: 'alice plays Forest',
+      }),
+    ];
+    render(<GameLog players={[makePlayer({ name: 'alice' })]} />);
+    expect(screen.queryByText(/T5·PREC/)).toBeNull();
+  });
+});
+
+describe('GameLog — card-hover wrapping (2026-05-03)', () => {
+  it('wraps highlighted card names that are present in cardsByName with a hover trigger', () => {
+    storeState.gameLog = [
+      makeEntry({
+        message: 'alice plays <font color=#ffff00>Blood Crypt</font>',
+        cardsByName: { 'blood crypt': makeCard('Blood Crypt') },
+      }),
+    ];
+    render(<GameLog />);
+    const hover = screen.getByTestId('game-log-card-hover');
+    expect(hover.getAttribute('data-card-name')).toBe('Blood Crypt');
+    expect(hover.className).toContain('cursor-help');
+  });
+
+  it('renders highlighted names without a hover wrapper when not in cardsByName', () => {
+    storeState.gameLog = [
+      makeEntry({
+        message: 'alice plays <font color=#ffff00>Blood Crypt</font>',
+        cardsByName: {},
+      }),
+    ];
+    render(<GameLog />);
+    expect(screen.queryByTestId('game-log-card-hover')).toBeNull();
+    // Plain colored span still renders so the message reads.
+    expect(screen.getByTestId('game-log-entry')).toHaveTextContent('Blood Crypt');
+  });
+
+  it('case-insensitively resolves card names to the cardsByName index', () => {
+    storeState.gameLog = [
+      makeEntry({
+        message: 'alice plays <font color=#ffff00>BLOOD CRYPT</font>',
+        cardsByName: { 'blood crypt': makeCard('Blood Crypt') },
+      }),
+    ];
+    render(<GameLog />);
+    expect(
+      screen.getByTestId('game-log-card-hover').getAttribute('data-card-name'),
+    ).toBe('Blood Crypt');
+  });
+
+  it('strips a trailing parenthesized disambiguator before lookup', () => {
+    storeState.gameLog = [
+      makeEntry({
+        message: 'alice plays <font color=#ffff00>Forest (a)</font>',
+        cardsByName: { forest: makeCard('Forest') },
+      }),
+    ];
+    render(<GameLog />);
+    expect(
+      screen.getByTestId('game-log-card-hover').getAttribute('data-card-name'),
+    ).toBe('Forest');
   });
 });

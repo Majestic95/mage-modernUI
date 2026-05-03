@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef } from 'react';
-import type { WebPlayerView } from '../api/schemas';
-import { renderUpstreamMarkup } from './dialogs/markupRenderer';
+import { useEffect, useMemo, useRef, type ReactNode } from 'react';
+import type { WebCardView, WebPlayerView } from '../api/schemas';
 import { REDESIGN } from '../featureFlags';
+import { HoverCardDetail } from './HoverCardDetail';
 import { PlayerPortrait } from './PlayerPortrait';
 import { useGameStore } from './store';
 
@@ -95,8 +95,7 @@ export function GameLog({
             <RedesignedEntry
               key={`${e.id}-${e.turn}`}
               text={e.message}
-              turn={e.turn}
-              phase={e.phase}
+              cardsByName={e.cardsByName}
               playerByName={playerByName}
               myPlayerId={myPlayerId}
             />
@@ -108,13 +107,11 @@ export function GameLog({
               data-testid="game-log-entry"
               className="text-zinc-300 leading-snug"
             >
-              {(e.turn > 0 || e.phase) && (
-                <span className="text-zinc-600 mr-1.5 font-mono">
-                  T{e.turn}
-                  {e.phase && `·${e.phase.slice(0, 4)}`}
-                </span>
-              )}
-              <LogMessage text={e.message} />
+              {/* 2026-05-03 directive — no turn/phase pill in the
+                  game log. Rendering only the card-played + life-
+                  change content per the user's "tell me who played
+                  what card and report life gain or life lost" spec. */}
+              {renderLogMarkup(e.message, e.cardsByName)}
             </div>
           ))
         )}
@@ -124,15 +121,101 @@ export function GameLog({
 }
 
 /**
- * Strip upstream's HTML-flavored markup safely (same approach as
- * GameDialog's renderer; see GameDialog.tsx renderUpstreamMarkup).
- * Inline here to avoid coupling — log entries are plain prose with
- * occasional &lt;font color&gt; highlights; we just render text and
- * drop any tags upstream emitted.
+ * Render an upstream log message with card-name highlights wrapped
+ * in {@link HoverCardDetail} so the user can hover any highlighted
+ * card to see its full art + oracle text — the same affordance the
+ * hand fan and battlefield tiles offer.
+ *
+ * <p>Tokenizer mirrors {@code renderUpstreamMarkup} (font-color +
+ * br + strip-other-tags) so security guarantees are identical: no
+ * {@code dangerouslySetInnerHTML}; arbitrary CSS can't slip into
+ * the {@code style} attribute (the regex constrains color values
+ * to a 3-or-6-char hex). The only change is the {@code <font>}
+ * arm, which looks the highlighted text up in {@code cardsByName}
+ * (frozen on the entry at emit time, see store.buildCardsByName)
+ * and renders {@code HoverCardDetail} when found. Misses fall back
+ * to a plain colored span — never broken text, never a hover stub
+ * that does nothing.
+ *
+ * <p>Lookup keys are lowercased to match {@code buildCardsByName}'s
+ * normalization. Engine-side log names sometimes include extra
+ * suffixes (e.g. {@code "Lightning Bolt (a)"}) — we strip a
+ * trailing parenthesized suffix before the lookup, then fall back
+ * to the un-stripped form if that misses.
  */
-function LogMessage({ text }: { text: string }) {
-  const stripped = text.replace(/<[^>]+>/g, '');
-  return <span>{stripped}</span>;
+function renderLogMarkup(
+  text: string,
+  cardsByName: Record<string, WebCardView>,
+): ReactNode {
+  const tokenRe =
+    /<font\s+color=(#[0-9a-fA-F]{3,6})>([\s\S]*?)<\/font>|<br\s*\/?>|<[^>]+>/g;
+  const parts: ReactNode[] = [];
+  let lastIdx = 0;
+  let key = 0;
+  let match: RegExpExecArray | null;
+  while ((match = tokenRe.exec(text)) !== null) {
+    if (match.index > lastIdx) {
+      parts.push(text.slice(lastIdx, match.index));
+    }
+    if (match[0].toLowerCase().startsWith('<br')) {
+      parts.push(<br key={`br-${key++}`} />);
+    } else if (match[0].toLowerCase().startsWith('<font')) {
+      const color = match[1]!;
+      const inner = match[2] ?? '';
+      const card = lookupCard(inner, cardsByName);
+      const colored = (
+        <span style={{ color }}>{stripTags(inner)}</span>
+      );
+      if (card) {
+        parts.push(
+          <HoverCardDetail key={`f-${key++}`} card={card}>
+            <span
+              data-testid="game-log-card-hover"
+              data-card-name={card.name}
+              className="cursor-help underline decoration-dotted underline-offset-2"
+            >
+              {colored}
+            </span>
+          </HoverCardDetail>,
+        );
+      } else {
+        parts.push(<span key={`f-${key++}`}>{colored}</span>);
+      }
+    }
+    // Any other tag (the third arm of the regex) is intentionally
+    // dropped — strips out unhandled markup without leaking it.
+    lastIdx = match.index + match[0].length;
+  }
+  if (lastIdx < text.length) {
+    parts.push(text.slice(lastIdx));
+  }
+  return parts.length === 1 ? parts[0] : <>{parts}</>;
+}
+
+/**
+ * Resolve a highlighted card name against the entry's frozen
+ * cards-by-name index. Tries the stripped form (no nested tags, no
+ * trailing parenthesized suffix) first, then a few permutations
+ * because engine log names occasionally include them.
+ */
+function lookupCard(
+  rawInner: string,
+  cardsByName: Record<string, WebCardView> | undefined,
+): WebCardView | null {
+  if (!cardsByName) return null;
+  const plain = stripTags(rawInner).trim();
+  if (!plain) return null;
+  const lower = plain.toLowerCase();
+  if (cardsByName[lower]) return cardsByName[lower];
+  // Try stripping a trailing " (a)" / " (b)" disambiguator (common
+  // when the engine emits a token-vs-source distinction).
+  const noParen = lower.replace(/\s*\([^)]*\)\s*$/, '');
+  if (cardsByName[noParen]) return cardsByName[noParen];
+  return null;
+}
+
+function stripTags(s: string): string {
+  return s.replace(/<[^>]+>/g, '');
 }
 
 /**
@@ -158,14 +241,12 @@ function LogMessage({ text }: { text: string }) {
  */
 function RedesignedEntry({
   text,
-  turn,
-  phase,
+  cardsByName,
   playerByName,
   myPlayerId,
 }: {
   text: string;
-  turn: number;
-  phase: string;
+  cardsByName: Record<string, WebCardView>;
   playerByName: Map<string, WebPlayerView>;
   myPlayerId: string | undefined;
 }) {
@@ -238,14 +319,11 @@ function RedesignedEntry({
             {displayName}
           </span>
         )}
+        {/* 2026-05-03 directive — no turn/phase pill on game-log
+            entries. Highlights inside the message become hoverable
+            card previews (see renderLogMarkup). */}
         <span className="text-zinc-300 text-xs">
-          {(turn > 0 || phase) && (
-            <span className="text-zinc-600 mr-1.5 font-mono">
-              T{turn}
-              {phase && `·${phase.slice(0, 4)}`}
-            </span>
-          )}
-          {renderUpstreamMarkup(actionText)}
+          {renderLogMarkup(actionText, cardsByName)}
         </span>
       </div>
     </div>

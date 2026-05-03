@@ -475,7 +475,10 @@ describe('useGameStore', () => {
     const gv = buildGameView(3);
     const wrap = webGameClientMessageSchema.parse({
       gameView: gv,
-      message: 'alice plays Forest',
+      // 2026-05-03 directive — log filter requires either a card-name
+      // highlight or a life-change pattern. Use the highlighted form
+      // here (the engine emits this format on plays/casts).
+      message: 'alice plays <font color=#ffff00>Forest</font>',
       targets: [],
       cardsView1: {},
       min: 0,
@@ -488,7 +491,7 @@ describe('useGameStore', () => {
     expect(log).toHaveLength(1);
     expect(log[0]).toMatchObject({
       id: 17,
-      message: 'alice plays Forest',
+      message: 'alice plays <font color=#ffff00>Forest</font>',
       turn: 3,
       phase: 'PRECOMBAT_MAIN',
     });
@@ -528,10 +531,13 @@ describe('useGameStore', () => {
 
   it('gameLog evicts oldest entries past the 500-entry cap', () => {
     // Push 510 messages, assert head is no longer the first one.
+    // 2026-05-03 directive — each message must pass the card-played
+    // / life-change filter to land in the log; embed a font tag so
+    // every message qualifies regardless of the index.
     for (let i = 0; i < 510; i++) {
       const wrap = webGameClientMessageSchema.parse({
         gameView: null,
-        message: `event ${i}`,
+        message: `<font color=#ffff00>event ${i}</font>`,
         targets: [],
         cardsView1: {},
         min: 0,
@@ -543,15 +549,20 @@ describe('useGameStore', () => {
     }
     const log = useGameStore.getState().gameLog;
     expect(log).toHaveLength(500);
-    // Oldest 10 evicted; head should be event 10.
-    expect(log[0]?.message).toBe('event 10');
-    expect(log[log.length - 1]?.message).toBe('event 509');
+    // Oldest 10 evicted; head should be event 10. (font tags wrap
+    // each message to satisfy the filter.)
+    expect(log[0]?.message).toBe('<font color=#ffff00>event 10</font>');
+    expect(log[log.length - 1]?.message).toBe(
+      '<font color=#ffff00>event 509</font>',
+    );
   });
 
   it('reset clears gameLog along with everything else', () => {
     const wrap = webGameClientMessageSchema.parse({
       gameView: null,
-      message: 'something',
+      // Filter requires highlighted card OR life pattern; use the
+      // highlighted form to land an entry that reset() then clears.
+      message: '<font color=#ffff00>something</font>',
       targets: [],
       cardsView1: {},
       min: 0,
@@ -563,6 +574,83 @@ describe('useGameStore', () => {
     expect(useGameStore.getState().gameLog).toHaveLength(1);
     useGameStore.getState().reset();
     expect(useGameStore.getState().gameLog).toHaveLength(0);
+  });
+
+  /* ---------- 2026-05-03 — game-log filter + cardsByName ---------- */
+
+  it('drops gameInform without a card highlight or life-change pattern', () => {
+    // "alice's turn" is the engine's turn-boundary inform — exactly
+    // the noise the user wanted gone from the log.
+    const wrap = webGameClientMessageSchema.parse({
+      gameView: null,
+      message: "alice's turn",
+      targets: [],
+      cardsView1: {},
+      min: 0,
+      max: 0,
+      flag: false,
+      choice: null,
+    });
+    useGameStore.getState().applyFrame(frame('gameInform', wrap, 5), wrap);
+    expect(useGameStore.getState().gameLog).toHaveLength(0);
+  });
+
+  it('keeps gameInform that contains a font-color highlight', () => {
+    const wrap = webGameClientMessageSchema.parse({
+      gameView: null,
+      message: 'alice plays <font color=#ffff00>Forest</font>',
+      targets: [],
+      cardsView1: {},
+      min: 0,
+      max: 0,
+      flag: false,
+      choice: null,
+    });
+    useGameStore.getState().applyFrame(frame('gameInform', wrap, 6), wrap);
+    expect(useGameStore.getState().gameLog).toHaveLength(1);
+  });
+
+  it('keeps "gains N life" / "loses N life" informs even without a card highlight', () => {
+    for (const message of ['alice gains 4 life', 'alice loses 3 life']) {
+      const wrap = webGameClientMessageSchema.parse({
+        gameView: null,
+        message,
+        targets: [],
+        cardsView1: {},
+        min: 0,
+        max: 0,
+        flag: false,
+        choice: null,
+      });
+      useGameStore.getState().applyFrame(frame('gameInform', wrap, 7), wrap);
+    }
+    const log = useGameStore.getState().gameLog;
+    expect(log).toHaveLength(2);
+    expect(log.map((e) => e.message)).toEqual([
+      'alice gains 4 life',
+      'alice loses 3 life',
+    ]);
+  });
+
+  it('snapshots cardsByName from the current gameView at emit time', () => {
+    const gv = buildGameView(2);
+    // buildGameView seeds a Forest in the local hand by default; verify
+    // it lands in cardsByName lowercased.
+    const wrap = webGameClientMessageSchema.parse({
+      gameView: gv,
+      message: 'alice plays <font color=#ffff00>Forest</font>',
+      targets: [],
+      cardsView1: {},
+      min: 0,
+      max: 0,
+      flag: false,
+      choice: null,
+    });
+    useGameStore.getState().applyFrame(frame('gameInform', wrap, 8), wrap);
+    const entry = useGameStore.getState().gameLog[0];
+    expect(entry).toBeDefined();
+    expect(entry!.cardsByName.forest).toBeDefined();
+    expect(entry!.cardsByName.forest!.name).toBe('Forest');
   });
 
   /* ---------- slice 19: game-over banner state ---------- */
