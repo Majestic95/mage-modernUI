@@ -71,7 +71,18 @@ export const useDecksStore = create<DecksState>()(
         return deck;
       },
 
-      update: (id, patch) =>
+      update: (id, patch) => {
+        // Audit fix — early-return on no-op patch so callers that pass
+        // {} (or only undefined fields) don't trigger a spurious
+        // re-render with a new array identity. Prior behavior allocated
+        // a new decks[] every call.
+        if (
+          patch.name === undefined
+          && patch.cards === undefined
+          && patch.sideboard === undefined
+        ) {
+          return;
+        }
         set((s) => ({
           decks: s.decks.map((d) => {
             if (d.id !== id) return d;
@@ -84,7 +95,8 @@ export const useDecksStore = create<DecksState>()(
               sideboard: patch.sideboard ?? d.sideboard,
             };
           }),
-        })),
+        }));
+      },
 
       remove: (id) => set((s) => ({ decks: s.decks.filter((d) => d.id !== id) })),
 

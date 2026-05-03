@@ -37,6 +37,7 @@ import type { WebDeckCardInfo, WebDeckValidationError } from '../api/schemas';
 import { useDecksStore } from '../decks/store';
 import { ValidationErrorList } from '../decks/ValidationErrorList';
 import { GameStream } from '../game/stream';
+import { PasswordPromptModal } from '../pages/PasswordPromptModal';
 
 interface EditableInitial {
   password: string;
@@ -112,6 +113,14 @@ interface Props {
    */
   joinPassword?: string;
   /**
+   * Audit fix (HIGH #3 + #7) — called when the lobby decides the
+   * user needs to re-enter their password (wrong-password 422 on
+   * first deck-pick). Parent updates the {@code joinPassword} prop
+   * which feeds back into the next deck-pick attempt. Without this,
+   * a guest who typed the wrong password had no recovery path.
+   */
+  onRequestPasswordReprompt?: (newPassword: string) => void;
+  /**
    * Slice L8 — called when the user confirms leaving the lobby.
    * The parent (App.tsx) clears activeLobbyId; this screen just
    * fires the appropriate server-side teardown (host: DELETE table,
@@ -120,7 +129,12 @@ interface Props {
   onLeave?: () => void;
 }
 
-export function NewLobbyScreen({ tableId, joinPassword, onLeave }: Props) {
+export function NewLobbyScreen({
+  tableId,
+  joinPassword,
+  onRequestPasswordReprompt,
+  onLeave,
+}: Props) {
   if (tableId === 'fixture') {
     return (
       <LobbyShell
@@ -136,6 +150,7 @@ export function NewLobbyScreen({ tableId, joinPassword, onLeave }: Props) {
     <LiveLobby
       tableId={tableId}
       joinPassword={joinPassword}
+      onRequestPasswordReprompt={onRequestPasswordReprompt}
       onLeave={onLeave}
     />
   );
@@ -144,10 +159,12 @@ export function NewLobbyScreen({ tableId, joinPassword, onLeave }: Props) {
 function LiveLobby({
   tableId,
   joinPassword,
+  onRequestPasswordReprompt,
   onLeave,
 }: {
   tableId: string;
   joinPassword?: string;
+  onRequestPasswordReprompt?: (newPassword: string) => void;
   onLeave?: () => void;
 }) {
   const session = useAuthStore((s) => s.session);
@@ -232,6 +249,7 @@ function LiveLobby({
       editInitial={initialFromTable(table)}
       useLiveDecksHook
       joinPassword={joinPassword}
+      onRequestPasswordReprompt={onRequestPasswordReprompt}
       onLeave={onLeave}
     />
   );
@@ -274,6 +292,7 @@ function LobbyShell({
   editInitial,
   useLiveDecksHook = false,
   joinPassword,
+  onRequestPasswordReprompt,
   onLeave,
 }: {
   data: LobbyFixture;
@@ -282,6 +301,7 @@ function LobbyShell({
   editInitial: EditableInitial;
   useLiveDecksHook?: boolean;
   joinPassword?: string;
+  onRequestPasswordReprompt?: (newPassword: string) => void;
   onLeave?: () => void;
 }) {
   const session = useAuthStore((s) => s.session);
@@ -307,6 +327,11 @@ function LobbyShell({
   const [deckValidationErrors, setDeckValidationErrors] = useState<
     readonly WebDeckValidationError[] | null
   >(null);
+  // Audit fix (HIGH #3 + #7) — when the server rejects with a wrong-
+  // password code on first deck-pick (or 422 generic with empty
+  // joinPassword on a passworded table), open a re-prompt modal so
+  // the user can fix it without leaving the lobby.
+  const [passwordReprompt, setPasswordReprompt] = useState(false);
   const [startSubmitting, setStartSubmitting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
   // Slice L8 — back button leave/close. Host gets a confirm modal
@@ -372,12 +397,27 @@ function LobbyShell({
     if (localSelectedDeckId !== null) return;
     const wireDeckName = localSeat?.deckName?.trim();
     if (!wireDeckName) return;
-    const match = allSavedDecks.find((d) => d.name === wireDeckName);
+    const wireSize = localSeat?.deckSize ?? 0;
+    // Audit fix — match by (name, mainboardSize) tuple so users with
+    // duplicate-named decks ("Untitled", "Burn", etc.) don't get
+    // silently bound to the wrong saved deck. Falls back to name-only
+    // when the mainboard size doesn't disambiguate uniquely (e.g.,
+    // two 100-card commander decks both named "Untitled").
+    const candidates = allSavedDecks.filter((d) => d.name === wireDeckName);
+    const sizeMatch = candidates.find(
+      (d) => d.cards.reduce((s, c) => s + c.amount, 0) === wireSize,
+    );
+    const match = sizeMatch ?? candidates[0];
     if (match) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setLocalSelectedDeckId(match.id);
     }
-  }, [localSelectedDeckId, localSeat?.deckName, allSavedDecks]);
+  }, [
+    localSelectedDeckId,
+    localSeat?.deckName,
+    localSeat?.deckSize,
+    allSavedDecks,
+  ]);
 
   // 2026-05-02 — optimistic host-seat override. The wire echoes a
   // seat's commanderName / colorIdentity / deckSize from the deck
@@ -496,6 +536,19 @@ function LobbyShell({
         setDeckValidationErrors(
           err.code === 'DECK_INVALID' ? err.validationErrors : null,
         );
+        // Audit fix (HIGH #3 + #7) — wrong-password / missing-password
+        // on first take-seat. Server signals via WRONG_PASSWORD or via
+        // 422 with a password-mentioning message. Heuristic: any 422
+        // mentioning "password" (case-insensitive) triggers a re-prompt.
+        // The reprompt modal closes the dead-end and lets the guest fix
+        // the password without leaving the lobby.
+        const looksLikeWrongPassword =
+          err.code === 'WRONG_PASSWORD'
+          || (err.status === 422
+              && /password/i.test(err.message ?? ''));
+        if (looksLikeWrongPassword && onRequestPasswordReprompt) {
+          setPasswordReprompt(true);
+        }
       } else {
         setDeckError('Failed to submit deck.');
         setDeckValidationErrors(null);
@@ -777,7 +830,9 @@ function LobbyShell({
               <div
                 role="alert"
                 data-testid="deck-error"
-                className="flex w-72 max-w-full flex-col gap-1 text-xs text-status-danger"
+                // Audit fix — cap height + scroll so a 30-error
+                // commander deck doesn't push the layout off-screen.
+                className="flex w-72 max-w-full max-h-48 overflow-y-auto flex-col gap-1 text-xs text-status-danger"
               >
                 {deckValidationErrors && deckValidationErrors.length > 0 ? (
                   <>
@@ -816,6 +871,27 @@ function LobbyShell({
               'Settings changed — guests must re-ready up.',
             )
           }
+        />
+      )}
+
+      {/* Audit fix (HIGH #3 + #7) — wrong-password reprompt. The
+          previous deck-pick attempt failed; the user types a new
+          password, we hand it up to App which updates joinPassword,
+          and the user can retry the deck-pick. Cancel exits without
+          changing anything (user can use the back button to leave
+          the lobby instead). */}
+      {passwordReprompt && (
+        <PasswordPromptModal
+          tableName="Re-enter password"
+          onClose={() => setPasswordReprompt(false)}
+          onSubmit={(pw) => {
+            onRequestPasswordReprompt?.(pw);
+            setPasswordReprompt(false);
+            // Clear the deck-error so the user knows the next deck-
+            // pick attempt is using the new password.
+            setDeckError(null);
+            setDeckValidationErrors(null);
+          }}
         />
       )}
 

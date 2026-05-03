@@ -113,15 +113,29 @@ function mapSeat(
   const isHost = webSeat.occupied && seatName === hostName && seatName !== '';
   // Schema 1.28 — server emits colorIdentity per seat, derived from
   // the commander's Card.getColorIdentity(). Filter against the WUBRG
-  // alphabet to defend against any future server-side oddity. Empty
-  // list = neutral team-ring (no commander or non-Commander format).
-  const colorIdentity = (webSeat.colorIdentity ?? []).filter(
-    (c): c is LobbyColor => VALID_COLORS.has(c as LobbyColor),
-  );
-  const artUrl = webSeat.commanderName
+  // alphabet to defend against any future server-side oddity (e.g.,
+  // lower-case emit from a hypothetical older 1.28 build); upper-case
+  // first to be tolerant. Empty list = neutral team-ring.
+  const colorIdentity = (webSeat.colorIdentity ?? [])
+    .map((c) => String(c).toUpperCase())
+    .filter((c): c is LobbyColor => VALID_COLORS.has(c as LobbyColor));
+  // Schema 1.29 — prefer the chosen-printing URL (setCode + cardNumber)
+  // so the lobby art reflects what the user picked in the deck editor.
+  // Falls back to by-name on 1.28 servers (printing fields empty) or
+  // when the seat hasn't submitted a deck yet — name-only at least
+  // surfaces the right art family.
+  const hasPrinting =
+    !!webSeat.commanderSetCode && !!webSeat.commanderCardNumber;
+  const artUrl = hasPrinting
+    ? scryfallByPrinting(
+        webSeat.commanderSetCode, webSeat.commanderCardNumber, 'art_crop')
+    : webSeat.commanderName
     ? scryfallByName(webSeat.commanderName, 'art_crop')
     : null;
-  const cardUrl = webSeat.commanderName
+  const cardUrl = hasPrinting
+    ? scryfallByPrinting(
+        webSeat.commanderSetCode, webSeat.commanderCardNumber, 'normal')
+    : webSeat.commanderName
     ? scryfallByName(webSeat.commanderName, 'normal')
     : null;
   const subtitle = subtitleFromCommanderName(webSeat.commanderName);
@@ -179,4 +193,14 @@ function normalizeName(raw: string): string {
 
 function scryfallByName(name: string, kind: 'art_crop' | 'normal'): string {
   return `https://api.scryfall.com/cards/named?format=image&version=${kind}&exact=${encodeURIComponent(name)}`;
+}
+
+function scryfallByPrinting(
+  setCode: string,
+  cardNumber: string,
+  kind: 'art_crop' | 'normal',
+): string {
+  const set = setCode.toLowerCase();
+  const num = encodeURIComponent(cardNumber);
+  return `https://api.scryfall.com/cards/${set}/${num}?format=image&version=${kind}`;
 }

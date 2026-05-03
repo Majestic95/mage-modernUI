@@ -11,57 +11,38 @@ import java.util.List;
  * <p>Slice 70-X (user direction 2026-04-30) — added {@code
  * commanderName} + {@code commanderImageNumber} so the lobby can
  * preview each seated player's commander identity BEFORE the game
- * starts. Both default to empty/{@code 0} for non-Commander game
- * types or seats whose deck submission hasn't completed yet
- * (validates fine — empty string + 0 means "no commander info to
- * show").
+ * starts.
  *
- * <p>Slice L2 (new-lobby-window, schema 1.27) — added {@code ready}
- * + {@code deckName} + {@code deckSize} + {@code deckSizeRequired}
- * so the new lobby screen can render the per-seat deck plate and
- * the per-seat ready toggle. {@code ready} is wire-only state today
- * (always emitted as {@code false}); slice L5 wires the toggle
- * endpoint that flips it. The deck-info fields read from the seat's
- * registered deck on the upstream {@link mage.game.match.Match}; if
- * no deck is registered yet (pre-submit) all three default to
- * {@code ""} / {@code 0}.
+ * <p>Schema 1.27 (slice L2) — added {@code ready} + {@code deckName}
+ * + {@code deckSize} + {@code deckSizeRequired} so the new lobby
+ * screen can render the per-seat deck plate and ready toggle.
  *
  * <p>Schema 1.28 — added {@code colorIdentity} so non-self seats
- * render the correct halo color in the new lobby. Without it the
- * client could only color the local user's seat (via the saved-
- * deck local override); every other seat fell back to a hardcoded
- * 6-commander stub and rendered a neutral team-ring.
+ * render the correct halo color in the new lobby.
+ *
+ * <p>Schema 1.29 — added {@code commanderSetCode} +
+ * {@code commanderCardNumber} (string) so the lobby preview honors
+ * the user's chosen printing for their commander art. Pre-1.29 the
+ * lobby fell back to a Scryfall by-name lookup which silently
+ * returned Scryfall's default printing instead of the user's pick.
+ * The integer {@code commanderImageNumber} stays for legacy reasons
+ * but is unused by the new lobby (it's 0 for ordinary cards).
  *
  * @param playerName            seated player's display name; empty when unoccupied
  * @param playerType            upstream {@code PlayerType} enum name
- *     (e.g. {@code "HUMAN"}, {@code "COMPUTER_MONTE_CARLO"}); empty
- *     when unoccupied
  * @param occupied              {@code true} if a player or AI fills the seat
- * @param commanderName         printed card name of this seat's first
- *     commander (sideboard slot 0). Empty for non-Commander formats
- *     and seats with no submitted deck. Multi-commander pairings
- *     (partner / background) surface only the first commander; later
- *     slices can extend to a list if useful.
- * @param commanderImageNumber  numeric printing identifier for
- *     scryfall art lookup ({@code commanderImageNumber} maps directly
- *     to {@code WebCommandObjectView.imageNumber}). 0 when no
- *     commander.
- * @param ready                 whether this seat has explicitly
- *     readied up. Always {@code false} pre-L5; L5 wires the
- *     toggle endpoint. AI seats are auto-ready on join (TableMapper
- *     emits {@code true} when {@code playerType != HUMAN}).
- * @param deckName              user-supplied deck name. Empty when
- *     no deck is registered yet.
- * @param deckSize              mainboard card count of the registered
- *     deck. {@code 0} when no deck yet.
- * @param deckSizeRequired      format-required mainboard size (60 for
- *     constructed, 100 for Commander, 40 for limited). Derived from
- *     the table's {@code deckType} string. {@code 0} if it cannot be
- *     determined.
- * @param colorIdentity         color identity of this seat's first
- *     commander as upper-case single-letter codes ("W","U","B","R","G").
- *     Empty list when no commander or non-Commander format. Read by
- *     the new lobby's seat halo / pip rendering.
+ * @param commanderName         printed card name of this seat's first commander
+ * @param commanderImageNumber  legacy int collector-number; 0 for ordinary cards
+ * @param ready                 whether this seat has explicitly readied up
+ * @param deckName              user-supplied deck name
+ * @param deckSize              mainboard card count of the registered deck
+ * @param deckSizeRequired      format-required mainboard size
+ * @param colorIdentity         WUBRG color-identity letter codes
+ * @param commanderSetCode      set code of this seat's first commander's chosen
+ *     printing (e.g. "C18", "ZNR"). Empty for non-Commander formats and seats
+ *     without a submitted deck. Used by the lobby to fetch the right Scryfall art.
+ * @param commanderCardNumber   collector number string of the same printing
+ *     (e.g. "1", "281", "287a"). Empty when no commander.
  */
 public record WebSeat(
         String playerName,
@@ -73,6 +54,8 @@ public record WebSeat(
         String deckName,
         int deckSize,
         int deckSizeRequired,
-        List<String> colorIdentity
+        List<String> colorIdentity,
+        String commanderSetCode,
+        String commanderCardNumber
 ) {
 }

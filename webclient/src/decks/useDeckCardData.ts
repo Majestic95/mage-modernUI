@@ -18,6 +18,20 @@ import type { SavedDeck } from './store';
 const cache = new Map<string, WebCardInfo | null>();
 const inflight = new Map<string, Promise<void>>();
 
+// Audit fix — clear the global card cache when the auth session goes
+// away. Card metadata isn't user-scoped today, but if the server ever
+// adds per-user card visibility (custom sets, preview cards) the next
+// user-on-this-device would see the prior user's view. Defensive,
+// cheap, runs once per logout. The subscription is a module-level
+// side effect installed on first import — same pattern as the cache
+// itself.
+useAuthStore.subscribe((state, prev) => {
+  if (prev.session && !state.session) {
+    cache.clear();
+    inflight.clear();
+  }
+});
+
 async function fetchOne(name: string, token: string): Promise<void> {
   if (cache.has(name)) return;
   const existing = inflight.get(name);
@@ -33,12 +47,13 @@ async function fetchOne(name: string, token: string): Promise<void> {
         { token },
       );
       cache.set(name, result.cards[0] ?? null);
-    } catch (err) {
-      if (err instanceof ApiError) {
-        cache.set(name, null);
-        return;
-      }
-      throw err;
+    } catch {
+      // Audit fix (HIGH #4) — write null on ANY failure (ApiError,
+      // network error, schema mismatch, etc.) so the cache always
+      // settles for this name. Pre-fix the non-ApiError path re-threw,
+      // leaving the entry permanently un-cached and the consumer's
+      // {@code loading} flag stuck on {@code true} forever.
+      cache.set(name, null);
     } finally {
       inflight.delete(name);
     }
@@ -71,7 +86,11 @@ export function useDeckCardData(deck: SavedDeck | null): Result {
     const missing = uniqueNames.filter((n) => !cache.has(n));
     if (missing.length === 0) return;
     let cancelled = false;
-    void Promise.all(missing.map((n) => fetchOne(n, token))).then(() => {
+    // Use .finally so the bump fires even on a rejection path —
+    // belt-and-suspenders since fetchOne now always writes to cache,
+    // but a future caller that throws shouldn't be able to leave the
+    // UI stuck in loading state.
+    Promise.all(missing.map((n) => fetchOne(n, token))).finally(() => {
       if (!cancelled) setBumpKey((k) => k + 1);
     });
     return () => {

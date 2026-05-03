@@ -18,11 +18,11 @@
  * <p>All mutations auto-save to the localStorage-backed Zustand store —
  * matches the existing "no explicit save button" convention.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { WebCardInfo, WebDeckCardInfo } from '../api/schemas';
 import { ArtPickerModal } from '../decks/ArtPickerModal';
 import { useDeckCardData } from '../decks/useDeckCardData';
-import { useDecksStore, type SavedDeck } from '../decks/store';
+import { useDecksStore } from '../decks/store';
 
 interface Props {
   deckId: string;
@@ -66,10 +66,29 @@ export function DeckEditor({ deckId, onClose }: Props) {
   const { byName, loading } = useDeckCardData(deck);
 
   const [renameDraft, setRenameDraft] = useState<string | null>(null);
+  // Audit fix (HIGH #5 + #4) — store the entry's CONTENT (cardName +
+  // setCode + cardNumber), not its array index, in the picker state.
+  // Index goes stale across cross-tab mutations and after qty=0 filter
+  // shifts indices; targeting by content survives both.
   const [artPicker, setArtPicker] = useState<
-    | { lane: Lane; index: number; entry: WebDeckCardInfo }
+    | {
+        lane: Lane;
+        cardName: string;
+        setCode: string;
+        cardNumber: string;
+        // Optimistic-revert target for swapArt failure surfaces.
+        previousAmount: number;
+      }
     | null
   >(null);
+
+  // Audit fix — cross-tab delete: if the deck disappears while we're
+  // editing it, route back to the list automatically. Without this the
+  // editor sat on "Deck not found" until the user clicked Back.
+  useEffect(() => {
+    if (!deck) onClose();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deck === null]);
 
   if (!deck) {
     return (
@@ -92,23 +111,62 @@ export function DeckEditor({ deckId, onClose }: Props) {
     setRenameDraft(null);
   };
 
-  const setQty = (lane: Lane, index: number, nextAmount: number) => {
-    const list = lane === 'cards' ? deck.cards : deck.sideboard;
+  // Audit fix (HIGH #5) — read fresh state via getState so cross-tab
+  // mutations don't get clobbered. Find the entry by content (cardName
+  // + setCode + cardNumber) instead of by array index — index is fragile
+  // because a prior qty=0 filter or a cross-tab delete shifts indices
+  // out from under us.
+  const setQty = (
+    lane: Lane,
+    cardName: string,
+    setCode: string,
+    cardNumber: string,
+    nextAmount: number,
+  ) => {
+    const fresh = useDecksStore.getState().decks.find((d) => d.id === deck.id);
+    if (!fresh) return;
+    const list = lane === 'cards' ? fresh.cards : fresh.sideboard;
+    // Audit fix — guard against stranding the Commander. In the
+    // sideboard's slot 0 (Commander format convention), refuse to
+    // delete to 0 — the user can still swap art / replace the entry
+    // outright via Option-1 search (when shipped). For now just block
+    // the destructive path.
+    const isCommanderSlot =
+      lane === 'sideboard'
+      && list[0]?.cardName === cardName
+      && list[0]?.setCode === setCode
+      && list[0]?.cardNumber === cardNumber;
+    const minAmount = isCommanderSlot ? 1 : 0;
+    const clamped = Math.max(minAmount, nextAmount);
     const updated = list
-      .map((c, i) => (i === index ? { ...c, amount: nextAmount } : c))
+      .map((c) =>
+        c.cardName === cardName
+        && c.setCode === setCode
+        && c.cardNumber === cardNumber
+          ? { ...c, amount: clamped }
+          : c,
+      )
       .filter((c) => c.amount > 0);
     updateDeck(deck.id, { [lane]: updated });
   };
 
   const swapArt = (
     lane: Lane,
-    index: number,
-    setCode: string,
-    cardNumber: string,
+    cardName: string,
+    fromSetCode: string,
+    fromCardNumber: string,
+    toSetCode: string,
+    toCardNumber: string,
   ) => {
-    const list = lane === 'cards' ? deck.cards : deck.sideboard;
-    const updated = list.map((c, i) =>
-      i === index ? { ...c, setCode, cardNumber } : c,
+    const fresh = useDecksStore.getState().decks.find((d) => d.id === deck.id);
+    if (!fresh) return;
+    const list = lane === 'cards' ? fresh.cards : fresh.sideboard;
+    const updated = list.map((c) =>
+      c.cardName === cardName
+      && c.setCode === fromSetCode
+      && c.cardNumber === fromCardNumber
+        ? { ...c, setCode: toSetCode, cardNumber: toCardNumber }
+        : c,
     );
     updateDeck(deck.id, { [lane]: updated });
   };
@@ -179,8 +237,14 @@ export function DeckEditor({ deckId, onClose }: Props) {
         byName={byName}
         commanderHint={false}
         onSetQty={setQty}
-        onSwapArt={(lane, index, entry) =>
-          setArtPicker({ lane, index, entry })
+        onSwapArt={(lane, entry) =>
+          setArtPicker({
+            lane,
+            cardName: entry.cardName,
+            setCode: entry.setCode,
+            cardNumber: entry.cardNumber,
+            previousAmount: entry.amount,
+          })
         }
       />
 
@@ -191,22 +255,35 @@ export function DeckEditor({ deckId, onClose }: Props) {
         byName={byName}
         // Commander format convention: sideboard slot 0 IS the commander.
         // Tag it visually so users don't try to remove it like a regular
-        // sideboard slot. (We don't enforce — user can still delete.)
+        // sideboard slot. setQty enforces a min of 1 for that slot.
         commanderHint={true}
         onSetQty={setQty}
-        onSwapArt={(lane, index, entry) =>
-          setArtPicker({ lane, index, entry })
+        onSwapArt={(lane, entry) =>
+          setArtPicker({
+            lane,
+            cardName: entry.cardName,
+            setCode: entry.setCode,
+            cardNumber: entry.cardNumber,
+            previousAmount: entry.amount,
+          })
         }
       />
 
       {artPicker && (
         <ArtPickerModal
-          cardName={artPicker.entry.cardName}
-          currentSetCode={artPicker.entry.setCode}
-          currentCardNumber={artPicker.entry.cardNumber}
+          cardName={artPicker.cardName}
+          currentSetCode={artPicker.setCode}
+          currentCardNumber={artPicker.cardNumber}
           onClose={() => setArtPicker(null)}
           onSelect={(setCode, cardNumber) =>
-            swapArt(artPicker.lane, artPicker.index, setCode, cardNumber)
+            swapArt(
+              artPicker.lane,
+              artPicker.cardName,
+              artPicker.setCode,
+              artPicker.cardNumber,
+              setCode,
+              cardNumber,
+            )
           }
         />
       )}
@@ -228,23 +305,33 @@ function DeckLane({
   entries: WebDeckCardInfo[];
   byName: ReadonlyMap<string, WebCardInfo | null>;
   commanderHint: boolean;
-  onSetQty: (lane: Lane, index: number, nextAmount: number) => void;
-  onSwapArt: (lane: Lane, index: number, entry: WebDeckCardInfo) => void;
+  onSetQty: (
+    lane: Lane,
+    cardName: string,
+    setCode: string,
+    cardNumber: string,
+    nextAmount: number,
+  ) => void;
+  onSwapArt: (lane: Lane, entry: WebDeckCardInfo) => void;
 }) {
-  // Build [bucket -> [entry+originalIndex]] preserving original index
-  // so qty / art swap mutations target the right element in the
-  // original array (we sort + group for display only).
+  // Audit fix (HIGH #6) — bucket entries by content, NOT by index.
+  // Index-based bucketing meant cards re-mounted whenever a prior
+  // entry got filtered out (qty=0), churning React state. The
+  // commander-flag is computed by content match against sideboard[0]
+  // so it survives reorder + post-filter index shifts.
+  const commanderEntry = commanderHint ? entries[0] ?? null : null;
   const grouped = useMemo(() => {
-    const buckets = new Map<TypeBucket, Array<{ entry: WebDeckCardInfo; index: number }>>();
+    const buckets = new Map<TypeBucket, Array<{ entry: WebDeckCardInfo }>>();
     for (const b of TYPE_BUCKET_ORDER) buckets.set(b, []);
-    entries.forEach((entry, index) => {
+    entries.forEach((entry) => {
       const card = byName.get(entry.cardName) ?? null;
-      // Sideboard slot 0 in Commander format is the commander — pull
-      // it into its own bucket regardless of card type so the user
-      // sees it labeled clearly.
-      const bucket: TypeBucket =
-        commanderHint && index === 0 ? 'Commander' : bucketFor(card);
-      buckets.get(bucket)?.push({ entry, index });
+      const isCommander =
+        commanderEntry !== null
+        && entry.cardName === commanderEntry.cardName
+        && entry.setCode === commanderEntry.setCode
+        && entry.cardNumber === commanderEntry.cardNumber;
+      const bucket: TypeBucket = isCommander ? 'Commander' : bucketFor(card);
+      buckets.get(bucket)?.push({ entry });
     });
     for (const arr of buckets.values()) {
       arr.sort((a, b) => {
@@ -257,7 +344,7 @@ function DeckLane({
       });
     }
     return buckets;
-  }, [entries, byName, commanderHint]);
+  }, [entries, byName, commanderEntry]);
 
   if (entries.length === 0) {
     return (
@@ -290,20 +377,47 @@ function DeckLane({
                   'repeat(auto-fill, minmax(220px, 1fr))',
               }}
             >
-              {items.map(({ entry, index }) => (
-                <li key={`${entry.cardName}-${entry.setCode}-${entry.cardNumber}-${index}`}>
-                  <CardRow
-                    entry={entry}
-                    card={byName.get(entry.cardName) ?? null}
-                    onIncrement={() => onSetQty(lane, index, entry.amount + 1)}
-                    onDecrement={() =>
-                      onSetQty(lane, index, Math.max(0, entry.amount - 1))
-                    }
-                    onDelete={() => onSetQty(lane, index, 0)}
-                    onSwapArt={() => onSwapArt(lane, index, entry)}
-                  />
-                </li>
-              ))}
+              {items.map(({ entry }) => {
+                // Audit fix (HIGH #6) — stable content key. Index-based
+                // keys caused CardRow re-mount churn when adjacent rows
+                // got deleted (filter shifts every following index).
+                const isCommanderSlot =
+                  commanderEntry !== null
+                  && entry.cardName === commanderEntry.cardName
+                  && entry.setCode === commanderEntry.setCode
+                  && entry.cardNumber === commanderEntry.cardNumber;
+                const key = `${entry.cardName}|${entry.setCode}|${entry.cardNumber}`;
+                return (
+                  <li key={key}>
+                    <CardRow
+                      entry={entry}
+                      card={byName.get(entry.cardName) ?? null}
+                      isCommanderSlot={isCommanderSlot}
+                      onIncrement={() =>
+                        onSetQty(
+                          lane, entry.cardName, entry.setCode,
+                          entry.cardNumber, entry.amount + 1,
+                        )
+                      }
+                      onDecrement={() =>
+                        onSetQty(
+                          lane, entry.cardName, entry.setCode,
+                          entry.cardNumber,
+                          Math.max(isCommanderSlot ? 1 : 0, entry.amount - 1),
+                        )
+                      }
+                      onDelete={() => {
+                        if (isCommanderSlot) return;  // guard
+                        onSetQty(
+                          lane, entry.cardName, entry.setCode,
+                          entry.cardNumber, 0,
+                        );
+                      }}
+                      onSwapArt={() => onSwapArt(lane, entry)}
+                    />
+                  </li>
+                );
+              })}
             </ul>
           </div>
         );
@@ -315,6 +429,7 @@ function DeckLane({
 function CardRow({
   entry,
   card,
+  isCommanderSlot,
   onIncrement,
   onDecrement,
   onDelete,
@@ -322,12 +437,17 @@ function CardRow({
 }: {
   entry: WebDeckCardInfo;
   card: WebCardInfo | null;
+  isCommanderSlot: boolean;
   onIncrement: () => void;
   onDecrement: () => void;
   onDelete: () => void;
   onSwapArt: () => void;
 }) {
   const artUrl = scryfallArtCropUrl(entry.setCode, entry.cardNumber);
+  // Audit fix (LOW) — Scryfall doesn't have art for some xmage promo
+  // sets / non-standard collector numbers. Track per-row image-fail
+  // state so we can render a placeholder instead of a broken icon.
+  const [imgFailed, setImgFailed] = useState(false);
   return (
     <div
       data-testid="deck-editor-card-row"
@@ -343,12 +463,13 @@ function CardRow({
         className="h-12 w-12 flex-shrink-0 overflow-hidden rounded bg-zinc-800 hover:ring-2 hover:ring-fuchsia-400 transition-shadow"
         title={`Swap art (currently ${entry.setCode} #${entry.cardNumber})`}
       >
-        {artUrl ? (
+        {artUrl && !imgFailed ? (
           <img
             src={artUrl}
             alt=""
             loading="lazy"
             referrerPolicy="no-referrer"
+            onError={() => setImgFailed(true)}
             style={{
               width: '100%',
               height: '100%',
@@ -356,7 +477,11 @@ function CardRow({
               display: 'block',
             }}
           />
-        ) : null}
+        ) : (
+          <span className="flex h-full w-full items-center justify-center text-[9px] text-zinc-500 px-1 text-center">
+            {entry.setCode || '—'}
+          </span>
+        )}
       </button>
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-zinc-100 truncate" title={entry.cardName}>
@@ -395,9 +520,15 @@ function CardRow({
         <button
           type="button"
           data-testid="deck-editor-delete"
-          aria-label="Remove card"
+          aria-label={isCommanderSlot ? 'Cannot remove commander' : 'Remove card'}
+          disabled={isCommanderSlot}
           onClick={onDelete}
-          className="ml-1 w-6 h-6 rounded text-zinc-400 bg-zinc-800 hover:bg-status-danger hover:text-white"
+          title={
+            isCommanderSlot
+              ? 'Commander cannot be removed — swap art instead'
+              : 'Remove card'
+          }
+          className="ml-1 w-6 h-6 rounded text-zinc-400 bg-zinc-800 enabled:hover:bg-status-danger enabled:hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
         >
           ×
         </button>

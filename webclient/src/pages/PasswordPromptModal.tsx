@@ -26,7 +26,13 @@ export function PasswordPromptModal({ tableName, onClose, onSubmit }: Props) {
   const modalRootRef = useRef<HTMLDivElement>(null);
   useModalA11y(modalRootRef, { onClose });
 
+  // Audit fix — block empty-password submit. Server treats '' as no
+  // password → 422 surfaces only after the user reaches the lobby and
+  // picks a deck (delayed feedback, several seconds and a UI-state
+  // transition away from the cause).
+  const canSubmit = password.trim().length > 0;
   const submit = () => {
+    if (!canSubmit) return;
     onSubmit(password);
     onClose();
   };
@@ -89,7 +95,8 @@ export function PasswordPromptModal({ tableName, onClose, onSubmit }: Props) {
             type="button"
             data-testid="password-prompt-submit"
             onClick={submit}
-            className="px-4 py-2 rounded bg-fuchsia-600 hover:bg-fuchsia-500 text-white font-medium"
+            disabled={!canSubmit}
+            className="px-4 py-2 rounded bg-fuchsia-600 hover:bg-fuchsia-500 disabled:bg-zinc-700 disabled:cursor-not-allowed text-white font-medium"
           >
             Continue
           </button>

@@ -19,6 +19,69 @@ minor mismatches.
 
 ---
 
+## 1.29 — 2026-05-02 — Per-seat commander printing (post-audit fix)
+
+Adds two additive fields — `WebSeat.commanderSetCode` and
+`WebSeat.commanderCardNumber` (both strings) — so the new lobby's
+commander art lookup honors the user's chosen printing instead of
+falling back to Scryfall's default-by-name. Pre-1.29 the lobby
+built `https://api.scryfall.com/cards/named?exact=NAME` URLs which
+silently returned a default printing, so the deck-editor art
+picker's selection didn't propagate to the lobby preview. The
+integer `commanderImageNumber` stays for legacy reasons but is
+unused by the new lobby (it's 0 for ordinary cards).
+
+```diff
+   "commanderName": "Atraxa, Praetors' Voice",
+   "commanderImageNumber": 0,
++  "commanderSetCode": "C16",
++  "commanderCardNumber": "28",
+```
+
+Both default to `""` for non-Commander formats and seats without a
+submitted deck. Redacted (set to `""`) on passworded tables for
+non-seated viewers, same as `commanderName` / `deckName`.
+
+## 1.28 — 2026-05-02 — Per-seat colorIdentity (lobby halo parity)
+
+Adds one additive field — `WebSeat.colorIdentity: List<String>` —
+so the new lobby renders the correct halo color for non-self seats.
+Pre-1.28 the client used a hardcoded 6-commander stub
+(`inferColorIdentity`); every other commander rendered with a
+neutral team-ring. Server populates from the commander's
+`Card.getColorIdentity()` and emits WUBRG-ordered upper-case letter
+codes (`["W","U","B","R","G"]`).
+
+```diff
+   "deckSizeRequired": 100,
++  "colorIdentity": ["W", "U", "B", "G"]
+```
+
+Defaults to `[]` for non-Commander formats and seats without a
+submitted deck. Redacted (set to `[]`) on passworded tables for
+non-seated viewers.
+
+## 1.27 — 2026-05-02 — New-lobby seat fields (slice L2)
+
+Adds four additive fields to `WebSeat` so the new full-page lobby
+can render the per-seat ready toggle and the per-seat deck plate
+without an extra round-trip:
+
+```diff
+   "commanderImageNumber": 0,
++  "ready": false,
++  "deckName": "Proliferate Control",
++  "deckSize": 100,
++  "deckSizeRequired": 100
+```
+
+`ready` is wire-only state pre-L5 (server emits `false` for human
+seats and `true` for AI seats). `deckName` / `deckSize` are read
+from the seat's registered deck on the upstream `Match`; if no deck
+is registered yet they default to `""` / `0`. `deckSizeRequired` is
+derived from the table's `deckType` string (60 for Constructed,
+100 for Commander, 40 for Limited; 0 if unknown).
+
 ## 1.26 — 2026-05-01 — Stack ability source CardView (slice 70-Z)
 
 Adds one additive field — `WebCardView.source: WebCardView | null` —

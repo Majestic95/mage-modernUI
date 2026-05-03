@@ -118,36 +118,58 @@ export function ArtPickerModal({
             </p>
           )}
           {printings && printings.length > 0 && (
-            <ul
-              data-testid="art-picker-grid"
-              className="grid gap-3"
-              style={{
-                gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
-              }}
-            >
-              {printings.map((p) => {
-                const isCurrent =
-                  p.setCode === currentSetCode
-                  && p.cardNumber === currentCardNumber;
-                return (
-                  <li key={`${p.setCode}-${p.cardNumber}`}>
-                    <PrintingTile
-                      printing={p}
-                      isCurrent={isCurrent}
-                      onSelect={() => {
-                        onSelect(p.setCode, p.cardNumber);
-                        onClose();
-                      }}
-                    />
-                  </li>
-                );
-              })}
-            </ul>
+            <>
+              {/* Audit fix (MEDIUM) — surface a notice when the user's
+                  saved printing isn't in the returned list. Without it,
+                  a user with a saved but engine-unknown printing has
+                  no signal that they should re-pick. */}
+              {!printings.some(
+                (p) => p.setCode === currentSetCode
+                  && p.cardNumber === currentCardNumber,
+              ) && (
+                <p
+                  data-testid="art-picker-current-missing"
+                  className="text-xs text-status-warning mb-3 italic"
+                >
+                  Your current printing ({currentSetCode || '—'}{' '}
+                  #{currentCardNumber || '—'}) isn't in this list — pick
+                  a new printing below.
+                </p>
+              )}
+              <ul
+                data-testid="art-picker-grid"
+                className="grid gap-3"
+                style={{
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+                }}
+              >
+                {printings.map((p) => {
+                  const isCurrent =
+                    p.setCode === currentSetCode
+                    && p.cardNumber === currentCardNumber;
+                  return (
+                    <li key={`${p.setCode}-${p.cardNumber}`}>
+                      <PrintingTile
+                        printing={p}
+                        isCurrent={isCurrent}
+                        onSelect={() => {
+                          onSelect(p.setCode, p.cardNumber);
+                          onClose();
+                        }}
+                      />
+                    </li>
+                  );
+                })}
+              </ul>
+            </>
           )}
           {truncated && (
+            // Audit fix (MEDIUM) — the prior copy advised "narrow your
+            // deck-build to a different card name" which makes no sense
+            // for a user who's picking art for an existing deck card.
             <p className="text-xs text-zinc-500 italic mt-3">
-              Showing first {PRINTINGS_LIMIT} printings — narrow your deck-build
-              to a different card name to see more.
+              Showing the first {PRINTINGS_LIMIT} printings (server cap).
+              Additional printings exist but aren't shown.
             </p>
           )}
         </div>
@@ -174,6 +196,13 @@ function PrintingTile({
       data-current={isCurrent || undefined}
       data-set={printing.setCode}
       data-number={printing.cardNumber}
+      // Audit fix (LOW) — accessible name for screen readers. Visible
+      // label is just "M21 #281", which on its own is meaningless to
+      // SR users; expand to a sentence.
+      aria-label={
+        `Use ${printing.setCode} #${printing.cardNumber}`
+        + (isCurrent ? ' (current printing)' : '')
+      }
       onClick={onSelect}
       className={
         'group flex flex-col gap-1 w-full rounded-lg overflow-hidden border transition-all '

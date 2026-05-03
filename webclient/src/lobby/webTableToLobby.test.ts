@@ -35,6 +35,8 @@ function baseTable(overrides: Partial<WebTable> = {}): WebTable {
         deckSize: 100,
         deckSizeRequired: 100,
         colorIdentity: ['W', 'U', 'B', 'G'],
+        commanderSetCode: 'C16',
+        commanderCardNumber: '28',
       },
       {
         playerName: 'bob',
@@ -47,6 +49,8 @@ function baseTable(overrides: Partial<WebTable> = {}): WebTable {
         deckSize: 99,
         deckSizeRequired: 100,
         colorIdentity: ['U', 'B', 'R'],
+        commanderSetCode: 'M19',
+        commanderCardNumber: '218',
       },
       {
         playerName: '',
@@ -59,6 +63,8 @@ function baseTable(overrides: Partial<WebTable> = {}): WebTable {
         deckSize: 0,
         deckSizeRequired: 100,
         colorIdentity: [],
+        commanderSetCode: '',
+        commanderCardNumber: '',
       },
     ],
     ...overrides,
@@ -153,6 +159,49 @@ describe('webTableToLobby', () => {
     expect(data.seats[2]?.commanderCardImageUrl).toBeNull();
   });
 
+  it('builds commander art URL from chosen printing when set+number present (1.29)', () => {
+    const data = webTableToLobby({
+      webTable: baseTable(),
+      currentUsername: 'alice',
+    });
+    // Schema 1.29 — wire carries commanderSetCode='C16'+cardNumber='28'.
+    // The lobby must build /cards/{set}/{number}, NOT /cards/named?exact.
+    // Without this fix the user's chosen art picker selection silently
+    // didn't propagate to the lobby commander preview.
+    expect(data.seats[0]?.commanderArtUrl).toBe(
+      'https://api.scryfall.com/cards/c16/28?format=image&version=art_crop',
+    );
+    expect(data.seats[0]?.commanderCardImageUrl).toBe(
+      'https://api.scryfall.com/cards/c16/28?format=image&version=normal',
+    );
+  });
+
+  it('falls back to by-name lookup when wire printing fields are blank (1.28 server)', () => {
+    const data = webTableToLobby({
+      webTable: baseTable({
+        seats: [
+          {
+            playerName: 'alice',
+            playerType: 'HUMAN',
+            occupied: true,
+            commanderName: 'Atraxa',
+            commanderImageNumber: 0,
+            ready: false,
+            deckName: 'A',
+            deckSize: 100,
+            deckSizeRequired: 100,
+            colorIdentity: ['W', 'U', 'B', 'G'],
+            commanderSetCode: '',  // 1.28 server doesn't emit
+            commanderCardNumber: '',
+          },
+        ],
+      }),
+      currentUsername: 'alice',
+    });
+    expect(data.seats[0]?.commanderArtUrl).toContain('/cards/named');
+    expect(data.seats[0]?.commanderArtUrl).toContain('exact=Atraxa');
+  });
+
   it('passes wire colorIdentity through, filtering invalid codes', () => {
     // Schema 1.28 — server emits colorIdentity per seat from
     // Card.getColorIdentity(). Mapper passes it through for occupied
@@ -172,6 +221,8 @@ describe('webTableToLobby', () => {
             deckSize: 100,
             deckSizeRequired: 100,
             colorIdentity: ['W', 'U', 'B', 'G', 'X'],
+            commanderSetCode: 'C16',
+            commanderCardNumber: '28',
           },
           {
             playerName: 'bob',
@@ -184,6 +235,8 @@ describe('webTableToLobby', () => {
             deckSize: 100,
             deckSizeRequired: 100,
             colorIdentity: [],
+            commanderSetCode: '',
+            commanderCardNumber: '',
           },
         ],
       }),

@@ -53,6 +53,12 @@ export function Lobby({ onEnterLobby }: Props = {}) {
 
   const [joinTarget, setJoinTarget] = useState<WebTable | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  // Audit fix (HIGH #2) — in-flight tableId for the Join action.
+  // Without this, double-click on Join fired onEnterLobby twice;
+  // PasswordPromptModal could re-mount overtop itself, and the
+  // non-passworded path triggered two routings + two refresh
+  // requests in rapid succession.
+  const [joiningId, setJoiningId] = useState<string | null>(null);
 
   const onLeave = useCallback(
     async (table: WebTable) => {
@@ -248,11 +254,17 @@ export function Lobby({ onEnterLobby }: Props = {}) {
         // that pre-flights a password without also taking a seat.
         <PasswordPromptModal
           tableName={joinTarget.tableName}
-          onClose={() => setJoinTarget(null)}
+          onClose={() => {
+            setJoinTarget(null);
+            setJoiningId(null);  // user cancelled — re-enable Join
+          }}
           onSubmit={(pw) => {
             requestImmediateRefresh();
             const id = joinTarget.tableId;
             onEnterLobby?.(id, pw);
+            // Row unmounts on App's lobby route swap; clearing here
+            // is belt-and-suspenders.
+            setJoiningId(null);
           }}
         />
       )}
@@ -340,23 +352,32 @@ export function Lobby({ onEnterLobby }: Props = {}) {
                   {canJoin && (
                     <button
                       type="button"
+                      data-testid="lobby-join-button"
                       // 2026-05-02 polish — non-passworded tables skip
                       // the join modal entirely; the user enters the
                       // new lobby with no seat and picks a deck inline
                       // (mirrors the host's PreLobbyModal flow).
                       // Passworded tables route through the password
-                      // prompt first.
+                      // prompt first. Audit fix (HIGH #2): guard
+                      // against double-click re-firing onEnterLobby.
+                      disabled={joiningId === t.tableId}
                       onClick={() => {
+                        if (joiningId === t.tableId) return;
+                        setJoiningId(t.tableId);
                         if (t.passworded) {
                           setJoinTarget(t);
+                          // Modal close (cancel or submit) clears the
+                          // joining flag below — user can retry.
                         } else {
                           requestImmediateRefresh();
                           onEnterLobby?.(t.tableId);
+                          // App swaps to NewLobbyScreen on next render;
+                          // this row unmounts, so the flag is moot.
                         }
                       }}
-                      className="bg-fuchsia-600 hover:bg-fuchsia-500 text-white text-sm font-medium rounded px-3 py-1.5"
+                      className="bg-fuchsia-600 hover:bg-fuchsia-500 disabled:bg-zinc-700 text-white text-sm font-medium rounded px-3 py-1.5"
                     >
-                      Join
+                      {joiningId === t.tableId ? 'Joining…' : 'Join'}
                     </button>
                   )}
                   {canLeave && (

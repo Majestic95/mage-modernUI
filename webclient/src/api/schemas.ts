@@ -257,6 +257,13 @@ export const webSeatSchema = z.object({
   // fell back to a hardcoded 6-commander client stub. Default [] keeps
   // forward-compat with 1.27 servers during a rolling upgrade.
   colorIdentity: z.array(z.string()).default(() => []),
+  // Schema 1.29 — set + collector number of the chosen commander
+  // printing (string, e.g. "C16" + "28"). Without these the lobby art
+  // lookup fell back to Scryfall by-name which silently returned the
+  // default printing instead of what the user picked in the deck
+  // editor. Empty default keeps forward-compat with 1.28 servers.
+  commanderSetCode: z.string().default(''),
+  commanderCardNumber: z.string().default(''),
 });
 export type WebSeat = z.infer<typeof webSeatSchema>;
 

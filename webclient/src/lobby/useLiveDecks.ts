@@ -86,6 +86,23 @@ function scryfallByName(name: string, kind: 'art_crop' | 'normal'): string {
   return `${SCRYFALL}?format=image&version=${kind}&exact=${encodeURIComponent(name)}`;
 }
 
+/**
+ * Build a Scryfall art URL from the saved deck's chosen commander
+ * printing (setCode + cardNumber). Falls back to {@link scryfallByName}
+ * when the saved entry is missing either field. Without this the lobby
+ * silently rendered Scryfall's default printing for the commander name
+ * regardless of what the user picked in the deck editor.
+ */
+function scryfallByPrinting(
+  setCode: string,
+  cardNumber: string,
+  kind: 'art_crop' | 'normal',
+): string {
+  const set = setCode.toLowerCase();
+  const num = encodeURIComponent(cardNumber);
+  return `https://api.scryfall.com/cards/${set}/${num}?format=image&version=${kind}`;
+}
+
 function commanderName(deck: SavedDeck): string {
   return deck.sideboard[0]?.cardName ?? '';
 }
@@ -222,11 +239,24 @@ function savedToLobbyDeck(deck: SavedDeck, isSelected: boolean): LobbyDeck {
   // (Commander format always has a sideboard with the commander).
   const requiredSize = deck.sideboard.length > 0 ? 100 : 60;
 
+  // Honor the user's chosen commander printing — saved deck stores
+  // setCode + cardNumber for every entry. The lobby seat optimistic
+  // override reads commanderArtUrl from this LobbyDeck, so without the
+  // printing-aware URL the local seat (and the host's seat for everyone
+  // else's view via wire emit) showed Scryfall's default printing.
+  const commanderEntry = deck.sideboard[0] ?? null;
+  const commanderArtUrl =
+    commanderEntry && commanderEntry.setCode && commanderEntry.cardNumber
+      ? scryfallByPrinting(commanderEntry.setCode, commanderEntry.cardNumber, 'art_crop')
+      : cmdrName
+      ? scryfallByName(cmdrName, 'art_crop')
+      : null;
+
   return {
     id: deck.id,
     name: deck.name || 'Untitled',
     commanderName: cmdrName,
-    commanderArtUrl: cmdrName ? scryfallByName(cmdrName, 'art_crop') : null,
+    commanderArtUrl,
     mainboardSize,
     requiredSize,
     colorIdentity,

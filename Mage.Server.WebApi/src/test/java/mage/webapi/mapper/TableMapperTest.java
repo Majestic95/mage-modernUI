@@ -2,11 +2,15 @@ package mage.webapi.mapper;
 
 import mage.cards.Card;
 import mage.cards.decks.Deck;
+import mage.filter.FilterMana;
 import org.junit.jupiter.api.Test;
+
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Locks the {@link TableMapper#cleanControllerName} contract.
@@ -163,6 +167,76 @@ class TableMapperTest {
         assertEquals(0, TableMapper.requiredMainboardSize(""));
         assertEquals(0, TableMapper.requiredMainboardSize("   "));
         assertEquals(0, TableMapper.requiredMainboardSize("Mystery Format"));
+    }
+
+    // ---- colorIdentityCodes (schema 1.28) — translate a Card's
+    // FilterMana colorIdentity into WUBRG letter codes. The lobby halo
+    // renders by these letters; ordering matters for downstream consumers
+    // that unique-by-position. Defensive null/throw fallbacks keep the
+    // lobby resilient to mid-mutation engine state.
+
+    @Test
+    void colorIdentityCodes_pentacolor_returnsWUBRG() {
+        FilterMana fm = new FilterMana();
+        fm.setWhite(true); fm.setBlue(true); fm.setBlack(true);
+        fm.setRed(true); fm.setGreen(true);
+        Card c = stubCardWithColors("Kenrith", "1", "CMR", fm);
+        assertEquals(List.of("W", "U", "B", "R", "G"),
+                TableMapper.colorIdentityCodesForTest(c));
+    }
+
+    @Test
+    void colorIdentityCodes_colorlessCommander_returnsEmpty() {
+        FilterMana fm = new FilterMana();
+        Card c = stubCardWithColors("Karn", "1", "DOM", fm);
+        assertTrue(TableMapper.colorIdentityCodesForTest(c).isEmpty());
+    }
+
+    @Test
+    void colorIdentityCodes_dimir_returnsUB_inWUBRGOrder() {
+        FilterMana fm = new FilterMana();
+        fm.setBlack(true); fm.setBlue(true);  // set in BU order
+        Card c = stubCardWithColors("Lazav", "1", "GTC", fm);
+        // Output should be WUBRG order regardless of set-order.
+        assertEquals(List.of("U", "B"), TableMapper.colorIdentityCodesForTest(c));
+    }
+
+    @Test
+    void colorIdentityCodes_nullFilterMana_returnsEmpty() {
+        // Default stub returns null for getColorIdentity (non-primitive).
+        Card c = stubCard("UnknownCard", "1");
+        assertTrue(TableMapper.colorIdentityCodesForTest(c).isEmpty());
+    }
+
+    @Test
+    void colorIdentityCodes_throwingCard_returnsEmpty() {
+        Card c = (Card) java.lang.reflect.Proxy.newProxyInstance(
+                Card.class.getClassLoader(),
+                new Class<?>[]{Card.class},
+                (proxy, method, args) -> {
+                    if ("getColorIdentity".equals(method.getName())) {
+                        throw new RuntimeException("simulated mid-mutation read");
+                    }
+                    return defaultFor(method.getReturnType());
+                });
+        assertTrue(TableMapper.colorIdentityCodesForTest(c).isEmpty());
+    }
+
+    private static Card stubCardWithColors(String name, String number, String set,
+                                            FilterMana colors) {
+        return (Card) java.lang.reflect.Proxy.newProxyInstance(
+                Card.class.getClassLoader(),
+                new Class<?>[]{Card.class},
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "getName" -> name;
+                    case "getCardNumber" -> number;
+                    case "getExpansionSetCode" -> set;
+                    case "getColorIdentity" -> colors;
+                    case "hashCode" -> System.identityHashCode(proxy);
+                    case "equals" -> proxy == args[0];
+                    case "toString" -> "stubCard(" + name + ")";
+                    default -> defaultFor(method.getReturnType());
+                });
     }
 
     /**

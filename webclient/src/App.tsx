@@ -134,13 +134,21 @@ export function App() {
   // entry would force fixture mode after a reload even when the
   // user wanted to leave). L8 — persist alongside the username so a
   // login-as-different-user doesn't inherit the stale lobbyId.
+  //
+  // Audit fix (HIGH #1) — only overwrite joinPassword when the lobby
+  // id changes (or we're explicitly leaving). Calling
+  // setActiveLobbyId(sameId) without the second arg used to wipe a
+  // valid in-use password — fragile coupling that would silently
+  // break re-prompt flows.
   const setActiveLobbyId = (id: string | null, password?: string) => {
     persistLobbyId(
       id === 'fixture' ? null : id,
       session?.username,
     );
     setActiveLobbyIdState(id);
-    setJoinPassword(password);
+    if (id === null || id !== activeLobbyId || password !== undefined) {
+      setJoinPassword(password);
+    }
   };
 
   useEffect(() => {
@@ -173,10 +181,16 @@ export function App() {
   // server-side token expiry) so the next login doesn't auto-jump
   // into a stale game window. Pure side effect — no setState — so
   // it's safe inside an effect.
+  //
+  // Audit fix (HIGH #1) — also clear joinPassword on logout. Without
+  // this, a passworded-lobby password sat in App state until next
+  // mount, surviving across a sign-out → sign-in-as-different-user.
   useEffect(() => {
     if (!session) {
       persistGameId(null);
       persistLobbyId(null);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setJoinPassword(undefined);
     }
   }, [session]);
 
@@ -186,6 +200,9 @@ export function App() {
   // new user starts at the table list, not someone else's lobby.
   // Same lint exemption as the DUELING effect above — the cascading
   // render fires once per session-change, not on a hot path.
+  //
+  // Audit fix (HIGH #1) — also clear joinPassword on this stale-user
+  // path so a switched-user doesn't inherit a prior user's password.
   useEffect(() => {
     if (!session) return;
     const storedUser = readPersistedLobbyUser();
@@ -193,6 +210,8 @@ export function App() {
       persistLobbyId(null);
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setActiveLobbyIdState(null);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setJoinPassword(undefined);
     }
   }, [session]);
 
@@ -257,6 +276,12 @@ export function App() {
       <NewLobbyScreen
         tableId={activeLobbyId}
         joinPassword={joinPassword}
+        // Audit fix (HIGH #3) — let the lobby request a fresh
+        // password prompt when the server rejects with WRONG_PASSWORD
+        // (or returns 422 on first-take with an empty password). The
+        // lobby renders a small "re-enter password" affordance that
+        // calls back here.
+        onRequestPasswordReprompt={(pw) => setJoinPassword(pw)}
         onLeave={() => setActiveLobbyId(null)}
       />
     );

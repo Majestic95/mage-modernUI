@@ -196,7 +196,9 @@ public final class TableMapper {
                 "",   // deckName redacted
                 0,    // deckSize redacted
                 full.deckSizeRequired(),
-                List.of()  // colorIdentity redacted
+                List.of(),  // colorIdentity redacted
+                "",   // commanderSetCode redacted
+                ""    // commanderCardNumber redacted
         );
     }
 
@@ -246,7 +248,7 @@ public final class TableMapper {
                                  String hostUsername) {
         if (s == null) {
             return new WebSeat("", "", false, "", 0, false, "", 0,
-                    deckSizeRequired, List.of());
+                    deckSizeRequired, List.of(), "", "");
         }
         boolean occupied = s.getPlayerId() != null;
         PlayerType type = s.getPlayerType();
@@ -280,6 +282,8 @@ public final class TableMapper {
         // shouldn't break the lobby listing.
         String commanderName = "";
         int commanderImageNumber = 0;
+        String commanderSetCode = "";
+        String commanderCardNumber = "";
         String deckName = "";
         int deckSize = 0;
         List<String> colorIdentity = List.of();
@@ -295,6 +299,11 @@ public final class TableMapper {
                         commanderName = emptyIfNull(commander.getName());
                         commanderImageNumber =
                                 parseCardNumber(commander.getCardNumber());
+                        // Schema 1.29 — emit the chosen printing's set +
+                        // collector number so the lobby can render the
+                        // user's picked art (vs. Scryfall's default-by-name).
+                        commanderSetCode = emptyIfNull(commander.getExpansionSetCode());
+                        commanderCardNumber = emptyIfNull(commander.getCardNumber());
                         colorIdentity = colorIdentityCodes(commander);
                     }
                 }
@@ -303,6 +312,8 @@ public final class TableMapper {
                 // the seat itself is still rendered.
                 commanderName = "";
                 commanderImageNumber = 0;
+                commanderSetCode = "";
+                commanderCardNumber = "";
                 deckName = "";
                 deckSize = 0;
                 colorIdentity = List.of();
@@ -342,7 +353,9 @@ public final class TableMapper {
                 deckName,
                 deckSize,
                 deckSizeRequired,
-                colorIdentity
+                colorIdentity,
+                commanderSetCode,
+                commanderCardNumber
         );
     }
 
@@ -370,6 +383,17 @@ public final class TableMapper {
         } catch (RuntimeException ex) {
             return List.of();
         }
+    }
+
+    /**
+     * Test-only accessor for {@link #colorIdentityCodes(Card)}. Package-
+     * private so the test class can verify WUBRG ordering, color-throw
+     * defensiveness, and pentacolor / colorless edge cases without going
+     * through the full {@code seat()} construction path (which requires
+     * a live {@link Match}).
+     */
+    static List<String> colorIdentityCodesForTest(Card commander) {
+        return colorIdentityCodes(commander);
     }
 
     /**
