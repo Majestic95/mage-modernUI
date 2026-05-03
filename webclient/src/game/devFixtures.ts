@@ -153,10 +153,33 @@ export function buildDemoGameView(): WebGameView {
     meBf[p.card.id] = p;
   }
 
+  // Helper — build a Record<id, card> from a list of [name, kind] pairs
+  // for graveyard / exile seeding so every player has scannable
+  // contents in those zones for layout / interaction testing.
+  const zone = (
+    entries: Array<[string, CardKind]>,
+  ): Record<string, ReturnType<typeof makeCard>> => {
+    const out: Record<string, ReturnType<typeof makeCard>> = {};
+    for (const [name, kind] of entries) {
+      const c = makeCard(name, kind);
+      out[c.id] = c;
+    }
+    return out;
+  };
+
   const me = webPlayerViewSchema.parse({
     playerId: meId, name: 'MAJEST1C', life: 40, wins: 0, winsNeeded: 1,
     libraryCount: 80, handCount: 6,
-    graveyard: {}, exile: {}, sideboard: {},
+    graveyard: zone([
+      ['Lightning Bolt', 'CREATURE'],
+      ['Path to Exile', 'CREATURE'],
+      ['Swords to Plowshares', 'CREATURE'],
+    ]),
+    exile: zone([
+      ['Counterspell', 'CREATURE'],
+      ['Force of Will', 'CREATURE'],
+    ]),
+    sideboard: {},
     battlefield: meBf,
     manaPool: { red: 0, green: 0, blue: 0, white: 0, black: 0, colorless: 0 },
     controlled: true, isHuman: true, isActive: false, hasPriority: true,
@@ -167,7 +190,16 @@ export function buildDemoGameView(): WebGameView {
   const goat = webPlayerViewSchema.parse({
     playerId: goatId, name: 'goat', life: 40, wins: 0, winsNeeded: 1,
     libraryCount: 90, handCount: 6,
-    graveyard: {}, exile: {}, sideboard: {},
+    graveyard: zone([
+      ['Birds of Paradise', 'CREATURE'],
+      ['Eternal Witness', 'CREATURE'],
+      ['Cultivate', 'CREATURE'],
+      ['Rampant Growth', 'CREATURE'],
+    ]),
+    exile: zone([
+      ['Worldly Tutor', 'CREATURE'],
+    ]),
+    sideboard: {},
     battlefield: bf('goat', [
       ['Forest', 'LAND'], ['Forest', 'LAND'], ['Forest', 'LAND'],
       ['Forest', 'LAND'], ['Forest', 'LAND'], ['Forest', 'LAND'],
@@ -189,7 +221,15 @@ export function buildDemoGameView(): WebGameView {
   const momur = webPlayerViewSchema.parse({
     playerId: momurId, name: 'momur', life: 40, wins: 0, winsNeeded: 1,
     libraryCount: 91, handCount: 5,
-    graveyard: {}, exile: {}, sideboard: {},
+    graveyard: zone([
+      ['Brainstorm', 'CREATURE'],
+      ['Ponder', 'CREATURE'],
+    ]),
+    exile: zone([
+      ['Snapcaster Mage', 'CREATURE'],
+      ['Mystical Tutor', 'CREATURE'],
+    ]),
+    sideboard: {},
     battlefield: bf('momur', [
       ['Island', 'LAND'], ['Island', 'LAND'], ['Island', 'LAND'],
       ['Sensei\'s Divining Top', 'ARTIFACT'],
@@ -204,7 +244,15 @@ export function buildDemoGameView(): WebGameView {
   const alloc = webPlayerViewSchema.parse({
     playerId: allocId, name: 'Alloc', life: 35, wins: 0, winsNeeded: 1,
     libraryCount: 85, handCount: 4,
-    graveyard: {}, exile: {}, sideboard: {},
+    graveyard: zone([
+      ['Lava Spike', 'CREATURE'],
+      ['Goblin Grenade', 'CREATURE'],
+      ['Searing Blaze', 'CREATURE'],
+    ]),
+    exile: zone([
+      ['Chandra, Torch of Defiance', 'CREATURE'],
+    ]),
+    sideboard: {},
     battlefield: bf('Alloc', [
       ['Mountain', 'LAND'], ['Mountain', 'LAND'], ['Mountain', 'LAND'],
       ['Mountain', 'LAND'],
