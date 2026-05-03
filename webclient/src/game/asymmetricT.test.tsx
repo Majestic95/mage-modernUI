@@ -89,6 +89,27 @@ describe('AsymmetricTLayout', () => {
     expect(pod.querySelector('[data-zone="lands"]')).toBeTruthy();
   });
 
+  it('local pod has no white halo border (user direction 2026-05-03)', () => {
+    // Opponent lanes still carry the white halo + breathing
+    // active-glow; the local pod doesn't need framing because the
+    // floating portrait + mana pool + hand fan are its identity
+    // affordances. Only the drop-target ring renders a border on
+    // the local pod, and only while a hand drag is in flight.
+    renderLayout();
+    const pod = screen.getByTestId('local-pod-rows');
+    expect(pod.className).not.toMatch(/animate-lane-active-glow/);
+    // No `border` utility class either (drop-target adds it
+    // dynamically; idle state has none).
+    expect(pod.className).not.toMatch(/\bborder\b/);
+    // Opponent lanes keep their halo: pick lane 0 and check.
+    const oppLane = screen.getByTestId('opponent-lane-0');
+    // The lane wrapper carries STATIC_HALO_STYLE inline, which sets
+    // an rgba(255,255,255,0.55) border-color. Read the inline style.
+    expect(oppLane.getAttribute('style') ?? '').toMatch(
+      /border-color:\s*rgba\(255,\s*255,\s*255/,
+    );
+  });
+
   it('clicking an opponent lane focus button collapses the other lanes', () => {
     renderLayout();
     fireEvent.click(screen.getByTestId('opponent-lane-0-focus'));

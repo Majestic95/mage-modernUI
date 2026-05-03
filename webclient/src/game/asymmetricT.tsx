@@ -484,18 +484,20 @@ function LocalPod({
       data-drop-target={isDropTarget || undefined}
       data-active={isActive || undefined}
       onPointerUp={onBoardDrop}
-      // Drop-target ring overrides the white halo + active glow
-      // while a hand drag is in flight (the dashed fuchsia outline
-      // is the higher-priority affordance — the player needs to
-      // know where the card will land).
-      style={isDropTarget ? undefined : { ...STATIC_HALO_STYLE, borderRadius: '0.375rem' }}
+      // 2026-05-03 — local pod no longer renders the white halo /
+      // active-glow that opponent lanes carry (user direction).
+      // Opponent lanes still need the halo to delineate seats; the
+      // local player has the floating portrait + mana pool + hand
+      // fan as their identity affordances and doesn't need a frame
+      // around the pod itself.
+      // Drop-target ring still applies — the dashed fuchsia outline
+      // tells the player where the card will land while a hand drag
+      // is in flight.
       className={
-        'flex flex-col gap-2 min-w-0 min-h-0 h-full p-2 border transition-colors ' +
+        'flex flex-col gap-2 min-w-0 min-h-0 h-full p-2 transition-colors ' +
         (isDropTarget
-          ? 'rounded ring-2 ring-fuchsia-500/40 outline outline-dashed outline-fuchsia-500 border-transparent'
-          : isActive
-            ? 'animate-lane-active-glow'
-            : '')
+          ? 'rounded border ring-2 ring-fuchsia-500/40 outline outline-dashed outline-fuchsia-500 border-transparent'
+          : '')
       }
     >
       <SubRowZone
