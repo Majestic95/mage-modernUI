@@ -497,43 +497,75 @@ function PlayerFrameInfoCluster({
             'flex items-center gap-2 whitespace-nowrap')
       }
     >
-      <ZoneIcon
-        zone="library"
-        count={player.libraryCount}
-        playerName={player.name}
-        variant={perspective}
-      />
       {/* Slice 70-P.1 (user directive 2026-04-30) — Hand N chip.
           Strategic info that the legacy strip surfaced inline; the
           redesigned anatomy didn't have a home for it until now.
           Cluster is the natural fit per catalog §2.2 "small
           horizontal cluster near the player frame." Display-only
           (the local hand is rendered visually as the fan; opponent
-          hands are private cards but public count). */}
+          hands are private cards but public count).
+
+          2026-05-03 — vertical layout pairs Graveyard + Exile on
+          the same row so the Exile chip stays inside the gutter's
+          vertical bounds (a four-row stack overflowed past the
+          lane on a 1080p viewport, hiding Exile entirely). Other
+          chips remain individual rows so Lib / Hand counts stay
+          glanceable. */}
+      <ZoneIcon
+        zone="library"
+        count={player.libraryCount}
+        playerName={player.name}
+        variant={perspective}
+      />
       <ZoneIcon
         zone="hand"
         count={player.handCount}
         playerName={player.name}
         variant={perspective}
       />
-      <ZoneIcon
-        zone="graveyard"
-        cards={player.graveyard}
-        playerName={player.name}
-        variant={perspective}
-        eligibleTargetIds={eligibleTargetIds}
-        canAct={canAct}
-        onObjectClick={onObjectClick}
-      />
-      <ZoneIcon
-        zone="exile"
-        cards={player.exile}
-        playerName={player.name}
-        variant={perspective}
-        eligibleTargetIds={eligibleTargetIds}
-        canAct={canAct}
-        onObjectClick={onObjectClick}
-      />
+      {layout === 'vertical' ? (
+        <div className="flex items-center gap-2">
+          <ZoneIcon
+            zone="graveyard"
+            cards={player.graveyard}
+            playerName={player.name}
+            variant={perspective}
+            eligibleTargetIds={eligibleTargetIds}
+            canAct={canAct}
+            onObjectClick={onObjectClick}
+          />
+          <ZoneIcon
+            zone="exile"
+            cards={player.exile}
+            playerName={player.name}
+            variant={perspective}
+            eligibleTargetIds={eligibleTargetIds}
+            canAct={canAct}
+            onObjectClick={onObjectClick}
+          />
+        </div>
+      ) : (
+        <>
+          <ZoneIcon
+            zone="graveyard"
+            cards={player.graveyard}
+            playerName={player.name}
+            variant={perspective}
+            eligibleTargetIds={eligibleTargetIds}
+            canAct={canAct}
+            onObjectClick={onObjectClick}
+          />
+          <ZoneIcon
+            zone="exile"
+            cards={player.exile}
+            playerName={player.name}
+            variant={perspective}
+            eligibleTargetIds={eligibleTargetIds}
+            canAct={canAct}
+            onObjectClick={onObjectClick}
+          />
+        </>
+      )}
       {opponentPoolNonEmpty && (
         // Slice 70-P critic UI/UX-I3 fix — opponent cluster uses
         // size="small" per catalog §2.3 "Visible but smaller." No

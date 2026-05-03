@@ -317,7 +317,18 @@ function OpponentLane({
     >
       <div
         data-testid={`opponent-lane-${laneIndex}-gutter`}
-        className="flex-shrink-0 w-[140px] flex flex-col p-2 border-r border-zinc-800/60 relative"
+        // 2026-05-03 — narrowed 140 → 120px (and items-center so
+        // the portrait stack is horizontally centered between the
+        // viewport edge and the battlefield region's left edge,
+        // not pinned left). The 20px reclaimed goes back to the
+        // battlefield sub-rows on the right. PlayerFrame inside is
+        // already `flex flex-col items-center`, so its children
+        // were already centered — but the gutter's own flex-col
+        // would stretch PlayerFrame to full width by default
+        // (cross-axis stretch). items-center keeps PlayerFrame
+        // intrinsic-width and centered, which makes the chip
+        // stack inherit the same center alignment.
+        className="flex-shrink-0 w-[120px] flex flex-col items-center p-2 border-r border-zinc-800/60 relative"
       >
         <button
           type="button"
