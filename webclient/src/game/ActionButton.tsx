@@ -39,6 +39,7 @@
  * <p>Reference: docs/design/picture-catalog.md §5.C, §6.1.
  */
 import { useEffect, useState } from 'react';
+import type { SkipState } from '../api/schemas';
 import { useAuthStore } from '../auth/store';
 import { useGameStore } from './store';
 import type { GameStream } from './stream';
@@ -108,6 +109,44 @@ const MENU_ITEMS: MenuItem[] = [
   // both live in the settings modal. Removed from the menu here
   // so there's a single canonical destructive-action surface.
 ];
+
+/**
+ * Schema 1.30 — translate a {@code PASS_PRIORITY_UNTIL_*} menu
+ * action to the corresponding {@code WebPlayerView.skipState} enum
+ * value. Used to highlight the menu item that's currently armed and
+ * to pick the human-readable banner label below.
+ *
+ * <p>The engine action → boolean → wire-enum chain (verified against
+ * {@code PlayerImpl.sendPlayerAction}):
+ * <ul>
+ *   <li>{@code PASS_PRIORITY_UNTIL_NEXT_TURN} (F4) →
+ *     {@code passedTurn} → {@code 'NEXT_TURN'}</li>
+ *   <li>{@code PASS_PRIORITY_UNTIL_MY_NEXT_TURN} (F9) →
+ *     {@code passedAllTurns} → {@code 'ALL_TURNS'}</li>
+ *   <li>{@code PASS_PRIORITY_UNTIL_STACK_RESOLVED} →
+ *     {@code passedUntilStackResolved} → {@code 'STACK_RESOLVED'}</li>
+ * </ul>
+ */
+const ACTION_TO_SKIP_STATE: Partial<Record<string, SkipState>> = {
+  PASS_PRIORITY_UNTIL_NEXT_TURN: 'NEXT_TURN',
+  PASS_PRIORITY_UNTIL_MY_NEXT_TURN: 'ALL_TURNS',
+  PASS_PRIORITY_UNTIL_STACK_RESOLVED: 'STACK_RESOLVED',
+};
+
+/**
+ * Human-readable banner copy per skip mode. The banner explains
+ * exactly what the engine is doing on the player's behalf so they
+ * can decide whether to keep skipping or cancel.
+ */
+const SKIP_STATE_LABELS: Record<SkipState, string> = {
+  '': '',
+  ALL_TURNS: 'Skipping until your next turn',
+  NEXT_TURN: 'Skipping to next turn',
+  END_OF_TURN: 'Skipping to end of turn',
+  NEXT_MAIN: 'Skipping to next main phase',
+  STACK_RESOLVED: 'Resolving stack',
+  END_STEP_BEFORE_MY_TURN: 'Skipping to end step before your next turn',
+};
 
 /**
  * Slice 70-M — derive the morphing label per picture-catalog §5.C.
@@ -257,6 +296,18 @@ export function ActionButton({ stream }: Props) {
 
   const myPriority = gv.priorityPlayerName === session.username;
   const stackEmpty = Object.keys(gv.stack).length === 0;
+  // Schema 1.30 — local player's armed skip mode. Empty string when
+  // no skip is active; one of the SkipState enum values otherwise.
+  // Used to render the skip-status banner above the morphing button
+  // and to highlight the corresponding menu item as armed.
+  const mySkipState: SkipState =
+    gv.players.find((p) => p.playerId === gv.myPlayerId)?.skipState ?? '';
+  const skipBannerLabel = SKIP_STATE_LABELS[mySkipState];
+
+  const cancelSkip = () => {
+    if (!stream) return;
+    stream.sendPlayerAction('PASS_PRIORITY_CANCEL_ALL_ACTIONS');
+  };
   // Slice 70-Z bug fix — `primaryActionFor` returns the action
   // matching what the button label says. When stack is non-empty + my
   // priority, label morphs to "Pass Priority" and the action is
@@ -291,6 +342,40 @@ export function ActionButton({ stream }: Props) {
       aria-label="Turn and action"
       className="border-t border-zinc-800 px-3 py-2 space-y-2"
     >
+      {/* Schema 1.30 — skip-status banner. Renders only while the
+          local player has an auto-skip mode armed (F4 / F8 / the
+          ellipsis menu's Pass-to-Your-Turn / etc.). Pulses to grab
+          attention because auto-skipping is disorienting if the
+          player forgot they armed it. Click anywhere on the banner
+          to fire PASS_PRIORITY_CANCEL_ALL_ACTIONS and stop the
+          skip. The whole banner is the cancel button — not a
+          buried × — because the user's primary intent on seeing
+          this banner is "make it stop". */}
+      {mySkipState !== '' && (
+        <button
+          type="button"
+          data-testid="skip-status-banner"
+          data-skip-state={mySkipState}
+          onClick={cancelSkip}
+          aria-label={`${skipBannerLabel}. Click to cancel.`}
+          title="Click to cancel auto-skip"
+          className={
+            'w-full px-3 py-2 rounded-md text-xs font-semibold ' +
+            'bg-amber-500/90 hover:bg-amber-400 text-zinc-950 ' +
+            'border border-amber-300 shadow-md ' +
+            'animate-pulse cursor-pointer transition-colors ' +
+            'flex items-center justify-between gap-2'
+          }
+        >
+          <span className="flex items-center gap-1.5">
+            <span aria-hidden="true">⏩</span>
+            <span>{skipBannerLabel}</span>
+          </span>
+          <span className="text-[10px] opacity-75 font-mono uppercase">
+            click / Esc to cancel
+          </span>
+        </button>
+      )}
       {/* TURN N caption per picture-catalog §5.C. */}
       <header
         data-testid="turn-counter"
@@ -379,29 +464,55 @@ export function ActionButton({ stream }: Props) {
                 'shadow-xl py-1'
               }
             >
-              {MENU_ITEMS.map((item) => (
-                <li key={item.action} role="none">
-                  <button
-                    type="button"
-                    role="menuitem"
-                    data-testid={`action-menu-${item.action}`}
-                    onClick={() => dispatchMenuItem(item)}
-                    title={item.title}
-                    className="
-                      w-full text-left px-3 py-1.5 text-xs transition-colors
-                      flex items-center justify-between gap-2
-                      text-zinc-200 hover:bg-zinc-800
-                    "
-                  >
-                    <span>{item.label}</span>
-                    {item.hotkey && (
-                      <span className="text-[10px] text-zinc-500 font-mono">
-                        {item.hotkey}
+              {MENU_ITEMS.map((item) => {
+                // Schema 1.30 — when this menu item's mapped skip
+                // state matches the local player's armed skip,
+                // render an "ARMED" affordance + amber background so
+                // the user can see what's running and click to
+                // cancel without remembering Esc.
+                const itemSkipState = ACTION_TO_SKIP_STATE[item.action];
+                const armed =
+                  itemSkipState !== undefined && itemSkipState === mySkipState;
+                return (
+                  <li key={item.action} role="none">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      aria-checked={armed || undefined}
+                      data-testid={`action-menu-${item.action}`}
+                      data-armed={armed || undefined}
+                      onClick={() => dispatchMenuItem(item)}
+                      title={armed ? 'Armed — click to cancel' : item.title}
+                      className={
+                        'w-full text-left px-3 py-1.5 text-xs transition-colors ' +
+                        'flex items-center justify-between gap-2 ' +
+                        (armed
+                          ? 'bg-amber-500/20 text-amber-200 hover:bg-amber-500/30'
+                          : 'text-zinc-200 hover:bg-zinc-800')
+                      }
+                    >
+                      <span className="flex items-center gap-1.5">
+                        {armed && (
+                          <span aria-hidden="true" className="text-[10px]">
+                            ●
+                          </span>
+                        )}
+                        <span>{item.label}</span>
+                        {armed && (
+                          <span className="text-[9px] uppercase tracking-wider text-amber-300/90 font-bold">
+                            armed
+                          </span>
+                        )}
                       </span>
-                    )}
-                  </button>
-                </li>
-              ))}
+                      {item.hotkey && (
+                        <span className="text-[10px] text-zinc-500 font-mono">
+                          {item.hotkey}
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           )}
           {/* Backdrop click-out when menu is open. Slice 70-M

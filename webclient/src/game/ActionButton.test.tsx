@@ -20,6 +20,8 @@ const storeState = vi.hoisted(() => ({
     step: string;
     priorityPlayerName: string;
     stack: Record<string, unknown>;
+    myPlayerId: string;
+    players: Array<{ playerId: string; skipState: string }>;
   },
 }));
 vi.mock('./store', async () => {
@@ -75,6 +77,11 @@ function setGame(overrides: Partial<typeof storeState.gameView> = {}) {
     step: 'PRECOMBAT_MAIN',
     priorityPlayerName: 'alice',
     stack: {},
+    myPlayerId: 'p-alice',
+    players: [
+      { playerId: 'p-alice', skipState: '' },
+      { playerId: 'p-bob', skipState: '' },
+    ],
     ...overrides,
   } as typeof storeState.gameView;
 }
@@ -458,5 +465,101 @@ describe('ActionButton — hotkeys', () => {
       new KeyboardEvent('keydown', { key: 'c', ctrlKey: true }),
     );
     expect(stream.sendPlayerAction).not.toHaveBeenCalled();
+  });
+});
+
+describe('ActionButton — schema 1.30 skip-state visuals', () => {
+  it('does not render the skip-status banner when no skip is armed', () => {
+    setGame();
+    authState.session = { username: 'alice' };
+    render(<ActionButton stream={makeStream()} />);
+    expect(screen.queryByTestId('skip-status-banner')).toBeNull();
+  });
+
+  it('renders the skip-status banner with the right label when local player has armed Pass-to-Next-Turn', () => {
+    setGame({
+      players: [
+        { playerId: 'p-alice', skipState: 'NEXT_TURN' },
+        { playerId: 'p-bob', skipState: '' },
+      ],
+    });
+    authState.session = { username: 'alice' };
+    render(<ActionButton stream={makeStream()} />);
+    const banner = screen.getByTestId('skip-status-banner');
+    expect(banner).toHaveTextContent('Skipping to next turn');
+    expect(banner.getAttribute('data-skip-state')).toBe('NEXT_TURN');
+  });
+
+  it('shows ALL_TURNS label for Pass-to-Your-Turn (passedAllTurns engine bool)', () => {
+    setGame({
+      players: [{ playerId: 'p-alice', skipState: 'ALL_TURNS' }],
+      myPlayerId: 'p-alice',
+    });
+    authState.session = { username: 'alice' };
+    render(<ActionButton stream={makeStream()} />);
+    expect(screen.getByTestId('skip-status-banner')).toHaveTextContent(
+      'Skipping until your next turn',
+    );
+  });
+
+  it('clicking the skip-status banner cancels via PASS_PRIORITY_CANCEL_ALL_ACTIONS', async () => {
+    const user = userEvent.setup();
+    setGame({
+      players: [{ playerId: 'p-alice', skipState: 'NEXT_TURN' }],
+      myPlayerId: 'p-alice',
+    });
+    authState.session = { username: 'alice' };
+    const stream = makeStream();
+    render(<ActionButton stream={stream} />);
+    await user.click(screen.getByTestId('skip-status-banner'));
+    expect(stream.sendPlayerAction).toHaveBeenCalledWith(
+      'PASS_PRIORITY_CANCEL_ALL_ACTIONS',
+    );
+  });
+
+  it('ignores OTHER players skipState — only the local player drives the banner', () => {
+    setGame({
+      players: [
+        { playerId: 'p-alice', skipState: '' },
+        { playerId: 'p-bob', skipState: 'NEXT_TURN' },
+      ],
+      myPlayerId: 'p-alice',
+    });
+    authState.session = { username: 'alice' };
+    render(<ActionButton stream={makeStream()} />);
+    expect(screen.queryByTestId('skip-status-banner')).toBeNull();
+  });
+
+  it('marks the matching menu item ARMED when the corresponding skip is active', async () => {
+    const user = userEvent.setup();
+    setGame({
+      players: [{ playerId: 'p-alice', skipState: 'NEXT_TURN' }],
+      myPlayerId: 'p-alice',
+    });
+    authState.session = { username: 'alice' };
+    render(<ActionButton stream={makeStream()} />);
+    await user.click(screen.getByTestId('action-button-ellipsis'));
+    const armedItem = screen.getByTestId(
+      'action-menu-PASS_PRIORITY_UNTIL_NEXT_TURN',
+    );
+    expect(armedItem.getAttribute('data-armed')).toBe('true');
+    expect(armedItem).toHaveTextContent(/armed/i);
+    // Sibling items not armed
+    const stackItem = screen.getByTestId(
+      'action-menu-PASS_PRIORITY_UNTIL_STACK_RESOLVED',
+    );
+    expect(stackItem.getAttribute('data-armed')).toBeNull();
+  });
+
+  it('does not crash when gv has no players (edge case during early frame)', () => {
+    // Defensive — schemas allow players to be empty during the
+    // pre-game window. Component must not error before the first
+    // populated frame.
+    setGame({ players: [] });
+    authState.session = { username: 'alice' };
+    expect(() =>
+      render(<ActionButton stream={makeStream()} />),
+    ).not.toThrow();
+    expect(screen.queryByTestId('skip-status-banner')).toBeNull();
   });
 });

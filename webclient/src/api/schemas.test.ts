@@ -402,6 +402,60 @@ function basicGameView(): WebGameView {
   });
 }
 
+describe('webPlayerViewSchema — schema 1.30 skipState', () => {
+  function fields() {
+    return {
+      playerId: '11111111-1111-1111-1111-111111111111',
+      name: 'alice',
+      life: 20,
+      wins: 0,
+      winsNeeded: 1,
+      libraryCount: 53,
+      handCount: 7,
+      graveyard: {},
+      exile: {},
+      sideboard: {},
+      battlefield: {},
+      manaPool: { red: 0, green: 0, blue: 0, white: 0, black: 0, colorless: 0 },
+      controlled: true,
+      isHuman: true,
+      isActive: true,
+      hasPriority: true,
+      hasLeft: false,
+      monarch: false,
+      initiative: false,
+      designationNames: [],
+    };
+  }
+
+  it('defaults skipState to empty string when missing (1.29 server back-compat)', () => {
+    const parsed = webPlayerViewSchema.parse(fields());
+    expect(parsed.skipState).toBe('');
+  });
+
+  it('passes through known skipState enum values', () => {
+    for (const v of [
+      'ALL_TURNS',
+      'NEXT_TURN',
+      'END_OF_TURN',
+      'NEXT_MAIN',
+      'STACK_RESOLVED',
+      'END_STEP_BEFORE_MY_TURN',
+    ] as const) {
+      const parsed = webPlayerViewSchema.parse({ ...fields(), skipState: v });
+      expect(parsed.skipState).toBe(v);
+    }
+  });
+
+  it('coerces unknown skipState values to empty string (.catch fallback)', () => {
+    const parsed = webPlayerViewSchema.parse({
+      ...fields(),
+      skipState: 'A_FUTURE_MODE_THE_CLIENT_DOES_NOT_KNOW',
+    });
+    expect(parsed.skipState).toBe('');
+  });
+});
+
 describe('webStreamFrameSchema', () => {
   it('parses an envelope with arbitrary data payload', () => {
     const env = webStreamFrameSchema.parse({

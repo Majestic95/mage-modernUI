@@ -675,8 +675,29 @@ export const webPlayerViewSchema = z.object({
     .enum(['connected', 'disconnected'])
     .catch('connected')
     .default('connected'),
+  // Schema 1.30 — which PASS_PRIORITY_UNTIL_* skip mode this player has
+  // armed, if any. Empty string when no skip is active. The engine's
+  // 6 mutually-exclusive passedUntil* booleans collapse to one enum
+  // string here; see GameViewMapper.deriveSkipState for the mapping.
+  // .catch('') tolerates a future server emitting a new value by
+  // coercing it to the no-skip state (UI shows nothing rather than
+  // hard-failing the parse). .default('') fires on missing key (a
+  // 1.29 server sending a frame with no skipState field).
+  skipState: z
+    .enum([
+      '',
+      'ALL_TURNS',
+      'NEXT_TURN',
+      'END_OF_TURN',
+      'NEXT_MAIN',
+      'STACK_RESOLVED',
+      'END_STEP_BEFORE_MY_TURN',
+    ])
+    .catch('')
+    .default(''),
 });
 export type WebPlayerView = z.infer<typeof webPlayerViewSchema>;
+export type SkipState = WebPlayerView['skipState'];
 
 export const webGameViewSchema = z.object({
   turn: z.number(),
