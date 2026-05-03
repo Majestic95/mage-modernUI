@@ -151,7 +151,7 @@ describe('AsymmetricTLayout', () => {
     }
   });
 
-  it('the active opponent lane mounts a single mask-carved spotlight ring with rotation + drop-shadow glow', () => {
+  it('the active opponent lane mounts two mask-carved spotlight rings (bloom + streak) sharing --halo-angle', () => {
     const gv = buildDemoGameView();
     // Promote opponent-1 to active (override the demo fixture).
     const opponents = gv.players.filter((p) => p.playerId !== gv.myPlayerId);
@@ -185,19 +185,32 @@ describe('AsymmetricTLayout', () => {
     );
     const halo = screen.getByTestId('lane-spotlight-halo');
     expect(halo.className).toMatch(/animate-lane-spotlight/);
-    // Single layer mirrors the focal-card pattern: conic gradient
-    // reading `var(--halo-angle)` so it rotates with the keyframe,
-    // mask-carved into a 3px perimeter ring, with a drop-shadow
-    // filter providing the outward bloom that follows the ring.
-    expect(halo.style.background).toContain(
+    // Two children, both mask-carved into perimeter rings so the
+    // bloom can never paint into the lane interior (which is what
+    // hid the opponent's portrait when we used drop-shadow).
+    const bloom = screen.getByTestId('lane-spotlight-bloom');
+    const streak = screen.getByTestId('lane-spotlight-streak');
+    // Both read var(--halo-angle, 0deg) from the parent's animation
+    // → rotate in exact lockstep frame-by-frame.
+    expect(bloom.style.background).toContain(
       'conic-gradient(from var(--halo-angle, 0deg)',
     );
-    expect(halo.style.padding).toBe('3px');
-    expect(halo.style.filter).toContain('drop-shadow');
-    // No flooding of the interior — there is no longer a separate
-    // bloom layer painting the full lane area.
-    expect(screen.queryByTestId('lane-spotlight-bloom')).toBeNull();
-    expect(screen.queryByTestId('lane-spotlight-streak')).toBeNull();
+    expect(streak.style.background).toContain(
+      'conic-gradient(from var(--halo-angle, 0deg)',
+    );
+    // Bloom is a wider mask-carved ring with blur — soft glow,
+    // confined to the ring shape.
+    expect(bloom.style.padding).toBe('9px');
+    expect(bloom.style.filter).toContain('blur');
+    // Streak is a thin 3px ring, no blur, no drop-shadow — sharp
+    // foreground sweep.
+    expect(streak.style.padding).toBe('3px');
+    expect(streak.style.filter).toBe('');
+    // Neither child uses drop-shadow (the fix for the portrait
+    // regression). Bloom is mask-bound to the perimeter; the soft
+    // edge comes purely from `filter: blur`.
+    expect(bloom.style.filter).not.toContain('drop-shadow');
+    expect(streak.style.filter).not.toContain('drop-shadow');
   });
 
   it('only one opponent lane has the spotlight at a time', () => {

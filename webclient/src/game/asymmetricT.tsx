@@ -37,36 +37,65 @@ const SPOTLIGHT_GRADIENT =
   'transparent 360deg)';
 
 function LaneSpotlightHalo() {
-  // Mirror the focal-card stack spotlight (StackZone.tsx) exactly:
-  // a single mask-carved perimeter ring with a rotating white-gold
-  // sweep. The "glow/bloom" reads visually from the bright color
-  // stops on the ring itself plus a `drop-shadow` filter — both
-  // bloom AND streak share the same painted shape, so they cannot
-  // drift out of sync (they ARE the same shape). The earlier two-
-  // layer attempt put a blurred full-area conic gradient under the
-  // streak, which flooded the lane's interior with gold; the focal
-  // card achieves its glow purely from this single ring layer.
+  // Two mask-carved perimeter rings, BOTH constrained to the lane's
+  // edge — never the interior. The single source of truth for
+  // rotation is the parent: it owns `animate-lane-spotlight`
+  // (rotates `--halo-angle`, plus `halo-breathe` for the pulse), so
+  // both children read `var(--halo-angle)` from the cascade and can
+  // never drift. The pair:
+  //   1. Bloom — a wider ring with a blur filter for soft outward
+  //      glow. Mask-carved so the BLUR effect is also limited to
+  //      the perimeter — earlier iterations used `drop-shadow` which
+  //      paints AROUND the carved ring AT ITS STACKING POSITION,
+  //      reaching inward far enough to obscure the opponent's
+  //      portrait at high intensity. With the bloom mask-carved
+  //      itself, the soft glow is physically confined to the ring.
+  //   2. Streak — a thin 3px ring with no blur for the sharp gold
+  //      sweep that reads as the foreground spotlight.
+  //
+  // The composite reads as: a bright gold streak rotating around
+  // the lane edge, surrounded by a soft golden halo that follows
+  // it in lockstep, breathing in and out.
+  const mask =
+    'linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)';
   return (
     <div
       data-testid="lane-spotlight-halo"
       aria-hidden="true"
-      className="animate-lane-spotlight absolute -inset-[2px] rounded-md pointer-events-none"
-      style={{
-        background: SPOTLIGHT_GRADIENT,
-        WebkitMask:
-          'linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)',
-        WebkitMaskComposite: 'xor',
-        mask: 'linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)',
-        maskComposite: 'exclude',
-        padding: '3px',
-        // Soft outward bloom that follows the bright ring — same
-        // glowing-edge feel the focal card gets from its color-
-        // identity halo, except here the drop-shadow is bound to
-        // the painted ring shape itself, so the glow co-rotates
-        // perfectly with the gold streak.
-        filter: 'drop-shadow(0 0 6px rgba(255, 215, 100, 0.55))',
-      }}
-    />
+      className="animate-lane-spotlight absolute -inset-[6px] rounded-md pointer-events-none"
+    >
+      {/* Bloom ring — same gradient + var(--halo-angle), wider
+          ring (padding 9px) with blur, opacity 0.85 for visibility. */}
+      <div
+        data-testid="lane-spotlight-bloom"
+        aria-hidden="true"
+        className="absolute inset-0 rounded-md"
+        style={{
+          background: SPOTLIGHT_GRADIENT,
+          WebkitMask: mask,
+          WebkitMaskComposite: 'xor',
+          mask: mask,
+          maskComposite: 'exclude',
+          padding: '9px',
+          filter: 'blur(6px)',
+          opacity: 0.85,
+        }}
+      />
+      {/* Sharp streak — 3px ring at the lane edge proper. */}
+      <div
+        data-testid="lane-spotlight-streak"
+        aria-hidden="true"
+        className="absolute inset-1 rounded-md"
+        style={{
+          background: SPOTLIGHT_GRADIENT,
+          WebkitMask: mask,
+          WebkitMaskComposite: 'xor',
+          mask: mask,
+          maskComposite: 'exclude',
+          padding: '3px',
+        }}
+      />
+    </div>
   );
 }
 
