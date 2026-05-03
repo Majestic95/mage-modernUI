@@ -300,6 +300,8 @@ Trivial slices (≤50 LOC, single file, no architectural impact) can run builder
 | `OutOfMemoryError: Java heap space` during `assembly:single` | Set `MAVEN_OPTS="-Xmx4g"` before the package command. (Doesn't apply to `run.sh`, which uses `-Xmx2g`.) |
 | `BindException` on port 17171 / 18080 / 5173 | Another instance is already running. Find Windows PID via `netstat -ano \| grep ":<port>"` (last column) and terminate via `wmic process where "ProcessId=<PID>" call terminate`. Avoid `taskkill` — it pops a console window. |
 | Card images don't show in webclient | Webclient fetches from Scryfall by `setCode + collectorNumber`. First-time hit is a network round-trip; service-worker cache hits afterwards. Check browser DevTools → Network for failed Scryfall requests. |
+| **Public Vercel app shows "failed to fetch" after a server restart** | You restarted the WebApi via bare `./run.sh` instead of [`./scripts/playtest-up.sh`](../scripts/playtest-up.sh). `run.sh` boots in dev profile with CORS = `localhost:5173, :4173` only, silently rejecting the Vercel origin (no error in the WebApi log past the dev-default warning). Bring the public stack back up with `./scripts/playtest-up.sh` from the repo root. **Never stop at bare `run.sh`** if the public site needs to stay working — see CLAUDE.md hard constraint #6. |
+| **Public Vercel app reachable but every API call fails** | The deployed bundle has the wrong (or empty) `VITE_XMAGE_WEBAPI_URL` baked in. This happens when redeploying via bare `vercel --prod` (cloud build path) instead of `playtest-up.sh`'s prebuilt path — the cloud build doesn't see the local ngrok URL. Re-run `./scripts/playtest-up.sh` to rebuild + redeploy with the URL embedded correctly. |
 
 ---
 

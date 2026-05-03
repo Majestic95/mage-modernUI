@@ -29,6 +29,7 @@ These are non-negotiable. Violating them undoes the whole project's leverage.
 3. **DTO firewall.** `Mage.Server.WebApi`'s public types (anything serialized to JSON or referenced by the client) must not be `mage.view.*` classes. Hand-written DTOs only. Mappers do the translation. This isolates the client from upstream view-class drift.
 4. **Schema versioning.** Every JSON payload includes `"schemaVersion": "X.Y"`. Bump on any breaking change. Client refuses to connect on mismatch.
 5. **Upstream is fetch-only.** The `upstream` remote is used to pull new card additions and bugfixes into our `master` tracking branch. We never edit `master` ourselves; we merge from `upstream/master`.
+6. **Public dev deploy is orchestrated — never bare `run.sh` when the Vercel app is live.** The public Vercel app (`xmage-playtest.vercel.app`) talks to the local WebApi through an ngrok tunnel set in Vercel env var `VITE_XMAGE_WEBAPI_URL`. The canonical bring-up is `./scripts/playtest-up.sh`, which: (a) kills stale ngrok, (b) starts a fresh tunnel + captures its URL, (c) builds the webclient locally with that URL baked in, (d) `vercel deploy --prebuilt --prod`, and (e) `exec ./run.sh` with `XMAGE_PROFILE=prod` + `XMAGE_CORS_ORIGINS=<alias>,<per-deploy>,localhost:5173,localhost:4173`. Tear down with `./scripts/playtest-down.sh`. **Never start the WebApi via bare `./run.sh` while the public Vercel app needs to keep working** — `run.sh` boots in dev profile with CORS allow-list = `localhost:5173, :4173` only, and the public site silently falls into CORS rejection (no error in the WebApi log beyond the dev-default warning). Same applies to redeploying via bare `vercel --prod` — that uses Vercel's cloud build path, which doesn't see the local ngrok URL and bakes empty `VITE_XMAGE_WEBAPI_URL` into the bundle. Full workflow in `docs/playtest-multiplayer.md`.
 
 ---
 
@@ -351,6 +352,7 @@ See `docs/PATH_C_PLAN.md` for full detail. High-level:
 - **Three-person upstream bus factor** (theelk801, LevelX2, JayDi85). If upstream slows, our fork still works; we just stop getting new cards.
 - **Card images** are not in the repo and not served by the Java server. Client fetches from Scryfall directly.
 - **No prior UI rewrite has shipped** in the project's history. We're trailblazing — if we hit a structural blocker, no one has solved it before us.
+- **ngrok + Vercel public deploy has invisible failure modes.** Free-tier ngrok rotates URLs on restart; if ngrok dies, the URL baked into the live Vercel bundle goes stale (no error message — just "failed to fetch" in the browser). The `XMAGE_CORS_ORIGINS` env var is required when prod-profiling the WebApi, but the failure mode for missing/wrong CORS is also silent: preflight returns 200 with no `Access-Control-Allow-Origin` header and the browser blocks the actual request. Always use `./scripts/playtest-up.sh` to bring the stack up; it handles all three coupled pieces (ngrok URL, Vercel bundle env, WebApi CORS) atomically. See [`docs/playtest-multiplayer.md`](docs/playtest-multiplayer.md).
 
 ---
 
