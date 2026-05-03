@@ -4,6 +4,7 @@ import type { GameStream } from './stream';
 import { useGameStore } from './store';
 import { useModalA11y } from '../util/useModalA11y';
 import { CardFace } from './CardFace';
+import { HoverCardDetail } from './HoverCardDetail';
 
 /**
  * Slice 70-F (ADR 0011 D5) — full-mode mulligan modal per
@@ -233,23 +234,30 @@ function HandPreview({
     >
       {cards.map((c) => (
         <li key={c.id}>
-          <button
-            type="button"
-            data-testid={`mulligan-hand-card-${c.id}`}
-            onClick={onMulligan}
-            disabled={disabled}
-            aria-label={`${c.name} — click to mulligan`}
-            className={
-              'block w-full rounded transition focus:outline-none ' +
-              'focus:ring-2 focus:ring-fuchsia-400 ' +
-              (disabled
-                ? 'cursor-not-allowed opacity-50 '
-                : 'cursor-pointer hover:brightness-110 ' +
-                  'animate-card-targeted-pulse')
-            }
-          >
-            <CardFace card={c} size="hand" />
-          </button>
+          {/* Hover-to-zoom — at the modal's tile size cards aren't
+              readable. HoverCardDetail wraps the trigger and renders
+              a portal popover with full art + oracle text on hover
+              (and on focus, for keyboard users). Same component used
+              by the in-game zone hover. */}
+          <HoverCardDetail card={c}>
+            <button
+              type="button"
+              data-testid={`mulligan-hand-card-${c.id}`}
+              onClick={onMulligan}
+              disabled={disabled}
+              aria-label={`${c.name} — click to mulligan`}
+              className={
+                'block w-full rounded transition focus:outline-none ' +
+                'focus:ring-2 focus:ring-fuchsia-400 ' +
+                (disabled
+                  ? 'cursor-not-allowed opacity-50 '
+                  : 'cursor-pointer hover:brightness-110 ' +
+                    'animate-card-targeted-pulse')
+              }
+            >
+              <CardFace card={c} size="hand" />
+            </button>
+          </HoverCardDetail>
         </li>
       ))}
     </ul>
