@@ -364,7 +364,18 @@ export function Battlefield({
           // Round 20 (user direction 2026-04-30) — bumped right
           // 24 → 40px so the Exile chip + count have breathing
           // room from the side-panel boundary.
-          className="absolute bottom-12 right-10 z-20 pointer-events-auto"
+          //
+          // 2026-05-03 z-index raise (z-20 → z-40): the hand region
+          // mounted by GameTable is `fixed ... z-30` with an inner
+          // pointer-events-auto wrapper that covers the entire ~280px
+          // bottom strip including this corner's footprint. At z-20
+          // the hand wrapper intercepted every click meant for the
+          // graveyard / exile chips here — the chip rendered as a
+          // button but never received its click. z-40 puts the
+          // corner above the hand wrapper for hit-testing without
+          // visually changing anything (the corner is small, the
+          // hand has no card art directly under it).
+          className="absolute bottom-12 right-10 z-40 pointer-events-auto"
         >
           <PlayerArea
             player={me}
