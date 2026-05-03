@@ -89,6 +89,16 @@ public final class MatchOptionsBuilder {
                 MultiplayerAttackOption.LEFT, "attackOption"));
         options.setRange(parseEnum(RangeOfInfluence.class, req.range(),
                 RangeOfInfluence.ALL, "range"));
+        // Audit fix — MatchOptions.quitRatio defaults to 0 (java int
+        // default). The MageServerImpl create-table check rejects when
+        // quitRatio < user.getMatchQuitRatio(); a user with ANY non-
+        // zero historical quit ratio (single concede in a prior game,
+        // network drop, etc.) gets blocked from creating a table with
+        // "incompatible quit ratio". The new lobby has no UI to set
+        // this — default to 100 (allow all). Same default for minimum
+        // rating + minimum age so neither blocks playtest accounts.
+        options.setQuitRatio(100);
+        options.setMinimumRating(0);
 
         // Per-seat playerType composition. Defaults to [HUMAN, HUMAN] —
         // a 1v1 table. Clients declaring AI opponents must list them

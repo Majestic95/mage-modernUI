@@ -52,6 +52,12 @@ class WebApiServerTest {
         // 429 legit test traffic.
         server.setSessionMintLimiter(
                 new mage.webapi.auth.IpRateLimiter(Integer.MAX_VALUE, 60_000L));
+        // Audit fix — same permissive limiter for the new card-search
+        // endpoint (default cap is 60/min/IP for production DoS
+        // protection; tests fire many search requests in close
+        // succession).
+        server.setCardSearchLimiter(
+                new mage.webapi.auth.IpRateLimiter(Integer.MAX_VALUE, 60_000L));
 
         // Slice 70 — reset MetricsRegistry counters before this test
         // class's HTTP probes start firing them. Counter state is
@@ -340,6 +346,57 @@ class WebApiServerTest {
         JsonNode body = JSON.readTree(resp.body());
         assertEquals(2, body.get("cards").size());
         assertTrue(body.get("truncated").asBoolean());
+    }
+
+    @Test
+    void getCardsSearch_percentWildcard_strippedNotInjected() throws Exception {
+        // Audit fix — user-supplied '%' would become a SQL LIKE
+        // wildcard if passed verbatim, matching every card and
+        // defeating the MIN_QUERY_LENGTH=2 intent. The handler must
+        // strip wildcards. q="%" reduces to "" → length < 2 → 400.
+        HttpResponse<String> resp = getAuthed("/api/cards/search?q=%25");
+        assertEquals(400, resp.statusCode());
+        JsonNode body = JSON.readTree(resp.body());
+        assertEquals("BAD_REQUEST", body.get("code").asText());
+    }
+
+    @Test
+    void getCardsSearch_underscoreWildcard_stripped() throws Exception {
+        // Same as above for SQL LIKE's single-char wildcard '_'.
+        HttpResponse<String> resp = getAuthed("/api/cards/search?q=__");
+        assertEquals(400, resp.statusCode());
+    }
+
+    @Test
+    void getCardsSearch_wildcardMixedWithLetters_strippedThenSearched() throws Exception {
+        // q="For%est" — strip '%' → "Forest" → valid 2+ char query,
+        // returns matches. Confirms wildcard stripping doesn't break
+        // legit queries that happen to contain percent.
+        HttpResponse<String> resp = getAuthed("/api/cards/search?q=For%25est&limit=5");
+        assertEquals(200, resp.statusCode());
+        JsonNode body = JSON.readTree(resp.body());
+        assertTrue(body.get("cards").size() > 0);
+    }
+
+    @Test
+    void getCardsSearch_perIpRateLimit_returns429AfterCap() throws Exception {
+        // Audit fix — replace the permissive test limiter with a
+        // strict 1/window limiter for this test only, fire two
+        // requests, expect the second to 429.
+        server.setCardSearchLimiter(
+                new mage.webapi.auth.IpRateLimiter(1, 60_000L));
+        try {
+            HttpResponse<String> ok = getAuthed("/api/cards/search?q=Forest");
+            assertEquals(200, ok.statusCode());
+            HttpResponse<String> limited = getAuthed("/api/cards/search?q=Forest");
+            assertEquals(429, limited.statusCode());
+            JsonNode body = JSON.readTree(limited.body());
+            assertEquals("RATE_LIMITED", body.get("code").asText());
+        } finally {
+            // Restore permissive limiter so subsequent tests aren't 429ed.
+            server.setCardSearchLimiter(
+                    new mage.webapi.auth.IpRateLimiter(Integer.MAX_VALUE, 60_000L));
+        }
     }
 
     @Test

@@ -80,7 +80,15 @@ export function DeckPreviewPanel({ deck, statsLoading = false }: Props) {
       >
         <CommanderCardArt
           name={deck.commanderName}
-          imageUrl={lobbyCardImageUrl(deck.commanderName)}
+          // Audit fix — honor the user's chosen commander printing.
+          // deck.commanderArtUrl is the printing-aware art_crop URL;
+          // promote it to the normal-version URL for the card image.
+          // Falls back to by-name lookup only when the chosen-printing
+          // URL isn't available (older deck without setCode/cardNumber).
+          imageUrl={
+            chosenPrintingNormalUrl(deck.commanderArtUrl)
+            ?? lobbyCardImageUrl(deck.commanderName)
+          }
         />
 
         <div className="flex min-h-0 flex-col gap-2">
@@ -125,6 +133,20 @@ export function DeckPreviewPanel({ deck, statsLoading = false }: Props) {
       </div>
     </section>
   );
+}
+
+/**
+ * Promote the LobbyDeck.commanderArtUrl (art_crop) to a normal-version
+ * URL for the commander card image. Returns null when the input
+ * doesn't look like a Scryfall printing URL — caller falls back to
+ * by-name lookup.
+ */
+function chosenPrintingNormalUrl(artCropUrl: string | null): string | null {
+  if (!artCropUrl) return null;
+  if (!artCropUrl.includes('/cards/') || artCropUrl.includes('/cards/named'))
+    return null;
+  if (!artCropUrl.includes('version=art_crop')) return null;
+  return artCropUrl.replace('version=art_crop', 'version=normal');
 }
 
 function CommanderCardArt({

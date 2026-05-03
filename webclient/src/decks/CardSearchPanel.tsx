@@ -13,7 +13,7 @@
  * <p>Server-side enforces a 2-char minimum query length; we mirror
  * the gate here so the network request isn't even fired below it.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ApiError, request } from '../api/client';
 import { webCardListingSchema, type WebCardInfo } from '../api/schemas';
 import { useAuthStore } from '../auth/store';
@@ -29,6 +29,7 @@ interface Props {
 const SEARCH_DEBOUNCE_MS = 300;
 const SEARCH_MIN_LENGTH = 2;
 const SEARCH_LIMIT = 50;
+const SEARCH_INPUT_MAX_LENGTH = 128;
 
 export function CardSearchPanel({ onAdd }: Props) {
   const token = useAuthStore((s) => s.session?.token ?? null);
@@ -37,11 +38,6 @@ export function CardSearchPanel({ onAdd }: Props) {
   const [truncated, setTruncated] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Track the latest fired query so a slow earlier response doesn't
-  // overwrite a faster later one (last-write-wins is wrong when typing
-  // fast — the user sees stale results matching an earlier prefix).
-  const latestQueryRef = useRef('');
 
   useEffect(() => {
     const trimmed = query.trim();
@@ -53,35 +49,49 @@ export function CardSearchPanel({ onAdd }: Props) {
       return;
     }
     if (!token) {
+      // Audit fix — clear stale results when the session goes away
+      // mid-search. Pre-fix the panel kept showing rows whose "+ Add"
+      // would 401 once clicked.
+      setResults(null);
+      setTruncated(false);
+      setLoading(false);
       setError('Not signed in.');
       return;
     }
+    // Audit fix — surface the spinner immediately on keystroke instead
+    // of waiting for the debounce timer to fire. The panel previously
+    // looked frozen for 300ms after every keystroke.
+    setLoading(true);
+    setError(null);
+    // Audit fix — abort the in-flight HTTP request when the user keeps
+    // typing OR unmounts. Pre-fix every keystroke spawned a request
+    // that ran to completion regardless; the visible state was filtered
+    // via a ref but the network + setState-on-unmount were wasted.
+    const controller = new AbortController();
     const handle = window.setTimeout(async () => {
-      latestQueryRef.current = trimmed;
-      setLoading(true);
-      setError(null);
       try {
         const resp = await request(
           `/api/cards/search?q=${encodeURIComponent(trimmed)}&limit=${SEARCH_LIMIT}`,
           webCardListingSchema,
-          { token },
+          { token, signal: controller.signal },
         );
-        // Drop stale responses — only the latest-typed query is allowed
-        // to update the visible results.
-        if (latestQueryRef.current !== trimmed) return;
+        if (controller.signal.aborted) return;
         setResults(resp.cards);
         setTruncated(resp.truncated);
+        setLoading(false);
       } catch (err) {
-        if (latestQueryRef.current !== trimmed) return;
-        setError(
-          err instanceof ApiError ? err.message : 'Search failed.',
-        );
+        if (controller.signal.aborted) return;
+        // Don't surface AbortError as a user-visible failure.
+        if (err instanceof DOMException && err.name === 'AbortError') return;
+        setError(err instanceof ApiError ? err.message : 'Search failed.');
         setResults([]);
-      } finally {
-        if (latestQueryRef.current === trimmed) setLoading(false);
+        setLoading(false);
       }
     }, SEARCH_DEBOUNCE_MS);
-    return () => window.clearTimeout(handle);
+    return () => {
+      window.clearTimeout(handle);
+      controller.abort();
+    };
   }, [query, token]);
 
   return (
@@ -97,20 +107,41 @@ export function CardSearchPanel({ onAdd }: Props) {
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search cards to add (min 2 chars)…"
           aria-label="Search cards to add to this deck"
-          className="flex-1 bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-fuchsia-500"
+          aria-controls="card-search-status"
+          maxLength={SEARCH_INPUT_MAX_LENGTH}
+          className="flex-1 bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-fuchsia-500 focus-visible:ring-2 focus-visible:ring-fuchsia-400"
         />
         {query && (
           <button
             type="button"
             data-testid="card-search-clear"
             onClick={() => setQuery('')}
-            className="text-sm text-zinc-400 hover:text-zinc-100 px-2"
+            className="text-sm text-zinc-400 hover:text-zinc-100 px-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-400 rounded"
             aria-label="Clear search"
           >
             ×
           </button>
         )}
       </div>
+
+      {/* Audit fix — aria-live region announces result counts +
+          loading + error states to screen readers. */}
+      <p
+        id="card-search-status"
+        className="sr-only"
+        role="status"
+        aria-live="polite"
+      >
+        {error
+          ? `Search error: ${error}`
+          : loading && results === null
+          ? 'Searching…'
+          : results !== null && results.length === 0
+          ? 'No matches.'
+          : results !== null
+          ? `${results.length} match${results.length === 1 ? '' : 'es'}${truncated ? ', showing first 50' : ''}.`
+          : ''}
+      </p>
 
       {error && (
         <p
@@ -149,15 +180,21 @@ export function CardSearchPanel({ onAdd }: Props) {
               gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
             }}
           >
-            {results.map((card) => (
-              <li key={`${card.setCode}-${card.cardNumber}-${card.name}`}>
+            {results.map((card, idx) => (
+              // Audit fix — include idx as a tiebreaker so two rows
+              // missing setCode/cardNumber (malformed DB rows) don't
+              // collide on the same React key.
+              <li
+                key={`${card.setCode}|${card.cardNumber}|${card.name}|${idx}`}
+              >
                 <SearchResultRow card={card} onAdd={onAdd} />
               </li>
             ))}
           </ul>
           {truncated && (
             <p className="text-xs text-zinc-500 italic">
-              Showing the first {SEARCH_LIMIT} matches — type more to narrow.
+              Showing the first {SEARCH_LIMIT} matches — refine your query
+              for a more specific match.
             </p>
           )}
         </>
@@ -222,7 +259,7 @@ function SearchResultRow({
         type="button"
         data-testid="card-search-add"
         onClick={() => onAdd(card)}
-        className="flex-shrink-0 px-2 py-1 rounded bg-fuchsia-600 hover:bg-fuchsia-500 text-white text-xs font-medium"
+        className="flex-shrink-0 px-2 py-1 rounded bg-fuchsia-600 hover:bg-fuchsia-500 text-white text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-300"
         aria-label={`Add ${card.name} to deck`}
       >
         + Add

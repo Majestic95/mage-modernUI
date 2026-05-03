@@ -54,11 +54,19 @@ export function CommanderPreviewPanel({ deck }: Props) {
           style={{ gridTemplateColumns: 'auto 1fr' }}
         >
           <CardImage
-            // Prefer Scryfall's resolved image (handles double-faced
-            // / split / promo printings); fall back to our exact-name
-            // builder so a transient network failure still paints the
-            // card.
-            imageUrl={card?.imageUrl ?? lobbyCardImageUrl(commanderName)}
+            // Audit fix — honor the user's chosen commander printing.
+            // deck.commanderArtUrl is the printing-aware art_crop URL
+            // built in useLiveDecks.savedToLobbyDeck; derive the
+            // normal-version URL by swapping the version param so the
+            // big card image matches the seat preview + in-game art.
+            // Falls back to Scryfall's by-name lookup (default
+            // printing) only if the chosen-printing URL is missing
+            // (older deck without setCode/cardNumber, etc.).
+            imageUrl={
+              chosenPrintingNormalUrl(deck.commanderArtUrl)
+              ?? card?.imageUrl
+              ?? lobbyCardImageUrl(commanderName)
+            }
             commanderName={commanderName}
           />
           <CardDetails
@@ -70,6 +78,22 @@ export function CommanderPreviewPanel({ deck }: Props) {
       )}
     </section>
   );
+}
+
+/**
+ * Promote the LobbyDeck.commanderArtUrl (art_crop) to a normal-version
+ * URL for the big card image. Returns null when the input doesn't look
+ * like a Scryfall printing URL (e.g., the by-name fallback path).
+ */
+function chosenPrintingNormalUrl(artCropUrl: string | null): string | null {
+  if (!artCropUrl) return null;
+  // Only swap when the URL is the per-printing /cards/{set}/{num}
+  // shape (built by scryfallByPrinting) — the by-name /cards/named
+  // shape would still reference the wrong printing even after swap.
+  if (!artCropUrl.includes('/cards/') || artCropUrl.includes('/cards/named'))
+    return null;
+  if (!artCropUrl.includes('version=art_crop')) return null;
+  return artCropUrl.replace('version=art_crop', 'version=normal');
 }
 
 function CardImage({

@@ -119,6 +119,24 @@ public final class WebApiServer {
             this.sessionMintLimiter = limiter;
         }
     }
+
+    /**
+     * Audit fix — per-IP rate limit on the card-search endpoint.
+     * {@code LIKE '%q%'} is a full-table scan of ~89k rows (the name
+     * index can't be used with a leading wildcard); without a limiter,
+     * an authenticated user could fire unlimited expensive scans. 60
+     * searches per minute per IP is generous for typing-rate UX
+     * (~1/sec) but blocks abuse loops.
+     */
+    private volatile mage.webapi.auth.IpRateLimiter cardSearchLimiter =
+            new mage.webapi.auth.IpRateLimiter(60, 60_000L);
+
+    /** Visible-for-test — same pattern as setSessionMintLimiter. */
+    public void setCardSearchLimiter(mage.webapi.auth.IpRateLimiter limiter) {
+        if (limiter != null) {
+            this.cardSearchLimiter = limiter;
+        }
+    }
     private List<String> corsOrigins = List.of();
     private Javalin app;
 
@@ -290,42 +308,60 @@ public final class WebApiServer {
         // printing per card. Min query length avoids hammering the
         // database with overly-broad matches.
         app.get("/api/cards/search", ctx -> {
+            // Audit fix — per-IP rate limit. LIKE '%q%' is a full-table
+            // scan (~89k rows); without this, an authed user can fire
+            // unlimited expensive scans and amplify into DoS.
+            String ip = ctx.ip();
+            if (!cardSearchLimiter.tryAcquire(ip)) {
+                throw new WebApiException(429, "RATE_LIMITED",
+                        "Too many search requests; please slow down.");
+            }
             String q = requireParam(ctx.queryParam("q"), "q").trim();
             if (q.length() < CARD_SEARCH_MIN_QUERY_LENGTH) {
                 throw new BadRequestResponse(
                         "q must be at least " + CARD_SEARCH_MIN_QUERY_LENGTH
                                 + " characters");
             }
+            // Audit fix — strip SQL LIKE wildcards from user input.
+            // SelectArg parameter-binds against injection (verified),
+            // but the LIKE operator itself treats user-supplied '%'
+            // and '_' as wildcards. q="%" matched everything, defeating
+            // the MIN_QUERY_LENGTH intent. Strip them outright (no
+            // current UX needs literal wildcards in card names).
+            String safeQ = q.replace("%", "").replace("_", "");
+            if (safeQ.length() < CARD_SEARCH_MIN_QUERY_LENGTH) {
+                throw new BadRequestResponse(
+                        "q must contain at least " + CARD_SEARCH_MIN_QUERY_LENGTH
+                                + " non-wildcard characters");
+            }
             int limit = clampLimit(ctx.queryParam("limit"));
             int rawCap = Math.min(limit * CARD_SEARCH_OVERSAMPLE, CARD_SEARCH_RAW_CAP);
             var raw = CardRepository.instance.findCards(
                     new mage.cards.repository.CardCriteria()
-                            .nameContains(q)
+                            .nameContains(safeQ)
                             .count((long) rawCap));
             // Dedupe by name preserving DB order (first-seen printing).
-            // Stop once we have `limit` distinct names. Track whether
-            // we processed every raw row vs. broke early — both signals
-            // feed the truncated flag below.
+            // Stop once we have `limit` distinct names.
+            // Track an explicit row index so we can decide whether the
+            // tail had unprocessed rows (truncated signal) without an
+            // O(n) indexOf walk per iteration.
             var seen = new java.util.LinkedHashMap<String, mage.cards.repository.CardInfo>();
             boolean processedAllRaw = true;
+            int idx = 0;
             for (var ci : raw) {
-                if (ci == null || ci.getName() == null) continue;
-                if (seen.containsKey(ci.getName())) continue;
-                seen.put(ci.getName(), ci);
-                if (seen.size() >= limit) {
-                    // Processed only PART of the raw set — there may
-                    // be more distinct names hiding in the unprocessed
-                    // rows, so flag truncated.
-                    if (raw.indexOf(ci) < raw.size() - 1) {
-                        processedAllRaw = false;
+                if (ci != null && ci.getName() != null
+                        && !seen.containsKey(ci.getName())) {
+                    seen.put(ci.getName(), ci);
+                    if (seen.size() >= limit) {
+                        if (idx < raw.size() - 1) processedAllRaw = false;
+                        break;
                     }
-                    break;
                 }
+                idx++;
             }
             // truncated when (a) raw query itself hit the DB cap (more
             // matches exist beyond what we even fetched), or (b) we
-            // filled `limit` before exhausting raw (more distinct names
-            // exist in the unprocessed tail).
+            // filled `limit` before exhausting raw.
             boolean truncated = raw.size() >= rawCap || !processedAllRaw;
             ctx.json(CardInfoMapper.many(
                     new java.util.ArrayList<>(seen.values()), truncated));
