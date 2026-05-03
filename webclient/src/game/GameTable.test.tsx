@@ -1,6 +1,18 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { LayoutGroup, MotionConfig } from 'framer-motion';
+
+// 2026-05-03 — pin LAYOUT_BOUNDS=false so this suite continues to
+// exercise the legacy 4-pod grid (four-pod-grid + data-side-pod
+// containment). Asymmetric-T layout has its own targeted suite in
+// asymmetricT.test.tsx.
+vi.mock('../featureFlags', async () => {
+  const actual = await vi.importActual<typeof import('../featureFlags')>(
+    '../featureFlags',
+  );
+  return { ...actual, LAYOUT_BOUNDS: false };
+});
+
 import { GameTable } from './GameTable';
 import { webGameViewSchema, webPlayerViewSchema, type WebGameView } from '../api/schemas';
 

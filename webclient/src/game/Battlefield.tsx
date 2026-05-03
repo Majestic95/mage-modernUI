@@ -1,4 +1,4 @@
-import { useMemo, type CSSProperties } from 'react';
+import { useMemo } from 'react';
 import type { WebGameView } from '../api/schemas';
 import type { InteractionMode } from './interactionMode';
 import { StackZone } from './StackZone';
@@ -7,6 +7,7 @@ import { gridAreaForOpponent, selectOpponents } from './battlefieldLayout';
 import { computePodCardSizeVars } from './podShrink';
 import type { DragState } from './useDragState';
 import { LAYOUT_BOUNDS, REDESIGN } from '../featureFlags';
+import { AsymmetricTLayout } from './asymmetricT';
 
 // LEGACY-BRANCH-FORK — slice 70-X.13 (Wave 4) cleanup marker.
 // Battlefield forks on REDESIGN inline (slotPart split at ~289,
@@ -112,6 +113,31 @@ export function Battlefield({
     // user wants a static viewport — content beyond bounds is
     // clipped rather than scrolled.
     <div className="flex-1 flex flex-col relative overflow-hidden">
+      {/* 2026-05-03 asymmetric-T branch — when LAYOUT_BOUNDS=true the
+          battlefield switches to the "asymmetric T" layout per the
+          industry-research recommendation: top 55% holds 3 stacked
+          opponent lanes, bottom 45% holds the local pod with full
+          width and sub-rows. The 4-pod grid below is the legacy
+          path retained for instant flag revert. Renders below the
+          announcer-region siblings inserted by GameTable. */}
+      {LAYOUT_BOUNDS && (
+        <AsymmetricTLayout
+          me={me}
+          opponents={opponents}
+          stack={gv.stack}
+          combat={gv.combat}
+          mode={mode}
+          canAct={canAct}
+          onObjectClick={onObjectClick}
+          onBoardDrop={onBoardDrop}
+          drag={drag}
+          eligibleTargetIds={eligibleTargetIds}
+          eligibleCombatIds={eligibleCombatIds}
+          combatRoles={combatRoles}
+        />
+      )}
+      {!LAYOUT_BOUNDS && (
+      <>
       {/* Slice 70-E — SR announcers (priority + elimination) moved
           to GameTable root per technical critic N4. The parent now
           mutates only on grid-shape changes (rare), not on every
@@ -207,32 +233,19 @@ export function Battlefield({
           // breaking the horizontal centering that the original
           // grid-stretched block layout provided.
           const isSidePod = area === 'left' || area === 'right';
-          // Layout containment (Tier 1, 2026-05-02) — when LAYOUT_BOUNDS
-          // is on, side pods get overflow clipping + items-stretch +
-          // min-h-0 so a busy battlefield (Commander wide boards with
-          // 30+ permanents) clips at the cell edge instead of escaping
-          // the viewport vertically. items-stretch swaps in for
-          // items-center so the PlayerArea fills the cell exactly and
-          // its rows render top-down rather than centered (centered
-          // overflow leaks symmetrically into the top + bottom — the
-          // upward leak is what the user-reported bug surfaced).
-          //
-          // OFF path preserves the slice-70-Y centered behavior
-          // verbatim so flipping VITE_FEATURE_LAYOUT_BOUNDS=false
-          // reverts cleanly without redeploy / git revert.
-          const sidePodClasses = LAYOUT_BOUNDS
-            ? ' flex items-stretch pb-[18vh] overflow-hidden min-h-0'
-            : ' flex items-center pb-[18vh]';
-          // Layout Tier 2 (2026-05-02) — dynamic card-shrink. Big
-          // commander boards (30+ permanents per opponent) overflow
-          // even after Tier 1 containment; without shrink the user
-          // would see only the top half of the pod's content. Apply
-          // to all opponent pods (top + sides). Returns null when
-          // the pod is at full size so we don't waste an inline
-          // style allocation on every render.
-          const podCardSizeVars = LAYOUT_BOUNDS
-            ? computePodCardSizeVars(Object.keys(p.battlefield).length)
-            : null;
+          // Layout containment (Tier 1) + Tier 2 dynamic card-shrink
+          // are now always-on for the legacy 4-pod path (2026-05-03).
+          // The LAYOUT_BOUNDS gate now switches at the OUTER fork
+          // (legacy vs asymmetric-T) above; flipping
+          // VITE_FEATURE_LAYOUT_BOUNDS=false picks the legacy path
+          // WITH its Tier 1/2 fixes intact (the previous "good
+          // state") rather than reverting all the way back to the
+          // unbounded slice-70-Y centered overflow.
+          const sidePodClasses =
+            ' flex items-stretch pb-[18vh] overflow-hidden min-h-0';
+          const podCardSizeVars = computePodCardSizeVars(
+            Object.keys(p.battlefield).length,
+          );
           const wrapperStyle = podCardSizeVars
             ? { gridArea: area, ...podCardSizeVars }
             : { gridArea: area };
@@ -241,10 +254,8 @@ export function Battlefield({
               key={p.playerId}
               style={wrapperStyle}
               data-side-pod={isSidePod || undefined}
-              data-bounded={isSidePod && LAYOUT_BOUNDS ? 'true' : undefined}
-              data-shrunk={
-                LAYOUT_BOUNDS && podCardSizeVars ? 'true' : undefined
-              }
+              data-bounded={isSidePod ? 'true' : undefined}
+              data-shrunk={podCardSizeVars ? 'true' : undefined}
               className={'min-w-0' + (isSidePod ? sidePodClasses : '')}
             >
               <PlayerArea
@@ -401,6 +412,13 @@ export function Battlefield({
           GameTable shell mounts MyHand as a sibling of Battlefield,
           consuming drag state from the same useDragState hook
           via GameTable. */}
+      </>
+      )}
     </div>
   );
 }
+
+/* AsymmetricTLayout + OpponentLane + LocalPod live in
+ * `./asymmetricT.tsx` — extracted out of this file 2026-05-03 to
+ * keep Battlefield.tsx focused on the legacy 4-pod path + the
+ * outer LAYOUT_BOUNDS fork. */

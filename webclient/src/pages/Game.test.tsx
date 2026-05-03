@@ -1,5 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
+
+// 2026-05-03 — pin LAYOUT_BOUNDS=false so this suite continues to
+// exercise the legacy 4-pod grid rendering path (which the
+// player-area-self / player-area-opponent / command-zone testids
+// depend on). The asymmetric-T layout that ships under
+// LAYOUT_BOUNDS=true has its own targeted suite in
+// asymmetricT.test.tsx; this file is the legacy-path coverage.
+vi.mock('../featureFlags', async () => {
+  const actual = await vi.importActual<typeof import('../featureFlags')>(
+    '../featureFlags',
+  );
+  return { ...actual, LAYOUT_BOUNDS: false };
+});
+
 import { Game } from './Game';
 import { useAuthStore } from '../auth/store';
 import { useGameStore } from '../game/store';

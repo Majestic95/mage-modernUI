@@ -15,10 +15,16 @@ import {
   type WebPlayerView,
 } from '../api/schemas';
 
-const flagState = vi.hoisted(() => ({ redesign: false }));
+const flagState = vi.hoisted(() => ({ redesign: false, layoutBounds: false }));
 vi.mock('../featureFlags', () => ({
   get REDESIGN() {
     return flagState.redesign;
+  },
+  // 2026-05-03 — LAYOUT_BOUNDS gate. Default false in tests so the
+  // existing legacy-path orientation/empty-state assertions still
+  // apply; opt in per-test where the locked-zone path is exercised.
+  get LAYOUT_BOUNDS() {
+    return flagState.layoutBounds;
   },
 }));
 
