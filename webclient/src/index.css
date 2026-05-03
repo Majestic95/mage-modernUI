@@ -223,7 +223,18 @@ input[type="checkbox"] {
  */
 @property --halo-angle {
   syntax: '<angle>';
-  inherits: false;
+  /* 2026-05-03 — flipped from `inherits: false` so the lane
+   * spotlight (LaneSpotlightHalo in asymmetricT.tsx) can animate
+   * `--halo-angle` on a parent element and have both child rings
+   * (bloom + streak) read the animated value via cascade. With
+   * `inherits: false`, descendants always read the registered
+   * `initial-value` (0deg) regardless of ancestor animation, so
+   * the conic-gradient `from var(--halo-angle)` was frozen at 0
+   * and the halo never rotated. Other consumers (stack-focal-
+   * spotlight, banner-halo-rotate, color-identity halo on the
+   * focal card) all animate AND read on the same element, so
+   * inheritance is a no-op for them and this flip is safe. */
+  inherits: true;
   initial-value: 0deg;
 }
 
