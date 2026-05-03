@@ -128,4 +128,51 @@ describe('GameTable shell', () => {
     expect(screen.getByTestId('player-area-self')).toBeInTheDocument();
     expect(screen.getByTestId('player-area-opponent')).toBeInTheDocument();
   });
+
+  it('side pods carry data-bounded when LAYOUT_BOUNDS is on (Tier 1 containment)', () => {
+    // Layout-bounds Tier 1 (2026-05-02) — busy boards on side pods
+    // (Commander wide boards, 30+ permanents) used to escape the cell
+    // bounds vertically because the wrapper used items-center +
+    // visible overflow. Tier 1 swaps to items-stretch + overflow-
+    // hidden + min-h-0 so content clips at the cell edge instead of
+    // flying off-screen. This test pins the wrapper attribute so a
+    // future refactor that strips the data-* doesn't silently lose
+    // the containment regression check.
+    //
+    // Need 3 players (so opponents.length=2 → idx 0='right' is a
+    // SIDE pod, not just 'top').
+    const gv = makeGameView();
+    const opp2 = webPlayerViewSchema.parse({
+      playerId: 'cccccccc-cccc-cccc-cccc-cccccccccccc',
+      name: 'carol',
+      life: 20,
+      wins: 0, winsNeeded: 1, libraryCount: 60, handCount: 7,
+      graveyard: {}, exile: {}, sideboard: {}, battlefield: {},
+      manaPool: { red: 0, green: 0, blue: 0, white: 0, black: 0, colorless: 0 },
+      controlled: false, isHuman: false, isActive: false, hasPriority: false,
+      hasLeft: false, monarch: false, initiative: false, designationNames: [],
+    });
+    const gv3 = webGameViewSchema.parse({ ...gv, players: [...gv.players, opp2] });
+    const { container } = renderInLayoutGroup(
+      <GameTable gameId="test-game" gameView={gv3} stream={null} />,
+    );
+    const sidePods = container.querySelectorAll('[data-side-pod="true"]');
+    expect(sidePods.length).toBeGreaterThan(0);
+    sidePods.forEach((pod) => {
+      // Default flag value is ON in the test env (vite reads
+      // import.meta.env which has no overrides during vitest); the
+      // off-only allowlist semantics in featureFlags.ts mean
+      // undefined → ON. Lock that the attribute is set.
+      expect(pod.getAttribute('data-bounded')).toBe('true');
+      // Tier 1 marker classes — overflow-hidden caps the cell, min-h-0
+      // lets the cell's flex parent collapse properly, items-stretch
+      // anchors the inner content to the cell's full height (vs the
+      // pre-fix items-center which centered + symmetrically overflowed).
+      expect(pod.className).toContain('overflow-hidden');
+      expect(pod.className).toContain('min-h-0');
+      expect(pod.className).toContain('items-stretch');
+      // Pre-fix class must NOT be present.
+      expect(pod.className).not.toContain('items-center');
+    });
+  });
 });

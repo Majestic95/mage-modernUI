@@ -79,3 +79,31 @@ export const REDESIGN: boolean =
 // CombatPanel / ManaPayPanel components were deleted in the same
 // commit. The VITE_FEATURE_CLICK_RESOLUTION env var is now unread —
 // safe to remove from Vercel project settings.
+
+/**
+ * 2026-05-02 layout containment + dynamic shrink. Stops side-pod
+ * battlefields from rendering off-screen when an opponent has more
+ * permanents than fit the cell height (user-reported regression in
+ * 4-player Commander). Bundled in a flag so playtest issues can
+ * revert by flipping {@code VITE_FEATURE_LAYOUT_BOUNDS=false} in
+ * Vercel — no redeploy needed if the flag is read at runtime; one
+ * rebuild if read at build-time. Defaults ON because the unbounded
+ * behavior is a hard visual bug that escapes the viewport.
+ *
+ * <p><b>Off-only allowlist</b> (same pattern as KEEP_ELIMINATED):
+ * any value other than the literal string {@code 'false'} keeps the
+ * flag enabled. Lets unset / empty / garbage env values default to
+ * the new safe behavior; only an intentional flip reverts.
+ *
+ * <p>Tier 1 (containment): side-pod wrappers gain {@code
+ * overflow-hidden + min-h-0 + items-stretch} so battlefield rows
+ * clip at the cell boundary instead of escaping vertically.
+ *
+ * <p>Tier 2 (uniform shrink): each pod sets a per-pod
+ * {@code --card-size-medium} CSS variable derived from permanent
+ * count, scaling cards down (to a readability floor) before
+ * containment kicks in. Hover-to-zoom (HoverCardDetail) covers the
+ * floor case for full-detail reading.
+ */
+export const LAYOUT_BOUNDS: boolean =
+  import.meta.env['VITE_FEATURE_LAYOUT_BOUNDS'] !== 'false';

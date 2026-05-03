@@ -5,7 +5,7 @@ import { StackZone } from './StackZone';
 import { PlayerArea } from './PlayerArea';
 import { gridAreaForOpponent, selectOpponents } from './battlefieldLayout';
 import type { DragState } from './useDragState';
-import { REDESIGN } from '../featureFlags';
+import { LAYOUT_BOUNDS, REDESIGN } from '../featureFlags';
 
 // LEGACY-BRANCH-FORK — slice 70-X.13 (Wave 4) cleanup marker.
 // Battlefield forks on REDESIGN inline (slotPart split at ~289,
@@ -206,24 +206,29 @@ export function Battlefield({
           // breaking the horizontal centering that the original
           // grid-stretched block layout provided.
           const isSidePod = area === 'left' || area === 'right';
+          // Layout containment (Tier 1, 2026-05-02) — when LAYOUT_BOUNDS
+          // is on, side pods get overflow clipping + items-stretch +
+          // min-h-0 so a busy battlefield (Commander wide boards with
+          // 30+ permanents) clips at the cell edge instead of escaping
+          // the viewport vertically. items-stretch swaps in for
+          // items-center so the PlayerArea fills the cell exactly and
+          // its rows render top-down rather than centered (centered
+          // overflow leaks symmetrically into the top + bottom — the
+          // upward leak is what the user-reported bug surfaced).
+          //
+          // OFF path preserves the slice-70-Y centered behavior
+          // verbatim so flipping VITE_FEATURE_LAYOUT_BOUNDS=false
+          // reverts cleanly without redeploy / git revert.
+          const sidePodClasses = LAYOUT_BOUNDS
+            ? ' flex items-stretch pb-[18vh] overflow-hidden min-h-0'
+            : ' flex items-center pb-[18vh]';
           return (
             <div
               key={p.playerId}
               style={{ gridArea: area }}
-              className={
-                // Slice 70-Y / Issue 1 v2 (2026-05-01) — side pods
-                // center vertically within the available space MINUS
-                // the hand-fan area at the bottom of the viewport.
-                // The hand fan is fixed-positioned outside the grid,
-                // so without padding-bottom the geometric center of
-                // the middle row falls behind the hand fan and the
-                // side pods visually anchor to the lower half of the
-                // viewport. pb-[18vh] reserves roughly the hand fan's
-                // visible height (≈180px on 1080p) so the centering
-                // sits in the viewport's true vertical middle.
-                'min-w-0' +
-                (isSidePod ? ' flex items-center pb-[18vh]' : '')
-              }
+              data-side-pod={isSidePod || undefined}
+              data-bounded={isSidePod && LAYOUT_BOUNDS ? 'true' : undefined}
+              className={'min-w-0' + (isSidePod ? sidePodClasses : '')}
             >
               <PlayerArea
                 player={p}
