@@ -13,7 +13,14 @@
 
 These constraints come from the user's slice-B-0 sign-off and override the matching defaults in the `current` variant:
 
+- **Cards render full Scryfall art via the existing `<CardFace>` component** (slice B-0 user direction 2026-05-03). The featureless rectangles in the reference screenshot are lo-res rendering, not an intentional simplification. No new "tabletop-style placeholder" component is needed; tabletop reuses `<CardFace>` exactly as `current` does. Card art is decoration only — zone placement, type-bucketing, and chrome are the variant's load-bearing differences from `current`.
+- **Action panel floats above the layout — never displaces it** (slice B-0 user direction 2026-05-03). The current REDESIGN's bottom-right morphing `<ActionButton>` (slice 70-M) keeps its position in tabletop, BUT it must render as a floating overlay (`position: fixed` with a high z-index + drop shadow) so the tabletop grid + zones underneath are NOT pushed up or reflowed to make room. The button is decorative chrome over the board, not a layout participant. This is intentional: the user's reference image shows zones that go all the way to the bottom edge, and the action button sits atop them.
 - **Zones are fixed dimensional anchors; cards inside adapt.** The colored zone containers (and the type-bucket boxes inside each zone) hold a fixed footprint that does NOT shrink/expand based on how full they are. Cards within a zone CAN shrink and/or stack to fit the available space — same spirit as the existing `LAYOUT_BOUNDS` Tier 2 behavior, but scoped per-zone-bucket rather than per-pod. **Vertical scroll within a zone is the last-resort worst-case** — it only kicks in if the cards-shrink-and-stack strategy can't fit the content. The intent: layout shape stays stable across game state changes; only the per-card density adapts.
+- **Target viewport: 1440p (2560×1440)** (slice B-0.5 user direction 2026-05-03). Layouts are tuned and tested at this resolution. Stability across viewport resizes is NOT a goal for this variant — the design is built and reviewed on 1440p hardware. Sub-1440p degradation is acceptable; super-1440p stretching is acceptable.
+- **Zone stability is irrefutable within a viewport.** Three layers enforce the guarantee that pod positions never shift under game-state changes (more permanents, modals opening, action panel rendering, etc.):
+  1. **CSS Grid with sized tracks** — every grid track is explicitly sized (`fr` or `%`); never `auto`. Cell bounding rects depend only on viewport size.
+  2. **Component architecture** — anything that isn't a pod stays out of the grid: action panel `position: fixed`, modals via portals, hover details `absolute`-positioned outside the flow.
+  3. **Tests** — `webclient/src/game/tabletopLayoutInvariants.test.tsx` asserts the structural CSS classes that deliver the guarantee (jsdom-level, slice B-0.5). Real-pixel measurements via Playwright are a future slice (B-0.6 candidate).
 - **Variant scope is fixture-mode-first.** Tabletop is iterated against `?game=fixture&variant=tabletop`. The production game window keeps rendering `current` until the user signs off on a tabletop graduation cutover.
 - **No engine code touched.** All work happens in `webclient/`. Java side and the wire format are untouched. No `schemaVersion` bump.
 - **Switcher visible from B-0 onward.** `[ current | tabletop ]` button row appears in the fixture from slice B-0. Tabletop will look incomplete until all element slices ship — that's expected. Side-by-side comparison is the point.
@@ -69,19 +76,19 @@ Each element below gets filled in during the walkthrough. Fields per element:
 
 - **Source:** Outer ornate border around the entire board.
 - **Current behavior:** `GameTable.tsx` renders the grid directly with no outer frame chrome.
-- **Tabletop spec:** _TBD — pending walkthrough_
-- **Open questions:** image asset vs CSS gradient vs SVG? If image: where does the asset live in the repo?
-- **Implementation tier:** _TBD pending walkthrough_
-- **Critic tier:** UI critic + Graphical critic.
+- **Tabletop spec:** **placeholder only** (slice B-0 user direction 2026-05-03 — *"wooden frame is not something I'm committed to"*). Implement as a thin wrapper `<div>` with a neutral dark border and a `data-tabletop-frame` attribute so we can light up the real treatment later without re-plumbing. The wooden look is deferred until the user confirms a direction (real image asset / CSS gradient / SVG / none).
+- **Open questions:** revisit treatment after the colored zones land — the frame may end up unnecessary if the zones already define the board edge clearly.
+- **Implementation tier:** mechanical (wrapper div + stub border).
+- **Critic tier:** none (placeholder).
 
 ### 3. Per-pod colored zones
 
 - **Source:** Red zone behind Zafara (top), blue behind Zaven (right), green behind Lyrra (left), purple behind Mirren (user, bottom).
-- **Current behavior:** `PlayerArea.tsx` wraps each pod with subtle dark accent chrome; the colored halo is on `PlayerPortrait` only.
-- **Tabletop spec:** _TBD — pending walkthrough_
-- **Open questions:** does the existing color-identity `PlayerPortrait` halo stay, get replaced by the zone background, or layer on top? What's the interaction with multicolor commanders (the existing `computeHaloBackground` conic-gradient)?
+- **Current behavior:** `PlayerArea.tsx` wraps each pod with subtle dark accent chrome; the colored halo is on `PlayerPortrait` only via `computeHaloBackground(colors, ...)` from `halo.ts`.
+- **Tabletop spec:** Zone background color is **driven by each player's commander color identity** (slice B-0 user direction 2026-05-03). Reuse the existing `computeHaloBackground()` from `halo.ts` — it already handles single-color (solid `--color-mana-X`), multicolor (conic-gradient with alternating bands), and colorless (neutral fallback). Apply that gradient as the zone background instead of (or in addition to) the portrait halo. The screenshot's solid-per-pod look corresponds to the single-color case; multicolor commanders will produce conic-gradient zone backgrounds that animate via the existing `--halo-angle` rotation.
+- **Open questions:** does the existing `PlayerPortrait` halo stay (layered on top, redundant signal), or get suppressed for tabletop (the zone background carries the color signal so the portrait halo is unnecessary)? — defer to walkthrough.
 - **Implementation tier:** standard.
-- **Critic tier:** UI + Graphical.
+- **Critic tier:** UI + Graphical (alpha / saturation / contrast tuning so card art inside the zone stays readable; the screenshot shows fairly saturated zone colors, but full Scryfall card art layered on top may need a desaturated or alpha-reduced background).
 
 ### 4. Type-bucketed battlefield slots
 
@@ -114,11 +121,13 @@ Each element below gets filled in during the walkthrough. Fields per element:
 - **Tabletop spec:** _TBD — pending walkthrough_
 - **Open questions:** keep the focal card geometry, just smaller? Or replace entirely with a turn/stack info tile (text-only)?
 
-### 8. Phase indicators below focal
+### 8. Phase indicators (full-width bottom strip)
 
-- **Source:** Small icon row below the central tile.
-- **Current behavior:** `PhaseTimeline.tsx` lives elsewhere in the layout (header strip / side panel depending on slice).
-- **Tabletop spec:** _TBD — pending walkthrough_
+- **Source:** Small icon row visible below the central "Stack & Turn" tile in the reference. **User direction (slice B-0, 2026-05-03):** keep the existing `PhaseTimeline` component verbatim, but reposition it to span the **full screen width along the bottom edge** of the layout (left-to-right) — same as other layouts we have made.
+- **Current behavior:** `PhaseTimeline.tsx` renders the phase segments; placement varies by slice (header strip in legacy, side-panel in earlier REDESIGN, central focal cell in current REDESIGN).
+- **Tabletop spec:** Same `PhaseTimeline` component, mounted in a new bottom-strip grid row in the tabletop `GameTable` variant. Full viewport width; height ~24-32px (tune during slice). Positioned BELOW the user's hand fan? Or ABOVE the hand? — clarify during walkthrough; the reference is ambiguous on z-order with the user pod.
+- **Implementation tier:** mechanical (component is reused; only the grid placement changes).
+- **Critic tier:** UI critic (verify the strip doesn't visually conflict with hand fan or the action panel placement once #12 lands).
 
 ### 9. Player portrait + life total positioning per pod
 
@@ -144,9 +153,15 @@ Each element below gets filled in during the walkthrough. Fields per element:
 - **Implementation tier:** standard (per-bucket CSS scaling logic + scroll fallback).
 - **Critic tier:** UI critic + UX (interaction patterns when scrolled — click/hover targets must still work).
 
-### 12. Action panel placement (deferred)
+### 12. Action panel placement
 
-The screenshot does not show an action panel (`Next Phase`, `Concede`, etc.). Open question: hidden behind a SettingsModal-style menu, or moved to a corner of the central tile, or replaced by hover/right-click affordances? Deferred until a walkthrough decision lands.
+- **Source:** Not visible in reference (mockup omission). User direction (slice B-0, 2026-05-03): keep current's bottom-right morphing `<ActionButton>` placement.
+- **Current behavior:** `<ActionButton>` (slice 70-M) renders as a flex-positioned element inside the side-panel grid cell at the bottom-right of the layout. Destructive actions (Concede, Leave) live inside `<SettingsModal>` (slice 70-O) reachable from the header.
+- **Tabletop spec:** Same `<ActionButton>` component, same bottom-right corner, BUT rendered as a **floating overlay** — `position: fixed` (or absolute over a positioned ancestor) with a high `z-index` and a drop shadow. The tabletop grid + zones underneath must NOT reflow to accommodate it; zones go edge-to-edge as in the reference image, the button floats over them. Destructive-action `<SettingsModal>` reachability stays the same as current — gear icon in the header, modal opens centered.
+- **Critical:** the floating-overlay rule is a load-bearing constraint (also captured in §load-bearing decisions). If the button ends up displacing zones or pushing the layout, the slice is wrong.
+- **Implementation tier:** standard.
+- **Critic tier:** UI critic (z-order ladder — make sure the button doesn't accidentally land below the zones; verify the drop shadow + click-target stay legible at the busiest possible board state). UX critic (verify the button is reachable + clickable when zones underneath are visually busy).
+- **Open questions:** drop-shadow color/blur (probably a soft black at low alpha; tune during slice). Does the button gain a backdrop blur for glass-morphism? — defer to UI critic.
 
 ---
 
