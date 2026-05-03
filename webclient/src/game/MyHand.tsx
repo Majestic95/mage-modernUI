@@ -9,9 +9,6 @@ import {
 } from '../animation/transitions';
 import { CardFace } from './CardFace';
 import { HoverCardDetail } from './HoverCardDetail';
-import { ManaPool } from './ManaPool';
-import type { ManaOrbColor } from './ManaOrb';
-import { hasAnyMana } from './manaPoolUtil';
 import { REDESIGN } from '../featureFlags';
 import { useDialogTargets } from './useDialogTargets';
 import type { GameStream } from './stream';
@@ -25,15 +22,12 @@ export function MyHand({
   hasPriority,
   onPointerDown,
   draggedCardId,
-  onSpendMana,
   stream,
 }: {
   hand: Record<string, WebCardView>;
   /**
-   * Slice 70-P (picture-catalog §2.3) — local player view, threaded
-   * through so the floating mana pool can mount in the hand region's
-   * top-right corner. Optional so legacy tests that don't care about
-   * mana pool placement don't need to construct a full player.
+   * Local player view, threaded through for hand-related rendering.
+   * Optional so legacy tests don't need to construct a full player.
    */
   player?: WebPlayerView;
   canAct: boolean;
@@ -41,27 +35,18 @@ export function MyHand({
   isMyTurn: boolean;
   hasPriority: boolean;
   /**
-   * Slice 36 â€” bound on each hand-card button to start the drag-
+   * Slice 36 — bound on each hand-card button to start the drag-
    * to-play gesture. The Battlefield owner decides whether the
    * press becomes a drag (5px movement threshold) or stays a
    * click; both paths route through {@code onObjectClick}.
    */
   onPointerDown: (cardId: string, ev: React.PointerEvent) => void;
   /**
-   * Slice 36 â€” id of the card currently being dragged, if any.
+   * Slice 36 — id of the card currently being dragged, if any.
    * The matching hand chip dims so the user can see which one is
    * "in flight". Other chips render normally.
    */
   draggedCardId: string | null;
-  /**
-   * Slice 70-X.10 (user feedback 2026-04-30) — when the engine has
-   * a gamePlayMana / gamePlayXMana dialog active, GameTable passes
-   * a handler that dispatches the player's manaType response. The
-   * floating mana pool then renders each orb as a clickable button
-   * so the player can spend pool mana directly (vs the prior
-   * battlefield-source-only payment path).
-   */
-  onSpendMana?: (color: ManaOrbColor) => void;
   /**
    * Slice 70-Y.1 — passed to {@link useDialogTargets} so hand cards
    * pulse + click-route through the dialog response channel when the
@@ -229,46 +214,19 @@ export function MyHand({
   // Pairs with LEGACY-BRANCH-END below. See PlayerArea.tsx for the
   // full mechanical-cleanup procedure when REDESIGN flips on.
   if (REDESIGN) {
-    // Slice 70-P critic Tech adjacent — gate the floating-pool
-    // wrapper on hasAnyMana so an empty pool produces NO DOM at
-    // all (catalog §2.3 "Empty pool: Don't render anything").
-    // Without the gate, the absolute-positioned wrapper still
-    // mounts as a 1px shell.
-    const showPool = !!player && hasAnyMana(player.manaPool);
     return (
       <div data-testid="my-hand" className="relative">
-        {/* Picture-catalog §2.3 — local mana pool floats at the
-            TOP-RIGHT of the hand region (NOT inside the player
-            frame). Renders glowing medium orbs per §2.3 "Glow
-            halo on each orb." Slice 70-P critic UI/UX-C1 fix —
-            glow={true} wires the spec-mandated halo through to
-            ManaOrb's box-shadow. */}
-        {showPool && (
-          <div
-            data-testid="hand-mana-pool"
-            // Slice 70-Z polish rounds 20 + 22 (user direction
-            // 2026-04-30) — mana pool moved UP via negative top so
-            // it clears the local PlayerFrame corner mount that
-            // sits in the same screen quadrant. Round 20: top-1
-            // → -top-5 (cleared the PRIORITY pill). Round 22: the
-            // -top-5 lift wasn't enough to escape the portrait
-            // itself — orbs visibly overlapped the portrait's top
-            // edge. -top-20 (-80px) lifts the orbs roughly the
-            // portrait-diameter above MyHand-top, putting them
-            // clearly above the corner mount's full footprint
-            // (portrait + PRIORITY pill + life badge). Right
-            // anchor unchanged (catalog §2.3 "TOP-RIGHT of the
-            // hand region").
-            className="absolute right-2 -top-20 z-10"
-          >
-            <ManaPool
-              player={player!}
-              size="medium"
-              glow
-              onSpend={onSpendMana}
-            />
-          </div>
-        )}
+        {/* 2026-05-03 — local floating mana pool relocated to the
+            asymmetric T layout, positioned directly above the local
+            portrait. Was rendered here at top-right of the hand
+            region (catalog §2.3) but the asymmetric T's local
+            PlayerFrame at z-40 lived in the SAME stacking-context
+            neighbourhood and the pool's z-30 (MyHand-fixed) parent
+            stacking context could never beat it; user reported the
+            orbs invisible on tap-lands. The pool now mounts in
+            asymmetricT.tsx as a sibling of `local-player-frame-corner`
+            at z-40, anchored above the portrait. See
+            `local-mana-pool-floating` in asymmetricT. */}
         {disabledHint && (
           <span
             data-testid="hand-disabled-hint"

@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import type { WebGameView } from '../api/schemas';
 import type { InteractionMode } from './interactionMode';
+import type { ManaOrbColor } from './ManaOrb';
 import { StackZone } from './StackZone';
 import { PlayerArea } from './PlayerArea';
 import { gridAreaForOpponent, selectOpponents } from './battlefieldLayout';
@@ -19,6 +20,7 @@ export function Battlefield({
   mode,
   canAct,
   onObjectClick,
+  onSpendMana,
   drag,
 }: {
   gv: WebGameView;
@@ -33,6 +35,14 @@ export function Battlefield({
   mode: InteractionMode;
   canAct: boolean;
   onObjectClick: (id: string) => void;
+  /**
+   * 2026-05-03 — passes the local mana-pool spend callback down to
+   * AsymmetricTLayout so the floating local mana pool by the local
+   * portrait can dispatch click-to-spend during gamePlayMana /
+   * gamePlayXMana dialogs. {@code null} when no stream is connected
+   * (orbs render as non-interactive display elements).
+   */
+  onSpendMana: ((color: ManaOrbColor) => void) | null;
   drag: DragState | null;
 }) {
   const me = useMemo(
@@ -129,6 +139,7 @@ export function Battlefield({
           mode={mode}
           canAct={canAct}
           onObjectClick={onObjectClick}
+          onSpendMana={onSpendMana}
           onBoardDrop={onBoardDrop}
           drag={drag}
           eligibleTargetIds={eligibleTargetIds}

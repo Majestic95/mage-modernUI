@@ -7,6 +7,9 @@ import { PlayerArea } from './PlayerArea';
 import { PlayerFrame } from './PlayerFrame';
 import { BattlefieldRowGroup } from './BattlefieldRowGroup';
 import { bucketBattlefield } from './battlefieldRows';
+import { hasAnyMana } from './manaPoolUtil';
+import { ManaPool } from './ManaPool';
+import type { ManaOrbColor } from './ManaOrb';
 import { REDESIGN } from '../featureFlags';
 
 /**
@@ -55,6 +58,7 @@ export function AsymmetricTLayout({
   combat,
   canAct,
   onObjectClick,
+  onSpendMana,
   onBoardDrop,
   drag,
   eligibleTargetIds,
@@ -68,6 +72,13 @@ export function AsymmetricTLayout({
   mode: InteractionMode;
   canAct: boolean;
   onObjectClick: (id: string) => void;
+  /**
+   * 2026-05-03 — click-to-spend handler for the floating local mana
+   * pool that mounts next to the local portrait. {@code null} when
+   * no stream is connected, in which case orbs render as
+   * non-interactive display elements.
+   */
+  onSpendMana: ((color: ManaOrbColor) => void) | null;
   onBoardDrop: () => void;
   drag: DragState | null;
   eligibleTargetIds: Set<string>;
@@ -187,6 +198,39 @@ export function AsymmetricTLayout({
           <div className="pointer-events-auto">
             <StackZone stack={stack} combat={combat} />
           </div>
+        </div>
+      )}
+
+      {/* Floating local mana pool — sits directly above the local
+          portrait so the orbs are glanceable next to the player's
+          identity (user direction 2026-05-03). Was previously
+          mounted in MyHand at top-right of the hand region; that
+          position lived inside the hand stacking context (z-30)
+          and was visually buried under the asymmetric T's local
+          PlayerFrame at z-40, plus far from the portrait. Mounted
+          here as a sibling of the corner mount with the same z-40,
+          positioned just above the frame's top edge. Renders only
+          when the pool has mana (catalog §2.3 "Empty pool: Don't
+          render anything"). */}
+      {REDESIGN && me && hasAnyMana(me.manaPool) && (
+        <div
+          data-testid="local-mana-pool-floating"
+          // bottom = local-player-frame-corner's `bottom-12` (3rem)
+          // + portrait + name + chip cluster height + small gap.
+          // 11rem clears the portrait stack reliably; if the cluster
+          // ever grows taller, bump this constant rather than letting
+          // the orbs collide with the portrait.
+          // right = same as the corner (`right-32`) so the orbs
+          // align over the portrait column.
+          className="absolute right-32 z-40 pointer-events-auto"
+          style={{ bottom: 'calc(3rem + 11rem)' }}
+        >
+          <ManaPool
+            player={me}
+            size="medium"
+            glow
+            onSpend={onSpendMana ?? undefined}
+          />
         </div>
       )}
 

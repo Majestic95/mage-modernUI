@@ -21,10 +21,10 @@ vi.mock('../featureFlags', async () => {
   return { ...actual, REDESIGN: true, LAYOUT_BOUNDS: true };
 });
 
-function renderLayout() {
+function renderLayout(opts: { onSpendMana?: (color: string) => void; me?: ReturnType<typeof buildDemoGameView>['players'][number] } = {}) {
   const gv = buildDemoGameView();
-  const me = gv.players.find((p) => p.playerId === gv.myPlayerId)!;
-  const opponents = gv.players.filter((p) => p.playerId !== gv.myPlayerId);
+  const me = opts.me ?? gv.players.find((p) => p.playerId === gv.myPlayerId)!;
+  const opponents = gv.players.filter((p) => p.playerId !== me.playerId);
   const mode: InteractionMode = { kind: 'idle' };
   return render(
     <MotionConfig reducedMotion="always">
@@ -38,6 +38,7 @@ function renderLayout() {
             mode={mode}
             canAct
             onObjectClick={() => {}}
+            onSpendMana={opts.onSpendMana ?? null}
             onBoardDrop={() => {}}
             drag={null}
             eligibleTargetIds={new Set()}
@@ -130,5 +131,48 @@ describe('AsymmetricTLayout', () => {
       'data-collapsed',
       'true',
     );
+  });
+
+  // 2026-05-03 — local floating mana pool relocated from MyHand
+  // (top-right of hand region) to here (above the local portrait)
+  // because the prior placement lived in a z-30 stacking context the
+  // local PlayerFrame at z-40 buried, and was far from the portrait
+  // anyway. User directive: "display floating mana by the local
+  // player's portrait."
+  it('renders the floating local mana pool when the local pool has mana', () => {
+    const gv = buildDemoGameView();
+    const baseMe = gv.players.find((p) => p.playerId === gv.myPlayerId)!;
+    const me = {
+      ...baseMe,
+      manaPool: { red: 1, green: 0, blue: 0, white: 0, black: 0, colorless: 2 },
+    };
+    renderLayout({ me });
+    const pool = screen.getByTestId('local-mana-pool-floating');
+    // Positioned above the portrait corner mount (right-32) at the
+    // same z as the portrait so it isn't buried by the asymmetric T
+    // local-player-frame-corner.
+    expect(pool.className).toMatch(/right-32/);
+    expect(pool.className).toMatch(/z-40/);
+  });
+
+  it('does not render the floating local mana pool when the pool is empty', () => {
+    renderLayout();
+    expect(screen.queryByTestId('local-mana-pool-floating')).toBeNull();
+  });
+
+  it('passes onSpend to the local mana pool when click-to-spend is wired', () => {
+    const gv = buildDemoGameView();
+    const baseMe = gv.players.find((p) => p.playerId === gv.myPlayerId)!;
+    const me = {
+      ...baseMe,
+      manaPool: { red: 1, green: 0, blue: 0, white: 0, black: 0, colorless: 0 },
+    };
+    const onSpend = vi.fn();
+    renderLayout({ me, onSpendMana: onSpend });
+    // ManaOrb renders as a button when onClick is bound.
+    const redOrb = screen.getByTestId('mana-orb-R');
+    expect(redOrb.tagName).toBe('BUTTON');
+    fireEvent.click(redOrb);
+    expect(onSpend).toHaveBeenCalledWith('R');
   });
 });

@@ -90,7 +90,7 @@ describe('MyHand — REDESIGN branch (picture-catalog §4)', () => {
     expect(root.className).not.toMatch(/bg-zinc-900/);
   });
 
-  it('mounts the floating mana pool in the top-right corner (catalog §2.3)', () => {
+  it('no longer renders a hand-region mana pool — relocated to asymmetric T near the local portrait (2026-05-03)', () => {
     flagState.redesign = true;
     render(
       <MyHand
@@ -107,16 +107,11 @@ describe('MyHand — REDESIGN branch (picture-catalog §4)', () => {
         })}
       />,
     );
-    const pool = screen.getByTestId('hand-mana-pool');
-    // Catalog §2.3: "Position for local player: TOP-RIGHT of the
-    // hand region." Tailwind classes encode the corner.
-    expect(pool.className).toMatch(/right-/);
-    expect(pool.className).toMatch(/top-/);
-  });
-
-  it('does not render the mana pool slot when player prop is omitted', () => {
-    flagState.redesign = true;
-    render(<MyHand {...PASSTHROUGH} />);
+    // The floating pool moved to asymmetricT.tsx as a sibling of
+    // local-player-frame-corner so it sits ABOVE the local portrait
+    // at z-40 (the prior MyHand mount lived in a z-30 stacking
+    // context the local PlayerFrame at z-40 buried). Verify the
+    // hand mount is gone.
     expect(screen.queryByTestId('hand-mana-pool')).toBeNull();
   });
 

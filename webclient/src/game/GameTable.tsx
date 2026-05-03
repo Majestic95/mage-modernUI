@@ -337,6 +337,7 @@ export function GameTable({ gameId, gameView, stream }: Props) {
           mode={mode}
           canAct={canAct}
           onObjectClick={onObjectClick}
+          onSpendMana={onSpendMana}
           drag={drag}
         />
       </main>
@@ -367,7 +368,6 @@ export function GameTable({ gameId, gameView, stream }: Props) {
               hasPriority={!!me.hasPriority}
               onPointerDown={beginHandPress}
               draggedCardId={drag?.cardId ?? null}
-              onSpendMana={onSpendMana}
               stream={stream}
             />
           )}
@@ -407,7 +407,6 @@ export function GameTable({ gameId, gameView, stream }: Props) {
               hasPriority={!!me.hasPriority}
               onPointerDown={beginHandPress}
               draggedCardId={drag?.cardId ?? null}
-              onSpendMana={onSpendMana}
               stream={stream}
             />
           </div>
