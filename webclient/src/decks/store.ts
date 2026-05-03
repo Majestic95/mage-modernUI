@@ -23,6 +23,12 @@ export interface SavedDeck {
   sideboard: WebDeckCardInfo[];
 }
 
+interface DeckUpdatePatch {
+  name?: string;
+  cards?: WebDeckCardInfo[];
+  sideboard?: WebDeckCardInfo[];
+}
+
 interface DecksState {
   decks: SavedDeck[];
   add: (
@@ -30,6 +36,14 @@ interface DecksState {
     cards: WebDeckCardInfo[],
     sideboard?: WebDeckCardInfo[],
   ) => SavedDeck;
+  /**
+   * Patch an existing deck. Used by DeckEditor for qty +/-, delete,
+   * art swap, and rename. No-op when the id doesn't match. Pass only
+   * the fields that change — undefined fields preserve their current
+   * value. {@code createdAt} stays put (rename / edit doesn't reset
+   * the deck's identity-of-origin).
+   */
+  update: (id: string, patch: DeckUpdatePatch) => void;
   remove: (id: string) => void;
   /** Reset the entire list (testing convenience). */
   clear: () => void;
@@ -56,6 +70,21 @@ export const useDecksStore = create<DecksState>()(
         set((s) => ({ decks: [deck, ...s.decks] }));
         return deck;
       },
+
+      update: (id, patch) =>
+        set((s) => ({
+          decks: s.decks.map((d) => {
+            if (d.id !== id) return d;
+            return {
+              ...d,
+              name: patch.name === undefined
+                ? d.name
+                : (patch.name.trim() || 'Untitled deck'),
+              cards: patch.cards ?? d.cards,
+              sideboard: patch.sideboard ?? d.sideboard,
+            };
+          }),
+        })),
 
       remove: (id) => set((s) => ({ decks: s.decks.filter((d) => d.id !== id) })),
 

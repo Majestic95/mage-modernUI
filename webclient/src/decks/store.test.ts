@@ -50,6 +50,43 @@ describe('useDecksStore', () => {
     expect(remaining[0]?.name).toBe('B');
   });
 
+  it('updates a deck patch — qty change preserves printing identity', () => {
+    const deck = useDecksStore.getState().add('Forest Test', [FOREST]);
+    const updatedCards: WebDeckCardInfo[] = [
+      { ...FOREST, amount: 24 },
+    ];
+    useDecksStore.getState().update(deck.id, { cards: updatedCards });
+    const after = useDecksStore.getState().decks[0];
+    expect(after?.cards[0]?.amount).toBe(24);
+    expect(after?.cards[0]?.setCode).toBe('M21');
+    expect(after?.cards[0]?.cardNumber).toBe('281');
+  });
+
+  it('updates a deck patch — art swap changes setCode + cardNumber', () => {
+    const deck = useDecksStore.getState().add('Forest Test', [FOREST]);
+    const swapped: WebDeckCardInfo[] = [
+      { cardName: 'Forest', setCode: 'UNF', cardNumber: '347', amount: 60 },
+    ];
+    useDecksStore.getState().update(deck.id, { cards: swapped });
+    const after = useDecksStore.getState().decks[0];
+    expect(after?.cards[0]?.setCode).toBe('UNF');
+    expect(after?.cards[0]?.cardNumber).toBe('347');
+  });
+
+  it('updates a deck patch — name rename, blank falls back to Untitled', () => {
+    const deck = useDecksStore.getState().add('Original', [FOREST]);
+    useDecksStore.getState().update(deck.id, { name: 'Renamed' });
+    expect(useDecksStore.getState().decks[0]?.name).toBe('Renamed');
+    useDecksStore.getState().update(deck.id, { name: '   ' });
+    expect(useDecksStore.getState().decks[0]?.name).toBe('Untitled deck');
+  });
+
+  it('update is no-op on unknown id', () => {
+    useDecksStore.getState().add('A', [FOREST]);
+    useDecksStore.getState().update('not-a-real-id', { name: 'X' });
+    expect(useDecksStore.getState().decks[0]?.name).toBe('A');
+  });
+
   it('persists decks to localStorage', () => {
     useDecksStore.getState().add('Persist Me', [FOREST]);
     const raw = localStorage.getItem('mage-decks');

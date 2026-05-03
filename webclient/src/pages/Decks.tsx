@@ -6,6 +6,7 @@ import { useDeckTypes, type DeckTypeGroup } from '../decks/useDeckTypes';
 import { useDeckLegality, type LegalityStatus } from '../decks/useDeckLegality';
 import { ValidationErrorList } from '../decks/ValidationErrorList';
 import { useAuthStore } from '../auth/store';
+import { DeckEditor } from './DeckEditor';
 
 /**
  * Decks tab — paste a textual deck list, resolve every card name to a
@@ -28,6 +29,10 @@ export function Decks() {
   const [text, setText] = useState('');
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Per-page state — when set, the editor takes over the Decks tab
+  // content. Local-state route (no URL) keeps it consistent with the
+  // existing modal/tab patterns elsewhere in the app.
+  const [editingDeckId, setEditingDeckId] = useState<string | null>(null);
 
   const deckTypes = useDeckTypes(session?.token);
 
@@ -77,6 +82,15 @@ export function Decks() {
     }
   };
 
+  if (editingDeckId) {
+    return (
+      <DeckEditor
+        deckId={editingDeckId}
+        onClose={() => setEditingDeckId(null)}
+      />
+    );
+  }
+
   return (
     <div className="space-y-6">
       <ImportForm
@@ -95,6 +109,7 @@ export function Decks() {
         deckTypesLoading={deckTypes.loading}
         token={session?.token}
         onRemove={removeDeck}
+        onEdit={setEditingDeckId}
       />
     </div>
   );
@@ -168,10 +183,11 @@ interface SavedListProps {
   deckTypesLoading: boolean;
   token: string | undefined;
   onRemove: (id: string) => void;
+  onEdit: (id: string) => void;
 }
 
 function SavedList({
-  decks, deckTypeGroups, deckTypesError, deckTypesLoading, token, onRemove,
+  decks, deckTypeGroups, deckTypesError, deckTypesLoading, token, onRemove, onEdit,
 }: SavedListProps) {
   return (
     <section className="space-y-3">
@@ -189,6 +205,7 @@ function SavedList({
               deckTypesLoading={deckTypesLoading}
               token={token}
               onRemove={onRemove}
+              onEdit={onEdit}
             />
           ))}
         </ul>
@@ -204,10 +221,11 @@ interface DeckRowProps {
   deckTypesLoading: boolean;
   token: string | undefined;
   onRemove: (id: string) => void;
+  onEdit: (id: string) => void;
 }
 
 function DeckRow({
-  deck, deckTypeGroups, deckTypesError, deckTypesLoading, token, onRemove,
+  deck, deckTypeGroups, deckTypesError, deckTypesLoading, token, onRemove, onEdit,
 }: DeckRowProps) {
   // Format pick is per-deck, in-memory only. Persisting across page
   // reloads is a slice 72-B follow-up — most users will pick the same
@@ -250,14 +268,25 @@ function DeckRow({
             imported {new Date(deck.createdAt).toLocaleDateString()}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => onRemove(deck.id)}
-          className="text-sm text-zinc-400 hover:text-red-400"
-          aria-label={`Delete ${deck.name}`}
-        >
-          Delete
-        </button>
+        <div className="flex items-center gap-3 flex-shrink-0">
+          <button
+            type="button"
+            data-testid="deck-row-edit"
+            onClick={() => onEdit(deck.id)}
+            className="text-sm text-fuchsia-300 hover:text-fuchsia-200"
+            aria-label={`Edit ${deck.name}`}
+          >
+            Edit
+          </button>
+          <button
+            type="button"
+            onClick={() => onRemove(deck.id)}
+            className="text-sm text-zinc-400 hover:text-red-400"
+            aria-label={`Delete ${deck.name}`}
+          >
+            Delete
+          </button>
+        </div>
       </div>
       <div className="flex items-center gap-3 flex-wrap">
         <label className="flex items-center gap-2 text-xs text-zinc-400">
