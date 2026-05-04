@@ -103,7 +103,7 @@ interface Props {
    * within its column instead of overflowing horizontally into
    * neighboring zones. REDESIGN-only; legacy branch ignores it.
    */
-  chipsLayout?: 'horizontal' | 'vertical';
+  chipsLayout?: 'horizontal' | 'vertical' | 'vertical-stacked';
 }
 
 export function PlayerFrame({

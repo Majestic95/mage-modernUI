@@ -461,11 +461,12 @@ function PlayerFrameInfoCluster({
 }: {
   player: WebPlayerView;
   perspective: 'self' | 'opponent';
-  layout?: 'horizontal' | 'vertical';
+  layout?: 'horizontal' | 'vertical' | 'vertical-stacked';
   eligibleTargetIds?: Set<string>;
   canAct?: boolean;
   onObjectClick?: (id: string) => void;
 }) {
+  const isVertical = layout === 'vertical' || layout === 'vertical-stacked';
   // Slice 70-P critic Tech-IMP-1 cleanup — schema-tied empty check
   // beats the 6-field repeat. ManaPool already filters non-zero
   // cells internally; this gate also avoids mounting the wrapper
@@ -500,7 +501,7 @@ function PlayerFrameInfoCluster({
       // they stay inside the gutter column.
       className={
         'text-[13px] text-text-secondary ' +
-        (layout === 'vertical'
+        (isVertical
           ? // In-flow stacked column: render as a normal flex child
             // of the PlayerFrame so the chip stack lives INSIDE the
             // gutter column. Avoids the absolute-positioned overflow
@@ -541,6 +542,8 @@ function PlayerFrameInfoCluster({
         variant={perspective}
       />
       {layout === 'vertical' ? (
+        // Existing 'vertical' (paired) — keeps Grave+Exile on one
+        // row to fit asymmetric-T's narrow 140px opponent gutter.
         <div className="flex items-center gap-2">
           <ZoneIcon
             zone="graveyard"
@@ -562,6 +565,10 @@ function PlayerFrameInfoCluster({
           />
         </div>
       ) : (
+        // Both 'horizontal' (single row, default) AND
+        // 'vertical-stacked' (parent flex-col → 4 separate rows)
+        // share the same flat fragment — the parent container
+        // class controls the actual layout.
         <>
           <ZoneIcon
             zone="graveyard"

@@ -274,6 +274,16 @@ export function PlayerArea({
     // Drop-target ring stays as the only visible chrome on the pod
     // wrapper — it's a transient interaction state, not background
     // chrome, so it doesn't violate the "pods float" principle.
+    // Polish-pass Z1 (user direction 2026-05-03) — tabletop side
+    // pods (left/right) get one zone-chip per row so each icon is
+    // visible. Top/bottom and variant=current keep the prior
+    // behavior. 'vertical-stacked' was added alongside 'vertical'
+    // so asymmetric-T's narrow opponent gutter (which still pairs
+    // Grave+Exile to fit at 1080p) is unaffected.
+    const chipsLayout =
+      variant === 'tabletop' && (position === 'left' || position === 'right')
+        ? ('vertical-stacked' as const)
+        : undefined;
     const playerFrame = (
       <PlayerFrame
         player={player}
@@ -284,6 +294,7 @@ export function PlayerArea({
         eligibleTargetIds={eligibleTargetIds}
         canAct={canAct}
         onObjectClick={onObjectClick}
+        chipsLayout={chipsLayout}
       />
     );
 
