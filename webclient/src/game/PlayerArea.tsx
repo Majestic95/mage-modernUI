@@ -477,6 +477,11 @@ export function PlayerArea({
             position={position}
             playerName={player.name}
             colorIdentity={player.colorIdentity ?? []}
+            canAct={canAct}
+            onObjectClick={onObjectClick}
+            eligibleTargetIds={eligibleTargetIds}
+            eligibleCombatIds={eligibleCombatIds}
+            combatRoles={combatRoles}
           />
         ) : allEmpty ? (
           <div className="flex flex-col gap-1.5">

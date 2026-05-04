@@ -4,7 +4,7 @@
  * once a bucket stacks 20+ cards. Tests lock in the click affordance
  * + esc-close + single-modal-per-pod invariant.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { TabletopBuckets } from './TabletopBuckets';
@@ -119,5 +119,48 @@ describe('TabletopBuckets — bucket-title modal', () => {
     expect(container.querySelector(`[data-permanent-id="${FOREST.card.id}"]`)).toBeInTheDocument();
     expect(container.querySelector(`[data-permanent-id="${ELF.card.id}"]`)).toBeInTheDocument();
     expect(container.querySelector(`[data-permanent-id="${RING.card.id}"]`)).toBeInTheDocument();
+  });
+
+  it('G4 — clicking a card while canAct dispatches onObjectClick with the card id', async () => {
+    const user = userEvent.setup();
+    const onObjectClick = vi.fn();
+    const { container } = render(
+      <TabletopBuckets
+        buckets={BUCKETS}
+        position="bottom"
+        playerName="alice"
+        colorIdentity={[]}
+        canAct
+        onObjectClick={onObjectClick}
+      />,
+    );
+    const elfButton = container.querySelector(
+      `[data-permanent-id="${ELF.card.id}"]`,
+    ) as HTMLButtonElement | null;
+    expect(elfButton).not.toBeNull();
+    await user.click(elfButton!);
+    expect(onObjectClick).toHaveBeenCalledWith(ELF.card.id);
+  });
+
+  it('G4 — clicking a card while !canAct does NOT dispatch (silent gate)', async () => {
+    const user = userEvent.setup();
+    const onObjectClick = vi.fn();
+    const { container } = render(
+      <TabletopBuckets
+        buckets={BUCKETS}
+        position="bottom"
+        playerName="alice"
+        colorIdentity={[]}
+        canAct={false}
+        onObjectClick={onObjectClick}
+      />,
+    );
+    const elfButton = container.querySelector(
+      `[data-permanent-id="${ELF.card.id}"]`,
+    ) as HTMLButtonElement | null;
+    expect(elfButton).not.toBeNull();
+    expect(elfButton!.disabled).toBe(true);
+    await user.click(elfButton!);
+    expect(onObjectClick).not.toHaveBeenCalled();
   });
 });

@@ -78,11 +78,24 @@ export function TabletopBuckets({
   position,
   playerName,
   colorIdentity,
+  canAct = false,
+  onObjectClick,
+  eligibleTargetIds,
+  eligibleCombatIds,
+  combatRoles,
 }: {
   buckets: TabletopBucketsData;
   position: PlayerAreaPosition;
   playerName: string;
   colorIdentity: readonly string[];
+  // G4 (2026-05-03) — click + combat affordance threading. Optional
+  // so existing test renders that don't care about live-game
+  // behavior keep working.
+  canAct?: boolean;
+  onObjectClick?: (id: string) => void;
+  eligibleTargetIds?: ReadonlySet<string>;
+  eligibleCombatIds?: ReadonlySet<string>;
+  combatRoles?: ReadonlyMap<string, 'attacker' | 'blocker'>;
 }) {
   const tint = tintForIdentity(colorIdentity);
   // Buckets stack along the pod's LONG axis. Top/bottom pods are
@@ -113,6 +126,11 @@ export function TabletopBuckets({
         flexBasis="25%"
         onOpen={() => setOpenKind('lands')}
         borderTint={tint}
+        canAct={canAct}
+        onObjectClick={onObjectClick}
+        eligibleTargetIds={eligibleTargetIds}
+        eligibleCombatIds={eligibleCombatIds}
+        combatRoles={combatRoles}
       />
       <BucketBox
         kind="creatures"
@@ -121,6 +139,11 @@ export function TabletopBuckets({
         flexBasis="50%"
         onOpen={() => setOpenKind('creatures')}
         borderTint={tint}
+        canAct={canAct}
+        onObjectClick={onObjectClick}
+        eligibleTargetIds={eligibleTargetIds}
+        eligibleCombatIds={eligibleCombatIds}
+        combatRoles={combatRoles}
       />
       <BucketBox
         kind="artifactsEnchantments"
@@ -129,6 +152,11 @@ export function TabletopBuckets({
         flexBasis="25%"
         onOpen={() => setOpenKind('artifactsEnchantments')}
         borderTint={tint}
+        canAct={canAct}
+        onObjectClick={onObjectClick}
+        eligibleTargetIds={eligibleTargetIds}
+        eligibleCombatIds={eligibleCombatIds}
+        combatRoles={combatRoles}
       />
       {openKind !== null && (
         <ZoneBrowser
@@ -160,6 +188,11 @@ function BucketBox({
   flexBasis,
   onOpen,
   borderTint,
+  canAct,
+  onObjectClick,
+  eligibleTargetIds,
+  eligibleCombatIds,
+  combatRoles,
 }: {
   kind: 'lands' | 'creatures' | 'artifactsEnchantments';
   label: string;
@@ -167,6 +200,11 @@ function BucketBox({
   flexBasis: string;
   onOpen: () => void;
   borderTint: string;
+  canAct: boolean;
+  onObjectClick: ((id: string) => void) | undefined;
+  eligibleTargetIds: ReadonlySet<string> | undefined;
+  eligibleCombatIds: ReadonlySet<string> | undefined;
+  combatRoles: ReadonlyMap<string, 'attacker' | 'blocker'> | undefined;
 }) {
   // Fixed flex-basis pinned to the percentage; flex-grow:0 +
   // flex-shrink:0 lock the bucket to that height regardless of
@@ -233,28 +271,53 @@ function BucketBox({
           data-testid={`tabletop-bucket-${kind}-cards`}
           className="flex flex-row items-center h-full pl-12 pr-2 py-2 min-h-0 min-w-0 [&>*+*]:-ml-[48px]"
         >
-          {cards.map((p) => (
+          {cards.map((p) => {
             // G3 (2026-05-03) — wrapper carries `data-permanent-id`
             // so StackZone's combat-arrow geometry resolver can find
-            // the attacker's bounding rect via querySelector. Without
-            // the wrapper, CardFace's outer DOM doesn't expose the
-            // permanent ID and combat arrows in tabletop draw from
-            // (0, 0). The peek-stacking utility `[&>*+*]:-ml-[48px]`
-            // still applies — wrappers are the new immediate flex
-            // children at the same intrinsic widths as CardFace itself.
-            <div
-              key={p.card.id}
-              data-permanent-id={p.card.id}
-              data-tapped={p.tapped || undefined}
-            >
-              <CardFace
-                card={p.card}
-                size="battlefield"
-                perm={p}
-                tapped={p.tapped}
-              />
-            </div>
-          ))}
+            // the attacker's bounding rect via querySelector.
+            // G4 (2026-05-03) — wrapper is now a `<button>` so each
+            // card is clickable in tabletop. Forwards the click to
+            // `onObjectClick`, which the click router maps to
+            // tap/select/declare-attacker/etc. Mirrors what
+            // BattlefieldTile does for variant=current. Combat
+            // eligibility / role surface as data-* so the same CSS
+            // hooks BattlefieldTile uses can apply (combat-eligible
+            // pulse, attacker/blocker badge — visual treatment is
+            // a follow-up slice; the data is here for it).
+            const isEligibleTarget = eligibleTargetIds?.has(p.card.id) ?? false;
+            const isEligibleCombat = eligibleCombatIds?.has(p.card.id) ?? false;
+            const combatRole = combatRoles?.get(p.card.id);
+            const clickable = canAct && !!onObjectClick;
+            return (
+              <button
+                key={p.card.id}
+                type="button"
+                data-permanent-id={p.card.id}
+                data-tapped={p.tapped || undefined}
+                data-combat-eligible={isEligibleCombat || undefined}
+                data-combat-role={combatRole ?? undefined}
+                data-targetable={isEligibleTarget || undefined}
+                disabled={!clickable}
+                onClick={
+                  clickable && onObjectClick
+                    ? () => onObjectClick(p.card.id)
+                    : undefined
+                }
+                className={
+                  'block p-0 m-0 bg-transparent border-0 outline-none ' +
+                  (clickable ? 'cursor-pointer' : 'cursor-default')
+                }
+                aria-label={p.card.name}
+              >
+                <CardFace
+                  card={p.card}
+                  size="battlefield"
+                  perm={p}
+                  tapped={p.tapped}
+                />
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
