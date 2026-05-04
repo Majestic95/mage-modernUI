@@ -40,7 +40,7 @@ Sequenced by dependency (matches the implementation order — earlier elements u
 | 5 | **Dedicated commander slot** | Top-corner (or zone-corner) box for the commander, separate from creatures | New slot inside the pod variant component | todo | — |
 | 6 | **Graveyard / exile prominence** | Visible boxes in opponent pods (not just user) | Existing `ZoneIcon` repositioned per-pod; possibly larger | todo | — |
 | 7 | **Central focal zone shrink** | "Stack & Turn" tile is smaller and less ornate than current | `StackZone` variant (`StackZone.tabletop.tsx`) | todo | — |
-| 8 | **Phase indicators below focal** | Small icon row below the central tile | Existing `PhaseTimeline` repositioned | todo | — |
+| 8 | **Phase indicators (TOP strip)** | Full-width top header strip via existing `GameHeader` (which already hosts PhaseTimeline in slice 70-O REDESIGN) | DemoGame mounts GameHeader as sibling above GameTable, mirroring real Game.tsx; production already mounts it the same way | done | B-7 |
 | 9 | **Player portrait + life total positioning** | Portrait sits centered above pod for opponents, below pod for user; life total adjacent | `PlayerPortrait` + `PlayerFrame` variant | todo | — |
 | 10 | **Hand fan (user)** | User's hand row at the bottom (visible cards) | `MyHand` — likely unchanged from current | todo | — |
 | 11 | **Zone-overflow strategy (vertical scroll)** | Each zone gets `overflow-y: auto` when its content exceeds height | Per-zone scroll wrapper inside the pod variant component | todo | — |

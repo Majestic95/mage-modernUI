@@ -26,6 +26,7 @@
  */
 import { useMemo, useState } from 'react';
 import { LayoutGroup, MotionConfig } from 'framer-motion';
+import { GameHeader } from '../game/GameHeader';
 import { GameTable } from '../game/GameTable';
 import { buildDemoGameView } from '../game/devFixtures';
 import { VariantSwitcher } from '../game/VariantSwitcher';
@@ -57,17 +58,37 @@ export function DemoGame() {
   // route let body scroll vertically because GameTable content
   // overflowed an undefined-height root, violating the battlefield's
   // "no scroll wheel" rule.
+  //
+  // Slice B-7 (element #8) — fixture mode now mounts GameHeader as a
+  // sibling above GameTable, mirroring real Game.tsx (line 160-167).
+  // GameHeader hosts the PhaseTimeline at the top of the screen
+  // (slice 70-O REDESIGN treatment) — the same "TOP strip" position
+  // tabletop's element #8 spec calls for. Without this, the fixture
+  // had no phase timeline visible at all. The header takes constants
+  // for connection / closeReason / onLeave since the fixture has no
+  // real WebSocket; clicking Leave/Concede etc. is a no-op in the
+  // fixture by design.
   return (
     <LayoutVariantProvider variant={variant}>
       <MotionConfig reducedMotion="user">
         <LayoutGroup>
           <div className="h-screen flex flex-col bg-zinc-950 text-zinc-100 overflow-hidden">
             <VariantSwitcher current={variant} onChange={onVariantChange} />
-            <GameTable
+            <GameHeader
               gameId="demo-fixture"
+              connection="open"
+              closeReason=""
               gameView={gameView}
+              onLeave={() => {}}
               stream={null}
             />
+            <div className="flex-1 min-h-0">
+              <GameTable
+                gameId="demo-fixture"
+                gameView={gameView}
+                stream={null}
+              />
+            </div>
           </div>
         </LayoutGroup>
       </MotionConfig>
