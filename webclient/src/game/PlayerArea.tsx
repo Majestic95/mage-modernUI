@@ -461,7 +461,7 @@ export function PlayerArea({
         className={battlefieldAreaClass}
       >
         {variant === 'tabletop' && tabletopBuckets ? (
-          <TabletopBuckets buckets={tabletopBuckets} position={position} />
+          <TabletopBuckets buckets={tabletopBuckets} position={position} playerName={player.name} />
         ) : allEmpty ? (
           <div className="flex flex-col gap-1.5">
             {/* Slice 70-Z.1 critic UI IMP-5 — caption color via the

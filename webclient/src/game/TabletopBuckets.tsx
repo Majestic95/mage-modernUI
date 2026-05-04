@@ -37,10 +37,12 @@
  * orientation-aware layout + labels + fixed sizes are visible;
  * card rendering inside each bucket is deferred to B-13-C.
  */
+import { useState } from 'react';
 import type { PlayerAreaPosition } from './PlayerArea';
 import type { TabletopBuckets as TabletopBucketsData } from './tabletopBattlefieldLayout';
-import type { WebPermanentView } from '../api/schemas';
+import type { WebCardView, WebPermanentView } from '../api/schemas';
 import { CardFace } from './CardFace';
+import { ZoneBrowser } from './ZoneBrowser';
 
 const BUCKET_LABELS = {
   lands: 'Lands',
@@ -48,12 +50,16 @@ const BUCKET_LABELS = {
   artifactsEnchantments: 'Artifacts & Enchantments',
 } as const;
 
+type BucketKind = keyof typeof BUCKET_LABELS;
+
 export function TabletopBuckets({
   buckets,
   position,
+  playerName,
 }: {
   buckets: TabletopBucketsData;
   position: PlayerAreaPosition;
+  playerName: string;
 }) {
   // Buckets stack along the pod's LONG axis. Top/bottom pods are
   // wide-horizontal so buckets line up left-to-right (flex-row).
@@ -63,6 +69,13 @@ export function TabletopBuckets({
   const flexDirClass = isHorizontalArrangement
     ? 'flex flex-row'
     : 'flex flex-col';
+  // User direction (2026-05-03) — clicking a bucket label opens a
+  // ZoneBrowser modal listing every card in that bucket at full
+  // size. Solves overcrowding once buckets stack 20+ cards. Only
+  // one modal is open per pod at a time (state lifted here).
+  const [openKind, setOpenKind] = useState<BucketKind | null>(null);
+  const openCards: readonly WebPermanentView[] =
+    openKind === null ? [] : buckets[openKind];
   return (
     <div
       data-testid="tabletop-buckets"
@@ -74,21 +87,43 @@ export function TabletopBuckets({
         label={BUCKET_LABELS.lands}
         cards={buckets.lands}
         flexBasis="25%"
+        onOpen={() => setOpenKind('lands')}
       />
       <BucketBox
         kind="creatures"
         label={BUCKET_LABELS.creatures}
         cards={buckets.creatures}
         flexBasis="50%"
+        onOpen={() => setOpenKind('creatures')}
       />
       <BucketBox
         kind="artifactsEnchantments"
         label={BUCKET_LABELS.artifactsEnchantments}
         cards={buckets.artifactsEnchantments}
         flexBasis="25%"
+        onOpen={() => setOpenKind('artifactsEnchantments')}
       />
+      {openKind !== null && (
+        <ZoneBrowser
+          title={`${playerName} — ${BUCKET_LABELS[openKind]}`}
+          cards={projectPermsToCards(openCards)}
+          onClose={() => setOpenKind(null)}
+        />
+      )}
     </div>
   );
+}
+
+// Permanents carry tap / counters / attachments state that ZoneBrowser
+// doesn't render today. For "browse what's in this bucket" the .card
+// projection is sufficient — full Scryfall art renders + hover-detail
+// works. Live perm-state inside the modal is a follow-up if requested.
+function projectPermsToCards(
+  perms: readonly WebPermanentView[],
+): Record<string, WebCardView> {
+  const out: Record<string, WebCardView> = {};
+  for (const p of perms) out[p.card.id] = p.card;
+  return out;
 }
 
 function BucketBox({
@@ -96,11 +131,13 @@ function BucketBox({
   label,
   cards,
   flexBasis,
+  onOpen,
 }: {
   kind: 'lands' | 'creatures' | 'artifactsEnchantments';
   label: string;
   cards: readonly WebPermanentView[];
   flexBasis: string;
+  onOpen: () => void;
 }) {
   // Fixed flex-basis pinned to the percentage; flex-grow:0 +
   // flex-shrink:0 lock the bucket to that height regardless of
@@ -120,18 +157,26 @@ function BucketBox({
       className="flex-shrink-0 flex-grow-0 min-h-0 min-w-0 relative rounded border border-zinc-500/70 overflow-hidden"
       style={{ flexBasis }}
     >
-      {/* Label sits at the top-left corner of the bucket. Faint when
-          populated, full-saturation when empty so the box structure
-          reads even without cards. */}
-      <span
+      {/* Label is a click target — opens a ZoneBrowser modal listing
+          every card in this bucket at full size (user direction
+          2026-05-03: "solves overcrowding in zones"). Hover ring +
+          pointer cursor telegraph the affordance. Empty buckets stay
+          clickable so the user can see "yep, nothing here." */}
+      <button
+        type="button"
         data-testid={`tabletop-bucket-${kind}-label`}
+        onClick={onOpen}
+        aria-label={`Open ${label} (${count} card${count === 1 ? '' : 's'})`}
         className={
-          'absolute top-1 left-2 z-10 text-[10px] uppercase tracking-wider font-semibold pointer-events-none ' +
+          'absolute top-1 left-2 z-10 text-[10px] uppercase tracking-wider font-semibold ' +
+          'rounded px-1 cursor-pointer ' +
+          'hover:bg-zinc-800/70 hover:text-zinc-100 transition-colors ' +
+          'focus:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-400 ' +
           (count === 0 ? 'text-zinc-400' : 'text-zinc-500/60')
         }
       >
         {label}
-      </span>
+      </button>
       {/* Slice B-13-D — card stacking with 10% peek per element #4.
           Cards after the first get `margin-left: -72px` (= -90% of
           --card-size-medium 80px), so each subsequent card shows
