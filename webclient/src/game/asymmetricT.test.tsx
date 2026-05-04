@@ -291,7 +291,16 @@ describe('AsymmetricTLayout', () => {
   });
 
   it('does not render the floating local mana pool when the pool is empty', () => {
-    renderLayout();
+    // Fixture default has non-zero mana since Z2 (so the tabletop
+    // floating pool is visible in dev). For this test we need an
+    // explicitly empty pool.
+    const gv = buildDemoGameView();
+    const baseMe = gv.players.find((p) => p.playerId === gv.myPlayerId)!;
+    const me = {
+      ...baseMe,
+      manaPool: { red: 0, green: 0, blue: 0, white: 0, black: 0, colorless: 0 },
+    };
+    renderLayout({ me });
     expect(screen.queryByTestId('local-mana-pool-floating')).toBeNull();
   });
 

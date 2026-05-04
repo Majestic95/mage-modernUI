@@ -209,7 +209,10 @@ export function buildDemoGameView(): WebGameView {
     ]),
     sideboard: {},
     battlefield: meBf,
-    manaPool: { red: 0, green: 0, blue: 0, white: 0, black: 0, colorless: 0 },
+    // 2026-05-03 — non-zero mana pool so the floating local mana
+    // orbs are visible in fixture mode (Z2). Boros-themed (W/R)
+    // matches the player's color identity.
+    manaPool: { red: 2, green: 0, blue: 0, white: 1, black: 0, colorless: 1 },
     controlled: true, isHuman: true, isActive: false, hasPriority: true,
     hasLeft: false, monarch: false, initiative: false, designationNames: [],
   });

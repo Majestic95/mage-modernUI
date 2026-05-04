@@ -4,6 +4,8 @@ import type { InteractionMode } from './interactionMode';
 import type { ManaOrbColor } from './ManaOrb';
 import { StackZone } from './StackZone';
 import { PlayerArea } from './PlayerArea';
+import { ManaPool } from './ManaPool';
+import { hasAnyMana } from './manaPoolUtil';
 import { gridAreaForOpponent, selectOpponents } from './battlefieldLayout';
 import { computePodCardSizeVars } from './podShrink';
 import type { DragState } from './useDragState';
@@ -565,6 +567,29 @@ export function Battlefield({
           GameTable shell mounts MyHand as a sibling of Battlefield,
           consuming drag state from the same useDragState hook
           via GameTable. */}
+
+      {/* User direction (2026-05-03, Z2): floating local mana pool
+          for variant=tabletop. asymmetricT.tsx already mounts an
+          analogous `local-mana-pool-floating` for current variant;
+          tabletop routes through this Battlefield branch instead so
+          we mount our own here. Position is `fixed` to the viewport
+          and sits just LEFT of the floating ActionButton dock
+          (which lives at `fixed bottom-3 right-3` with width ≤320px).
+          Empty pool renders nothing per catalog §2.3. */}
+      {variant === 'tabletop' && me && hasAnyMana(me.manaPool) && (
+        <div
+          data-testid="tabletop-local-mana-pool-floating"
+          className="fixed bottom-3 right-[340px] z-40 pointer-events-auto"
+        >
+          <ManaPool
+            player={me}
+            size="medium"
+            glow
+            layout="vertical"
+            onSpend={onSpendMana ?? undefined}
+          />
+        </div>
+      )}
       </>
       )}
     </div>
