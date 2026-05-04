@@ -308,6 +308,20 @@ function BucketBox({
                 layoutId={layoutId}
                 data-layout-id={layoutId}
                 data-card-id={p.card.cardId || undefined}
+                // H2 (2026-05-04) — CardFace's `battlefield` size uses
+                // fluid `height: 100%` + aspect-ratio 5/7 (designed for
+                // BattlefieldTile's `aspect-square w-full` slot). Without
+                // an explicit parent box, the chain
+                // motion.div → HoverCardDetail span → button → CardFace
+                // has no height for `100%` to fill against and the card
+                // collapses to a tiny speck. Honoring `--card-size-medium`
+                // here keeps podShrink's scale-down working when an
+                // opponent pod overflows.
+                style={{
+                  width: 'var(--card-size-medium, 80px)',
+                  height: 'calc(var(--card-size-medium, 80px) * 7 / 5)',
+                  flexShrink: 0,
+                }}
               >
                 <HoverCardDetail card={p.card}>
                   <button
