@@ -39,6 +39,8 @@
  */
 import type { PlayerAreaPosition } from './PlayerArea';
 import type { TabletopBuckets as TabletopBucketsData } from './tabletopBattlefieldLayout';
+import type { WebPermanentView } from '../api/schemas';
+import { CardFace } from './CardFace';
 
 const BUCKET_LABELS = {
   lands: 'Lands',
@@ -70,19 +72,19 @@ export function TabletopBuckets({
       <BucketBox
         kind="lands"
         label={BUCKET_LABELS.lands}
-        count={buckets.lands.length}
+        cards={buckets.lands}
         flexBasis="25%"
       />
       <BucketBox
         kind="creatures"
         label={BUCKET_LABELS.creatures}
-        count={buckets.creatures.length}
+        cards={buckets.creatures}
         flexBasis="50%"
       />
       <BucketBox
         kind="artifactsEnchantments"
         label={BUCKET_LABELS.artifactsEnchantments}
-        count={buckets.artifactsEnchantments.length}
+        cards={buckets.artifactsEnchantments}
         flexBasis="25%"
       />
     </div>
@@ -92,17 +94,18 @@ export function TabletopBuckets({
 function BucketBox({
   kind,
   label,
-  count,
+  cards,
   flexBasis,
 }: {
   kind: 'lands' | 'creatures' | 'artifactsEnchantments';
   label: string;
-  count: number;
+  cards: readonly WebPermanentView[];
   flexBasis: string;
 }) {
   // Fixed flex-basis pinned to the percentage; flex-grow:0 +
   // flex-shrink:0 lock the bucket to that height regardless of
   // content (T1 compliance).
+  const count = cards.length;
   return (
     <div
       data-testid={`tabletop-bucket-${kind}`}
@@ -111,19 +114,39 @@ function BucketBox({
       className="flex-shrink-0 flex-grow-0 min-h-0 min-w-0 relative rounded border border-zinc-700/50 bg-zinc-900/30 overflow-hidden"
       style={{ flexBasis }}
     >
-      {/* Label sits at the top-left corner of the bucket. Faint by
-          default; full-saturation on empty buckets so the box
-          structure reads even without cards. Future B-13-C card
-          render will sit beneath/around the label. */}
+      {/* Label sits at the top-left corner of the bucket. Faint when
+          populated, full-saturation when empty so the box structure
+          reads even without cards. */}
       <span
         data-testid={`tabletop-bucket-${kind}-label`}
         className={
-          'absolute top-1 left-2 text-[10px] uppercase tracking-wider font-semibold pointer-events-none ' +
+          'absolute top-1 left-2 z-10 text-[10px] uppercase tracking-wider font-semibold pointer-events-none ' +
           (count === 0 ? 'text-zinc-400' : 'text-zinc-500/60')
         }
       >
         {label}
       </span>
+      {/* Slice B-13-C-1 — basic card row. Cards laid out in a
+          horizontal flex row inside the bucket. Stacking math
+          (10% peek per element #4) deferred to follow-up; for
+          now cards line up left-to-right and overflow is hidden
+          by the bucket's overflow-hidden class. */}
+      {count > 0 && (
+        <div
+          data-testid={`tabletop-bucket-${kind}-cards`}
+          className="flex flex-row items-center gap-1 h-full pl-12 pr-2 py-2 min-h-0 min-w-0"
+        >
+          {cards.map((p) => (
+            <CardFace
+              key={p.card.id}
+              card={p.card}
+              size="battlefield"
+              perm={p}
+              tapped={p.tapped}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

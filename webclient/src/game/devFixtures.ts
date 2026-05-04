@@ -114,16 +114,23 @@ export function buildDemoGameView(): WebGameView {
   const momurId = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
   const allocId = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
 
-  // Slice B-9-A.1 (user direction 2026-05-03) — battlefields cleared
-  // for layout-reference clarity. The previous fixture had MAJEST1C
-  // populated with Elsha + attachments + creatures + lands etc. for
-  // attachment-badge testing; user wants empty pods so screenshots
-  // for tabletop layout iteration are uncluttered. Future slice can
-  // restore demo permanents for attachment / type-bucket testing
-  // once the structural layout is locked. Player names + portraits
-  // + zone counters + commander identities + life totals + library +
-  // graveyard / exile contents are preserved.
-  const meBf: Record<string, WebPermanentView> = {};
+  // Slice B-13-C-1 — restored a small varied population per player
+  // to verify type-bucket partition + card rendering inside the
+  // tabletop variant's bucket boxes. Sized small so empty-pod
+  // structure / cluster-orientation / portrait-position layout
+  // iteration screenshots stay readable. Each player gets a mix
+  // of lands + creatures + artifacts/enchantments (and goat gets
+  // a planeswalker + enchantment to verify hybrid partition rules:
+  // PLANESWALKER → creatures bucket; ENCHANTMENT →
+  // artifacts-enchantments bucket).
+  const meBf: Record<string, WebPermanentView> = bf('MAJEST1C', [
+    ['Plains', 'LAND'],
+    ['Plains', 'LAND'],
+    ['Mountain', 'LAND'],
+    ['Soul Warden', 'CREATURE'],
+    ['Goblin Guide', 'CREATURE'],
+    ['Sol Ring', 'ARTIFACT'],
+  ]);
 
   // Helper — build a Record<id, card> from a list of [name, kind] pairs
   // for graveyard / exile seeding so every player has scannable
@@ -183,8 +190,15 @@ export function buildDemoGameView(): WebGameView {
       ['Worldly Tutor', 'CREATURE'],
     ]),
     sideboard: {},
-    // Slice B-9-A.1 — battlefield cleared for reference clarity.
-    battlefield: {},
+    // Slice B-13-C-1 — small varied board to verify partition
+    // (PLANESWALKER → creatures; ENCHANTMENT → artifactsEnchantments).
+    battlefield: bf('goat', [
+      ['Forest', 'LAND'],
+      ['Forest', 'LAND'],
+      ['Llanowar Elves', 'CREATURE'],
+      ['Nissa, Vital Force', 'PLANESWALKER'],
+      ['Elemental Bond', 'ENCHANTMENT'],
+    ]),
     manaPool: { red: 0, green: 0, blue: 0, white: 0, black: 0, colorless: 0 },
     controlled: false, isHuman: true, isActive: true, hasPriority: false,
     hasLeft: false, monarch: false, initiative: false, designationNames: [],
@@ -205,8 +219,13 @@ export function buildDemoGameView(): WebGameView {
       ['Mystical Tutor', 'CREATURE'],
     ]),
     sideboard: {},
-    // Slice B-9-A.1 — battlefield cleared for reference clarity.
-    battlefield: {},
+    // Slice B-13-C-1 — small mono-blue board.
+    battlefield: bf('momur', [
+      ['Island', 'LAND'],
+      ['Island', 'LAND'],
+      ['Snapcaster Mage', 'CREATURE'],
+      ['Sensei\'s Divining Top', 'ARTIFACT'],
+    ]),
     manaPool: { red: 0, green: 0, blue: 0, white: 0, black: 0, colorless: 0 },
     controlled: false, isHuman: true, isActive: false, hasPriority: false,
     hasLeft: false, monarch: false, initiative: false, designationNames: [],
@@ -227,8 +246,13 @@ export function buildDemoGameView(): WebGameView {
       ['Chandra, Torch of Defiance', 'CREATURE'],
     ]),
     sideboard: {},
-    // Slice B-9-A.1 — battlefield cleared for reference clarity.
-    battlefield: {},
+    // Slice B-13-C-1 — small mono-red board.
+    battlefield: bf('Alloc', [
+      ['Mountain', 'LAND'],
+      ['Mountain', 'LAND'],
+      ['Goblin Guide', 'CREATURE'],
+      ['Lightning Greaves', 'ARTIFACT'],
+    ]),
     manaPool: { red: 0, green: 0, blue: 0, white: 0, black: 0, colorless: 0 },
     controlled: false, isHuman: true, isActive: false, hasPriority: false,
     hasLeft: false, monarch: false, initiative: false, designationNames: [],
