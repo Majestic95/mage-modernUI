@@ -408,8 +408,30 @@ export function Battlefield({
               (catalog §3.2). gv.combat is already memoized into
               combatRoles above; pass the raw groups here so
               StackZone can map attackers → defenders / blockers
-              by ID. Legacy branch ignores the prop. */}
-          <StackZone stack={gv.stack} combat={gv.combat} />
+              by ID. Legacy branch ignores the prop.
+
+              Polish-pass P2 (audit must-close #3, 2026-05-03) —
+              wrap the focal stack in a bordered tile + turn /
+              active-player label below for variant=tabletop, so
+              the center reads as a distinct region rather than
+              floating cards in void. variant=current keeps the
+              bare flex cell. */}
+          {variant === 'tabletop' ? (
+            <div
+              data-testid="central-focal-tile"
+              className="flex flex-col items-center gap-2 rounded-lg border border-zinc-700/80 bg-zinc-900/60 px-6 py-4 shadow-inner"
+            >
+              <StackZone stack={gv.stack} combat={gv.combat} />
+              <div
+                data-testid="central-focal-turn-label"
+                className="text-[11px] uppercase tracking-wider text-zinc-400 font-semibold"
+              >
+                Turn {gv.turn} — {gv.activePlayerName}
+              </div>
+            </div>
+          ) : (
+            <StackZone stack={gv.stack} combat={gv.combat} />
+          )}
         </div>
 
         {/* Self pod — bottom-center of the 4-pod arrangement.
