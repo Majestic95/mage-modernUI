@@ -213,6 +213,14 @@ export function Battlefield({
       */}
       <div
         data-testid="four-pod-grid"
+        // Slice B-2 (variant=tabletop) — placeholder frame chrome.
+        // `data-tabletop-frame` attribute + neutral-dark border ring
+        // when variant=tabletop, per element #2 spec ("placeholder
+        // only, wooden treatment deferred"). The attribute lets
+        // future slices light up the real wood/metal/etc. treatment
+        // without re-plumbing the wrapper. variant=current renders
+        // the grid without the attribute / extra border.
+        data-tabletop-frame={variant === 'tabletop' || undefined}
         // Slice 70-Z polish round 20 (user direction 2026-04-30) —
         // padding-bottom reserves clearance for the fixed-position
         // hand fan. Hand section is `h-[280px]` anchored at
@@ -221,7 +229,12 @@ export function Battlefield({
         // hand-fan strip occupies ~280 − 63 ≈ 217px above viewport
         // bottom. pb-56 (224px) keeps the bottom pod's battlefield
         // rows clear of the hand fan with a hair of breathing room.
-        className="flex-1 min-h-0 p-4 pb-56 grid gap-4"
+        className={
+          'flex-1 min-h-0 p-4 pb-56 grid gap-4' +
+          (variant === 'tabletop'
+            ? ' border-2 border-zinc-800/80 rounded-lg'
+            : '')
+        }
         // Slice 70-E critic UI-Critical-1 — inline style for the
         // grid-template-areas. The Tailwind bracket arbitrary
         // [grid-template-areas:"..."] form splits on whitespace and

@@ -34,7 +34,7 @@ Sequenced by dependency (matches the implementation order — earlier elements u
 | # | Element | Region in screenshot | Target component(s) | Status | Slice ref |
 |---|---|---|---|---|---|
 | 1 | **Tokens & color palette** | All zone backgrounds (red / blue / green / purple) | `webclient/src/styles/tokens.css` (new `--tabletop-zone-colorless` token) + `webclient/src/game/halo.ts` (`computeTabletopZoneBackground` helper) | done | B-1 |
-| 2 | **Wooden frame chrome** | Outer ornate border around the whole board | New: `GameTable` variant or wrapping `<TabletopFrame>` | todo | — |
+| 2 | **Wooden frame chrome** | Outer ornate border around the whole board | `Battlefield.tsx` 4-pod grid (`data-tabletop-frame` attribute + `border-2 border-zinc-800/80 rounded-lg` placeholder) | done (placeholder) | B-2 |
 | 3 | **Per-pod colored zones** | Each pod's full background tinted to its commander color | `asymmetricT.tsx` `OpponentLane` + `LocalPod` (inline `style.background` gated on `useLayoutVariant() === 'tabletop'`) | done | B-1 |
 | 4 | **Type-bucketed battlefield slots** | Lands / Creatures / Artifacts-Enchantments boxes within each pod | New `battlefieldLayout` strategy + new `BattlefieldRow` variant | todo | — |
 | 5 | **Dedicated commander slot** | Top-corner (or zone-corner) box for the commander, separate from creatures | New slot inside the pod variant component | todo | — |
