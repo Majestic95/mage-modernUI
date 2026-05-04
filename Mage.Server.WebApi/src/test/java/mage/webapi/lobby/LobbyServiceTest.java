@@ -44,10 +44,11 @@ class LobbyServiceTest {
     void aiSkill_madVsMonteCarlo_split() {
         assertEquals(4, LobbyService.AI_SKILL_MAD,
                 "AI_SKILL_MAD remains 4 (slice-47 cliff for ComputerPlayer7).");
-        assertEquals(1, LobbyService.AI_SKILL_MONTE_CARLO,
-                "AI_SKILL_MONTE_CARLO is 1 — MCTS skill * 2.0s per priority "
-                        + "decision; skill=1 → 2s/decision. Higher values produce "
-                        + "30-60s AI turns (verified Mage.Player.AIMCTS/ComputerPlayerMCTS).");
+        assertEquals(0, LobbyService.AI_SKILL_MONTE_CARLO,
+                "AI_SKILL_MONTE_CARLO is 0 — MCTS skill * 2.0s per priority "
+                        + "decision; skill=0 → 0s/decision (calculateThinkTime returns "
+                        + "0 in every branch, search is skipped, AI passes priority "
+                        + "immediately). User direction 2026-05-04: 'no delay'.");
         assertEquals(LobbyService.AI_SKILL_MAD, LobbyService.AI_SKILL,
                 "AI_SKILL alias must equal AI_SKILL_MAD so the legacy slice-47 "
                         + "test continues to pin the same value.");

@@ -60,15 +60,18 @@ public final class LobbyService {
      * Skill level for the {@code COMPUTER_MONTE_CARLO} AI. MCTS doesn't
      * have the empty-tree bug — its skill maps directly to
      * {@code maxThinkTime = skill * 2} seconds per priority decision
-     * ({@code ComputerPlayerMCTS.java:44}). At {@code skill = 4} the AI
-     * spent 8s on declare-attackers / declare-blockers / its own main-phase
-     * priorities and 4s elsewhere, producing 30–60s AI turns that made
-     * iterative testing impossible. Skill=1 gives a 2s budget (1s for
-     * non-combat priorities, 0s when the search tree is mid-saturated) —
-     * an order of magnitude faster, with the only cost being weaker AI
-     * play, which is acceptable for UI/UX validation runs.
+     * ({@code ComputerPlayerMCTS.java:44}). Walked down the skill ladder
+     * over UI iterations: 4 → 30-60s AI turns (unusable); 1 → 2-4s per
+     * priority (still felt slow at 4-player Commander); 0 → MCTS's
+     * `calculateThinkTime` returns 0 in every branch, the search runs
+     * are skipped entirely, the AI passes priority immediately. Trade-
+     * off: the AI does not strategically play spells / declare attackers
+     * — it pretty much always passes. Acceptable for UI/UX testing runs
+     * where AI play quality is irrelevant; bump back to 1+ for real
+     * gameplay validation. User direction 2026-05-04: "I do not want
+     * any delay on them."
      */
-    static final int AI_SKILL_MONTE_CARLO = 1;
+    static final int AI_SKILL_MONTE_CARLO = 0;
     /** Alias kept for tests that still reference the old constant name. */
     static final int AI_SKILL = AI_SKILL_MAD;
 
