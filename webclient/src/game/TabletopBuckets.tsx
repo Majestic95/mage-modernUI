@@ -45,6 +45,7 @@ import type { WebCardView, WebPermanentView } from '../api/schemas';
 import { CardFace } from './CardFace';
 import { HoverCardDetail } from './HoverCardDetail';
 import { ZoneBrowser } from './ZoneBrowser';
+import { groupWithAttachmentsAndStacks } from './battlefieldRows';
 
 const BUCKET_LABELS = {
   lands: 'Lands',
@@ -284,7 +285,17 @@ function BucketBox({
           // card itself shrinks below 48px.
           className="flex flex-row items-center h-full pl-12 pr-2 py-2 min-h-0 min-w-0 overflow-x-auto [&>*+*]:[margin-left:calc(-1*var(--card-size-medium,80px)*0.6)]"
         >
-          {cards.map((p) => {
+          {/* F5 (audit W5, 2026-05-04) — group identical cards into
+              ×N stacks via the existing helper. 5 Forests render as
+              1 host card with a `×5` badge instead of 5 separate
+              cards in the row, reducing visual clutter and matching
+              variant=current's BattlefieldRowGroup convention.
+              Attachments grouping (W4) is deferred — auras still
+              render as separate cards in the same bucket for now. */}
+          {groupWithAttachmentsAndStacks(cards as WebPermanentView[]).map((group) => {
+            const p = group.host;
+            const stackCount = group.stackedDuplicates.length + 1;
+            const hasDuplicates = group.stackedDuplicates.length > 0;
             // G3 (2026-05-03) — wrapper carries `data-permanent-id`
             // so StackZone's combat-arrow geometry resolver can find
             // the attacker's bounding rect via querySelector.
@@ -345,13 +356,22 @@ function BucketBox({
                 // collapsed: motion.div=block child sizes-to-content
                 // → span=intrinsic → button=intrinsic → CardFace
                 // height:100% resolved against 0.
-                className="flex"
+                className="flex relative"
                 style={{
                   width: 'var(--card-size-medium, 80px)',
                   height: 'calc(var(--card-size-medium, 80px) * 7 / 5)',
                   flexShrink: 0,
                 }}
               >
+                {hasDuplicates && (
+                  <span
+                    data-testid="stack-count-badge"
+                    aria-label={`${stackCount} copies`}
+                    className="absolute top-1 right-1 z-10 px-1.5 py-0.5 rounded-full bg-zinc-900/85 border border-zinc-600 text-[11px] font-mono font-semibold text-zinc-100 pointer-events-none shadow"
+                  >
+                    ×{stackCount}
+                  </span>
+                )}
                 <HoverCardDetail card={p.card}>
                   <button
                     type="button"

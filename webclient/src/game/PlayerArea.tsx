@@ -280,8 +280,17 @@ export function PlayerArea({
     // behavior. 'vertical-stacked' was added alongside 'vertical'
     // so asymmetric-T's narrow opponent gutter (which still pairs
     // Grave+Exile to fit at 1080p) is unaffected.
+    //
+    // F3 (audit C1, 2026-05-04) — extend stacked layout to the
+    // bottom pod (local user). The bottom pod is also a flex-row
+    // layout (PlayerFrame on the left, buckets on the right), so
+    // the PlayerFrame area is narrow and the absolute-positioned
+    // horizontal chip cluster was at risk of being clipped by the
+    // hand-fan strip / pb-64 reserve. Vertical column under the
+    // portrait fits cleanly inside the cell.
     const chipsLayout =
-      variant === 'tabletop' && (position === 'left' || position === 'right')
+      variant === 'tabletop' &&
+      (position === 'left' || position === 'right' || position === 'bottom')
         ? ('vertical-stacked' as const)
         : undefined;
     const playerFrame = (
