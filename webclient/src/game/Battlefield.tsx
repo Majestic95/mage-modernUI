@@ -230,10 +230,19 @@ export function Battlefield({
         // bottom. pb-56 (224px) keeps the bottom pod's battlefield
         // rows clear of the hand fan with a hair of breathing room.
         className={
-          'flex-1 min-h-0 p-4 pb-56 grid gap-4' +
+          // Slice B-9-A.6 — pb-56 (224px) reserved space at the
+          // bottom of the grid for the floating hand fan. For
+          // tabletop, the hand fan is `position: fixed` so it
+          // doesn't need a layout reservation; dropping pb-56 gives
+          // ~224px back to grid row tracks (~15% of viewport
+          // height) so all 4 pods read as substantial. The hand
+          // fan now visually overlays the bottom pod's colored
+          // zone (acceptable per element #10 spec; cards inside
+          // the bottom pod adapt around the overlap via element
+          // #11 shrink-stack-scroll).
           (variant === 'tabletop'
-            ? ' border-4 border-zinc-600 rounded-lg'
-            : '')
+            ? 'flex-1 min-h-0 p-4 grid gap-4 border-4 border-zinc-600 rounded-lg'
+            : 'flex-1 min-h-0 p-4 pb-56 grid gap-4')
         }
         // Slice 70-E critic UI-Critical-1 — inline style for the
         // grid-template-areas. The Tailwind bracket arbitrary
@@ -266,9 +275,15 @@ export function Battlefield({
             variant === 'tabletop'
               ? '20% 60% 20%'
               : 'minmax(0, max-content) minmax(0, 1fr) minmax(0, max-content)',
+          // Slice B-9-A.5 — bumped top/bottom rows 20% → 25% (and
+          // middle 60% → 50%) so the top/bottom pods have enough
+          // vertical room for both the PlayerFrame chrome AND a
+          // substantial colored battlefield zone. With 20%, the
+          // colored zone collapsed to ~27px after PlayerFrame's
+          // ~130px + gap consumed most of the 197px cell.
           gridTemplateRows:
             variant === 'tabletop'
-              ? '20% 60% 20%'
+              ? '25% 50% 25%'
               : 'auto minmax(0, 1fr) auto',
         }}
       >

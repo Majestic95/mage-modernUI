@@ -279,13 +279,21 @@ export function PlayerArea({
     // commander portrait. The portrait halo + life badge already
     // extend past the strict frame bounding box; the prior 12px gap
     // wasn't enough to clear them at busy boards.
+    // Slice B-9-A.5 — tabletop variant uses a tight gap (gap-2 = 8px)
+    // between PlayerFrame and battlefield-area. The default gap-10
+    // (40px) was consuming too much vertical space in the 20%-tall
+    // top/bottom rows, leaving battlefield-area at ~27px (barely
+    // visible against dark zinc with alpha-reduced glow tokens).
+    // gap-2 + slightly taller rows (25% in Battlefield.tsx) gives
+    // battlefield-area ~109px — a substantial colored zone.
+    // current variant keeps the original gap-10 / gap-3 / gap-8.
     const flexClass = isVertical
       ? position === 'top'
-        ? 'flex flex-col gap-10'
-        : 'flex flex-col gap-3'
+        ? variant === 'tabletop' ? 'flex flex-col gap-2' : 'flex flex-col gap-10'
+        : variant === 'tabletop' ? 'flex flex-col gap-2' : 'flex flex-col gap-3'
       : position === 'right'
-        ? 'flex flex-row-reverse gap-8'
-        : 'flex flex-row gap-8';
+        ? variant === 'tabletop' ? 'flex flex-row-reverse gap-2' : 'flex flex-row-reverse gap-8'
+        : variant === 'tabletop' ? 'flex flex-row gap-2' : 'flex flex-row gap-8';
     // Drop-target ring stays as the only visible chrome on the pod
     // wrapper — it's a transient interaction state, not background
     // chrome, so it doesn't violate the "pods float" principle.
