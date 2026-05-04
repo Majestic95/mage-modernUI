@@ -128,6 +128,17 @@
   --color-mana-multicolor-glow: rgba(232, 197, 108, 0.55);
 
   /*
+   * Slice B-1 (variant=tabletop) — colorless commander zone background.
+   * Distinct from `--color-mana-colorless-glow` (cool silver-grey,
+   * tuned for halo overlay) — tabletop wants colorless players to read
+   * as warm ivory + gold per docs/design/variant-tabletop.md element
+   * #1 user direction (2026-05-03). Used by `computeTabletopZoneBackground`
+   * in halo.ts; consumed by per-pod zone background wrappers in the
+   * tabletop variant only.
+   */
+  --tabletop-zone-colorless: rgba(245, 230, 180, 0.5);
+
+  /*
    * Slice 70-G — per-color foreground tokens for mana-orb count
    * text. ManaOrb previously used `text-bg-base` (#0E1A20) for every
    * color; that's borderline (~5.3:1) against the lavender black

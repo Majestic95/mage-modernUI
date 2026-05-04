@@ -11,6 +11,9 @@ import { hasAnyMana } from './manaPoolUtil';
 import { ManaPool } from './ManaPool';
 import type { ManaOrbColor } from './ManaOrb';
 import { REDESIGN } from '../featureFlags';
+import { useLayoutVariant } from '../layoutVariants';
+import { computeTabletopZoneBackground } from './halo';
+import { useGameStore } from './store';
 
 /**
  * 2026-05-03 (user direction) — active-player lane spotlight. The
@@ -412,13 +415,42 @@ function OpponentLane({
   const battlefield = Object.values(opponent.battlefield);
   const rows = bucketBattlefield(battlefield);
 
+  // Slice B-1 (variant=tabletop) — per-pod commander-identity zone
+  // background. The inline `style.background` overrides the Tailwind
+  // `bg-zinc-900/30` below when the variant is 'tabletop'; current
+  // rendering is unchanged because the style is undefined for variant
+  // !== 'tabletop'. Color-identity resolution mirrors PlayerPortrait's
+  // pattern (slice 70-J): prefer the live `player.colorIdentity` from
+  // the wire; fall back to the gameStore snapshot when the live value
+  // is empty (e.g., commander cast from command zone clears the live
+  // value but the snapshot survives).
+  const variant = useLayoutVariant();
+  const colorIdentitySnapshot = useGameStore(
+    (s) => s.colorIdentitySnapshots?.[opponent.playerId],
+  );
+  const resolvedColorIdentity =
+    opponent.colorIdentity && opponent.colorIdentity.length > 0
+      ? opponent.colorIdentity
+      : (colorIdentitySnapshot ?? opponent.colorIdentity ?? []);
+  const tabletopZoneStyle: CSSProperties | undefined =
+    variant === 'tabletop'
+      ? {
+          background: computeTabletopZoneBackground(
+            resolvedColorIdentity,
+            opponent.hasLeft,
+          ),
+        }
+      : undefined;
+
   return (
     <div
       data-testid={`opponent-lane-${laneIndex}`}
       data-player-id={opponent.playerId}
       data-focused={focused || undefined}
       data-active={isActive || undefined}
+      data-tabletop-zone={variant === 'tabletop' || undefined}
       className="relative rounded-md border border-zinc-800/60 bg-zinc-900/30 flex min-h-0 min-w-0 overflow-hidden"
+      style={tabletopZoneStyle}
     >
       {isActive && <LaneSpotlightHalo />}
       <div
@@ -548,12 +580,34 @@ function LocalPod({
   const isDropTarget = drag != null;
   const isActive = me.isActive;
 
+  // Slice B-1 (variant=tabletop) — per-pod commander-identity zone
+  // background. Same pattern as OpponentLane above; current rendering
+  // unchanged because the style is undefined for variant !== 'tabletop'.
+  const variant = useLayoutVariant();
+  const colorIdentitySnapshot = useGameStore(
+    (s) => s.colorIdentitySnapshots?.[me.playerId],
+  );
+  const resolvedColorIdentity =
+    me.colorIdentity && me.colorIdentity.length > 0
+      ? me.colorIdentity
+      : (colorIdentitySnapshot ?? me.colorIdentity ?? []);
+  const tabletopZoneStyle: CSSProperties | undefined =
+    variant === 'tabletop'
+      ? {
+          background: computeTabletopZoneBackground(
+            resolvedColorIdentity,
+            me.hasLeft,
+          ),
+        }
+      : undefined;
+
   return (
     <div
       data-testid="local-pod-rows"
       data-droppable="board"
       data-drop-target={isDropTarget || undefined}
       data-active={isActive || undefined}
+      data-tabletop-zone={variant === 'tabletop' || undefined}
       onPointerUp={onBoardDrop}
       // 2026-05-03 — local pod no longer renders the white halo /
       // active-glow that opponent lanes carry (user direction).
@@ -570,6 +624,7 @@ function LocalPod({
           ? 'rounded border ring-2 ring-fuchsia-500/40 outline outline-dashed outline-fuchsia-500 border-transparent'
           : '')
       }
+      style={tabletopZoneStyle}
     >
       <SubRowZone
         label="Creatures"
