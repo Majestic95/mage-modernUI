@@ -330,15 +330,22 @@ function BucketBox({
                 layoutId={layoutId}
                 data-layout-id={layoutId}
                 data-card-id={p.card.cardId || undefined}
-                // H2 (2026-05-04) — CardFace's `battlefield` size uses
-                // fluid `height: 100%` + aspect-ratio 5/7 (designed for
-                // BattlefieldTile's `aspect-square w-full` slot). Without
-                // an explicit parent box, the chain
-                // motion.div → HoverCardDetail span → button → CardFace
-                // has no height for `100%` to fill against and the card
-                // collapses to a tiny speck. Honoring `--card-size-medium`
-                // here keeps podShrink's scale-down working when an
-                // opponent pod overflows.
+                // H2 + H3 (2026-05-04) — CardFace's `battlefield` size
+                // is `height: 100%` + aspect-ratio 5/7 (designed for
+                // BattlefieldTile's slot which has explicit pixel
+                // dimensions from row flex sizing). H2 set explicit
+                // `width/height` here so CardFace had numbers to
+                // resolve against; H3 fixes the missed second half:
+                // making the motion.div a `display: flex` so the
+                // intermediate HoverCardDetail span (inline-flex,
+                // sizes-to-content by default) STRETCHES to fill the
+                // motion.div's 112px height — and the button inside
+                // it stretches likewise (inline-flex stretches its
+                // children by default). Without `flex` here the chain
+                // collapsed: motion.div=block child sizes-to-content
+                // → span=intrinsic → button=intrinsic → CardFace
+                // height:100% resolved against 0.
+                className="flex"
                 style={{
                   width: 'var(--card-size-medium, 80px)',
                   height: 'calc(var(--card-size-medium, 80px) * 7 / 5)',
