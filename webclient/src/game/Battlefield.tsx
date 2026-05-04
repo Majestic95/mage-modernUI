@@ -331,6 +331,7 @@ export function Battlefield({
             variant === 'tabletop'
               ? ' flex items-stretch overflow-hidden min-h-0'
               : ' flex items-stretch pb-[18vh] overflow-hidden min-h-0';
+          const isTabletop = variant === 'tabletop';
           const podCardSizeVars = computePodCardSizeVars(
             Object.keys(p.battlefield).length,
           );
@@ -358,7 +359,17 @@ export function Battlefield({
               data-side-pod={isSidePod || undefined}
               data-bounded={isSidePod ? 'true' : undefined}
               data-shrunk={podCardSizeVars ? 'true' : undefined}
-              className={'min-w-0' + (isSidePod ? sidePodClasses : '')}
+              className={
+                'min-w-0' +
+                (isSidePod ? sidePodClasses : '') +
+                // Polish-pass P12 (audit nice-to-have #14, 2026-05-03)
+                // — subtle elevation so each pod reads as resting on
+                // the table surface. Applied to opponent pods only;
+                // bottom-pod gets the same on its own wrapper below.
+                (isTabletop
+                  ? ' rounded-md shadow-lg shadow-black/45 ring-1 ring-zinc-700/30'
+                  : '')
+              }
             >
               <PlayerArea
                 player={p}
@@ -454,7 +465,18 @@ export function Battlefield({
             fixed-positioned sibling at the battlefield's bottom-
             right corner (slotPart='frame', see below). Legacy keeps
             the unified pod here. */}
-        <div style={{ gridArea: 'bottom' }} className="min-w-0">
+        <div
+          style={{ gridArea: 'bottom' }}
+          className={
+            'min-w-0' +
+            // P12 — bottom pod gets the same subtle elevation as
+            // opponent pods so all 4 pods read as resting on the
+            // table surface.
+            (variant === 'tabletop'
+              ? ' rounded-md shadow-lg shadow-black/45 ring-1 ring-zinc-700/30'
+              : '')
+          }
+        >
           {me ? (
             <PlayerArea
               player={me}
