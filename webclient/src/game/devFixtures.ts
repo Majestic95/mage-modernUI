@@ -169,11 +169,15 @@ export function buildDemoGameView(): WebGameView {
 
   const me = webPlayerViewSchema.parse({
     playerId: meId, name: 'MAJEST1C', life: 40, wins: 0, winsNeeded: 1,
-    // Slice B-1 — fixture commander identities so tabletop variant
-    // zone backgrounds render distinctly. Jeskai (W/U/R) showcases
-    // the 3-band conic-gradient + --halo-angle rotation; pairs well
-    // with the Elsha (Jeskai) commander on this player's battlefield.
-    colorIdentity: ['W', 'U', 'R'],
+    // Slice B-1.5 (refined from B-1's W/U/R) — Boros (W/R), 2-band
+    // conic-gradient that reads more clearly than the original Jeskai
+    // 3-band on a wide-aspect pod. The white-glow token composites
+    // onto dark zinc as warm cream/tan, similar to card-back chrome,
+    // so 3 bands tended to muddy each other; 2 bands give cleaner
+    // visual separation. Pairs reasonably with the Elsha commander
+    // on this player's battlefield (Elsha's full identity is Jeskai
+    // WUR but Boros captures the W+R combat-leaning theme).
+    colorIdentity: ['W', 'R'],
     libraryCount: 80, handCount: 6,
     graveyard: zone([
       ['Lightning Bolt', 'CREATURE'],

@@ -8,6 +8,7 @@ import { gridAreaForOpponent, selectOpponents } from './battlefieldLayout';
 import { computePodCardSizeVars } from './podShrink';
 import type { DragState } from './useDragState';
 import { LAYOUT_BOUNDS, REDESIGN } from '../featureFlags';
+import { useLayoutVariant } from '../layoutVariants';
 import { AsymmetricTLayout } from './asymmetricT';
 
 // LEGACY-BRANCH-FORK — slice 70-X.13 (Wave 4) cleanup marker.
@@ -100,6 +101,11 @@ export function Battlefield({
   // region as the cursor crosses between them. Battlefield no
   // longer owns a `draggedCard` lookup or the preview JSX.
 
+  // Slice B-1.5 — layout-variant routing. tabletop overrides
+  // LAYOUT_BOUNDS=true to use the 4-pod grid (cross/plus); current
+  // keeps asymmetric-T.
+  const variant = useLayoutVariant();
+
   return (
     // Slice 57 (UX audit fix B) â€” Battlefield restructure. Pre-fix:
     // self section was flex-1 overflow-auto and contained MyHand,
@@ -128,9 +134,16 @@ export function Battlefield({
           industry-research recommendation: top 55% holds 3 stacked
           opponent lanes, bottom 45% holds the local pod with full
           width and sub-rows. The 4-pod grid below is the legacy
-          path retained for instant flag revert. Renders below the
-          announcer-region siblings inserted by GameTable. */}
-      {LAYOUT_BOUNDS && (
+          path retained for instant flag revert.
+          Slice B-1.5 — variant=tabletop overrides this branch and
+          uses the legacy 4-pod grid (cross/plus arrangement) instead.
+          Tabletop's spec calls for top + left + right + bottom pods
+          around a central focal area, matching the legacy 4-pod grid
+          structure. The asymmetric-T layout is reserved for variant=
+          'current'; the 4-pod grid serves both `!LAYOUT_BOUNDS` and
+          `variant === 'tabletop'`. Renders below the announcer-region
+          siblings inserted by GameTable. */}
+      {LAYOUT_BOUNDS && variant !== 'tabletop' && (
         <AsymmetricTLayout
           me={me}
           opponents={opponents}
@@ -147,7 +160,7 @@ export function Battlefield({
           combatRoles={combatRoles}
         />
       )}
-      {!LAYOUT_BOUNDS && (
+      {(!LAYOUT_BOUNDS || variant === 'tabletop') && (
       <>
       {/* Slice 70-E — SR announcers (priority + elimination) moved
           to GameTable root per technical critic N4. The parent now
