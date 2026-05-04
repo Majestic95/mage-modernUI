@@ -167,6 +167,32 @@ describe('Game page', () => {
     expect(screen.getByTestId('player-area-opponent')).toBeInTheDocument();
   });
 
+  it('G1 — `?variant=tabletop` URL flag flips the live game to the 4-pod tabletop layout', () => {
+    // Snapshot URL so we can restore it after the test (other tests
+    // assume the default no-param URL → variant=current).
+    const previousUrl = window.location.href;
+    try {
+      window.history.replaceState(
+        {},
+        '',
+        `${window.location.pathname}?variant=tabletop`,
+      );
+      render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
+      act(() => {
+        useGameStore.setState({
+          connection: 'open',
+          gameView: buildGameView(),
+        });
+      });
+      // `central-focal-tile` is a tabletop-only testid (P2 polish);
+      // its presence means the LayoutVariantProvider mount in Game.tsx
+      // is forwarding the URL-derived variant to descendants.
+      expect(screen.getByTestId('central-focal-tile')).toBeInTheDocument();
+    } finally {
+      window.history.replaceState({}, '', previousUrl);
+    }
+  });
+
   it('shows turn number on the phase timeline (slice 28 owns this display)', () => {
     render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
     act(() => {

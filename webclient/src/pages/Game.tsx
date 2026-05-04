@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { LayoutGroup, MotionConfig } from 'framer-motion';
 import { useAuthStore } from '../auth/store';
 import { GameStream } from '../game/stream';
@@ -11,6 +11,11 @@ import { GameHeader } from '../game/GameHeader';
 import { GameTable } from '../game/GameTable';
 import { Waiting } from '../game/Waiting';
 import { useAudioCues } from '../game/useAudioCues';
+import {
+  LayoutVariantProvider,
+  getActiveVariant,
+  type LayoutVariant,
+} from '../layoutVariants';
 
 interface Props {
   gameId: string;
@@ -38,6 +43,16 @@ export function Game({ gameId, onLeave }: Props) {
   const protocolError = useGameStore((s) => s.protocolError);
   const gameView = useGameStore((s) => s.gameView);
   const reset = useGameStore((s) => s.reset);
+
+  // G1 (graduation step toward production tabletop, 2026-05-03) —
+  // resolve the layout variant from the URL once on mount and pin it
+  // into a Provider so descendant components' useLayoutVariant() reads
+  // pick up the user's choice. Mirrors DemoGame.tsx's pattern. Default
+  // is `current` (T6: production keeps current until graduation
+  // cutover); `?variant=tabletop` opts the live game into the 4-pod
+  // layout. The variant is captured at mount time — a follow-up slice
+  // can wire a runtime switcher if needed.
+  const [variant] = useState<LayoutVariant>(() => getActiveVariant());
 
   // 2026-05-02 — priority + turn audio cues. Hook is store-subscriber
   // based, so it doesn't trigger re-renders on every game-frame
@@ -154,10 +169,11 @@ export function Game({ gameId, onLeave }: Props) {
     // descendants of the LayoutGroup. Header banner + protocol-error
     // strip stay at this level so they sit ABOVE GameTable's grid
     // shell rather than competing with it for grid space.
-    <MotionConfig reducedMotion="user">
-      <LayoutGroup>
-        <div className="h-screen flex flex-col bg-zinc-950 text-zinc-100 overflow-hidden">
-          <GameHeader
+    <LayoutVariantProvider variant={variant}>
+      <MotionConfig reducedMotion="user">
+        <LayoutGroup>
+          <div className="h-screen flex flex-col bg-zinc-950 text-zinc-100 overflow-hidden">
+            <GameHeader
             gameId={gameId}
             connection={connection}
             closeReason={closeReason}
@@ -201,5 +217,6 @@ export function Game({ gameId, onLeave }: Props) {
         </div>
       </LayoutGroup>
     </MotionConfig>
+    </LayoutVariantProvider>
   );
 }
