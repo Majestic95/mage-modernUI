@@ -271,7 +271,18 @@ function BucketBox({
       {count > 0 && (
         <div
           data-testid={`tabletop-bucket-${kind}-cards`}
-          className="flex flex-row items-center h-full pl-12 pr-2 py-2 min-h-0 min-w-0 [&>*+*]:-ml-[48px]"
+          // F1 (audit H4, 2026-05-04) — overflow-x-auto so cards
+          // beyond the bucket's intrinsic width are reachable via
+          // horizontal scroll. Spec-prescribed adaptation chain
+          // (shrink → stack → scroll); scroll is the last fallback
+          // when peek-stacking still overflows.
+          //
+          // Peek is now scaled to the active card-size token so
+          // `--card-size-medium` overrides from podShrink keep a
+          // proportional 40% visible-strip per card instead of a
+          // hardcoded -48px that turns into 100% overlap when the
+          // card itself shrinks below 48px.
+          className="flex flex-row items-center h-full pl-12 pr-2 py-2 min-h-0 min-w-0 overflow-x-auto [&>*+*]:[margin-left:calc(-1*var(--card-size-medium,80px)*0.6)]"
         >
           {cards.map((p) => {
             // G3 (2026-05-03) — wrapper carries `data-permanent-id`
@@ -289,7 +300,18 @@ function BucketBox({
             const isEligibleTarget = eligibleTargetIds?.has(p.card.id) ?? false;
             const isEligibleCombat = eligibleCombatIds?.has(p.card.id) ?? false;
             const combatRole = combatRoles?.get(p.card.id);
-            const clickable = canAct && !!onObjectClick;
+            // F4 (audit C2, 2026-05-04) — during combat
+            // (declareAttackers / declareBlockers), only cards in
+            // `eligibleCombatIds` should dispatch. Without this gate
+            // tabletop's lands and artifacts visibly remained clickable
+            // during combat and dispatched useless onObjectClicks the
+            // engine silently rejected. `eligibleCombatIds` is empty
+            // outside combat, so this is a no-op for any other phase.
+            const inCombatMode = (eligibleCombatIds?.size ?? 0) > 0;
+            const clickable =
+              canAct &&
+              !!onObjectClick &&
+              (!inCombatMode || isEligibleCombat);
             // G7 (2026-05-04) — wrap each tabletop bucket card with
             // a `<motion.div layoutId={p.card.cardId} layout>` so
             // Framer animates cross-zone glides into the bucket's

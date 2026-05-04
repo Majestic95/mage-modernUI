@@ -508,6 +508,29 @@ export function GameTable({ gameId, gameView, stream }: Props) {
         </div>
       )}
 
+      {/* F2 (audit W6, 2026-05-04) — floating CommanderDamageTracker
+          dock for variant=tabletop. Side panel is forced collapsed
+          for tabletop (P4) which hid the in-panel tracker; Commander
+          format requires this surface. Mirrors the action dock's
+          chrome, mounted at viewport bottom-LEFT (right side is taken
+          by the action dock + floating mana pool). The tracker
+          itself returns null when there's no commander game, so
+          non-Commander matches see nothing. */}
+      {REDESIGN && variant === 'tabletop' && gameView && (
+        <div
+          data-testid="game-table-commander-damage-floating-dock"
+          className="fixed bottom-3 left-3 z-30 w-[clamp(260px,20vw,360px)] max-h-[60vh]
+            rounded-lg bg-bg-elevated/95 backdrop-blur-sm
+            border border-zinc-800 shadow-xl overflow-y-auto"
+        >
+          <CommanderDamageTracker
+            gameId={gameId}
+            gameView={gameView}
+            opponents={opponents}
+          />
+        </div>
+      )}
+
       {/* Slice 70-M (picture-catalog §6.1) — REDESIGN drops the
           action footer entirely. The morphing button + ellipsis
           menu live in the side panel above. */}

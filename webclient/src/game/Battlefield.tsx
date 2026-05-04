@@ -468,7 +468,17 @@ export function Battlefield({
             right corner (slotPart='frame', see below). Legacy keeps
             the unified pod here. */}
         <div
-          style={{ gridArea: 'bottom' }}
+          // F1 (audit H5, 2026-05-04) — apply podShrink to the local
+          // bottom pod too. Was applied only to opponent pods; the
+          // user's own crowded board overflowed silently because
+          // local cards stayed at full 80px while opponents shrank.
+          // Symmetric scaling restores parity across all 4 pods.
+          style={{
+            gridArea: 'bottom',
+            ...(me && variant === 'tabletop'
+              ? computePodCardSizeVars(Object.keys(me.battlefield).length) ?? {}
+              : {}),
+          }}
           className={
             'min-w-0' +
             // P12 — bottom pod gets the same subtle elevation as
