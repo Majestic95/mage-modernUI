@@ -146,8 +146,24 @@ export function buildDemoGameView(): WebGameView {
     return out;
   };
 
+  // Slice B-12-B — minimal commandList entries per player so the
+  // commander slots can resolve Scryfall art for visual verification.
+  // Real-ish set+collector pairs that should resolve (Scryfall API
+  // may rate-limit; fallback ladder is name-text → placeholder).
   const me = webPlayerViewSchema.parse({
     playerId: meId, name: 'MAJEST1C', life: 40, wins: 0, winsNeeded: 1,
+    commandList: [
+      {
+        id: 'cmdr-elsha',
+        kind: 'commander',
+        name: 'Elsha, Threefold Master',
+        expansionSetCode: 'C21',
+        imageFileName: '',
+        imageNumber: 0,
+        cardNumber: '32',
+        rules: [],
+      },
+    ],
     // Slice B-1.5 (refined from B-1's W/U/R) — Boros (W/R), 2-band
     // conic-gradient that reads more clearly than the original Jeskai
     // 3-band on a wide-aspect pod. The white-glow token composites
@@ -177,6 +193,18 @@ export function buildDemoGameView(): WebGameView {
   // Right pod — the layout-stress case the user reported.
   const goat = webPlayerViewSchema.parse({
     playerId: goatId, name: 'goat', life: 40, wins: 0, winsNeeded: 1,
+    commandList: [
+      {
+        id: 'cmdr-ghalta',
+        kind: 'commander',
+        name: 'Ghalta, Primal Hunger',
+        expansionSetCode: 'RIX',
+        imageFileName: '',
+        imageNumber: 0,
+        cardNumber: '130',
+        rules: [],
+      },
+    ],
     // Mono-green — board has Forests + Llanowar Elves + Ghalta etc.
     colorIdentity: ['G'],
     libraryCount: 90, handCount: 6,
@@ -207,6 +235,18 @@ export function buildDemoGameView(): WebGameView {
   // Top pod — modest board.
   const momur = webPlayerViewSchema.parse({
     playerId: momurId, name: 'momur', life: 40, wins: 0, winsNeeded: 1,
+    commandList: [
+      {
+        id: 'cmdr-talrand',
+        kind: 'commander',
+        name: 'Talrand, Sky Summoner',
+        expansionSetCode: 'M13',
+        imageFileName: '',
+        imageNumber: 0,
+        cardNumber: '75',
+        rules: [],
+      },
+    ],
     // Mono-blue — board has Islands + Snapcaster Mage + Brainstorm.
     colorIdentity: ['U'],
     libraryCount: 91, handCount: 5,
@@ -234,6 +274,18 @@ export function buildDemoGameView(): WebGameView {
   // Left pod — also busy, mirror of right to test left-pod stacking.
   const alloc = webPlayerViewSchema.parse({
     playerId: allocId, name: 'Alloc', life: 35, wins: 0, winsNeeded: 1,
+    commandList: [
+      {
+        id: 'cmdr-krenko',
+        kind: 'commander',
+        name: 'Krenko, Mob Boss',
+        expansionSetCode: 'M13',
+        imageFileName: '',
+        imageNumber: 0,
+        cardNumber: '142',
+        rules: [],
+      },
+    ],
     // Mono-red — board has Mountains + Goblin Guides + Lava Spike.
     colorIdentity: ['R'],
     libraryCount: 85, handCount: 4,
