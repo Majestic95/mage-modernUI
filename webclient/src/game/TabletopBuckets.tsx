@@ -1,12 +1,25 @@
 /**
- * Slice B-13-B — three-bucket layout for the tabletop variant's
- * battlefield content area (element #4 of variant-tabletop.md).
+ * Slice B-13-B (refined in B-13-B.1) — three-bucket layout for the
+ * tabletop variant's battlefield content area (element #4 of
+ * variant-tabletop.md).
  *
- * <p>Each pod's colored zone subdivides into three vertically-stacked
- * bucket boxes:
+ * <p>Each pod's colored zone subdivides into three bucket boxes
+ * arranged along the pod's LONG axis (mirrors the per-pod cluster
+ * orientation rule from element #6):
  * <ul>
- *   <li><b>Lands</b> — 25% of pod's colored-zone height</li>
- *   <li><b>Creatures</b> — 50% (largest, contains Creatures + Planeswalkers)</li>
+ *   <li><b>TOP / BOTTOM pods</b> (horizontal-layout pods): buckets
+ *       stack <i>horizontally</i> (left-to-right). Each bucket is a
+ *       vertical column within the wide pod.</li>
+ *   <li><b>LEFT / RIGHT pods</b> (vertical-layout pods): buckets
+ *       stack <i>vertically</i> (top-to-bottom). Each bucket is a
+ *       horizontal strip within the tall pod.</li>
+ * </ul>
+ *
+ * <p>Size ratios are uniform across orientations:
+ * <ul>
+ *   <li><b>Lands</b> — 25%</li>
+ *   <li><b>Creatures</b> — 50% (largest; contains Creatures +
+ *       Planeswalkers)</li>
  *   <li><b>Artifacts &amp; Enchantments</b> — 25% (incl Battles)</li>
  * </ul>
  *
@@ -20,10 +33,11 @@
  * colored region (per user direction during element #6 walkthrough:
  * "labels can be visible for empty bucket zones").
  *
- * <p>This slice (B-13-B) ships the bucket SHELL only — labels and
- * fixed sizes are visible; card rendering inside each bucket is
- * deferred to B-13-C.
+ * <p>This slice (B-13-B + B-13-B.1) ships the bucket SHELL only —
+ * orientation-aware layout + labels + fixed sizes are visible;
+ * card rendering inside each bucket is deferred to B-13-C.
  */
+import type { PlayerAreaPosition } from './PlayerArea';
 import type { TabletopBuckets as TabletopBucketsData } from './tabletopBattlefieldLayout';
 
 const BUCKET_LABELS = {
@@ -34,13 +48,24 @@ const BUCKET_LABELS = {
 
 export function TabletopBuckets({
   buckets,
+  position,
 }: {
   buckets: TabletopBucketsData;
+  position: PlayerAreaPosition;
 }) {
+  // Buckets stack along the pod's LONG axis. Top/bottom pods are
+  // wide-horizontal so buckets line up left-to-right (flex-row).
+  // Left/right pods are tall-vertical so buckets stack top-to-
+  // bottom (flex-col). Same percentage size ratios in either case.
+  const isHorizontalArrangement = position === 'top' || position === 'bottom';
+  const flexDirClass = isHorizontalArrangement
+    ? 'flex flex-row'
+    : 'flex flex-col';
   return (
     <div
       data-testid="tabletop-buckets"
-      className="flex flex-col h-full w-full gap-1 min-h-0 min-w-0"
+      data-bucket-orientation={isHorizontalArrangement ? 'horizontal' : 'vertical'}
+      className={`${flexDirClass} h-full w-full gap-1 min-h-0 min-w-0`}
     >
       <BucketBox
         kind="lands"
