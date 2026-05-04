@@ -2,6 +2,7 @@ import { useMemo, type CSSProperties } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import type { WebPlayerView } from '../api/schemas';
 import { REDESIGN } from '../featureFlags';
+import { useLayoutVariant } from '../layoutVariants';
 import { computeHaloBackground } from './halo';
 import { LifeCounter } from './LifeCounter';
 import { ManaPool } from './ManaPool';
@@ -157,6 +158,15 @@ export function PlayerFrame({
   const disconnected =
     !eliminated && player.connectionState === 'disconnected';
 
+  // Slice B-12-D — for tabletop variant, hide the Hand chip on the
+  // user's own pod (perspective === 'self') because the user's hand
+  // is visible in the fan at the bottom of the screen, making the
+  // chip redundant. Per element #6 spec: "No counter for the user's
+  // own pod (their hand is visible in the fan)." Opponents keep
+  // their Hand chip — strategic signal "do they have a counter?"
+  const variant = useLayoutVariant();
+  const hideHandChip = variant === 'tabletop' && perspective === 'self';
+
   // Critic N11 — aria-label synthesis moves here from PlayerArea.
   // Critic UX-I3 — colorIdentity is included in the SR label so
   // blind users get the strategic-info signal that sighted users
@@ -266,10 +276,12 @@ export function PlayerFrame({
             playerName={player.name}
             variant={perspective}
           />
-          <span>
-            <span className="text-text-secondary">Hand</span>{' '}
-            <span className="font-mono">{player.handCount}</span>
-          </span>
+          {!hideHandChip && (
+            <span>
+              <span className="text-text-secondary">Hand</span>{' '}
+              <span className="font-mono">{player.handCount}</span>
+            </span>
+          )}
           <ZoneIcon
             label="Grave"
             zone="graveyard"
