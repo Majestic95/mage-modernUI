@@ -441,20 +441,13 @@ export function PlayerArea({
     // Empty-board fallback: when EVERY bucket is empty, show the
     // "No permanents yet." placeholder (preserves the legacy UX).
     const allEmpty = battlefield.length === 0;
-    const battlefieldAreaRedesign = allEmpty ? (
-      <div className="flex flex-col gap-1.5">
-        {/* Slice 70-Z.1 critic UI IMP-5 — caption color via the
-            --color-text-secondary token (#9BA8B0) instead of the
-            hardcoded text-zinc-600 (#52525B) which read as too dark
-            against the canvas. */}
-        <span
-          className="text-xs italic"
-          style={{ color: 'var(--color-text-secondary)' }}
-        >
-          No permanents yet.
-        </span>
-      </div>
-    ) : (
+    // Slice B-9-A.1 — the battlefield-area wrapper is now shared by
+    // both the empty-state and populated-state branches so the
+    // tabletop colored gradient renders on empty pods too. Empty-
+    // state placeholder text remains as a child for legacy parity
+    // (subtle italic caption); future slices can decide whether to
+    // hide it under variant=tabletop for an uncluttered reference.
+    const battlefieldAreaRedesign = (
       <div
         data-testid="battlefield-area"
         data-tabletop-zone={variant === 'tabletop' || undefined}
@@ -468,8 +461,25 @@ export function PlayerArea({
         // edge of each pod, colored zone wraps cards only" structure.
         style={tabletopZoneStyle}
       >
-        {mainRowsRedesign}
-        {artifactsBoxRedesign}
+        {allEmpty ? (
+          <div className="flex flex-col gap-1.5">
+            {/* Slice 70-Z.1 critic UI IMP-5 — caption color via the
+                --color-text-secondary token (#9BA8B0) instead of the
+                hardcoded text-zinc-600 (#52525B) which read as too dark
+                against the canvas. */}
+            <span
+              className="text-xs italic"
+              style={{ color: 'var(--color-text-secondary)' }}
+            >
+              No permanents yet.
+            </span>
+          </div>
+        ) : (
+          <>
+            {mainRowsRedesign}
+            {artifactsBoxRedesign}
+          </>
+        )}
       </div>
     );
     // Slice 70-Z polish round 17 — slotPart-driven rendering.

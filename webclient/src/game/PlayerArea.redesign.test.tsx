@@ -344,7 +344,12 @@ describe('PlayerArea — REDESIGN battlefield composition (slice 70-Z.1)', () =>
       expect(screen.getByText(/No permanents yet/)).toBeInTheDocument();
       // Artifact zone also absent when empty.
       expect(screen.queryByTestId('artifact-zone')).toBeNull();
-      expect(screen.queryByTestId('battlefield-area')).toBeNull();
+      // Slice B-9-A.1 — battlefield-area wrapper now renders even
+      // when empty so the variant=tabletop colored zone gradient
+      // continues to apply on empty pods. The "No permanents yet"
+      // placeholder is now a child INSIDE the wrapper rather than
+      // a replacement for it.
+      expect(screen.getByTestId('battlefield-area')).toBeInTheDocument();
     });
 
     it('renders the battlefield-area wrapper when at least one permanent exists', () => {

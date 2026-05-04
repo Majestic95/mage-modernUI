@@ -114,44 +114,16 @@ export function buildDemoGameView(): WebGameView {
   const momurId = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
   const allocId = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
 
-  // MAJEST1C — build battlefield then bolt attachments onto specific
-  // hosts so the layout-locked +N badge has something to demo against.
-  // Elsha gets equipment + an aura; Monastery Mentor gets an aura.
+  // Slice B-9-A.1 (user direction 2026-05-03) — battlefields cleared
+  // for layout-reference clarity. The previous fixture had MAJEST1C
+  // populated with Elsha + attachments + creatures + lands etc. for
+  // attachment-badge testing; user wants empty pods so screenshots
+  // for tabletop layout iteration are uncluttered. Future slice can
+  // restore demo permanents for attachment / type-bucket testing
+  // once the structural layout is locked. Player names + portraits
+  // + zone counters + commander identities + life totals + library +
+  // graveyard / exile contents are preserved.
   const meBf: Record<string, WebPermanentView> = {};
-  const baseEntries: Array<[string, CardKind]> = [
-    ['Plains', 'LAND'], ['Plains', 'LAND'], ['Plains', 'LAND'],
-    ['Mountain', 'LAND'], ['Mountain', 'LAND'],
-    ['Sacred Foundry', 'LAND'], ['Reliquary Tower', 'LAND'],
-    ['Soul Warden', 'CREATURE'],
-    ['Goblin Guide', 'CREATURE'],
-    ['Monastery Mentor', 'CREATURE'],
-    ['Mother of Runes', 'CREATURE'],
-    ['Elsha, Threefold Master', 'CREATURE'],
-    ['Sol Ring', 'ARTIFACT'],
-    ['Mana Crypt', 'ARTIFACT'],
-  ];
-  let elshaId = '';
-  let mentorId = '';
-  for (const [name, kind] of baseEntries) {
-    const p = makePerm(name, kind, 'MAJEST1C');
-    meBf[p.card.id] = p;
-    if (name === 'Elsha, Threefold Master') elshaId = p.card.id;
-    if (name === 'Monastery Mentor') mentorId = p.card.id;
-  }
-  // Attach two equipment + one aura to Elsha (3 attachments → +3 badge).
-  for (const [name, kind] of [
-    ['Lightning Greaves', 'ARTIFACT'],
-    ['Sword of Fire and Ice', 'ARTIFACT'],
-    ['Daybreak Coronet', 'ENCHANTMENT'],
-  ] as Array<[string, CardKind]>) {
-    const p = makePerm(name, kind, 'MAJEST1C', elshaId);
-    meBf[p.card.id] = p;
-  }
-  // Attach one aura to Monastery Mentor (+1 badge).
-  {
-    const p = makePerm('Pacifism', 'ENCHANTMENT', 'MAJEST1C', mentorId);
-    meBf[p.card.id] = p;
-  }
 
   // Helper — build a Record<id, card> from a list of [name, kind] pairs
   // for graveyard / exile seeding so every player has scannable
@@ -211,18 +183,8 @@ export function buildDemoGameView(): WebGameView {
       ['Worldly Tutor', 'CREATURE'],
     ]),
     sideboard: {},
-    battlefield: bf('goat', [
-      ['Forest', 'LAND'], ['Forest', 'LAND'], ['Forest', 'LAND'],
-      ['Forest', 'LAND'], ['Forest', 'LAND'], ['Forest', 'LAND'],
-      ['Mosswort Bridge', 'LAND'], ['Reliquary Tower', 'LAND'],
-      ['Llanowar Elves', 'CREATURE'], ['Deadly Recluse', 'CREATURE'],
-      ['Ghalta, Primal Hunger', 'CREATURE'],
-      ['Nissa, Vital Force', 'PLANESWALKER'],
-      ['Elemental Bond', 'ENCHANTMENT'],
-      ['Agatha\'s Soul Cauldron', 'ARTIFACT'],
-      ['Relic of Legends', 'ARTIFACT'],
-      ['Sol Ring', 'ARTIFACT'],
-    ]),
+    // Slice B-9-A.1 — battlefield cleared for reference clarity.
+    battlefield: {},
     manaPool: { red: 0, green: 0, blue: 0, white: 0, black: 0, colorless: 0 },
     controlled: false, isHuman: true, isActive: true, hasPriority: false,
     hasLeft: false, monarch: false, initiative: false, designationNames: [],
@@ -243,11 +205,8 @@ export function buildDemoGameView(): WebGameView {
       ['Mystical Tutor', 'CREATURE'],
     ]),
     sideboard: {},
-    battlefield: bf('momur', [
-      ['Island', 'LAND'], ['Island', 'LAND'], ['Island', 'LAND'],
-      ['Sensei\'s Divining Top', 'ARTIFACT'],
-      ['Snapcaster Mage', 'CREATURE'],
-    ]),
+    // Slice B-9-A.1 — battlefield cleared for reference clarity.
+    battlefield: {},
     manaPool: { red: 0, green: 0, blue: 0, white: 0, black: 0, colorless: 0 },
     controlled: false, isHuman: true, isActive: false, hasPriority: false,
     hasLeft: false, monarch: false, initiative: false, designationNames: [],
@@ -268,13 +227,8 @@ export function buildDemoGameView(): WebGameView {
       ['Chandra, Torch of Defiance', 'CREATURE'],
     ]),
     sideboard: {},
-    battlefield: bf('Alloc', [
-      ['Mountain', 'LAND'], ['Mountain', 'LAND'], ['Mountain', 'LAND'],
-      ['Mountain', 'LAND'],
-      ['Goblin Guide', 'CREATURE'], ['Goblin Guide', 'CREATURE'],
-      ['Lightning Greaves', 'ARTIFACT'],
-      ['Kratos, God of War', 'CREATURE'],
-    ]),
+    // Slice B-9-A.1 — battlefield cleared for reference clarity.
+    battlefield: {},
     manaPool: { red: 0, green: 0, blue: 0, white: 0, black: 0, colorless: 0 },
     controlled: false, isHuman: true, isActive: false, hasPriority: false,
     hasLeft: false, monarch: false, initiative: false, designationNames: [],
