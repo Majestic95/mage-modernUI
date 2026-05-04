@@ -230,18 +230,16 @@ export function Battlefield({
         // bottom. pb-56 (224px) keeps the bottom pod's battlefield
         // rows clear of the hand fan with a hair of breathing room.
         className={
-          // Slice B-9-A.6 — pb-56 (224px) reserved space at the
-          // bottom of the grid for the floating hand fan. For
-          // tabletop, the hand fan is `position: fixed` so it
-          // doesn't need a layout reservation; dropping pb-56 gives
-          // ~224px back to grid row tracks (~15% of viewport
-          // height) so all 4 pods read as substantial. The hand
-          // fan now visually overlays the bottom pod's colored
-          // zone (acceptable per element #10 spec; cards inside
-          // the bottom pod adapt around the overlap via element
-          // #11 shrink-stack-scroll).
+          // Slice B-9-B.3 — pb-56 (224px) reserved space at the
+          // bottom of the grid for the floating hand fan, restored
+          // for tabletop. B-9-A.6 dropped it to give pods more
+          // room, but the hand fan's visible footprint (~217px
+          // above viewport bottom) covered most of the bottom pod.
+          // pb-56 puts the bottom cell exactly above the hand fan
+          // with ~7px clearance. Trade: top/bottom pods are
+          // ~253px instead of ~309px, but bottom is fully visible.
           (variant === 'tabletop'
-            ? 'flex-1 min-h-0 p-4 grid gap-4 border-4 border-zinc-600 rounded-lg'
+            ? 'flex-1 min-h-0 p-4 pb-56 grid gap-4 border-4 border-zinc-600 rounded-lg'
             : 'flex-1 min-h-0 p-4 pb-56 grid gap-4')
         }
         // Slice 70-E critic UI-Critical-1 — inline style for the
@@ -315,29 +313,20 @@ export function Battlefield({
           const wrapperStyle = podCardSizeVars
             ? { gridArea: area, ...podCardSizeVars }
             : { gridArea: area };
-          // Slice B-9-B — for variant=tabletop, opponent pods use
-          // the slotPart split (rows + frame) so the colored
-          // battlefield zone fills 100% of the cell uniformly
-          // across all four pods (load-bearing rule T1
-          // enforced symmetrically). PlayerFrame mounts as a
-          // sibling, absolute-positioned at the OUTER edge of the
-          // cell per orientation (element #9 spec). variant=current
-          // keeps the existing single-PlayerArea render that puts
-          // the frame inside the cell.
-          const isTabletop = variant === 'tabletop';
-          // Outer-edge frame anchor per pod orientation. Translate
-          // values move the frame OUTSIDE the cell boundary so it
-          // sits beyond the colored zone, matching the reference
-          // image's "portrait on the outer edge" composition.
-          const frameAnchorClass = isTabletop
-            ? area === 'top'
-              ? 'absolute left-1/2 top-0 -translate-x-1/2 -translate-y-full pb-2 z-10'
-              : area === 'left'
-                ? 'absolute top-1/2 left-0 -translate-x-full -translate-y-1/2 pr-2 z-10'
-                : area === 'right'
-                  ? 'absolute top-1/2 right-0 translate-x-full -translate-y-1/2 pl-2 z-10'
-                  : ''
-            : '';
+          // Slice B-9-B reverted (B-9-B.2) — the dual-PlayerArea
+          // (rows + absolute-positioned frame) restructure broke
+          // opponent portrait visibility. Reverted to single
+          // PlayerArea call, default render path (frame inside
+          // cell, eating ~130px of cell height). Accepts the
+          // asymmetry between opponent cells and the local cell
+          // (which uses the slotPart split with floating frame
+          // corner mount). This matches the existing `current`
+          // REDESIGN behavior and keeps all portraits visible.
+          // Element #9's "portraits outside colored zone" is
+          // structurally complex (the overflow-hidden chain on
+          // ancestors clips outward-positioned frames) — defer
+          // to a future slice that addresses the overflow-hidden
+          // chain holistically.
           return (
             <div
               key={p.playerId}
@@ -345,11 +334,7 @@ export function Battlefield({
               data-side-pod={isSidePod || undefined}
               data-bounded={isSidePod ? 'true' : undefined}
               data-shrunk={podCardSizeVars ? 'true' : undefined}
-              className={
-                'min-w-0' +
-                (isSidePod ? sidePodClasses : '') +
-                (isTabletop ? ' relative h-full w-full' : '')
-              }
+              className={'min-w-0' + (isSidePod ? sidePodClasses : '')}
             >
               <PlayerArea
                 player={p}
@@ -371,30 +356,7 @@ export function Battlefield({
                 onBoardDrop={onBoardDrop}
                 // Slice 69b (D13) — clockwise tab order preserved.
                 tabIndex={10 + idx}
-                // Slice B-9-B — tabletop renders only the rows part
-                // here so the colored battlefield zone fills the
-                // whole cell. The frame mounts as a sibling below.
-                {...(isTabletop ? { slotPart: 'rows' as const } : {})}
               />
-              {isTabletop && (
-                <div className={frameAnchorClass}>
-                  <PlayerArea
-                    player={p}
-                    perspective="opponent"
-                    position={area}
-                    canAct={canAct}
-                    onObjectClick={onObjectClick}
-                    targetable={eligibleTargetIds.has(p.playerId)}
-                    eligibleTargetIds={eligibleTargetIds}
-                    eligibleCombatIds={eligibleCombatIds}
-                    combatRoles={combatRoles}
-                    isDropTarget={false}
-                    onBoardDrop={() => {}}
-                    tabIndex={10 + idx}
-                    slotPart="frame"
-                  />
-                </div>
-              )}
             </div>
           );
         })}
