@@ -177,18 +177,18 @@ function BucketBox({
       >
         {label}
       </button>
-      {/* Slice B-13-D — card stacking with 10% peek per element #4.
-          Cards after the first get `margin-left: -72px` (= -90% of
-          --card-size-medium 80px), so each subsequent card shows
-          only its leftmost 10% behind the next card. Total visible
-          width for N cards = 80 + (N-1) × 8 px. The first card
-          fully visible; deeper cards stack like a hand-fan but
-          horizontal. T1 ✓ — bucket box stays fixed-size; cards
-          adapt by overlapping. */}
+      {/* Slice B-13-D + polish-pass P1 — peek raised from 10% to
+          40% so cards inside a bucket are scannable at a glance
+          (audit 2026-05-03: 10% collapsed 20 cards into unreadable
+          stripes; 40% shows ~5-7 cards readably and matches the
+          reference's tabletop density). margin-left: -48px = -60%
+          of --card-size-medium 80px → each card after the first
+          shows its leftmost 40% (32px). T1 ✓ — bucket footprint
+          unchanged; cards adapt within the fixed box. */}
       {count > 0 && (
         <div
           data-testid={`tabletop-bucket-${kind}-cards`}
-          className="flex flex-row items-center h-full pl-12 pr-2 py-2 min-h-0 min-w-0 [&>*+*]:-ml-[72px]"
+          className="flex flex-row items-center h-full pl-12 pr-2 py-2 min-h-0 min-w-0 [&>*+*]:-ml-[48px]"
         >
           {cards.map((p) => (
             <CardFace
