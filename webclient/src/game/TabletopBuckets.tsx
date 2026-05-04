@@ -161,22 +161,36 @@ function BucketBox({
           every card in this bucket at full size (user direction
           2026-05-03: "solves overcrowding in zones"). Hover ring +
           pointer cursor telegraph the affordance. Empty buckets stay
-          clickable so the user can see "yep, nothing here." */}
+          clickable so the user can see "yep, nothing here."
+          Polish-pass P7 (audit should-close #7) — bumped from
+          text-[10px] to text-xs + px-1.5 py-0.5 for discoverability. */}
       <button
         type="button"
         data-testid={`tabletop-bucket-${kind}-label`}
         onClick={onOpen}
         aria-label={`Open ${label} (${count} card${count === 1 ? '' : 's'})`}
         className={
-          'absolute top-1 left-2 z-10 text-[10px] uppercase tracking-wider font-semibold ' +
-          'rounded px-1 cursor-pointer ' +
+          'absolute top-1 left-2 z-20 text-xs uppercase tracking-wider font-semibold ' +
+          'rounded px-1.5 py-0.5 cursor-pointer ' +
           'hover:bg-zinc-800/70 hover:text-zinc-100 transition-colors ' +
           'focus:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-400 ' +
-          (count === 0 ? 'text-zinc-400' : 'text-zinc-500/60')
+          (count === 0 ? 'text-zinc-400' : 'text-zinc-500/70')
         }
       >
         {label}
       </button>
+      {/* Polish-pass P7 (audit should-close #8) — empty-bucket
+          ghost label centered inside the bucket interior so the
+          geometry reads even at zero permanents. Pointer-events
+          none so it never intercepts the corner-label click. */}
+      {count === 0 && (
+        <span
+          data-testid={`tabletop-bucket-${kind}-empty-ghost`}
+          className="absolute inset-0 flex items-center justify-center text-sm italic text-zinc-600/40 pointer-events-none select-none"
+        >
+          {label}
+        </span>
+      )}
       {/* Slice B-13-D + polish-pass P1 — peek raised from 10% to
           40% so cards inside a bucket are scannable at a glance
           (audit 2026-05-03: 10% collapsed 20 cards into unreadable
