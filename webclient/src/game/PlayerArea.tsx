@@ -435,9 +435,21 @@ export function PlayerArea({
     //   artifacts right).
     // - Left/Right (horizontal pod): vertical split (main top,
     //   artifacts bottom).
-    const battlefieldAreaClass = isVertical
-      ? 'flex flex-row gap-2 min-w-0 min-h-0'
-      : 'flex flex-col gap-2 min-w-0 min-h-0 h-full';
+    // Slice B-9-A.2 — for variant=tabletop, append `flex-1 w-full
+    // h-full` so the battlefield-area (which carries the colored
+    // zone gradient) fills its parent pod's available space
+    // regardless of card content. Without this, an empty pod's
+    // colored zone collapses to the placeholder caption's intrinsic
+    // size, violating load-bearing rule T1 ("zones are fixed
+    // dimensional anchors"). variant=current keeps existing
+    // content-driven sizing.
+    const tabletopFillClass =
+      variant === 'tabletop' ? ' flex-1 w-full h-full' : '';
+    const battlefieldAreaClass =
+      (isVertical
+        ? 'flex flex-row gap-2 min-w-0 min-h-0'
+        : 'flex flex-col gap-2 min-w-0 min-h-0 h-full') +
+      tabletopFillClass;
     // Empty-board fallback: when EVERY bucket is empty, show the
     // "No permanents yet." placeholder (preserves the legacy UX).
     const allEmpty = battlefield.length === 0;

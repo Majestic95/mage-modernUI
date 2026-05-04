@@ -253,9 +253,23 @@ export function Battlefield({
         style={{
           gridTemplateAreas:
             '". top ." "left center right" ". bottom ."',
+          // Slice B-9-A.2 — variant-tabletop load-bearing rule T1
+          // ("zones are fixed dimensional anchors; cards inside
+          // adapt") REQUIRES deterministic cell sizes. The legacy
+          // `minmax(0, max-content)` / `auto` tracks let cells
+          // shrink to content — empty pods would collapse to thin
+          // strips and full pods would expand, both violating T1.
+          // Fixed percentages give each pod cell a deterministic
+          // rectangle regardless of content; cards adapt within
+          // (shrink → stack → scroll) per element #11.
           gridTemplateColumns:
-            'minmax(0, max-content) minmax(0, 1fr) minmax(0, max-content)',
-          gridTemplateRows: 'auto minmax(0, 1fr) auto',
+            variant === 'tabletop'
+              ? '20% 60% 20%'
+              : 'minmax(0, max-content) minmax(0, 1fr) minmax(0, max-content)',
+          gridTemplateRows:
+            variant === 'tabletop'
+              ? '20% 60% 20%'
+              : 'auto minmax(0, 1fr) auto',
         }}
       >
         {opponents.map((p, idx) => {
