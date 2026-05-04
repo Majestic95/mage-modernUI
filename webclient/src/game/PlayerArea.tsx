@@ -457,7 +457,16 @@ export function PlayerArea({
     ) : (
       <div
         data-testid="battlefield-area"
+        data-tabletop-zone={variant === 'tabletop' || undefined}
         className={battlefieldAreaClass}
+        // Slice B-9-A — for variant=tabletop, the colored commander-
+        // identity gradient lives HERE (the innermost battlefield
+        // content wrapper) rather than on the outer pod wrapper.
+        // Result: PlayerFrame (portrait + name + zone counters) sits
+        // OUTSIDE the colored zone in the transparent outer wrapper,
+        // matching the reference image's "portrait on the outer
+        // edge of each pod, colored zone wraps cards only" structure.
+        style={tabletopZoneStyle}
       >
         {mainRowsRedesign}
         {artifactsBoxRedesign}
@@ -519,10 +528,14 @@ export function PlayerArea({
         data-drop-target={isDropTarget || undefined}
         data-active={player.isActive || undefined}
         data-priority={player.hasPriority || undefined}
+        // Slice B-9-A — `data-tabletop-zone` stays on the outer
+        // wrapper as a diagnostic flag, but the colored gradient
+        // moved to the inner battlefield-area div above so the
+        // PlayerFrame inside this wrapper renders OUTSIDE the
+        // colored zone.
         data-tabletop-zone={variant === 'tabletop' || undefined}
         tabIndex={player.hasLeft ? undefined : tabIndex}
         onPointerUp={onBoardDrop}
-        style={tabletopZoneStyle}
         className={
           flexClass +
           ' transition-colors ' +
