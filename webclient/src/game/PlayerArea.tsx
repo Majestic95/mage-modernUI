@@ -593,7 +593,21 @@ export function PlayerArea({
         {position === 'bottom' ? (
           <>
             {battlefieldAreaRedesign}
-            {playerFrame}
+            {/* Slice B-9-B.7 — for tabletop, anchor the local user
+                PlayerFrame to the bottom-LEFT of the pod (per
+                element #9 walkthrough correction: "Lets move local-
+                player (bottom pod)'s portrait to the far bottom
+                left of their pod's area instead of centered.").
+                self-start aligns the wrapper to the start (left) of
+                the flex-col's cross axis; w-fit shrinks the wrapper
+                to PlayerFrame's intrinsic width so the colored zone
+                above isn't squeezed by a stretching frame box.
+                variant=current keeps the original centered render. */}
+            {variant === 'tabletop' ? (
+              <div className="self-start w-fit">{playerFrame}</div>
+            ) : (
+              playerFrame
+            )}
           </>
         ) : (
           <>
