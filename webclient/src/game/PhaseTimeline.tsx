@@ -1,4 +1,5 @@
 import type { WebGameView } from '../api/schemas';
+import { useLayoutVariant } from '../layoutVariants';
 
 /* ---------- phase timeline (slice 28) ---------- */
 
@@ -111,27 +112,41 @@ const TIMELINE_PHASES: PhaseConfig[] = [
  * engine actually visits that step.
  */
 export function PhaseTimeline({ gameView }: { gameView: WebGameView }) {
+  const variant = useLayoutVariant();
+  const compact = variant === 'tabletop';
   const totalSteps = TIMELINE_PHASES.reduce(
     (n, p) => n + p.steps.length,
     0,
   );
+  // Polish-pass P3 (audit must-close #4) — for variant=tabletop the
+  // top header is slimmed: drop the redundant "Turn N / activePlayer"
+  // left block (already in the central focal P2), drop sub-step labels
+  // (combat phase's six step names), and shrink py-2 → py-1. Net
+  // ~52px → ~24px header, freeing pod budget. variant=current keeps
+  // the original full timeline.
   return (
     <div
       data-testid="phase-timeline"
-      className="flex items-stretch gap-2 px-4 py-2 bg-zinc-950 border-b border-zinc-800 select-none"
+      data-compact={compact || undefined}
+      className={
+        'flex items-stretch gap-2 px-4 bg-zinc-950 border-b border-zinc-800 select-none ' +
+        (compact ? 'py-1' : 'py-2')
+      }
     >
-      <div className="flex flex-col justify-center pr-3 border-r border-zinc-800 min-w-[5.5rem]">
-        <div className="text-[10px] uppercase tracking-wider text-zinc-500">
-          Turn {gameView.turn}
+      {!compact && (
+        <div className="flex flex-col justify-center pr-3 border-r border-zinc-800 min-w-[5.5rem]">
+          <div className="text-[10px] uppercase tracking-wider text-zinc-500">
+            Turn {gameView.turn}
+          </div>
+          <div
+            data-testid="active-player-name"
+            className="text-sm font-medium text-zinc-200 truncate"
+            title={gameView.activePlayerName}
+          >
+            {gameView.activePlayerName || '—'}
+          </div>
         </div>
-        <div
-          data-testid="active-player-name"
-          className="text-sm font-medium text-zinc-200 truncate"
-          title={gameView.activePlayerName}
-        >
-          {gameView.activePlayerName || '—'}
-        </div>
-      </div>
+      )}
       <div className="flex-1 flex items-start gap-1.5">
         {TIMELINE_PHASES.map((phase) => (
           <PhaseSegment
@@ -139,6 +154,7 @@ export function PhaseTimeline({ gameView }: { gameView: WebGameView }) {
             phase={phase}
             activeStep={gameView.step}
             totalSteps={totalSteps}
+            compact={compact}
           />
         ))}
       </div>
@@ -150,10 +166,12 @@ function PhaseSegment({
   phase,
   activeStep,
   totalSteps,
+  compact = false,
 }: {
   phase: PhaseConfig;
   activeStep: string;
   totalSteps: number;
+  compact?: boolean;
 }) {
   const isActivePhase = phase.steps.some((s) => s.name === activeStep);
   return (
@@ -221,8 +239,9 @@ function PhaseSegment({
       </div>
       {/* Per-step labels row — only rendered for phases with showStepLabels
           (currently Combat) so single-step phases don't get a redundant
-          duplicate of their phase header. */}
-      {phase.showStepLabels && (
+          duplicate of their phase header. Suppressed in tabletop's
+          compact mode (P3) so the header stays at ~24px. */}
+      {phase.showStepLabels && !compact && (
         <div
           data-testid="phase-step-labels"
           className="relative h-3 mt-0.5"
