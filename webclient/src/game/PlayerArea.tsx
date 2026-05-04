@@ -588,6 +588,21 @@ export function PlayerArea({
               {playerFrame}
             </>
           )
+        ) : variant === 'tabletop' && (position === 'left' || position === 'right') ? (
+          // Polish-pass P6 (audit should-close #6, 2026-05-03) —
+          // side-pod portraits previously sat at the TOP edge of
+          // their tall pod (default `align-items: stretch` on the
+          // flex-row container leaves PlayerFrame's intrinsic
+          // content anchored to its container's top). Wrapping in
+          // `flex flex-col justify-center` centers the portrait
+          // against the pod's vertical mid-line so left/right pods
+          // are rotationally symmetric with top/bottom.
+          <>
+            <div className="flex flex-col justify-center">
+              {playerFrame}
+            </div>
+            {battlefieldAreaRedesign}
+          </>
         ) : (
           <>
             {playerFrame}
