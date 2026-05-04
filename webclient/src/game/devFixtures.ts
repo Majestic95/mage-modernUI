@@ -98,6 +98,43 @@ function bf(controllerName: string, entries: Array<[string, CardKind]>): Record<
   return out;
 }
 
+// User direction (2026-05-03) — "Put 20 cards in each zone and let me
+// see how it looks." Each pod's three buckets (lands / creatures /
+// artifacts-enchantments) gets exactly 20 entries so B-13-D's 10%
+// peek stacking renders at full density across all 4 pods.
+const BIG_BOARD_CREATURE_POOL: ReadonlyArray<[string, CardKind]> = [
+  ['Llanowar Elves', 'CREATURE'],
+  ['Birds of Paradise', 'CREATURE'],
+  ['Snapcaster Mage', 'CREATURE'],
+  ['Goblin Guide', 'CREATURE'],
+  ['Soul Warden', 'CREATURE'],
+  ['Mother of Runes', 'CREATURE'],
+  ['Eternal Witness', 'CREATURE'],
+  ['Monastery Mentor', 'CREATURE'],
+  ['Mulldrifter', 'CREATURE'],
+  ['Reclamation Sage', 'CREATURE'],
+];
+const BIG_BOARD_ARTIFACT_POOL: ReadonlyArray<[string, CardKind]> = [
+  ['Sol Ring', 'ARTIFACT'],
+  ['Mana Crypt', 'ARTIFACT'],
+  ["Sensei's Divining Top", 'ARTIFACT'],
+  ['Lightning Greaves', 'ARTIFACT'],
+  ['Skullclamp', 'ARTIFACT'],
+  ['Mind Stone', 'ARTIFACT'],
+  ['Arcane Signet', 'ARTIFACT'],
+  ["Wayfarer's Bauble", 'ARTIFACT'],
+  ['Swiftfoot Boots', 'ARTIFACT'],
+  ["Commander's Sphere", 'ARTIFACT'],
+];
+
+function bigBoardEntries(landName: string): Array<[string, CardKind]> {
+  const out: Array<[string, CardKind]> = [];
+  for (let i = 0; i < 20; i++) out.push([landName, 'LAND']);
+  for (let i = 0; i < 20; i++) out.push(BIG_BOARD_CREATURE_POOL[i % BIG_BOARD_CREATURE_POOL.length]!);
+  for (let i = 0; i < 20; i++) out.push(BIG_BOARD_ARTIFACT_POOL[i % BIG_BOARD_ARTIFACT_POOL.length]!);
+  return out;
+}
+
 /**
  * Build a 4-player Commander demo game view. Layout-stress-tested:
  * the right pod (goat) gets a deliberately busy board (many lands +
@@ -114,30 +151,10 @@ export function buildDemoGameView(): WebGameView {
   const momurId = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
   const allocId = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
 
-  // Slice B-13-D verify — bumped MAJEST1C's board to ~14 permanents
-  // so the 10% peek stacking from B-13-D is visible at scale.
-  // 7 lands → Lands bucket overflow; 5 creatures → Creatures bucket
-  // overflow; 2 artifacts → Artifacts bucket has room. Cards in
-  // overflowing buckets stack with each subsequent card showing
-  // only its leftmost 10%. Other players keep small fixtures so the
-  // contrast is visible (top/bottom ~14 cards stacked vs side ~5
-  // not stacked).
-  const meBf: Record<string, WebPermanentView> = bf('MAJEST1C', [
-    ['Plains', 'LAND'],
-    ['Plains', 'LAND'],
-    ['Plains', 'LAND'],
-    ['Mountain', 'LAND'],
-    ['Mountain', 'LAND'],
-    ['Sacred Foundry', 'LAND'],
-    ['Reliquary Tower', 'LAND'],
-    ['Soul Warden', 'CREATURE'],
-    ['Goblin Guide', 'CREATURE'],
-    ['Monastery Mentor', 'CREATURE'],
-    ['Mother of Runes', 'CREATURE'],
-    ['Elsha, Threefold Master', 'CREATURE'],
-    ['Sol Ring', 'ARTIFACT'],
-    ['Mana Crypt', 'ARTIFACT'],
-  ]);
+  // 2026-05-03 user direction — every pod runs the full 60-entry
+  // big-board (20 lands + 20 creatures + 20 artifacts) so peek
+  // stacking renders at scale on all 4 pods simultaneously.
+  const meBf: Record<string, WebPermanentView> = bf('MAJEST1C', bigBoardEntries('Plains'));
 
   // Helper — build a Record<id, card> from a list of [name, kind] pairs
   // for graveyard / exile seeding so every player has scannable
@@ -225,15 +242,7 @@ export function buildDemoGameView(): WebGameView {
       ['Worldly Tutor', 'CREATURE'],
     ]),
     sideboard: {},
-    // Slice B-13-C-1 — small varied board to verify partition
-    // (PLANESWALKER → creatures; ENCHANTMENT → artifactsEnchantments).
-    battlefield: bf('goat', [
-      ['Forest', 'LAND'],
-      ['Forest', 'LAND'],
-      ['Llanowar Elves', 'CREATURE'],
-      ['Nissa, Vital Force', 'PLANESWALKER'],
-      ['Elemental Bond', 'ENCHANTMENT'],
-    ]),
+    battlefield: bf('goat', bigBoardEntries('Forest')),
     manaPool: { red: 0, green: 0, blue: 0, white: 0, black: 0, colorless: 0 },
     controlled: false, isHuman: true, isActive: true, hasPriority: false,
     hasLeft: false, monarch: false, initiative: false, designationNames: [],
@@ -266,13 +275,7 @@ export function buildDemoGameView(): WebGameView {
       ['Mystical Tutor', 'CREATURE'],
     ]),
     sideboard: {},
-    // Slice B-13-C-1 — small mono-blue board.
-    battlefield: bf('momur', [
-      ['Island', 'LAND'],
-      ['Island', 'LAND'],
-      ['Snapcaster Mage', 'CREATURE'],
-      ['Sensei\'s Divining Top', 'ARTIFACT'],
-    ]),
+    battlefield: bf('momur', bigBoardEntries('Island')),
     manaPool: { red: 0, green: 0, blue: 0, white: 0, black: 0, colorless: 0 },
     controlled: false, isHuman: true, isActive: false, hasPriority: false,
     hasLeft: false, monarch: false, initiative: false, designationNames: [],
@@ -305,13 +308,7 @@ export function buildDemoGameView(): WebGameView {
       ['Chandra, Torch of Defiance', 'CREATURE'],
     ]),
     sideboard: {},
-    // Slice B-13-C-1 — small mono-red board.
-    battlefield: bf('Alloc', [
-      ['Mountain', 'LAND'],
-      ['Mountain', 'LAND'],
-      ['Goblin Guide', 'CREATURE'],
-      ['Lightning Greaves', 'ARTIFACT'],
-    ]),
+    battlefield: bf('Alloc', bigBoardEntries('Mountain')),
     manaPool: { red: 0, green: 0, blue: 0, white: 0, black: 0, colorless: 0 },
     controlled: false, isHuman: true, isActive: false, hasPriority: false,
     hasLeft: false, monarch: false, initiative: false, designationNames: [],
