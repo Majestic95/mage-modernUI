@@ -495,9 +495,14 @@ export function GameTable({ gameId, gameView, stream }: Props) {
       {REDESIGN && sidePanelCollapsed && (
         <div
           data-testid="game-table-action-floating-dock"
-          className="fixed bottom-3 right-3 z-30 w-[clamp(220px,18vw,320px)]
+          // H1 (2026-05-03): widened dock + bumped padding + min-height
+          // floor so the morphing primary button has vertical breathing
+          // room. Was `w-[clamp(220px,18vw,320px)] p-2` → action label
+          // ("Pass to Next Turn") felt cramped vs the rest of the
+          // tabletop chrome. Now `clamp(260,20vw,360) p-3 min-h-[120px]`.
+          className="fixed bottom-3 right-3 z-30 w-[clamp(260px,20vw,360px)] min-h-[120px]
             rounded-lg bg-bg-elevated/95 backdrop-blur-sm
-            border border-zinc-800 shadow-xl p-2"
+            border border-zinc-800 shadow-xl p-3"
         >
           <ActionButton stream={stream} />
         </div>

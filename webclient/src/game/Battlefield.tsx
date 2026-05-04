@@ -579,7 +579,10 @@ export function Battlefield({
       {variant === 'tabletop' && me && hasAnyMana(me.manaPool) && (
         <div
           data-testid="tabletop-local-mana-pool-floating"
-          className="fixed bottom-3 right-[340px] z-40 pointer-events-auto"
+          // H1 (2026-05-03) — dock max width grew 320 → 360px, so
+          // the mana-pool right offset bumps 340 → 380 to keep a
+          // gap between them.
+          className="fixed bottom-3 right-[380px] z-40 pointer-events-auto"
         >
           <ManaPool
             player={me}
