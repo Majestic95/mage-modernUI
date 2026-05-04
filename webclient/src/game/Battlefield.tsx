@@ -4,6 +4,7 @@ import type { InteractionMode } from './interactionMode';
 import type { ManaOrbColor } from './ManaOrb';
 import { StackZone } from './StackZone';
 import { PlayerArea } from './PlayerArea';
+import { TabletopCommanderSlot } from './TabletopCommanderSlot';
 import { gridAreaForOpponent, selectOpponents } from './battlefieldLayout';
 import { computePodCardSizeVars } from './podShrink';
 import type { DragState } from './useDragState';
@@ -339,6 +340,21 @@ export function Battlefield({
           // ancestors clips outward-positioned frames) — defer
           // to a future slice that addresses the overflow-hidden
           // chain holistically.
+          // Slice B-12-A — commander slot anchor per pod orientation
+          // (per element #5). Slot sits absolute-positioned inside
+          // the cell at the outside corner. Cell wrapper gets
+          // `relative` for tabletop so the absolute child anchors
+          // correctly.
+          const isTabletop = variant === 'tabletop';
+          const commanderSlotAnchorClass = isTabletop
+            ? area === 'top'
+              ? 'absolute top-2 right-2 z-10'
+              : area === 'left'
+                ? 'absolute bottom-2 left-2 z-10'
+                : area === 'right'
+                  ? 'absolute bottom-2 right-2 z-10'
+                  : ''
+            : '';
           return (
             <div
               key={p.playerId}
@@ -346,8 +362,17 @@ export function Battlefield({
               data-side-pod={isSidePod || undefined}
               data-bounded={isSidePod ? 'true' : undefined}
               data-shrunk={podCardSizeVars ? 'true' : undefined}
-              className={'min-w-0' + (isSidePod ? sidePodClasses : '')}
+              className={
+                'min-w-0' +
+                (isSidePod ? sidePodClasses : '') +
+                (isTabletop ? ' relative' : '')
+              }
             >
+              {isTabletop && (
+                <div className={commanderSlotAnchorClass}>
+                  <TabletopCommanderSlot player={p} />
+                </div>
+              )}
               <PlayerArea
                 player={p}
                 perspective="opponent"
@@ -420,7 +445,17 @@ export function Battlefield({
             fixed-positioned sibling at the battlefield's bottom-
             right corner (slotPart='frame', see below). Legacy keeps
             the unified pod here. */}
-        <div style={{ gridArea: 'bottom' }} className="min-w-0">
+        <div
+          style={{ gridArea: 'bottom' }}
+          className={
+            'min-w-0' + (variant === 'tabletop' ? ' relative' : '')
+          }
+        >
+          {variant === 'tabletop' && me && (
+            <div className="absolute bottom-2 right-2 z-10">
+              <TabletopCommanderSlot player={me} />
+            </div>
+          )}
           {me ? (
             <PlayerArea
               player={me}
