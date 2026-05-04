@@ -308,8 +308,17 @@ export function Battlefield({
           // WITH its Tier 1/2 fixes intact (the previous "good
           // state") rather than reverting all the way back to the
           // unbounded slice-70-Y centered overflow.
+          // Slice B-9-B.5 — for tabletop, drop pb-[18vh] (~259px
+          // reserved at bottom of side pod wrappers). The hand fan
+          // clearance is handled by the grid's pb-56; side pods
+          // don't need their own additional bottom reserve. With
+          // pb-[18vh] in place, side pods couldn't grow even when
+          // middle row% was bumped — the inner pb swallowed the
+          // gain. variant=current keeps the existing pb-[18vh].
           const sidePodClasses =
-            ' flex items-stretch pb-[18vh] overflow-hidden min-h-0';
+            variant === 'tabletop'
+              ? ' flex items-stretch overflow-hidden min-h-0'
+              : ' flex items-stretch pb-[18vh] overflow-hidden min-h-0';
           const podCardSizeVars = computePodCardSizeVars(
             Object.keys(p.battlefield).length,
           );
