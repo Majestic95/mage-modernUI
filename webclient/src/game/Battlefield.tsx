@@ -232,7 +232,7 @@ export function Battlefield({
         className={
           'flex-1 min-h-0 p-4 pb-56 grid gap-4' +
           (variant === 'tabletop'
-            ? ' border-2 border-zinc-800/80 rounded-lg'
+            ? ' border-4 border-zinc-600 rounded-lg'
             : '')
         }
         // Slice 70-E critic UI-Critical-1 — inline style for the
