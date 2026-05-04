@@ -8,6 +8,8 @@ import { REDESIGN } from '../featureFlags';
 import { useLayoutVariant } from '../layoutVariants';
 import { computeTabletopZoneBackground } from './halo';
 import { useGameStore } from './store';
+import { partitionForTabletop } from './tabletopBattlefieldLayout';
+import { TabletopBuckets } from './TabletopBuckets';
 
 /** Stable empty Set so the optional prop default doesn't recreate
  *  on every render (would defeat downstream useMemo). */
@@ -468,6 +470,15 @@ export function PlayerArea({
     // state placeholder text remains as a child for legacy parity
     // (subtle italic caption); future slices can decide whether to
     // hide it under variant=tabletop for an uncluttered reference.
+    // Slice B-13-B — for tabletop variant, replace the existing
+    // mainRowsRedesign + artifactsBoxRedesign content with the new
+    // 3-bucket layout (Lands / Creatures / Artifacts-Enchantments
+    // per element #4). Buckets are fixed-size strips stacked
+    // vertically; labels visible even on empty buckets per the
+    // user's element #6 walkthrough direction.
+    const tabletopBuckets =
+      variant === 'tabletop' ? partitionForTabletop(battlefield) : null;
+
     const battlefieldAreaRedesign = (
       <div
         data-testid="battlefield-area"
@@ -482,7 +493,9 @@ export function PlayerArea({
         // edge of each pod, colored zone wraps cards only" structure.
         style={tabletopZoneStyle}
       >
-        {allEmpty ? (
+        {variant === 'tabletop' && tabletopBuckets ? (
+          <TabletopBuckets buckets={tabletopBuckets} />
+        ) : allEmpty ? (
           <div className="flex flex-col gap-1.5">
             {/* Slice 70-Z.1 critic UI IMP-5 — caption color via the
                 --color-text-secondary token (#9BA8B0) instead of the
