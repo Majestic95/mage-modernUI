@@ -169,6 +169,11 @@ export function buildDemoGameView(): WebGameView {
 
   const me = webPlayerViewSchema.parse({
     playerId: meId, name: 'MAJEST1C', life: 40, wins: 0, winsNeeded: 1,
+    // Slice B-1 — fixture commander identities so tabletop variant
+    // zone backgrounds render distinctly. Jeskai (W/U/R) showcases
+    // the 3-band conic-gradient + --halo-angle rotation; pairs well
+    // with the Elsha (Jeskai) commander on this player's battlefield.
+    colorIdentity: ['W', 'U', 'R'],
     libraryCount: 80, handCount: 6,
     graveyard: zone([
       ['Lightning Bolt', 'CREATURE'],
@@ -189,6 +194,8 @@ export function buildDemoGameView(): WebGameView {
   // Right pod — the layout-stress case the user reported.
   const goat = webPlayerViewSchema.parse({
     playerId: goatId, name: 'goat', life: 40, wins: 0, winsNeeded: 1,
+    // Mono-green — board has Forests + Llanowar Elves + Ghalta etc.
+    colorIdentity: ['G'],
     libraryCount: 90, handCount: 6,
     graveyard: zone([
       ['Birds of Paradise', 'CREATURE'],
@@ -220,6 +227,8 @@ export function buildDemoGameView(): WebGameView {
   // Top pod — modest board.
   const momur = webPlayerViewSchema.parse({
     playerId: momurId, name: 'momur', life: 40, wins: 0, winsNeeded: 1,
+    // Mono-blue — board has Islands + Snapcaster Mage + Brainstorm.
+    colorIdentity: ['U'],
     libraryCount: 91, handCount: 5,
     graveyard: zone([
       ['Brainstorm', 'CREATURE'],
@@ -243,6 +252,8 @@ export function buildDemoGameView(): WebGameView {
   // Left pod — also busy, mirror of right to test left-pod stacking.
   const alloc = webPlayerViewSchema.parse({
     playerId: allocId, name: 'Alloc', life: 35, wins: 0, winsNeeded: 1,
+    // Mono-red — board has Mountains + Goblin Guides + Lava Spike.
+    colorIdentity: ['R'],
     libraryCount: 85, handCount: 4,
     graveyard: zone([
       ['Lava Spike', 'CREATURE'],
