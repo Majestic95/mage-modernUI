@@ -108,4 +108,16 @@ describe('TabletopBuckets — bucket-title modal', () => {
     await user.click(screen.getByTestId('zone-browser-close'));
     expect(screen.queryByTestId('zone-browser')).toBeNull();
   });
+
+  it('G3 — each rendered card carries `data-permanent-id` so StackZone combat arrows can resolve attacker rects', () => {
+    const { container } = render(
+      <TabletopBuckets buckets={BUCKETS} position="bottom" playerName="alice" colorIdentity={[]} />,
+    );
+    // Three cards in BUCKETS (FOREST land, ELF creature, RING artifact).
+    // Each must surface a [data-permanent-id="..."] wrapper that StackZone
+    // querySelectors against when rendering combat arrows.
+    expect(container.querySelector(`[data-permanent-id="${FOREST.card.id}"]`)).toBeInTheDocument();
+    expect(container.querySelector(`[data-permanent-id="${ELF.card.id}"]`)).toBeInTheDocument();
+    expect(container.querySelector(`[data-permanent-id="${RING.card.id}"]`)).toBeInTheDocument();
+  });
 });

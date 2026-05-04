@@ -234,13 +234,26 @@ function BucketBox({
           className="flex flex-row items-center h-full pl-12 pr-2 py-2 min-h-0 min-w-0 [&>*+*]:-ml-[48px]"
         >
           {cards.map((p) => (
-            <CardFace
+            // G3 (2026-05-03) — wrapper carries `data-permanent-id`
+            // so StackZone's combat-arrow geometry resolver can find
+            // the attacker's bounding rect via querySelector. Without
+            // the wrapper, CardFace's outer DOM doesn't expose the
+            // permanent ID and combat arrows in tabletop draw from
+            // (0, 0). The peek-stacking utility `[&>*+*]:-ml-[48px]`
+            // still applies — wrappers are the new immediate flex
+            // children at the same intrinsic widths as CardFace itself.
+            <div
               key={p.card.id}
-              card={p.card}
-              size="battlefield"
-              perm={p}
-              tapped={p.tapped}
-            />
+              data-permanent-id={p.card.id}
+              data-tapped={p.tapped || undefined}
+            >
+              <CardFace
+                card={p.card}
+                size="battlefield"
+                perm={p}
+                tapped={p.tapped}
+              />
+            </div>
           ))}
         </div>
       )}
