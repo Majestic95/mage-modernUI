@@ -238,8 +238,17 @@ export function Battlefield({
           // pb-56 puts the bottom cell exactly above the hand fan
           // with ~7px clearance. Trade: top/bottom pods are
           // ~253px instead of ~309px, but bottom is fully visible.
+          //
+          // Polish-pass P5 (audit must-close #1, 2026-05-03) —
+          // table-edge chrome upgraded from a flat 4px border to a
+          // bounded "play surface" treatment: 2px outer dark-zinc
+          // border + 1px inset ring + soft inset shadow + faint
+          // bg-zinc-950/40 fill. Reads as a defined surface rather
+          // than pods floating in void.
           (variant === 'tabletop'
-            ? 'flex-1 min-h-0 p-4 pb-56 grid gap-4 border-4 border-zinc-600 rounded-lg'
+            ? 'flex-1 min-h-0 p-4 pb-56 grid gap-4 rounded-xl ' +
+              'border-2 border-zinc-800 ring-1 ring-zinc-700/50 ring-inset ' +
+              'bg-zinc-950/40 shadow-[inset_0_0_60px_rgba(0,0,0,0.55)]'
             : 'flex-1 min-h-0 p-4 pb-56 grid gap-4')
         }
         // Slice 70-E critic UI-Critical-1 — inline style for the
