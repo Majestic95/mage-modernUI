@@ -48,8 +48,15 @@ export const LAYOUT_VARIANTS = ['current', 'tabletop'] as const;
 
 export type LayoutVariant = (typeof LAYOUT_VARIANTS)[number];
 
-/** The variant that renders when no override / URL param is set. */
-export const DEFAULT_VARIANT: LayoutVariant = 'current';
+/**
+ * The variant that renders when no override / URL param is set.
+ *
+ * <p>2026-05-04 — graduation cutover: flipped from {@code 'current'} to
+ * {@code 'tabletop'}. Tabletop is now the production default; users
+ * opt out via {@code ?variant=current} (legacy escape hatch). T6 in
+ * {@code docs/design/variant-tabletop.md} updated to match.
+ */
+export const DEFAULT_VARIANT: LayoutVariant = 'tabletop';
 
 const VARIANT_PARAM = 'variant';
 

@@ -13,6 +13,19 @@ vi.mock('../featureFlags', async () => {
   return { ...actual, LAYOUT_BOUNDS: false };
 });
 
+// 2026-05-04 — graduation cutover flipped DEFAULT_VARIANT to `tabletop`.
+// This file pins the legacy `current`-variant side-panel + dialog-dock
+// CSS-variable contract (tabletop forces sidepanel collapsed via P4,
+// which short-circuits the `--side-panel-width` exposure). Pin
+// useLayoutVariant() to `'current'` so bare <GameTable> renders
+// inherit the legacy variant.
+vi.mock('../layoutVariants', async () => {
+  const actual = await vi.importActual<typeof import('../layoutVariants')>(
+    '../layoutVariants',
+  );
+  return { ...actual, useLayoutVariant: () => 'current' };
+});
+
 import { GameTable } from './GameTable';
 import { webGameViewSchema, webPlayerViewSchema, type WebGameView } from '../api/schemas';
 

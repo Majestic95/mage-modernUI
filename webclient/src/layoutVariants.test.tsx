@@ -108,8 +108,8 @@ describe('setVariantInUrl', () => {
   });
 
   it('strips ?variant= when setting the default variant (URL stays clean)', () => {
-    window.history.replaceState({}, '', '/?variant=current&other=x');
-    setVariantInUrl('current');
+    window.history.replaceState({}, '', '/?variant=tabletop&other=x');
+    setVariantInUrl(DEFAULT_VARIANT);
     const search = new URLSearchParams(window.location.search);
     expect(search.has('variant')).toBe(false);
     // Other params survive.
@@ -118,21 +118,26 @@ describe('setVariantInUrl', () => {
 
   it('uses replaceState (does not push a history entry)', () => {
     const before = window.history.length;
-    setVariantInUrl('current');
-    setVariantInUrl('current');
-    setVariantInUrl('current');
+    setVariantInUrl(DEFAULT_VARIANT);
+    setVariantInUrl(DEFAULT_VARIANT);
+    setVariantInUrl(DEFAULT_VARIANT);
     // history.length should not grow on replaceState calls.
     expect(window.history.length).toBe(before);
   });
 
   it('sets ?variant= when setting a non-default variant', () => {
-    setVariantInUrl('tabletop');
+    // Pick the variant that is NOT the default — that's the legacy
+    // escape-hatch path post-graduation cutover (was 'tabletop' before
+    // the flip; now 'current').
+    const nonDefault = DEFAULT_VARIANT === 'tabletop' ? 'current' : 'tabletop';
+    setVariantInUrl(nonDefault);
     const search = new URLSearchParams(window.location.search);
-    expect(search.get('variant')).toBe('tabletop');
+    expect(search.get('variant')).toBe(nonDefault);
   });
 
   it('round-trips through getActiveVariant (set then read)', () => {
-    setVariantInUrl('tabletop');
-    expect(getActiveVariant(window.location.search)).toBe('tabletop');
+    const nonDefault = DEFAULT_VARIANT === 'tabletop' ? 'current' : 'tabletop';
+    setVariantInUrl(nonDefault);
+    expect(getActiveVariant(window.location.search)).toBe(nonDefault);
   });
 });

@@ -118,6 +118,10 @@ const FAKE_GAME_ID = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 
 describe('Game page', () => {
   beforeEach(() => {
+    // The `?variant=current` URL pin lives in setupTests.ts as a
+    // global beforeEach (post-graduation-cutover, 2026-05-04) — this
+    // suite is legacy-path coverage so it inherits that default. The
+    // one tabletop-specific test (G1) overrides it locally.
     useAuthStore.setState({
       session: ANON_SESSION,
       loading: false,

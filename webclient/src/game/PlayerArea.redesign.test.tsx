@@ -28,6 +28,20 @@ vi.mock('../featureFlags', () => ({
   },
 }));
 
+// 2026-05-04 — graduation cutover flipped DEFAULT_VARIANT to `tabletop`.
+// This file's assertions exercise the asymmetric-T REDESIGN composition
+// (artifact zone routing, per-pod row orientation), all of which is the
+// `current` variant's behavior. Pin useLayoutVariant() to `'current'`
+// for every test in this file so the bare <PlayerArea> renders (no
+// Provider wrap) read `current` instead of inheriting the global
+// tabletop default.
+vi.mock('../layoutVariants', async () => {
+  const actual = await vi.importActual<typeof import('../layoutVariants')>(
+    '../layoutVariants',
+  );
+  return { ...actual, useLayoutVariant: () => 'current' };
+});
+
 import { PlayerArea } from './PlayerArea';
 
 function makePerm(name: string, types: string[]): WebPermanentView {

@@ -47,11 +47,11 @@ export function Game({ gameId, onLeave }: Props) {
   // G1 (graduation step toward production tabletop, 2026-05-03) —
   // resolve the layout variant from the URL once on mount and pin it
   // into a Provider so descendant components' useLayoutVariant() reads
-  // pick up the user's choice. Mirrors DemoGame.tsx's pattern. Default
-  // is `current` (T6: production keeps current until graduation
-  // cutover); `?variant=tabletop` opts the live game into the 4-pod
-  // layout. The variant is captured at mount time — a follow-up slice
-  // can wire a runtime switcher if needed.
+  // pick up the user's choice. Mirrors DemoGame.tsx's pattern.
+  //
+  // 2026-05-04 cutover: the default is now `tabletop`; `?variant=current`
+  // is the legacy escape hatch. The variant is captured at mount time —
+  // a follow-up slice can wire a runtime switcher if needed.
   const [variant] = useState<LayoutVariant>(() => getActiveVariant());
 
   // 2026-05-02 — priority + turn audio cues. Hook is store-subscriber

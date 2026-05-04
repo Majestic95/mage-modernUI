@@ -45,8 +45,8 @@ T4. **Target viewport: 1440p (2560×1440).**
 T5. **No engine code. No wire-format change. No schemaVersion bump.**
     All variant work in `webclient/`. Java side untouched. Variant is a runtime URL knob.
 
-T6. **Fixture-mode-first.**
-    Iterate against `?game=fixture&variant=tabletop`. Production game window keeps `current` until graduation cutover.
+T6. **Tabletop is the production default (post-cutover 2026-05-04).**
+    Production game window renders tabletop by default. `?variant=current` is the legacy escape hatch. Fixture-mode iteration still uses `?game=fixture&variant=tabletop` for explicitness.
 
 T7. **Cross/plus 4-pod arrangement.**
     Top opp + left opp + right opp + bottom user, with central focal area. NOT asymmetric-T (3 vertical stacked lanes) which is `current`'s default. Battlefield.tsx routes `variant === 'tabletop'` through the legacy 4-pod grid path.

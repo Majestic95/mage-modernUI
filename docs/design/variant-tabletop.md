@@ -21,7 +21,7 @@ These constraints come from the user's slice-B-0 sign-off and override the match
   1. **CSS Grid with sized tracks** — every grid track is explicitly sized (`fr` or `%`); never `auto`. Cell bounding rects depend only on viewport size.
   2. **Component architecture** — anything that isn't a pod stays out of the grid: action panel `position: fixed`, modals via portals, hover details `absolute`-positioned outside the flow.
   3. **Tests** — `webclient/src/game/tabletopLayoutInvariants.test.tsx` asserts the structural CSS classes that deliver the guarantee (jsdom-level, slice B-0.5). Real-pixel measurements via Playwright are a future slice (B-0.6 candidate).
-- **Variant scope is fixture-mode-first.** Tabletop is iterated against `?game=fixture&variant=tabletop`. The production game window keeps rendering `current` until the user signs off on a tabletop graduation cutover.
+- **Variant scope was fixture-mode-first.** Tabletop was iterated against `?game=fixture&variant=tabletop` through graduation. **2026-05-04 cutover:** `DEFAULT_VARIANT` flipped to `tabletop`; the production game window now renders tabletop by default, and `?variant=current` is the legacy escape hatch (still wired, lets users fall back to the asymmetric-T layout if a tabletop bug bites them).
 - **No engine code touched.** All work happens in `webclient/`. Java side and the wire format are untouched. No `schemaVersion` bump.
 - **Switcher visible from B-0 onward.** `[ current | tabletop ]` button row appears in the fixture from slice B-0. Tabletop will look incomplete until all element slices ship — that's expected. Side-by-side comparison is the point.
 
@@ -390,15 +390,11 @@ We'll cover these as part of the walkthrough; flagging here so you know they're 
 
 - **Bottom-right GameDialog vs action dock collision (G8 audit, 2026-05-04).** The library-search / Demonic Tutor variant of `GameDialog` reads `--side-panel-width` for its right offset. With tabletop forcing `sidePanelCollapsed=true` the var resolves to `0px` and the dialog hugs the viewport right edge at `1rem` (~16px), overlapping the floating ActionButton dock at `right-3` (12px). Both share `z-40` so DOM-order wins, but they visually overlap. Edge case (only triggers on tutor / library-search effects); fix when it surfaces in live play, e.g. by adding a tabletop-specific `right-margin = action-dock-width + gutter`.
 
-## Variant-switcher gating (G9 decision, 2026-05-04)
+## Variant-switcher gating (G9 decision, 2026-05-04 — superseded by cutover)
 
-`VariantSwitcher.tsx` stays `import.meta.env.DEV`-gated for now. **Production users opt into tabletop via the `?variant=tabletop` URL flag** (wired in `Game.tsx` since G1). Rationale:
+**Historical context (pre-cutover):** `VariantSwitcher.tsx` was `import.meta.env.DEV`-gated; production users opted into tabletop via the `?variant=tabletop` URL flag wired in `Game.tsx` since G1. Rationale was that T6 said production keeps `current` until graduation cutover, so a visible production switcher would have implicitly invited users in early.
 
-- T6 says production keeps `current` until graduation cutover. A visible production switcher implicitly invites users in before that cutover.
-- Power users + playtesters who want to compare layouts can use the URL flag (or run a dev build).
-- A discoverable user-facing toggle should ship via `SettingsModal` (a "Game window layout" picker) — appropriate AFTER live-game smoke testing validates tabletop is structurally complete, not before. Queued as a future slice (G10 or similar).
-
-Decision is reversible: the gate is one line in `VariantSwitcher.tsx` (`if (!import.meta.env.DEV) return null;`).
+**2026-05-04 graduation cutover:** `DEFAULT_VARIANT` flipped to `tabletop` (see top "Load-bearing decisions" section). The dev-only switcher gating remains in place — a discoverable user-facing toggle should still ship via `SettingsModal` (a "Game window layout" picker) so users who hit a tabletop edge case can fall back to `current` without typing a URL flag. Queued as a future slice (G10 or similar). Until then, `?variant=current` is the documented escape hatch.
 
 ---
 
