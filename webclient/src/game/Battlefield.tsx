@@ -273,15 +273,18 @@ export function Battlefield({
             variant === 'tabletop'
               ? '20% 60% 20%'
               : 'minmax(0, max-content) minmax(0, 1fr) minmax(0, max-content)',
-          // Slice B-9-A.5 — bumped top/bottom rows 20% → 25% (and
-          // middle 60% → 50%) so the top/bottom pods have enough
-          // vertical room for both the PlayerFrame chrome AND a
-          // substantial colored battlefield zone. With 20%, the
-          // colored zone collapsed to ~27px after PlayerFrame's
-          // ~130px + gap consumed most of the 197px cell.
+          // Slice B-9-B.4 (user direction 2026-05-03) — left/right
+          // pods (which live in middle row) needed more vertical
+          // room. Reverted middle-row to 60% (was 50% in B-9-A.5);
+          // top/bottom shrink to 20% each (back to original B-9-A.2
+          // values). With smaller-gap (B-9-A.5's gap-2) and pb-56
+          // restored (B-9-B.3), top/bottom cells now ~210px which
+          // still leaves PlayerFrame + a visible battlefield-area.
+          // Side pods grow ~100px taller, matching the user's
+          // "extend down to the red line" red-line annotation.
           gridTemplateRows:
             variant === 'tabletop'
-              ? '25% 50% 25%'
+              ? '20% 60% 20%'
               : 'auto minmax(0, 1fr) auto',
         }}
       >
