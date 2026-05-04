@@ -60,18 +60,19 @@ public final class LobbyService {
      * Skill level for the {@code COMPUTER_MONTE_CARLO} AI. MCTS doesn't
      * have the empty-tree bug — its skill maps directly to
      * {@code maxThinkTime = skill * 2} seconds per priority decision
-     * ({@code ComputerPlayerMCTS.java:44}). Walked down the skill ladder
-     * over UI iterations: 4 → 30-60s AI turns (unusable); 1 → 2-4s per
-     * priority (still felt slow at 4-player Commander); 0 → MCTS's
-     * `calculateThinkTime` returns 0 in every branch, the search runs
-     * are skipped entirely, the AI passes priority immediately. Trade-
-     * off: the AI does not strategically play spells / declare attackers
-     * — it pretty much always passes. Acceptable for UI/UX testing runs
-     * where AI play quality is irrelevant; bump back to 1+ for real
-     * gameplay validation. User direction 2026-05-04: "I do not want
-     * any delay on them."
+     * ({@code ComputerPlayerMCTS.java:44}). Skill ladder explored over
+     * UI iterations: 4 → 30-60s AI turns (unusable); 1 → 2-4s per
+     * priority (slow but tolerable in 4-player Commander); 0 → search
+     * is skipped, AI passes priority immediately (UI-testing only,
+     * no strategic play).
+     *
+     * <p>2026-05-04: restored to 1 to evaluate stock MCTS as a baseline
+     * Commander AI before deciding whether to invest in a custom
+     * {@code Mage.Player.AI.Commander} subclass. AI-1 (zero-delay) is
+     * reachable by flipping this back to 0 if iterative UI testing
+     * resumes.
      */
-    static final int AI_SKILL_MONTE_CARLO = 0;
+    static final int AI_SKILL_MONTE_CARLO = 1;
     /** Alias kept for tests that still reference the old constant name. */
     static final int AI_SKILL = AI_SKILL_MAD;
 
