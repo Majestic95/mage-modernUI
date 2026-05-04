@@ -281,18 +281,19 @@ export function PlayerArea({
     // commander portrait. The portrait halo + life badge already
     // extend past the strict frame bounding box; the prior 12px gap
     // wasn't enough to clear them at busy boards.
-    // Slice B-9-A.5 — tabletop variant uses a tight gap (gap-2 = 8px)
-    // between PlayerFrame and battlefield-area. The default gap-10
-    // (40px) was consuming too much vertical space in the 20%-tall
-    // top/bottom rows, leaving battlefield-area at ~27px (barely
-    // visible against dark zinc with alpha-reduced glow tokens).
-    // gap-2 + slightly taller rows (25% in Battlefield.tsx) gives
-    // battlefield-area ~109px — a substantial colored zone.
+    // Slice B-13-C-2 — for tabletop top/bottom pods, switch to
+    // flex-ROW (was flex-col). flex-col put PlayerFrame ABOVE
+    // battlefield-area, eating ~146px of the 192px cell height
+    // and leaving cards rendered as ~46px tall slivers. flex-row
+    // puts PlayerFrame BESIDE battlefield-area; battlefield-area
+    // gets the cell's full height (~192px) and cards render at
+    // proper battlefield-card size. Frame on LEFT for bottom pod
+    // (per element #9 user direction) and TOP pod for symmetry.
     // current variant keeps the original gap-10 / gap-3 / gap-8.
     const flexClass = isVertical
       ? position === 'top'
-        ? variant === 'tabletop' ? 'flex flex-col gap-2' : 'flex flex-col gap-10'
-        : variant === 'tabletop' ? 'flex flex-col gap-2' : 'flex flex-col gap-3'
+        ? variant === 'tabletop' ? 'flex flex-row gap-2' : 'flex flex-col gap-10'
+        : variant === 'tabletop' ? 'flex flex-row gap-2' : 'flex flex-col gap-3'
       : position === 'right'
         ? variant === 'tabletop' ? 'flex flex-row-reverse gap-2' : 'flex flex-row-reverse gap-8'
         : variant === 'tabletop' ? 'flex flex-row gap-2' : 'flex flex-row gap-8';
@@ -604,24 +605,24 @@ export function PlayerArea({
         }
       >
         {position === 'bottom' ? (
-          <>
-            {battlefieldAreaRedesign}
-            {/* Slice B-9-B.7 — for tabletop, anchor the local user
-                PlayerFrame to the bottom-LEFT of the pod (per
-                element #9 walkthrough correction: "Lets move local-
-                player (bottom pod)'s portrait to the far bottom
-                left of their pod's area instead of centered.").
-                self-start aligns the wrapper to the start (left) of
-                the flex-col's cross axis; w-fit shrinks the wrapper
-                to PlayerFrame's intrinsic width so the colored zone
-                above isn't squeezed by a stretching frame box.
-                variant=current keeps the original centered render. */}
-            {variant === 'tabletop' ? (
-              <div className="self-start w-fit">{playerFrame}</div>
-            ) : (
-              playerFrame
-            )}
-          </>
+          variant === 'tabletop' ? (
+            // Slice B-13-C-2 — for tabletop bottom pod, render
+            // frame FIRST in flex-row so it sits at the LEFT of
+            // the cell (per element #9 user direction "far bottom
+            // left"). battlefield-area takes the remaining
+            // horizontal space via flex-1, getting full cell
+            // height for cards. variant=current keeps battlefield-
+            // first / frame-second flex-col render.
+            <>
+              {playerFrame}
+              {battlefieldAreaRedesign}
+            </>
+          ) : (
+            <>
+              {battlefieldAreaRedesign}
+              {playerFrame}
+            </>
+          )
         ) : (
           <>
             {playerFrame}
