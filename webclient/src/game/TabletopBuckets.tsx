@@ -111,7 +111,13 @@ function BucketBox({
       data-testid={`tabletop-bucket-${kind}`}
       data-bucket-kind={kind}
       data-card-count={count}
-      className="flex-shrink-0 flex-grow-0 min-h-0 min-w-0 relative rounded border border-zinc-700/50 bg-zinc-900/30 overflow-hidden"
+      // Slice B-13-E — visual tuning. Border bumped from
+      // border-zinc-700/50 (very dim) → border-zinc-500/70 so the
+      // bucket boundaries read clearly against the colored zone.
+      // Dropped the bucket's own bg-zinc-900/30 so the underlying
+      // commander-identity gradient shows through (eliminates a
+      // dim-overlay-on-color muddying the zone color).
+      className="flex-shrink-0 flex-grow-0 min-h-0 min-w-0 relative rounded border border-zinc-500/70 overflow-hidden"
       style={{ flexBasis }}
     >
       {/* Label sits at the top-left corner of the bucket. Faint when
