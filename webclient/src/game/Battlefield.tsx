@@ -426,7 +426,14 @@ export function Battlefield({
               player={me}
               perspective="self"
               position="bottom"
-              {...(REDESIGN ? { slotPart: 'rows' as const } : {})}
+              // Slice B-9-B.6 — for tabletop, drop the slotPart split
+              // so the bottom pod renders with frame inside cell
+              // (matching opponents). Top + bottom colored zones
+              // become structurally symmetric. variant=current keeps
+              // the slotPart='rows' split + floating corner frame.
+              {...(REDESIGN && variant !== 'tabletop'
+                ? { slotPart: 'rows' as const }
+                : {})}
               canAct={canAct}
               onObjectClick={onObjectClick}
               targetable={eligibleTargetIds.has(me.playerId)}
@@ -459,7 +466,7 @@ export function Battlefield({
           boundary. z-index keeps it ABOVE any battlefield content
           but BELOW floating overlays like GameDialog.
           REDESIGN-only mount; legacy renders the unified pod above. */}
-      {REDESIGN && me && (
+      {REDESIGN && me && variant !== 'tabletop' && (
         <div
           data-testid="local-player-frame-corner"
           // Round 20 (user direction 2026-04-30) — bumped right
