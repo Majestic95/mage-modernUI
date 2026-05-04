@@ -563,7 +563,13 @@ export function PlayerArea({
           ' transition-colors ' +
           (isDropTarget
             ? 'rounded ring-2 ring-fuchsia-500/40 outline outline-dashed outline-fuchsia-500'
-            : '')
+            : '') +
+          // Slice B-9-A.3 — outer pod wrapper fills its grid cell
+          // when variant=tabletop, so battlefield-area's flex-1 has
+          // room to claim. Without this the wrapper sized to
+          // PlayerFrame's intrinsic content and the colored zone
+          // collapsed (visible regression of T1 from B-9-A.2).
+          (variant === 'tabletop' ? ' h-full w-full' : '')
         }
       >
         {position === 'bottom' ? (
