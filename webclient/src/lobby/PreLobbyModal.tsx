@@ -33,7 +33,34 @@ interface Props {
   onCreated: (tableId: string) => void;
 }
 
-const DEFAULT_AI_TYPE = 'COMPUTER_MONTE_CARLO';
+/**
+ * AI types the user can pick when filling seats. Order = display order;
+ * the first entry is the default selection. MAD (`ComputerPlayer7`)
+ * leads because it's the engine-blessed playable AI; MCTS is exposed
+ * as an "experimental" alternative.
+ *
+ * <p>Hardcoded rather than derived from {@code serverState.playerTypes}
+ * so unforeseen PlayerType enum additions don't accidentally surface
+ * in the UI without explicit review (e.g. Draft-only bots, or a
+ * future custom Commander AI that needs its own labelling). When a
+ * new playable AI lands, append a row here.
+ */
+const AI_OPTIONS = [
+  {
+    value: 'COMPUTER_MAD',
+    label: 'MAD (recommended)',
+    hint: 'Simulation-based AI. Plays strategically.',
+  },
+  {
+    value: 'COMPUTER_MONTE_CARLO',
+    label: 'Monte Carlo',
+    hint: 'MCTS search. Experimental — may pass priority often.',
+  },
+] as const;
+
+type AiTypeValue = (typeof AI_OPTIONS)[number]['value'];
+
+const DEFAULT_AI_TYPE: AiTypeValue = AI_OPTIONS[0].value;
 
 export function PreLobbyModal({
   roomId,
@@ -72,6 +99,7 @@ export function PreLobbyModal({
   const maxPlayers = selectedGameType?.maxPlayers ?? minPlayers;
   const [playerCount, setPlayerCount] = useState(maxPlayers);
   const [fillWithAi, setFillWithAi] = useState(false);
+  const [aiType, setAiType] = useState<AiTypeValue>(DEFAULT_AI_TYPE);
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -122,12 +150,12 @@ export function PreLobbyModal({
 
     // Build the seats array. Slot 0 is always HUMAN (the creator
     // auto-occupies it on table create). If "fill with AI" is on,
-    // remaining slots are COMPUTER_MONTE_CARLO so the table can
+    // remaining slots get the user-selected AI type so the table can
     // start solo or with one human + several AI opponents.
     const seats: string[] = [];
     seats.push('HUMAN');
     for (let i = 1; i < clampedCount; i++) {
-      seats.push(fillWithAi ? DEFAULT_AI_TYPE : 'HUMAN');
+      seats.push(fillWithAi ? aiType : 'HUMAN');
     }
 
     const body: Record<string, unknown> = {
@@ -163,7 +191,7 @@ export function PreLobbyModal({
             {
               token: session.token,
               method: 'POST',
-              body: { playerType: DEFAULT_AI_TYPE },
+              body: { playerType: aiType },
             },
           );
         } catch (err) {
@@ -285,18 +313,47 @@ export function PreLobbyModal({
           )}
         </Field>
 
-        <label
-          data-testid="pre-lobby-ai-toggle"
-          className="flex cursor-pointer items-center gap-2 text-sm text-text-primary"
-        >
-          <input
-            type="checkbox"
-            checked={fillWithAi}
-            onChange={(e) => setFillWithAi(e.target.checked)}
-            className="h-4 w-4 accent-accent-primary"
-          />
-          <span>Fill remaining seats with AI</span>
-        </label>
+        <div className="flex flex-col gap-2">
+          <label
+            data-testid="pre-lobby-ai-toggle"
+            className="flex cursor-pointer items-center gap-2 text-sm text-text-primary"
+          >
+            <input
+              type="checkbox"
+              checked={fillWithAi}
+              onChange={(e) => setFillWithAi(e.target.checked)}
+              className="h-4 w-4 accent-accent-primary"
+            />
+            <span>Fill remaining seats with AI</span>
+          </label>
+          {fillWithAi && (
+            <div className="ml-6 flex flex-col gap-1">
+              <label
+                htmlFor="pre-lobby-ai-type"
+                className="text-xs uppercase text-text-secondary"
+                style={{ letterSpacing: '0.08em' }}
+              >
+                AI type
+              </label>
+              <select
+                id="pre-lobby-ai-type"
+                data-testid="pre-lobby-ai-type"
+                value={aiType}
+                onChange={(e) => setAiType(e.target.value as AiTypeValue)}
+                className={inputClass()}
+              >
+                {AI_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-text-secondary">
+                {AI_OPTIONS.find((o) => o.value === aiType)?.hint}
+              </p>
+            </div>
+          )}
+        </div>
 
         {error && (
           <p

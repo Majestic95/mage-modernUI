@@ -511,15 +511,22 @@ export function GameTable({ gameId, gameView, stream }: Props) {
       {/* F2 (audit W6, 2026-05-04) — floating CommanderDamageTracker
           dock for variant=tabletop. Side panel is forced collapsed
           for tabletop (P4) which hid the in-panel tracker; Commander
-          format requires this surface. Mirrors the action dock's
-          chrome, mounted at viewport bottom-LEFT (right side is taken
-          by the action dock + floating mana pool). The tracker
-          itself returns null when there's no commander game, so
-          non-Commander matches see nothing. */}
+          format requires this surface. Tracker auto-returns null
+          when there's no commander game, so non-Commander matches
+          see nothing.
+
+          2026-05-04 reposition (user direction): was bottom-LEFT,
+          overlapping the local user's commander zone in the bottom
+          pod. Moved to bottom-RIGHT, stacked above the action dock.
+          Geometry: action dock = `bottom-3 right-3 min-h-[120px]`
+          (= 132px from viewport bottom at min-height) → tracker
+          `bottom-36` (= 144px) gives a ~12px gap. If dock content
+          pushes height past 120px, the tracker may visually touch;
+          accept for now and revisit with a flex column if it bites. */}
       {REDESIGN && variant === 'tabletop' && gameView && (
         <div
           data-testid="game-table-commander-damage-floating-dock"
-          className="fixed bottom-3 left-3 z-30 w-[clamp(260px,20vw,360px)] max-h-[60vh]
+          className="fixed bottom-36 right-3 z-30 w-[clamp(260px,20vw,360px)] max-h-[55vh]
             rounded-lg bg-bg-elevated/95 backdrop-blur-sm
             border border-zinc-800 shadow-xl overflow-y-auto"
         >

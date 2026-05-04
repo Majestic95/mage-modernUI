@@ -176,12 +176,14 @@ describe('PreLobbyModal', () => {
     const createBody = JSON.parse(
       fetchMock.mock.calls[0]?.[1]?.body as string,
     ) as Record<string, unknown>;
+    // 2026-05-04 — default AI type flipped from COMPUTER_MONTE_CARLO
+    // to COMPUTER_MAD; a dropdown lets the user pick MCTS instead.
     expect(createBody).toMatchObject({
       seats: [
         'HUMAN',
-        'COMPUTER_MONTE_CARLO',
-        'COMPUTER_MONTE_CARLO',
-        'COMPUTER_MONTE_CARLO',
+        'COMPUTER_MAD',
+        'COMPUTER_MAD',
+        'COMPUTER_MAD',
       ],
     });
 
@@ -190,8 +192,69 @@ describe('PreLobbyModal', () => {
       const aiBody = JSON.parse(
         fetchMock.mock.calls[i]?.[1]?.body as string,
       ) as Record<string, unknown>;
+      expect(aiBody).toEqual({ playerType: 'COMPUTER_MAD' });
+    }
+  });
+
+  it('lets the user pick a non-default AI type from the dropdown (Monte Carlo)', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(tableResponse())
+      .mockResolvedValue(new Response(null, { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <PreLobbyModal
+        roomId={ROOM_ID}
+        serverState={SERVER_STATE}
+        onClose={() => {}}
+        onCreated={() => {}}
+      />,
+    );
+
+    // Toggle AI on. The dropdown should now appear.
+    const aiToggle = screen
+      .getByTestId('pre-lobby-ai-toggle')
+      .querySelector('input[type="checkbox"]') as HTMLInputElement;
+    await user.click(aiToggle);
+
+    const aiTypeSelect = screen.getByTestId('pre-lobby-ai-type') as HTMLSelectElement;
+    expect(aiTypeSelect.value).toBe('COMPUTER_MAD');
+    await user.selectOptions(aiTypeSelect, 'COMPUTER_MONTE_CARLO');
+
+    await user.click(screen.getByTestId('pre-lobby-create'));
+
+    // Default 4 players → 3 AI fills (slot 0 = HUMAN host).
+    const createBody = JSON.parse(
+      fetchMock.mock.calls[0]?.[1]?.body as string,
+    ) as Record<string, unknown>;
+    expect(createBody).toMatchObject({
+      seats: [
+        'HUMAN',
+        'COMPUTER_MONTE_CARLO',
+        'COMPUTER_MONTE_CARLO',
+        'COMPUTER_MONTE_CARLO',
+      ],
+    });
+    for (let i = 1; i <= 3; i++) {
+      const aiBody = JSON.parse(
+        fetchMock.mock.calls[i]?.[1]?.body as string,
+      ) as Record<string, unknown>;
       expect(aiBody).toEqual({ playerType: 'COMPUTER_MONTE_CARLO' });
     }
+  });
+
+  it('hides the AI-type dropdown when "Fill with AI" is unchecked', () => {
+    render(
+      <PreLobbyModal
+        roomId={ROOM_ID}
+        serverState={SERVER_STATE}
+        onClose={() => {}}
+        onCreated={() => {}}
+      />,
+    );
+    expect(screen.queryByTestId('pre-lobby-ai-type')).not.toBeInTheDocument();
   });
 
   it('clamps player count to the selected mode min/max', async () => {
