@@ -91,13 +91,17 @@ export function TabletopCommanderSlot({ player }: { player: WebPlayerView }) {
 
   // Full art treatment — small rounded card thumbnail with the
   // commander's art_crop. Card-aspect-ratio container (~5:7).
+  // Slice B-12-E — hover affordance signals the slot will be
+  // clickable to cast once the engine-priority-dispatch wiring
+  // lands (deferred slice). cursor-pointer + hover ring telegraph
+  // "interactive" without the onClick yet.
   return (
     <div
       data-testid="tabletop-commander-slot"
       data-player-id={player.playerId}
       data-state="art"
-      title={commander.name}
-      className="rounded-md border-2 border-zinc-600 bg-zinc-900 shadow-lg overflow-hidden"
+      title={`${commander.name} — click to cast (engine wiring TODO)`}
+      className="rounded-md border-2 border-zinc-600 bg-zinc-900 shadow-lg overflow-hidden cursor-pointer hover:ring-2 hover:ring-fuchsia-400 transition-shadow"
       style={{ width: '90px', height: '64px' }}
     >
       <img
