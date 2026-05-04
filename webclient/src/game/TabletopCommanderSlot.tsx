@@ -21,15 +21,26 @@
 import type { WebPlayerView } from '../api/schemas';
 import { scryfallCommanderImageUrl } from './scryfall';
 import { usePlayerCommanders } from './usePlayerCommanders';
+import { filterCommanders } from './commanderPredicates';
 
 export function TabletopCommanderSlot({ player }: { player: WebPlayerView }) {
+  // `usePlayerCommanders` returns from snapshot ∪ live commandList —
+  // it surfaces the commander even after it leaves the command zone
+  // (cast, exiled, etc.) per slice 70-X.14's snapshot fallback.
+  // For the slot's empty-vs-on-battlefield distinction we ALSO need
+  // the live commandList to know if the commander is *currently* in
+  // the command zone (and therefore cast'able from the slot).
   const commanders = usePlayerCommanders(player);
   const commander = commanders[0] ?? null;
+  const liveCommanders = filterCommanders(player.commandList);
+  const inCommandZone = liveCommanders.length > 0;
   const imageUrl = commander
     ? scryfallCommanderImageUrl(commander, 'art_crop')
     : null;
 
-  // No commander → "Commander" text placeholder (existing B-12-A look).
+  // No commander known at all (snapshot empty AND commandList empty)
+  // → bright "Commander" placeholder. Pre-game / non-Commander
+  // formats / fixture without commandList land here.
   if (!commander) {
     return (
       <div
@@ -38,6 +49,25 @@ export function TabletopCommanderSlot({ player }: { player: WebPlayerView }) {
         data-state="empty"
         title="Commander"
         className="rounded border-2 border-zinc-600 bg-zinc-900/80 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-300 shadow-lg"
+      >
+        Commander
+      </div>
+    );
+  }
+
+  // Commander known but NOT currently in the command zone (snapshot
+  // has it; live commandList doesn't) → on battlefield (or graveyard
+  // / exile / library — anywhere except command zone). Per element #5
+  // spec, render a faint "Commander" label so the slot keeps its
+  // visual presence but signals nothing-to-cast-from-here.
+  if (!inCommandZone) {
+    return (
+      <div
+        data-testid="tabletop-commander-slot"
+        data-player-id={player.playerId}
+        data-state="on-battlefield"
+        title={`${commander.name} (not in command zone)`}
+        className="rounded border-2 border-dashed border-zinc-700 bg-zinc-900/40 px-3 py-2 text-[10px] uppercase tracking-wider text-zinc-500 shadow-md"
       >
         Commander
       </div>
