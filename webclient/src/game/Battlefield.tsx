@@ -246,7 +246,10 @@ export function Battlefield({
           // bg-zinc-950/40 fill. Reads as a defined surface rather
           // than pods floating in void.
           (variant === 'tabletop'
-            ? 'flex-1 min-h-0 p-4 pb-56 grid gap-4 rounded-xl ' +
+            ? // Polish-pass P8 (audit should-close #10): bump
+              // bottom-padding pb-56 → pb-64 so the bottom pod has
+              // +32px clearance over the floating hand fan.
+              'flex-1 min-h-0 p-4 pb-64 grid gap-4 rounded-xl ' +
               'border-2 border-zinc-800 ring-1 ring-zinc-700/50 ring-inset ' +
               'bg-zinc-950/40 shadow-[inset_0_0_60px_rgba(0,0,0,0.55)]'
             : 'flex-1 min-h-0 p-4 pb-56 grid gap-4')
