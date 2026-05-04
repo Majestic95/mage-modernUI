@@ -11,6 +11,7 @@ import { slow } from '../animation/debug';
 import { ELIMINATION_SLASH } from '../animation/transitions';
 import { formatColorIdentity } from './PlayerFrame.helpers';
 import { useGameStore } from './store';
+import { useLayoutVariant } from '../layoutVariants';
 
 /**
  * Slice 70-Z (P2 audit) — extracted from PlayerFrame.tsx so the
@@ -75,6 +76,8 @@ export function PlayerFrameRedesigned({
   // their battlefield rows).
   void position;
   const portraitSize = perspective === 'self' ? 'large' : 'medium';
+  const variant = useLayoutVariant();
+  const isTabletop = variant === 'tabletop';
 
   // Bug fix (2026-05-01) — colorIdentity snapshot fallback for the
   // SR label. PlayerPortrait below applies the same fallback for its
@@ -200,14 +203,28 @@ export function PlayerFrameRedesigned({
               portrait's bottom edge (badge half-height = bottom
               offset). h-10 = 40px → -bottom-5 (=-20px); h-8 = 32px
               → -bottom-4 (=-16px). */}
+        {/* Polish-pass P10 (audit nice-to-have #12, spec §9.4 "plain
+            number, no shield/heart") — for variant=tabletop drop the
+            disc chrome (bg / ring / shadow) and rely on a strong text
+            shadow for legibility against arbitrary portrait art. The
+            sizing slot stays the same so positioning relative to the
+            portrait doesn't shift. variant=current keeps the badge. */}
         <div
           data-testid={`life-numeral-${perspective}`}
           aria-hidden="true"
           className={
-            'absolute left-1/2 -translate-x-1/2 z-10 flex items-center justify-center rounded-full bg-zinc-900 ring-2 ring-zinc-700 shadow-lg font-bold text-white tabular-nums leading-none ' +
+            'absolute left-1/2 -translate-x-1/2 z-10 flex items-center justify-center rounded-full font-bold text-white tabular-nums leading-none ' +
+            (isTabletop
+              ? ''
+              : 'bg-zinc-900 ring-2 ring-zinc-700 shadow-lg ') +
             (perspective === 'self'
               ? 'h-10 w-10 -bottom-5 text-base'
               : 'h-8 w-8 -bottom-4 text-sm')
+          }
+          style={
+            isTabletop
+              ? { textShadow: '0 1px 3px rgba(0,0,0,0.95), 0 0 6px rgba(0,0,0,0.85)' }
+              : undefined
           }
         >
           {player.life}

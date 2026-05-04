@@ -52,15 +52,39 @@ const BUCKET_LABELS = {
 
 type BucketKind = keyof typeof BUCKET_LABELS;
 
+// Polish-pass P11 (audit nice-to-have #13, 2026-05-03) — bucket
+// border tinted by commander color identity at ~30% alpha so the
+// "whose pod is this" wayfinding signal returns without re-flooding
+// the zones with color (the user's earlier "remove the colors under
+// each zone" directive stands). First color of identity wins for
+// multi-color; empty identity falls back to a neutral gold.
+const COLOR_TINT_RGBA: Record<string, string> = {
+  W: 'rgba(255, 245, 205, 0.45)',
+  U: 'rgba(150, 190, 235, 0.45)',
+  B: 'rgba(180, 160, 200, 0.45)',
+  R: 'rgba(225, 140, 140, 0.45)',
+  G: 'rgba(150, 200, 150, 0.45)',
+};
+const COLORLESS_TINT_RGBA = 'rgba(245, 230, 180, 0.35)';
+
+function tintForIdentity(colorIdentity: readonly string[]): string {
+  if (colorIdentity.length === 0) return COLORLESS_TINT_RGBA;
+  const first = colorIdentity[0]!;
+  return COLOR_TINT_RGBA[first] ?? COLORLESS_TINT_RGBA;
+}
+
 export function TabletopBuckets({
   buckets,
   position,
   playerName,
+  colorIdentity,
 }: {
   buckets: TabletopBucketsData;
   position: PlayerAreaPosition;
   playerName: string;
+  colorIdentity: readonly string[];
 }) {
+  const tint = tintForIdentity(colorIdentity);
   // Buckets stack along the pod's LONG axis. Top/bottom pods are
   // wide-horizontal so buckets line up left-to-right (flex-row).
   // Left/right pods are tall-vertical so buckets stack top-to-
@@ -88,6 +112,7 @@ export function TabletopBuckets({
         cards={buckets.lands}
         flexBasis="25%"
         onOpen={() => setOpenKind('lands')}
+        borderTint={tint}
       />
       <BucketBox
         kind="creatures"
@@ -95,6 +120,7 @@ export function TabletopBuckets({
         cards={buckets.creatures}
         flexBasis="50%"
         onOpen={() => setOpenKind('creatures')}
+        borderTint={tint}
       />
       <BucketBox
         kind="artifactsEnchantments"
@@ -102,6 +128,7 @@ export function TabletopBuckets({
         cards={buckets.artifactsEnchantments}
         flexBasis="25%"
         onOpen={() => setOpenKind('artifactsEnchantments')}
+        borderTint={tint}
       />
       {openKind !== null && (
         <ZoneBrowser
@@ -132,12 +159,14 @@ function BucketBox({
   cards,
   flexBasis,
   onOpen,
+  borderTint,
 }: {
   kind: 'lands' | 'creatures' | 'artifactsEnchantments';
   label: string;
   cards: readonly WebPermanentView[];
   flexBasis: string;
   onOpen: () => void;
+  borderTint: string;
 }) {
   // Fixed flex-basis pinned to the percentage; flex-grow:0 +
   // flex-shrink:0 lock the bucket to that height regardless of
@@ -154,8 +183,8 @@ function BucketBox({
       // Dropped the bucket's own bg-zinc-900/30 so the underlying
       // commander-identity gradient shows through (eliminates a
       // dim-overlay-on-color muddying the zone color).
-      className="flex-shrink-0 flex-grow-0 min-h-0 min-w-0 relative rounded border border-zinc-500/70 overflow-hidden"
-      style={{ flexBasis }}
+      className="flex-shrink-0 flex-grow-0 min-h-0 min-w-0 relative rounded border overflow-hidden"
+      style={{ flexBasis, borderColor: borderTint }}
     >
       {/* Label is a click target — opens a ZoneBrowser modal listing
           every card in this bucket at full size (user direction

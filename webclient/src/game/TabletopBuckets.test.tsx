@@ -67,7 +67,7 @@ const BUCKETS = {
 describe('TabletopBuckets — bucket-title modal', () => {
   it('renders no ZoneBrowser by default', () => {
     render(
-      <TabletopBuckets buckets={BUCKETS} position="bottom" playerName="alice" />,
+      <TabletopBuckets buckets={BUCKETS} position="bottom" playerName="alice" colorIdentity={[]} />,
     );
     expect(screen.queryByTestId('zone-browser')).toBeNull();
   });
@@ -75,7 +75,7 @@ describe('TabletopBuckets — bucket-title modal', () => {
   it('clicking the Lands label opens a ZoneBrowser titled with player + bucket name', async () => {
     const user = userEvent.setup();
     render(
-      <TabletopBuckets buckets={BUCKETS} position="bottom" playerName="alice" />,
+      <TabletopBuckets buckets={BUCKETS} position="bottom" playerName="alice" colorIdentity={[]} />,
     );
     await user.click(screen.getByTestId('tabletop-bucket-lands-label'));
     const browser = screen.getByTestId('zone-browser');
@@ -87,7 +87,7 @@ describe('TabletopBuckets — bucket-title modal', () => {
   it('switching from one bucket to another swaps the open modal contents', async () => {
     const user = userEvent.setup();
     render(
-      <TabletopBuckets buckets={BUCKETS} position="bottom" playerName="alice" />,
+      <TabletopBuckets buckets={BUCKETS} position="bottom" playerName="alice" colorIdentity={[]} />,
     );
     await user.click(screen.getByTestId('tabletop-bucket-lands-label'));
     expect(screen.getByTestId('zone-browser').textContent).toContain('Lands');
@@ -101,7 +101,7 @@ describe('TabletopBuckets — bucket-title modal', () => {
   it('clicking the close button dismisses the modal', async () => {
     const user = userEvent.setup();
     render(
-      <TabletopBuckets buckets={BUCKETS} position="bottom" playerName="alice" />,
+      <TabletopBuckets buckets={BUCKETS} position="bottom" playerName="alice" colorIdentity={[]} />,
     );
     await user.click(screen.getByTestId('tabletop-bucket-creatures-label'));
     expect(screen.getByTestId('zone-browser')).toBeInTheDocument();
