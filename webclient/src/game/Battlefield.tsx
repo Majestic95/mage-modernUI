@@ -315,6 +315,29 @@ export function Battlefield({
           const wrapperStyle = podCardSizeVars
             ? { gridArea: area, ...podCardSizeVars }
             : { gridArea: area };
+          // Slice B-9-B — for variant=tabletop, opponent pods use
+          // the slotPart split (rows + frame) so the colored
+          // battlefield zone fills 100% of the cell uniformly
+          // across all four pods (load-bearing rule T1
+          // enforced symmetrically). PlayerFrame mounts as a
+          // sibling, absolute-positioned at the OUTER edge of the
+          // cell per orientation (element #9 spec). variant=current
+          // keeps the existing single-PlayerArea render that puts
+          // the frame inside the cell.
+          const isTabletop = variant === 'tabletop';
+          // Outer-edge frame anchor per pod orientation. Translate
+          // values move the frame OUTSIDE the cell boundary so it
+          // sits beyond the colored zone, matching the reference
+          // image's "portrait on the outer edge" composition.
+          const frameAnchorClass = isTabletop
+            ? area === 'top'
+              ? 'absolute left-1/2 top-0 -translate-x-1/2 -translate-y-full pb-2 z-10'
+              : area === 'left'
+                ? 'absolute top-1/2 left-0 -translate-x-full -translate-y-1/2 pr-2 z-10'
+                : area === 'right'
+                  ? 'absolute top-1/2 right-0 translate-x-full -translate-y-1/2 pl-2 z-10'
+                  : ''
+            : '';
           return (
             <div
               key={p.playerId}
@@ -322,7 +345,11 @@ export function Battlefield({
               data-side-pod={isSidePod || undefined}
               data-bounded={isSidePod ? 'true' : undefined}
               data-shrunk={podCardSizeVars ? 'true' : undefined}
-              className={'min-w-0' + (isSidePod ? sidePodClasses : '')}
+              className={
+                'min-w-0' +
+                (isSidePod ? sidePodClasses : '') +
+                (isTabletop ? ' relative h-full w-full' : '')
+              }
             >
               <PlayerArea
                 player={p}
@@ -344,7 +371,30 @@ export function Battlefield({
                 onBoardDrop={onBoardDrop}
                 // Slice 69b (D13) — clockwise tab order preserved.
                 tabIndex={10 + idx}
+                // Slice B-9-B — tabletop renders only the rows part
+                // here so the colored battlefield zone fills the
+                // whole cell. The frame mounts as a sibling below.
+                {...(isTabletop ? { slotPart: 'rows' as const } : {})}
               />
+              {isTabletop && (
+                <div className={frameAnchorClass}>
+                  <PlayerArea
+                    player={p}
+                    perspective="opponent"
+                    position={area}
+                    canAct={canAct}
+                    onObjectClick={onObjectClick}
+                    targetable={eligibleTargetIds.has(p.playerId)}
+                    eligibleTargetIds={eligibleTargetIds}
+                    eligibleCombatIds={eligibleCombatIds}
+                    combatRoles={combatRoles}
+                    isDropTarget={false}
+                    onBoardDrop={() => {}}
+                    tabIndex={10 + idx}
+                    slotPart="frame"
+                  />
+                </div>
+              )}
             </div>
           );
         })}
