@@ -1,4 +1,3 @@
-import type { CSSProperties } from 'react';
 import { bucketBattlefield, rowOrder } from './battlefieldRows';
 import type { WebPlayerView } from '../api/schemas';
 import { CommandZone } from './CommandZone';
@@ -6,8 +5,6 @@ import { PlayerFrame } from './PlayerFrame';
 import { BattlefieldRowGroup } from './BattlefieldRowGroup';
 import { REDESIGN } from '../featureFlags';
 import { useLayoutVariant } from '../layoutVariants';
-import { computeTabletopZoneBackground } from './halo';
-import { useGameStore } from './store';
 import { partitionForTabletop } from './tabletopBattlefieldLayout';
 import { TabletopBuckets } from './TabletopBuckets';
 
@@ -120,30 +117,7 @@ export function PlayerArea({
   // board with one Forest shows just the lands row.
   const rows = bucketBattlefield(battlefield);
 
-  // Slice B-1.5 (variant=tabletop) — per-pod commander-identity zone
-  // background. Mirrors the OpponentLane/LocalPod consumer pattern
-  // from slice B-1; current rendering is unchanged because the style
-  // is undefined for variant !== 'tabletop'. Color-identity resolution
-  // mirrors PlayerPortrait's pattern (slice 70-J): prefer the live
-  // colorIdentity from the wire; fall back to gameStore snapshot when
-  // the live value is empty.
   const variant = useLayoutVariant();
-  const colorIdentitySnapshot = useGameStore(
-    (s) => s.colorIdentitySnapshots?.[player.playerId],
-  );
-  const resolvedColorIdentity =
-    player.colorIdentity && player.colorIdentity.length > 0
-      ? player.colorIdentity
-      : (colorIdentitySnapshot ?? player.colorIdentity ?? []);
-  const tabletopZoneStyle: CSSProperties | undefined =
-    variant === 'tabletop'
-      ? {
-          background: computeTabletopZoneBackground(
-            resolvedColorIdentity,
-            player.hasLeft,
-          ),
-        }
-      : undefined;
   const orderedRows = rowOrder(perspective);
   // Slice 70-Z.1 critic Tech IMP-1 — `rowOrder` was narrowed to the
   // two MAIN rows (creatures + lands) for the redesigned per-pod
@@ -485,14 +459,6 @@ export function PlayerArea({
         data-testid="battlefield-area"
         data-tabletop-zone={variant === 'tabletop' || undefined}
         className={battlefieldAreaClass}
-        // Slice B-9-A — for variant=tabletop, the colored commander-
-        // identity gradient lives HERE (the innermost battlefield
-        // content wrapper) rather than on the outer pod wrapper.
-        // Result: PlayerFrame (portrait + name + zone counters) sits
-        // OUTSIDE the colored zone in the transparent outer wrapper,
-        // matching the reference image's "portrait on the outer
-        // edge of each pod, colored zone wraps cards only" structure.
-        style={tabletopZoneStyle}
       >
         {variant === 'tabletop' && tabletopBuckets ? (
           <TabletopBuckets buckets={tabletopBuckets} position={position} />
@@ -562,7 +528,6 @@ export function PlayerArea({
             // the default render path).
             (variant === 'tabletop' ? ' h-full w-full flex flex-col' : '')
           }
-          style={tabletopZoneStyle}
         >
           {battlefieldAreaRedesign}
         </div>
