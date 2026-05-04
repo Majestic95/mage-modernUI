@@ -435,16 +435,17 @@ export function PlayerArea({
     //   artifacts right).
     // - Left/Right (horizontal pod): vertical split (main top,
     //   artifacts bottom).
-    // Slice B-9-A.2 — for variant=tabletop, append `flex-1 w-full
-    // h-full` so the battlefield-area (which carries the colored
-    // zone gradient) fills its parent pod's available space
-    // regardless of card content. Without this, an empty pod's
-    // colored zone collapses to the placeholder caption's intrinsic
-    // size, violating load-bearing rule T1 ("zones are fixed
-    // dimensional anchors"). variant=current keeps existing
-    // content-driven sizing.
-    const tabletopFillClass =
-      variant === 'tabletop' ? ' flex-1 w-full h-full' : '';
+    // Slice B-9-A.4 (revised from .2) — battlefield-area gets
+    // `flex-1` only, no explicit `h-full w-full`. The earlier .2
+    // attempt added all three but they conflict in flex layouts
+    // (h-full says "100% of parent" while flex-1 says "grow to
+    // remainder" — different browsers resolve differently). flex-1
+    // alone is sufficient: in flex-col parents (top/bottom pods)
+    // it grows the main axis vertically; cross axis stretches via
+    // align-items default. In flex-row parents (left/right pods)
+    // same shape on the horizontal axis. Enforces T1 ("zones are
+    // fixed dimensional anchors") without conflicting properties.
+    const tabletopFillClass = variant === 'tabletop' ? ' flex-1' : '';
     const battlefieldAreaClass =
       (isVertical
         ? 'flex flex-row gap-2 min-w-0 min-h-0'
@@ -528,7 +529,16 @@ export function PlayerArea({
             'transition-colors ' +
             (isDropTarget
               ? 'rounded ring-2 ring-fuchsia-500/40 outline outline-dashed outline-fuchsia-500'
-              : '')
+              : '') +
+            // Slice B-9-A.4 — slotPart='rows' wrapper (used by the
+            // bottom pod's split mount per slice 70-Z polish round
+            // 17) needs to fill its grid cell when variant=tabletop.
+            // Without this, the wrapper is content-sized and
+            // battlefield-area's flex-1 has nothing to claim — the
+            // colored zone collapses to a thin strip (T1 violation
+            // visible in the bottom pod even after B-9-A.3 fixed
+            // the default render path).
+            (variant === 'tabletop' ? ' h-full w-full flex flex-col' : '')
           }
           style={tabletopZoneStyle}
         >
