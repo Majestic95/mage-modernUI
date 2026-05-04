@@ -1,0 +1,56 @@
+═══ XMAGE LOAD-BEARING RULES — APPLY THIS TURN ═══
+
+1. **BREAKAGE ANALYSIS BEFORE CODING — ALWAYS, NO EXCEPTIONS.**
+   Before any Edit/Write, write: scope lock / what's changing / what could break / edge cases / schema impact / upstream rebase impact / test plan. Even trivial changes get a one-sentence version. Skipping is never acceptable. If you catch yourself coding without this written, STOP and write it.
+
+2. **Pick critic tier at recon and log the slice.**
+   Tier = mechanical / standard / architectural / trivial — chosen in the scope brief. After commit, append a row to docs/decisions/critic-pass-log.md noting which specialists ran + which were skipped + why. Don't escalate "to be safe."
+
+3. **DTO firewall is sacred.**
+   No `mage.view.*` types in WebApi public method signatures, public fields, or any JSON. Hand-written DTOs only. Mappers translate.
+
+4. **Schema bump on every breaking wire change.**
+   Bump `schemaVersion` → update `docs/schema/` snapshot → update client zod schemas → write migration note in `docs/schema/CHANGELOG.md`. All four, or none.
+
+5. **File size discipline.**
+   Soft cap 400 LOC, hard cap 500. If a file is trending past 400, plan the split now — don't wait. Documented exception comment required for any overshoot.
+
+6. **pnpm, not npm, in webclient/.**
+   `pnpm install`, `pnpm dev`, `pnpm test`, `pnpm typecheck`, `pnpm lint`. Never `npm`.
+
+7. **Checkpoint commit before risky debugging.**
+   Before any non-trivial debug session, commit working state ("wip: pre-debug snapshot"). Gives a clean revert point.
+
+8. **Never push to upstream remote.**
+   `origin` only. The `upstream` push URL is disabled — if you see a push fail, that's the safety net, not a bug to work around.
+
+═══════════════════════════════════════════════════
+
+═══ VARIANT-TABLETOP LOAD-BEARING RULES — APPLY WHEN TOUCHING TABLETOP WORK ═══
+
+The active layout-variant work is `tabletop` (`?variant=tabletop`). These rules are project-specific decisions that override default REDESIGN behavior. Forgetting any one of them produces a structural bug. Source of truth: `docs/design/variant-tabletop.md` "Load-bearing decisions" section.
+
+T1. **Zones are FIXED dimensional anchors. Cards inside adapt.**
+    Pod-zone footprints (the colored rectangles) do NOT shrink/expand based on how full they are. Empty pods still render the colored zone at full layout size. Cards inside adapt via shrink → stack (10% peek) → vertical scroll (last resort). Mechanism: 4-pod grid uses fixed percentages / fr units, NOT `auto` or `max-content`.
+
+T2. **Action panel floats; never displaces the layout.**
+    Bottom-right morphing ActionButton sits as `position: fixed` overlay with high z-index + drop shadow. NOT a grid-cell participant. Pods underneath go edge-to-edge.
+
+T3. **Cards render full Scryfall art via existing `<CardFace>`.**
+    No simplification. The featureless rectangles in the reference screenshot were lo-res rendering, not an intentional spec.
+
+T4. **Target viewport: 1440p (2560×1440).**
+    Cross-resize stability is NOT a goal. Sub-1440p / super-1440p degradation acceptable.
+
+T5. **No engine code. No wire-format change. No schemaVersion bump.**
+    All variant work in `webclient/`. Java side untouched. Variant is a runtime URL knob.
+
+T6. **Fixture-mode-first.**
+    Iterate against `?game=fixture&variant=tabletop`. Production game window keeps `current` until graduation cutover.
+
+T7. **Cross/plus 4-pod arrangement.**
+    Top opp + left opp + right opp + bottom user, with central focal area. NOT asymmetric-T (3 vertical stacked lanes) which is `current`'s default. Battlefield.tsx routes `variant === 'tabletop'` through the legacy 4-pod grid path.
+
+Before any tabletop slice's breakage analysis: explicitly verify the proposed change respects T1-T7. If unsure, re-read `docs/design/variant-tabletop.md` "Load-bearing decisions" section.
+
+═══════════════════════════════════════════════════
