@@ -24,12 +24,14 @@
  * the 500-LOC hard cap (App.tsx hit 509 LOC pre-extraction with no
  * documented exception).
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { LayoutGroup, MotionConfig } from 'framer-motion';
 import { GameHeader } from '../game/GameHeader';
 import { GameTable } from '../game/GameTable';
 import { buildDemoGameView } from '../game/devFixtures';
 import { VariantSwitcher } from '../game/VariantSwitcher';
+import { useGameStore } from '../game/store';
+import { useAuthStore } from '../auth/store';
 import {
   LayoutVariantProvider,
   getActiveVariant,
@@ -46,6 +48,28 @@ export function DemoGame() {
   const [variant, setVariant] = useState<LayoutVariant>(() =>
     getActiveVariant(),
   );
+
+  // Z3 (2026-05-03) — write the fixture gameView into useGameStore
+  // and seed a fake auth session so components that read directly
+  // from the stores (ActionButton, MyHand priority indicator, etc.)
+  // light up in fixture mode. Without this, ActionButton returned
+  // null because both `gameView` and `session` selectors resolved
+  // to null and the user couldn't see the morphing "Next Step"
+  // button. Username matches the fixture's MAJEST1C so the
+  // myPriority derivation reads true.
+  useEffect(() => {
+    useGameStore.setState({ gameView, connection: 'open' });
+    useAuthStore.setState({
+      session: {
+        schemaVersion: '1.15',
+        token: 'tok-fixture',
+        username: gameView.players.find((p) => p.playerId === gameView.myPlayerId)?.name ?? 'MAJEST1C',
+        isAnonymous: true,
+        isAdmin: false,
+        expiresAt: '2099-01-01T00:00:00Z',
+      },
+    });
+  }, [gameView]);
 
   const onVariantChange = (next: LayoutVariant) => {
     setVariantInUrl(next);
