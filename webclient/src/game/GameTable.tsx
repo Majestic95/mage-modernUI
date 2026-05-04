@@ -25,6 +25,7 @@ import {
 import { isBoardClickable, routeObjectClick } from './clickRouter';
 import { useDragState } from './useDragState';
 import { useGameStore } from './store';
+import { useLayoutVariant } from '../layoutVariants';
 import { CommanderColorsProvider } from './useCommanderColors';
 import { buildOnSpendMana } from './manaPaymentAdapter';
 
@@ -143,7 +144,13 @@ export function GameTable({ gameId, gameView, stream }: Props) {
   // side panel column is removed from the grid template, freeing the
   // space for battlefield + hand. Reads from the store; flips on
   // header click (REDESIGN only).
-  const sidePanelCollapsed = useGameStore((s) => s.sidePanelCollapsed);
+  // Polish-pass P4 (audit must-close #5, 2026-05-03) — variant=tabletop
+  // forces the panel collapsed regardless of store state, so the play
+  // surface gets the full viewport width per the reference. The store
+  // flag is ignored under tabletop; in `current` it still rules.
+  const variant = useLayoutVariant();
+  const sidePanelCollapsedRaw = useGameStore((s) => s.sidePanelCollapsed);
+  const sidePanelCollapsed = variant === 'tabletop' || sidePanelCollapsedRaw;
   const me = useMemo(
     () => gameView.players.find((p) => p.playerId === gameView.myPlayerId) ?? null,
     [gameView.players, gameView.myPlayerId],
