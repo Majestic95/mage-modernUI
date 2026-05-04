@@ -38,6 +38,7 @@
  * card rendering inside each bucket is deferred to B-13-C.
  */
 import { useState } from 'react';
+import { motion } from 'framer-motion';
 import type { PlayerAreaPosition } from './PlayerArea';
 import type { TabletopBuckets as TabletopBucketsData } from './tabletopBattlefieldLayout';
 import type { WebCardView, WebPermanentView } from '../api/schemas';
@@ -289,47 +290,57 @@ function BucketBox({
             const isEligibleCombat = eligibleCombatIds?.has(p.card.id) ?? false;
             const combatRole = combatRoles?.get(p.card.id);
             const clickable = canAct && !!onObjectClick;
+            // G7 (2026-05-04) — wrap each tabletop bucket card with
+            // a `<motion.div layoutId={p.card.cardId} layout>` so
+            // Framer animates cross-zone glides into the bucket's
+            // rendered position (hand → stack → bucket, etc.).
+            // `cardId` is the stable cross-zone identity (per
+            // schemas.ts: "For non-stack zones cardId === id;
+            // stack-resolution may bump id but cardId stays put").
+            // Mirrors BattlefieldRowGroup.tsx's `motion.div
+            // layoutId={host.card.cardId}` pattern. Without this,
+            // cards popped into the bucket without an entrance glide.
+            const layoutId = p.card.cardId || undefined;
             return (
-              // G6 (2026-05-04) — wrap the click target in
-              // HoverCardDetail so hovering / focusing a tabletop
-              // battlefield card surfaces the full Scryfall card
-              // popover (rules text, full art, type line). Mirrors
-              // BattlefieldTile's wrap pattern. HoverCardDetail's
-              // outer `<span class="relative inline-flex">` becomes
-              // the new immediate flex child of the row; peek-
-              // stacking utility `[&>*+*]:-ml-[48px]` still applies
-              // (it targets ANY child element type).
-              <HoverCardDetail key={p.card.id} card={p.card}>
-                <button
-                  type="button"
-                  data-permanent-id={p.card.id}
-                  data-tapped={p.tapped || undefined}
-                  data-combat-eligible={isEligibleCombat || undefined}
-                  data-combat-role={combatRole ?? undefined}
-                  data-targetable={isEligibleTarget || undefined}
-                  disabled={!clickable}
-                  onClick={
-                    clickable && onObjectClick
-                      ? () => onObjectClick(p.card.id)
-                      : undefined
-                  }
-                  className={
-                    'block p-0 m-0 bg-transparent border-0 outline-none ' +
-                    (clickable ? 'cursor-pointer' : 'cursor-default')
-                  }
-                  aria-label={p.card.name}
-                >
-                  <CardFace
-                    card={p.card}
-                    size="battlefield"
-                    perm={p}
-                    tapped={p.tapped}
-                    isEligibleCombat={isEligibleCombat}
-                    combatRole={combatRole ?? null}
-                    targetableForDialog={isEligibleTarget}
-                  />
-                </button>
-              </HoverCardDetail>
+              <motion.div
+                key={p.card.id}
+                layout
+                layoutId={layoutId}
+                data-layout-id={layoutId}
+                data-card-id={p.card.cardId || undefined}
+              >
+                <HoverCardDetail card={p.card}>
+                  <button
+                    type="button"
+                    data-permanent-id={p.card.id}
+                    data-tapped={p.tapped || undefined}
+                    data-combat-eligible={isEligibleCombat || undefined}
+                    data-combat-role={combatRole ?? undefined}
+                    data-targetable={isEligibleTarget || undefined}
+                    disabled={!clickable}
+                    onClick={
+                      clickable && onObjectClick
+                        ? () => onObjectClick(p.card.id)
+                        : undefined
+                    }
+                    className={
+                      'block p-0 m-0 bg-transparent border-0 outline-none ' +
+                      (clickable ? 'cursor-pointer' : 'cursor-default')
+                    }
+                    aria-label={p.card.name}
+                  >
+                    <CardFace
+                      card={p.card}
+                      size="battlefield"
+                      perm={p}
+                      tapped={p.tapped}
+                      isEligibleCombat={isEligibleCombat}
+                      combatRole={combatRole ?? null}
+                      targetableForDialog={isEligibleTarget}
+                    />
+                  </button>
+                </HoverCardDetail>
+              </motion.div>
             );
           })}
         </div>

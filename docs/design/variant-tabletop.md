@@ -386,6 +386,22 @@ We'll cover these as part of the walkthrough; flagging here so you know they're 
 
 ---
 
+## Known issues (graduation-pass — surface them or ignore them per real-play priority)
+
+- **Bottom-right GameDialog vs action dock collision (G8 audit, 2026-05-04).** The library-search / Demonic Tutor variant of `GameDialog` reads `--side-panel-width` for its right offset. With tabletop forcing `sidePanelCollapsed=true` the var resolves to `0px` and the dialog hugs the viewport right edge at `1rem` (~16px), overlapping the floating ActionButton dock at `right-3` (12px). Both share `z-40` so DOM-order wins, but they visually overlap. Edge case (only triggers on tutor / library-search effects); fix when it surfaces in live play, e.g. by adding a tabletop-specific `right-margin = action-dock-width + gutter`.
+
+## Variant-switcher gating (G9 decision, 2026-05-04)
+
+`VariantSwitcher.tsx` stays `import.meta.env.DEV`-gated for now. **Production users opt into tabletop via the `?variant=tabletop` URL flag** (wired in `Game.tsx` since G1). Rationale:
+
+- T6 says production keeps `current` until graduation cutover. A visible production switcher implicitly invites users in before that cutover.
+- Power users + playtesters who want to compare layouts can use the URL flag (or run a dev build).
+- A discoverable user-facing toggle should ship via `SettingsModal` (a "Game window layout" picker) — appropriate AFTER live-game smoke testing validates tabletop is structurally complete, not before. Queued as a future slice (G10 or similar).
+
+Decision is reversible: the gate is one line in `VariantSwitcher.tsx` (`if (!import.meta.env.DEV) return null;`).
+
+---
+
 ## Critic-pass-log + commit references
 
 | Slice | Commit | Element(s) | Critics |

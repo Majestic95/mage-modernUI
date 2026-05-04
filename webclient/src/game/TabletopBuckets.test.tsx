@@ -142,6 +142,15 @@ describe('TabletopBuckets — bucket-title modal', () => {
     expect(onObjectClick).toHaveBeenCalledWith(ELF.card.id);
   });
 
+  it('G7 — each card surfaces `data-layout-id={cardId}` so Framer can glide cross-zone (cardId is the stable cross-zone identity per schemas.ts)', () => {
+    const { container } = render(
+      <TabletopBuckets buckets={BUCKETS} position="bottom" playerName="alice" colorIdentity={[]} />,
+    );
+    expect(container.querySelector(`[data-layout-id="${FOREST.card.cardId}"]`)).toBeInTheDocument();
+    expect(container.querySelector(`[data-layout-id="${ELF.card.cardId}"]`)).toBeInTheDocument();
+    expect(container.querySelector(`[data-layout-id="${RING.card.cardId}"]`)).toBeInTheDocument();
+  });
+
   it('G4 — clicking a card while !canAct does NOT dispatch (silent gate)', async () => {
     const user = userEvent.setup();
     const onObjectClick = vi.fn();
