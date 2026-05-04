@@ -114,22 +114,29 @@ export function buildDemoGameView(): WebGameView {
   const momurId = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
   const allocId = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
 
-  // Slice B-13-C-1 — restored a small varied population per player
-  // to verify type-bucket partition + card rendering inside the
-  // tabletop variant's bucket boxes. Sized small so empty-pod
-  // structure / cluster-orientation / portrait-position layout
-  // iteration screenshots stay readable. Each player gets a mix
-  // of lands + creatures + artifacts/enchantments (and goat gets
-  // a planeswalker + enchantment to verify hybrid partition rules:
-  // PLANESWALKER → creatures bucket; ENCHANTMENT →
-  // artifacts-enchantments bucket).
+  // Slice B-13-D verify — bumped MAJEST1C's board to ~14 permanents
+  // so the 10% peek stacking from B-13-D is visible at scale.
+  // 7 lands → Lands bucket overflow; 5 creatures → Creatures bucket
+  // overflow; 2 artifacts → Artifacts bucket has room. Cards in
+  // overflowing buckets stack with each subsequent card showing
+  // only its leftmost 10%. Other players keep small fixtures so the
+  // contrast is visible (top/bottom ~14 cards stacked vs side ~5
+  // not stacked).
   const meBf: Record<string, WebPermanentView> = bf('MAJEST1C', [
     ['Plains', 'LAND'],
     ['Plains', 'LAND'],
+    ['Plains', 'LAND'],
     ['Mountain', 'LAND'],
+    ['Mountain', 'LAND'],
+    ['Sacred Foundry', 'LAND'],
+    ['Reliquary Tower', 'LAND'],
     ['Soul Warden', 'CREATURE'],
     ['Goblin Guide', 'CREATURE'],
+    ['Monastery Mentor', 'CREATURE'],
+    ['Mother of Runes', 'CREATURE'],
+    ['Elsha, Threefold Master', 'CREATURE'],
     ['Sol Ring', 'ARTIFACT'],
+    ['Mana Crypt', 'ARTIFACT'],
   ]);
 
   // Helper — build a Record<id, card> from a list of [name, kind] pairs
