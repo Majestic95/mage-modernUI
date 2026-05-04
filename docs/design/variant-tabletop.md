@@ -37,7 +37,7 @@ Sequenced by dependency (matches the implementation order — earlier elements u
 | 2 | **Wooden frame chrome** | Outer ornate border around the whole board | `Battlefield.tsx` 4-pod grid (`data-tabletop-frame` attribute + `border-2 border-zinc-800/80 rounded-lg` placeholder) | done (placeholder) | B-2 |
 | 3 | **Per-pod colored zones** | Each pod's full background tinted to its commander color | `asymmetricT.tsx` `OpponentLane` + `LocalPod` (inline `style.background` gated on `useLayoutVariant() === 'tabletop'`) | done | B-1 |
 | 4 | **Type-bucketed battlefield slots** | Lands / Creatures / Artifacts-Enchantments boxes within each pod | New `battlefieldLayout` strategy + new `BattlefieldRow` variant | todo | — |
-| 5 | **Dedicated commander slot** | Top-corner (or zone-corner) box for the commander, separate from creatures | New slot inside the pod variant component | todo | — |
+| 5 | **Dedicated commander slot** | ~~Top-corner box for the commander, separate from creatures~~ **Removed 2026-05-03** — the per-pod commander slot was visually redundant with `PlayerPortrait` (which already renders the commander's `art_crop` as the portrait), and the originally-intended click-to-cast behavior was never wired. Source-of-truth for "is the commander in the command zone?" continues to live on the side-panel `ZoneIcon` chip until a future cast affordance is designed. | Slot mount removed from `Battlefield.tsx`; `TabletopCommanderSlot.tsx` left as orphan for now (dead-code sweep deferred). | done (removed) | B-tabletop-drop-commander-slot (2026-05-03) |
 | 6 | **Graveyard / exile prominence** | Visible boxes in opponent pods (not just user) | Existing `ZoneIcon` repositioned per-pod; possibly larger | todo | — |
 | 7 | **Central focal zone shrink** | "Stack & Turn" tile is smaller and less ornate than current | `StackZone` variant (`StackZone.tabletop.tsx`) | todo | — |
 | 8 | **Phase indicators (TOP strip)** | Full-width top header strip via existing `GameHeader` (which already hosts PhaseTimeline in slice 70-O REDESIGN) | DemoGame mounts GameHeader as sibling above GameTable, mirroring real Game.tsx; production already mounts it the same way | done | B-7 |
@@ -142,7 +142,9 @@ Each element below gets filled in during the walkthrough. Fields per element:
 - **Implementation tier:** architectural (new layout strategy + new test surface).
 - **Critic tier:** Technical + UI + UX (interaction patterns for click/hover when scrolled).
 
-### 5. Dedicated commander slot
+### 5. Dedicated commander slot — REMOVED (2026-05-03)
+
+> **Status: removed.** User direction 2026-05-03: "Can we remove the little commander image by each player portrait? What is that even for?" The slot was rendering visually-redundant commander art (PlayerPortrait already uses the commander's `art_crop` as the portrait), and the originally-planned click-to-cast affordance was never wired (engine priority dispatch was deferred indefinitely). Per-pod commander-slot mounts were dropped from `Battlefield.tsx`; component file `TabletopCommanderSlot.tsx` remains in the tree as an orphan pending a dead-code sweep. **The text below is preserved for historical context (the original element #5 spec)** — do not reintroduce without re-deciding.
 
 - **Source:** Small box per pod showing the commander, positioned at the *outside corner* of each pod relative to the layout center:
   - **TOP opponent:** right of pod (horizontal row's right end).
