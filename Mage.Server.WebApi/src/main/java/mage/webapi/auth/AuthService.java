@@ -153,6 +153,15 @@ public final class AuthService implements AutoCloseable {
     private final int disconnectTimeoutSeconds;
 
     public AuthService(EmbeddedServer embedded, WebSessionStore store) {
+        // F21.6 (audit Corr E1) — startup self-test for the
+        // reflective password-verify path. Fails fast at WebApi
+        // construction if upstream's AuthorizedUser shape has
+        // drifted (renamed fields, type changes). Without this, a
+        // future upstream rebase that renames any of the four
+        // reflected fields would silently break ALL registered-user
+        // logins (verifyPasswordReflective returns false; users see
+        // INVALID_CREDENTIALS indistinguishable from real bad creds).
+        verifyReflectionShapeOrFail();
         this.embedded = embedded;
         this.store = store;
         this.sweeper = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -383,7 +392,17 @@ public final class AuthService implements AutoCloseable {
             // contribution is the wrong-password REJECTION; the right-
             // password ACCEPT path follows in a separate slice that fixes
             // upstream's connectUser interaction.
-            if (!verifyPasswordReflective(stored, password)) {
+            // F21.5 — NFKC normalize the supplied password so a
+            // user who typed "café" (composed) at register time can
+            // sign in with "café" (decomposed) and vice versa.
+            // verifyPasswordReflective re-computes the hash with
+            // password.getBytes(UTF-8); if the bytes differ from
+            // what register stored, it returns false. Normalizing
+            // both sides at the same boundary point ensures the
+            // hash math sees identical input.
+            String normalizedPassword =
+                    java.text.Normalizer.normalize(password, java.text.Normalizer.Form.NFKC);
+            if (!verifyPasswordReflective(stored, normalizedPassword)) {
                 // F21.3 — count this failure toward per-username
                 // lockout so 5 wrong-password attempts trigger a
                 // 15-minute lock (with exponential backoff after).
@@ -505,9 +524,25 @@ public final class AuthService implements AutoCloseable {
         }
         String trimmed = username.trim();
         validateUsername(trimmed);
-        if (password == null || password.length() < 8) {
+        // F21.5 (audit Sec A4) — password length policy.
+        // - Min 8 (NIST SP 800-63B §5.1.1.2 minimum).
+        // - Max 128 (cap a multi-megabyte password to prevent DoS
+        //   amplification via the SHA-256 × 1024 hash loop in
+        //   AuthorizedUserRepository.add()).
+        // - NFKC normalize so users who registered "café" (composed)
+        //   can sign in with "café" (decomposed) too.
+        if (password == null) {
             throw new WebApiException(400, "INVALID_PASSWORD",
                     "Password must be at least 8 characters.");
+        }
+        password = java.text.Normalizer.normalize(password, java.text.Normalizer.Form.NFKC);
+        if (password.length() < 8) {
+            throw new WebApiException(400, "INVALID_PASSWORD",
+                    "Password must be at least 8 characters.");
+        }
+        if (password.length() > 128) {
+            throw new WebApiException(400, "INVALID_PASSWORD",
+                    "Password must be 128 characters or fewer.");
         }
         if (email == null || email.isBlank() || !email.contains("@")) {
             throw new WebApiException(400, "INVALID_EMAIL",
@@ -563,6 +598,51 @@ public final class AuthService implements AutoCloseable {
             }
         }
         LOG.info("User registered: username={}", trimmed);
+    }
+
+    /**
+     * Slice F21.6 (audit Corr E1) — startup self-test for the
+     * reflective password-verify path. Asserts that
+     * {@code AuthorizedUser} still has the four fields
+     * {@link #verifyPasswordReflective} reads, with the expected
+     * types. Throws {@link IllegalStateException} on drift —
+     * surfaces immediately at WebApi construction so an operator
+     * sees the failure at boot rather than discovering it as a
+     * silent INVALID_CREDENTIALS for every registered user.
+     *
+     * <p>This is a SHAPE check, not a full round-trip — running an
+     * actual register+verify cycle at boot would write to the
+     * user_data DB on every restart. The full round-trip is
+     * exercised by {@code AuthServiceRegisterTest}; this is the
+     * production-time canary.
+     */
+    private static void verifyReflectionShapeOrFail() {
+        Class<?> klass = mage.server.AuthorizedUser.class;
+        Object[][] required = {
+                {"salt", String.class},
+                {"password", String.class},
+                {"hashAlgorithm", String.class},
+                {"hashIterations", int.class},
+        };
+        for (Object[] row : required) {
+            String name = (String) row[0];
+            Class<?> expected = (Class<?>) row[1];
+            try {
+                java.lang.reflect.Field f = klass.getDeclaredField(name);
+                if (!f.getType().equals(expected)) {
+                    throw new IllegalStateException(
+                            "Auth self-test failed: AuthorizedUser." + name
+                                    + " has type " + f.getType().getName()
+                                    + " but expected " + expected.getName()
+                                    + ". Upstream shape drifted.");
+                }
+            } catch (NoSuchFieldException ex) {
+                throw new IllegalStateException(
+                        "Auth self-test failed: AuthorizedUser." + name
+                                + " field not found. Upstream shape drifted.",
+                        ex);
+            }
+        }
     }
 
     /**

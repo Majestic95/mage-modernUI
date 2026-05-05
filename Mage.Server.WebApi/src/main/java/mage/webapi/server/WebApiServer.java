@@ -199,6 +199,33 @@ public final class WebApiServer {
         });
 
         registerExceptionHandlers(app);
+        // F21.4 (audit Sec E1) — security response headers on every
+        // response. Runs BEFORE auth so 401/403/429 responses also
+        // carry the headers. Conservative defaults appropriate for
+        // a JSON API + WebSocket server fronted by HTTPS at Vercel
+        // / ngrok edge:
+        //   - HSTS: 2-year max-age + includeSubDomains. preload
+        //     omitted because we don't control the parent domain.
+        //   - X-Content-Type-Options: nosniff (defense against
+        //     MIME-sniffing-based XSS on browsers that ignore the
+        //     Content-Type header).
+        //   - X-Frame-Options: DENY (we never embed in iframes).
+        //   - Referrer-Policy: no-referrer (don't leak game URLs to
+        //     external sites a user might link to).
+        //   - Cross-Origin-Resource-Policy: same-site (limits
+        //     unintended cross-origin reads).
+        // CSP is intentionally NOT set here — the API serves only
+        // JSON and the SPA's CSP is owned by Vercel's static-asset
+        // headers. Setting CSP on the API would be ignored by
+        // browsers (no HTML response) but adds noise.
+        app.before(ctx -> {
+            ctx.header("Strict-Transport-Security",
+                    "max-age=63072000; includeSubDomains");
+            ctx.header("X-Content-Type-Options", "nosniff");
+            ctx.header("X-Frame-Options", "DENY");
+            ctx.header("Referrer-Policy", "no-referrer");
+            ctx.header("Cross-Origin-Resource-Policy", "same-site");
+        });
         app.before(new BearerAuthMiddleware(authService, embedded));
         registerRoutes(app);
         // WebSocket routes do not run through BearerAuthMiddleware —
