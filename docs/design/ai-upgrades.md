@@ -71,7 +71,7 @@ the methods we override still exist with compatible signatures.
 | 3 | **Don't recast commander into tax hell** — refuse recast when tax ≥ 6 and we don't have safe mana headroom | Half-day | Medium | Queued (AI-8.1) |
 | 4 | **Don't wipe your own board** — sanity check before board wipes | 1 day | Medium | Queued (AI-8.1) |
 | 5 | **Lethal short-circuit** — when `CombatUtil.canKillOpponent` says yes, just attack instead of 12s of search | Half-day | Small but visible | Queued (AI-8.2) |
-| 6 | **AI activity telemetry** — count selected actions vs priority handoffs per AI per turn; WARN when empty-tree bug fires | 1 day | Diagnostic | Queued (AI-8.2) |
+| 6 | **AI activity telemetry** — count actions vs priority handoffs per (turn, AI player); WARN when ≥20 passes occur within one turn with 0 actions (empty-tree bug signature) | Half-day | Diagnostic | ✅ AI-8.2 |
 
 **Tier 1 total when complete:** ~5 days, "turns the AI from comically bad
 to passably casual" per the Commander expert agent.

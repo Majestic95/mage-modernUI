@@ -103,6 +103,26 @@ class CommanderComputerPlayer7Test {
     }
 
     @Test
+    void actOverride_isPresent() {
+        // AI-8.2 added a protected act(Game) override for empty-tree
+        // telemetry. The act() method is the inner-loop entry point
+        // for every priority window — if our override is silently
+        // lost (e.g., upstream changes signature), the telemetry
+        // stops measuring and the empty-tree bug becomes invisible
+        // again. Pin the override via reflection.
+        try {
+            var method = CommanderComputerPlayer7.class.getDeclaredMethod(
+                    "act", mage.game.Game.class);
+            assertNotNull(method, "act(Game) override must exist");
+            assertEquals(CommanderComputerPlayer7.class, method.getDeclaringClass(),
+                    "act(Game) must be declared on our subclass — if upstream's "
+                            + "signature changed it would resolve to the parent.");
+        } catch (NoSuchMethodException ex) {
+            throw new AssertionError("act(Game) override missing — telemetry disabled.", ex);
+        }
+    }
+
+    @Test
     void boot_registersOverrideAsComputerMadHandler() {
         // The override is installed in EmbeddedServer.installAiOverrides().
         // Confirm the registration actually replaced the upstream

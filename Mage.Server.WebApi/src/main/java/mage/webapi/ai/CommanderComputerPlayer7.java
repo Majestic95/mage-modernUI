@@ -9,6 +9,7 @@ import mage.player.ai.ComputerPlayerControllableProxy;
 import mage.players.Player;
 import mage.target.Target;
 import mage.watchers.common.CommanderInfoWatcher;
+import org.apache.log4j.Logger;
 
 import java.util.Set;
 import java.util.UUID;
@@ -45,17 +46,24 @@ import java.util.UUID;
  *       commander is lethal regardless of life total. The score
  *       function picks the opponent with the lowest
  *       {@code min(life, 21 - commanderDamageDealtFromOurCommander)} —
- *       i.e., whoever is closest to losing by EITHER clock. An
- *       opponent at 40 life who has taken 16 commander damage from
- *       us scores 5 (ahead of an opponent at 8 life who has taken
- *       0 commander damage, who scores 8). Pile on the closer kill.</li>
+ *       i.e., whoever is closest to losing by EITHER clock.</li>
+ *   <li><b>Empty-tree-bug telemetry</b> (AI-8.2). Counts priority
+ *       handoffs vs. actions executed per turn. Logs a WARN when
+ *       a turn elapses with N consecutive passes and 0 actions —
+ *       the structural signature of the upstream empty-tree bug
+ *       at {@code ComputerPlayer7.java:119}. Pure observability;
+ *       no behavior change. Surfaces how often the bug actually
+ *       fires so we can decide whether further mitigation is
+ *       worth the investment.</li>
  * </ul>
  *
  * Future heuristics (recast-tax thresholds, board-wipe sanity,
- * lethal short-circuit, telemetry) land in subsequent slices — see
+ * lethal short-circuit) land in subsequent slices — see
  * {@code docs/design/ai-upgrades.md} for the full upgrade menu.
  */
 public class CommanderComputerPlayer7 extends ComputerPlayerControllableProxy {
+
+    private static final Logger log = Logger.getLogger(CommanderComputerPlayer7.class);
 
     /**
      * 21 combat damage from a single commander loses the game per
@@ -65,12 +73,30 @@ public class CommanderComputerPlayer7 extends ComputerPlayerControllableProxy {
      */
     private static final int COMMANDER_DAMAGE_LETHAL = 21;
 
+    /**
+     * AI-8.2 telemetry — pass count above which we suspect the
+     * upstream empty-tree bug ({@code ComputerPlayer7.java:119}) is
+     * firing rather than legitimate "I have nothing to do" passes.
+     * Tuned high enough that normal turn cycles (untap/upkeep/draw/
+     * combat-step passes) don't trigger it. Conservative — better
+     * to under-fire and miss some occurrences than to spam logs on
+     * legitimate idle turns.
+     */
+    private static final int EMPTY_TREE_WARN_THRESHOLD = 20;
+
+    private long lastObservedTurnHash = -1L;
+    private int passesThisTurn = 0;
+    private int actionsThisTurn = 0;
+
     public CommanderComputerPlayer7(String name, RangeOfInfluence range, int skill) {
         super(name, range, skill);
     }
 
     public CommanderComputerPlayer7(final CommanderComputerPlayer7 player) {
         super(player);
+        this.lastObservedTurnHash = player.lastObservedTurnHash;
+        this.passesThisTurn = player.passesThisTurn;
+        this.actionsThisTurn = player.actionsThisTurn;
     }
 
     @Override
@@ -198,6 +224,68 @@ public class CommanderComputerPlayer7 extends ComputerPlayerControllableProxy {
      *
      * <p>Package-private for unit-testability.
      */
+    /**
+     * Telemetry for the upstream empty-tree bug
+     * ({@code ComputerPlayer7.java:119}). Counts priority handoffs
+     * vs. actions executed within a single (turn, active player)
+     * tuple. When the count of consecutive empty-action invocations
+     * crosses {@link #EMPTY_TREE_WARN_THRESHOLD} within one turn,
+     * logs a WARN naming the player + turn so the operator can
+     * cross-reference the game log.
+     *
+     * <p>Skips counting in simulation contexts (`game.isSimulation()`)
+     * — the AI's own internal sim-tree calls {@code act} repeatedly
+     * to evaluate hypothetical branches; counting those would flood
+     * with false positives.
+     *
+     * <p>Pure observability — does not change AI behavior. Defers
+     * to super for the actual action invocation either way.
+     */
+    @Override
+    protected void act(Game game) {
+        if (game.isSimulation()) {
+            super.act(game);
+            return;
+        }
+        long currentTurnHash = computeTurnHash(game);
+        if (currentTurnHash != lastObservedTurnHash) {
+            // Turn boundary — emit the prior turn's WARN if it
+            // matches the empty-tree signature (lots of passes, no
+            // actions), then reset counters.
+            maybeWarnEmptyTree(game);
+            lastObservedTurnHash = currentTurnHash;
+            passesThisTurn = 0;
+            actionsThisTurn = 0;
+        }
+        int actionsBefore = actions == null ? 0 : actions.size();
+        super.act(game);
+        int actionsAfter = actions == null ? 0 : actions.size();
+        if (actionsBefore == 0 && actionsAfter == 0) {
+            passesThisTurn++;
+        } else {
+            // The action queue drained means actual plays happened.
+            // Any positive delta is "actions consumed."
+            actionsThisTurn += Math.max(0, actionsBefore - actionsAfter);
+        }
+    }
+
+    private long computeTurnHash(Game game) {
+        UUID activeId = game.getActivePlayerId();
+        int turnNum = game.getState().getTurnNum();
+        return ((long) turnNum) * 0x100000000L
+                ^ (activeId == null ? 0L : activeId.hashCode());
+    }
+
+    private void maybeWarnEmptyTree(Game game) {
+        if (passesThisTurn >= EMPTY_TREE_WARN_THRESHOLD && actionsThisTurn == 0) {
+            log.warn(String.format(
+                    "AI '%s' passed priority %d times across the prior turn without "
+                            + "producing any action — possible empty-tree bug "
+                            + "(ComputerPlayer7.java:119). Current turn: %d.",
+                    getName(), passesThisTurn, game.getState().getTurnNum()));
+        }
+    }
+
     int commanderDamageDealtTo(UUID opponentId, Game game) {
         Player me = game.getPlayer(playerId);
         if (me == null) {
