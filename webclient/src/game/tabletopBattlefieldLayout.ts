@@ -46,49 +46,71 @@ export interface TabletopBuckets {
   readonly artifactsEnchantments: readonly WebPermanentView[];
 }
 
+type Bucket = 'lands' | 'creatures' | 'artifactsEnchantments';
+
+/**
+ * Bucket placement for a single permanent based ONLY on its own
+ * type tags. Used as the leaf decision in {@link partitionForTabletop}
+ * AND as the host-resolution decision when re-bucketing an aura /
+ * equipment to follow its host.
+ */
+function bucketByOwnType(perm: WebPermanentView): Bucket {
+  const types = perm.card.types;
+  if (types.includes('CREATURE')) return 'creatures';
+  if (types.includes('PLANESWALKER')) return 'creatures';
+  if (types.includes('LAND')) return 'lands';
+  if (
+    types.includes('ARTIFACT') ||
+    types.includes('ENCHANTMENT') ||
+    types.includes('BATTLE')
+  ) {
+    return 'artifactsEnchantments';
+  }
+  // Defensive default — a future engine type tag we don't know about
+  // still appears somewhere instead of being dropped.
+  return 'artifactsEnchantments';
+}
+
 export function partitionForTabletop(
   permanents: readonly WebPermanentView[],
 ): TabletopBuckets {
+  // 2026-05-04 — attachment re-bucketing. Auras and equipment
+  // that are attached to a host on the SAME battlefield route to
+  // wherever the host went, so a creature with an aura renders
+  // both in the creatures bucket (where TabletopBuckets' grouping
+  // helper pairs them as host + attachments). Without this, auras
+  // landed in the artifacts-enchantments bucket as disembodied
+  // cards, disconnected from their host. Mirrors the legacy
+  // `bucketBattlefield` re-bucketing in battlefieldRows.ts.
+  // Auras attached to a permanent on a DIFFERENT battlefield
+  // (enchant opponent) stay in the controller's artifacts bucket
+  // — the host id won't be in the byId map for this player.
+  const byId = new Map<string, WebPermanentView>(
+    permanents.map((p) => [p.card.id, p]),
+  );
+
+  function rootBucket(perm: WebPermanentView): Bucket {
+    let current = perm;
+    const visited = new Set<string>();
+    while (current.attachedTo && current.attachedToPermanent) {
+      if (visited.has(current.card.id)) break;
+      visited.add(current.card.id);
+      const host = byId.get(current.attachedTo);
+      if (!host) break;
+      current = host;
+    }
+    return bucketByOwnType(current);
+  }
+
   const lands: WebPermanentView[] = [];
   const creatures: WebPermanentView[] = [];
   const artifactsEnchantments: WebPermanentView[] = [];
 
   for (const perm of permanents) {
-    const types = perm.card.types;
-
-    // Hybrid "creature wins" — any permanent currently carrying
-    // the CREATURE type tag goes to Creatures, regardless of any
-    // other types (artifact, enchantment, land, etc.) it also has.
-    if (types.includes('CREATURE')) {
-      creatures.push(perm);
-      continue;
-    }
-    // Planeswalkers also go to Creatures (per element #4 spec)
-    // because they share the attack/block affordance space.
-    if (types.includes('PLANESWALKER')) {
-      creatures.push(perm);
-      continue;
-    }
-    // Lands AFTER the CREATURE check so animated manlands route to
-    // Creatures while inanimate lands stay here.
-    if (types.includes('LAND')) {
-      lands.push(perm);
-      continue;
-    }
-    // Artifacts, Enchantments, Battles all share this bucket.
-    if (
-      types.includes('ARTIFACT') ||
-      types.includes('ENCHANTMENT') ||
-      types.includes('BATTLE')
-    ) {
-      artifactsEnchantments.push(perm);
-      continue;
-    }
-    // Unknown type tag — fall back to Artifacts-Enchantments rather
-    // than dropping the permanent. Defensive: a future engine
-    // upgrade with a new type tag won't make permanents disappear
-    // from the rendering until tabletop's partition catches up.
-    artifactsEnchantments.push(perm);
+    const bucket = rootBucket(perm);
+    if (bucket === 'lands') lands.push(perm);
+    else if (bucket === 'creatures') creatures.push(perm);
+    else artifactsEnchantments.push(perm);
   }
 
   return { lands, creatures, artifactsEnchantments };

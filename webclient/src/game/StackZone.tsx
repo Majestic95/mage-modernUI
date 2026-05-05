@@ -21,6 +21,7 @@ import { REDESIGN } from '../featureFlags';
 import { computeHaloBackground } from './halo';
 import { TargetingArrow } from './TargetingArrow';
 import { useIsCinematicCastActive } from '../animation/useIsCinematicCastActive';
+import { ZoneBrowser } from './ZoneBrowser';
 
 /**
  * Slice 70-N (ADR 0011 D5, picture-catalog §3) — central focal-zone
@@ -237,6 +238,23 @@ const FAN_CAP = 4;
  */
 function StackFan({ entries }: { entries: readonly WebCardView[] }) {
   const topmost = entries[0];
+  // F17 (2026-05-04) — "View all" stack browser. Lets the player
+  // see every entry on the stack ordered newest → oldest (the same
+  // order the engine resolves them). Useful for deep storm / cascade
+  // chains that exceed FAN_CAP=4 visible tiles where the +N pill
+  // swallows the rest. Mounts only the trigger button + state here;
+  // the actual modal reuses ZoneBrowser. Hooks must run before the
+  // early-return so they aren't conditional.
+  const [browserOpen, setBrowserOpen] = useState(false);
+  const browserCards = useMemo<Record<string, WebCardView>>(() => {
+    const out: Record<string, WebCardView> = {};
+    // Object insertion order is preserved on string keys; iterating
+    // entries top-to-bottom puts the newest spell first in the
+    // resulting Record (matches engine resolution order).
+    for (const e of entries) out[e.id] = e.source ?? e;
+    return out;
+  }, [entries]);
+
   if (!topmost) return null;
 
   const fan = entries.slice(1, 1 + FAN_CAP);
@@ -256,6 +274,27 @@ function StackFan({ entries }: { entries: readonly WebCardView[] }) {
       // produces a clean back-to-front stack.
       className="relative flex items-center justify-center isolate"
     >
+      {/* F17 (2026-05-04) — "View all" trigger. Always visible when
+          the stack has any entries; clicking opens a ZoneBrowser
+          modal with the full list ordered newest → oldest. The
+          button is positioned absolute at top-right so it doesn't
+          shift focal-card geometry. */}
+      <button
+        type="button"
+        data-testid="stack-view-all-button"
+        onClick={() => setBrowserOpen(true)}
+        className="absolute top-1 right-1 z-20 px-2 py-0.5 text-[10px] uppercase tracking-wider rounded bg-zinc-900/85 hover:bg-zinc-800 border border-zinc-700 text-zinc-100 shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-400 pointer-events-auto"
+        aria-label={`View all ${entries.length} stack entries`}
+      >
+        View all ({entries.length})
+      </button>
+      {browserOpen && (
+        <ZoneBrowser
+          title={`Stack — ${entries.length} entr${entries.length === 1 ? 'y' : 'ies'} (top resolves first)`}
+          cards={browserCards}
+          onClose={() => setBrowserOpen(false)}
+        />
+      )}
       <AnimatePresence mode="popLayout" initial={false}>
         {/* Fan items render BELOW the topmost. Reverse mapping order
             so motion's reorder animations don't shuffle the visible

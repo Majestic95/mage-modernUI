@@ -311,12 +311,28 @@ function BucketBox({
               variant=current's BattlefieldRowGroup convention.
               2026-05-04 — grouping result is cached in `groupedCards`
               above so per-bucket shrink can use the visible count.
-              Attachments grouping (W4) is deferred — auras still
-              render as separate cards in the same bucket for now. */}
+              F16 (W4 follow-up, 2026-05-04) — attachment fan-out
+              now ships: when a host has auras / equipment attached,
+              they render BEHIND the host with 30% peek offset
+              (mirrors legacy AttachmentGroupSlot in
+              BattlefieldRowGroup.tsx). Auras already routed to the
+              host's bucket in partitionForTabletop. */}
           {groupedCards.map((group) => {
             const p = group.host;
             const stackCount = group.stackedDuplicates.length + 1;
             const hasDuplicates = group.stackedDuplicates.length > 0;
+            const hasAttachments = group.attachments.length > 0;
+            // Container width grows by 30% per fan layer (attachments
+            // only — duplicates already collapse to ×N badge so they
+            // don't add fan layers in tabletop). Without attachments
+            // the cluster is exactly one tile wide (back-compat).
+            const FAN_OFFSET = 0.3;
+            const fanCount = group.attachments.length;
+            const baseW = 'var(--card-size-medium, 80px)';
+            const containerWidth = hasAttachments
+              ? `calc(${baseW} * (1 + ${fanCount} * ${FAN_OFFSET}))`
+              : baseW;
+            const hostZ = fanCount + 1;
             // G3 (2026-05-03) — wrapper carries `data-permanent-id`
             // so StackZone's combat-arrow geometry resolver can find
             // the attacker's bounding rect via querySelector.
@@ -377,53 +393,132 @@ function BucketBox({
                 // collapsed: motion.div=block child sizes-to-content
                 // → span=intrinsic → button=intrinsic → CardFace
                 // height:100% resolved against 0.
-                className="flex relative"
+                data-attachment-host={hasAttachments || undefined}
+                data-attachment-count={
+                  hasAttachments ? group.attachments.length : undefined
+                }
+                className="relative"
                 style={{
-                  width: 'var(--card-size-medium, 80px)',
+                  width: containerWidth,
                   height: 'calc(var(--card-size-medium, 80px) * 7 / 5)',
                   flexShrink: 0,
                 }}
               >
-                {hasDuplicates && (
-                  <span
-                    data-testid="stack-count-badge"
-                    aria-label={`${stackCount} copies`}
-                    className="absolute top-1 right-1 z-10 px-1.5 py-0.5 rounded-full bg-zinc-900/85 border border-zinc-600 text-[11px] font-mono font-semibold text-zinc-100 pointer-events-none shadow"
-                  >
-                    ×{stackCount}
-                  </span>
-                )}
-                <HoverCardDetail card={p.card}>
-                  <button
-                    type="button"
-                    data-permanent-id={p.card.id}
-                    data-tapped={p.tapped || undefined}
-                    data-combat-eligible={isEligibleCombat || undefined}
-                    data-combat-role={combatRole ?? undefined}
-                    data-targetable={isEligibleTarget || undefined}
-                    disabled={!clickable}
-                    onClick={
-                      clickable && onObjectClick
-                        ? () => onObjectClick(p.card.id)
-                        : undefined
-                    }
-                    className={
-                      'block p-0 m-0 bg-transparent border-0 outline-none ' +
-                      (clickable ? 'cursor-pointer' : 'cursor-default')
-                    }
-                    aria-label={p.card.name}
-                  >
-                    <CardFace
-                      card={p.card}
-                      size="battlefield"
-                      perm={p}
-                      tapped={p.tapped}
-                      isEligibleCombat={isEligibleCombat}
-                      combatRole={combatRole ?? null}
-                      targetableForDialog={isEligibleTarget}
-                    />
-                  </button>
-                </HoverCardDetail>
+                {/* Host card sits at left:0 with the highest z so any
+                    attachments behind it peek to the right of the host.
+                    The flex wrapper inside re-establishes the H3 stretch
+                    chain through HoverCardDetail's inline-flex span. */}
+                <div
+                  className="absolute top-0 left-0 flex"
+                  style={{
+                    width: baseW,
+                    height: 'calc(var(--card-size-medium, 80px) * 7 / 5)',
+                    zIndex: hostZ,
+                  }}
+                >
+                  {hasDuplicates && (
+                    <span
+                      data-testid="stack-count-badge"
+                      aria-label={`${stackCount} copies`}
+                      className="absolute top-1 right-1 z-10 px-1.5 py-0.5 rounded-full bg-zinc-900/85 border border-zinc-600 text-[11px] font-mono font-semibold text-zinc-100 pointer-events-none shadow"
+                    >
+                      ×{stackCount}
+                    </span>
+                  )}
+                  <HoverCardDetail card={p.card}>
+                    <button
+                      type="button"
+                      data-permanent-id={p.card.id}
+                      data-tapped={p.tapped || undefined}
+                      data-combat-eligible={isEligibleCombat || undefined}
+                      data-combat-role={combatRole ?? undefined}
+                      data-targetable={isEligibleTarget || undefined}
+                      disabled={!clickable}
+                      onClick={
+                        clickable && onObjectClick
+                          ? () => onObjectClick(p.card.id)
+                          : undefined
+                      }
+                      className={
+                        'block p-0 m-0 bg-transparent border-0 outline-none ' +
+                        (clickable ? 'cursor-pointer' : 'cursor-default')
+                      }
+                      aria-label={p.card.name}
+                    >
+                      <CardFace
+                        card={p.card}
+                        size="battlefield"
+                        perm={p}
+                        tapped={p.tapped}
+                        isEligibleCombat={isEligibleCombat}
+                        combatRole={combatRole ?? null}
+                        targetableForDialog={isEligibleTarget}
+                      />
+                    </button>
+                  </HoverCardDetail>
+                </div>
+                {/* F16 — attachments fan out to the right at 30% peek
+                    each. Each layer's z-index descends so the rightmost
+                    attachment is at the bottom of the local stack and
+                    the host stays on top. Auras are rarely actionable
+                    in casual play so they're rendered as a passive
+                    HoverCardDetail-wrapped CardFace; clicking them
+                    forwards to onObjectClick same as host (engine
+                    handles target validity). */}
+                {group.attachments.map((att, idx) => {
+                  const attEligibleTarget =
+                    eligibleTargetIds?.has(att.card.id) ?? false;
+                  const attEligibleCombat =
+                    eligibleCombatIds?.has(att.card.id) ?? false;
+                  const attClickable =
+                    canAct &&
+                    !!onObjectClick &&
+                    (!inCombatMode || attEligibleCombat);
+                  return (
+                    <div
+                      key={att.card.id}
+                      data-attachment-of={p.card.id}
+                      data-card-id={att.card.cardId || undefined}
+                      className="absolute top-0 flex"
+                      style={{
+                        left: `calc(${baseW} * ${FAN_OFFSET} * ${idx + 1})`,
+                        width: baseW,
+                        height:
+                          'calc(var(--card-size-medium, 80px) * 7 / 5)',
+                        zIndex: hostZ - 1 - idx,
+                      }}
+                    >
+                      <HoverCardDetail card={att.card}>
+                        <button
+                          type="button"
+                          data-permanent-id={att.card.id}
+                          data-tapped={att.tapped || undefined}
+                          disabled={!attClickable}
+                          onClick={
+                            attClickable && onObjectClick
+                              ? () => onObjectClick(att.card.id)
+                              : undefined
+                          }
+                          className={
+                            'block p-0 m-0 bg-transparent border-0 outline-none ' +
+                            (attClickable ? 'cursor-pointer' : 'cursor-default')
+                          }
+                          aria-label={att.card.name}
+                        >
+                          <CardFace
+                            card={att.card}
+                            size="battlefield"
+                            perm={att}
+                            tapped={att.tapped}
+                            isEligibleCombat={attEligibleCombat}
+                            combatRole={null}
+                            targetableForDialog={attEligibleTarget}
+                          />
+                        </button>
+                      </HoverCardDetail>
+                    </div>
+                  );
+                })}
               </motion.div>
             );
           })}
