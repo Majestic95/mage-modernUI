@@ -215,7 +215,7 @@ public final class GameStreamHandler implements Consumer<WsConfig> {
         // shouldDeliverByRoute defaults a bound route to "player".
         ctx.attribute(WebSocketCallbackHandler.ATTR_ROUTE_KIND,
                 WebSocketCallbackHandler.ROUTE_PLAYER);
-        bindGameChatId(ctx, gameId);
+        bindGameChatId(ctx, gameId, session);
         if (!handler.get().register(ctx)) {
             return;
         }
@@ -263,19 +263,57 @@ public final class GameStreamHandler implements Consumer<WsConfig> {
      * {@link WebSocketCallbackHandler} can suppress unrelated chats.
      * Failures are non-fatal — when no chatId is bound, chat fans out
      * to every socket (slice 2 behavior).
+     *
+     * <p>2026-05-05 (FB#8″ — game-log REAL fix) — also calls
+     * {@code chatManager.joinChat(chatId, userId)} so the user is added
+     * to the chat session's {@code users} map. Without this call, the
+     * delivery filter ({@link WebSocketCallbackHandler#shouldDeliverChat})
+     * was correctly bound but the engine-side broadcast loop in
+     * {@code ChatSession.broadcast} (line 183) never iterated this user
+     * → chat callbacks (including all {@code MessageType.GAME} card-play
+     * informs) were never fired for the WS at all → empty
+     * {@code chatMessages} bucket on the client → empty GameLogWindow
+     * for the entire game. Mirrors {@link RoomStreamHandler}'s
+     * {@code joinChat} call (line 133), which is why lobby chat
+     * worked but game chat / game-log did not.
      */
-    private void bindGameChatId(WsConnectContext ctx, UUID gameId) {
+    private void bindGameChatId(WsConnectContext ctx, UUID gameId, SessionEntry session) {
+        UUID chatId;
         try {
-            UUID chatId = embedded.server().chatFindByGame(gameId);
-            if (chatId != null) {
-                ctx.attribute(WebSocketCallbackHandler.ATTR_BOUND_CHAT_ID, chatId);
-            }
+            chatId = embedded.server().chatFindByGame(gameId);
         } catch (Exception ex) {
             // Game does not exist yet (synthetic gameId in tests, or
             // pre-game flow): leave the attribute unset so chat fans
             // out by default.
             LOG.debug("chatFindByGame({}) failed: {}", gameId, ex.toString());
+            return;
         }
+        if (chatId == null) {
+            return;
+        }
+        ctx.attribute(WebSocketCallbackHandler.ATTR_BOUND_CHAT_ID, chatId);
+        UUID userId = resolveUserId(session.upstreamSessionId());
+        if (userId == null) {
+            // No upstream userId resolves for this session — surfaces in
+            // tests with synthetic sessions; production sessions always
+            // resolve. Skip joinChat; the user still gets game frames
+            // via the route-kind filter, but no chat / game-log entries.
+            LOG.debug("joinChat skipped: no userId for session, game={}", gameId);
+            return;
+        }
+        try {
+            embedded.managerFactory().chatManager().joinChat(chatId, userId);
+        } catch (RuntimeException ex) {
+            // Idempotent upstream-side; non-fatal if it throws.
+            LOG.warn("joinChat failed: user={}, game={}, chatId={}: {}",
+                    session.username(), gameId, chatId, ex.getMessage());
+        }
+    }
+
+    private UUID resolveUserId(String upstreamSessionId) {
+        Optional<mage.server.Session> upstream =
+                embedded.managerFactory().sessionManager().getSession(upstreamSessionId);
+        return upstream.map(mage.server.Session::getUserId).orElse(null);
     }
 
     /**
