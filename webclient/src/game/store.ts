@@ -142,32 +142,46 @@ export interface GameLogEntry {
 
 /**
  * Filter — keep entries that mention a CARD (a {@code <font>} tag
- * carrying {@code object_id} — engine emits that attribute only on
- * card highlights via {@code mage.util.GameLog.injectPopupSupport};
- * player-name highlights via {@code getColoredPlayerName} carry
- * only {@code color}) or a life change ({@code "gains N life"} /
- * {@code "loses N life"}, the two patterns
- * {@link mage.players.PlayerImpl#gainLife} /
+ * carrying either an {@code object_id} attribute OR a card-color hex
+ * value) or a life change ({@code "gains N life"} / {@code "loses N
+ * life"}, the patterns {@link mage.players.PlayerImpl#gainLife} /
  * {@link mage.players.PlayerImpl#loseLife} emit). Phase / step /
- * turn-boundary informs and noise like "alice draws a card" or
- * "alice scries 2" are dropped — they wrap the player name in a
- * font tag but never reference a card object_id.
+ * turn-boundary informs ("alice's turn", "Beginning of upkeep",
+ * "alice draws a card") get dropped — they only carry the player-teal
+ * highlight ({@code #20B2AA}) and never reference a card.
  *
- * <p>2026-05-03 audit fix — the prior filter used {@code /<font\s/i}
- * which matched any font tag, including the player-name wrappers
- * present on roughly every engine inform. Net effect was 90% pass-
- * through (untap, draw, scry, mulligan, etc. all survived). The
- * tightened {@code object_id} signal is precise: engine code path
- * shows ONLY card / token / face-down highlights carry it.
+ * <p>2026-05-05 fix — the 2026-05-03 audit tightened to require
+ * {@code object_id}, but upstream has TWO highlight paths:
+ * {@code mage.util.GameLog.getColoredObjectName} (no {@code object_id})
+ * AND {@code getColoredObjectIdName} (with {@code object_id}). Many
+ * card-play informs use the simpler form, so {@code object_id}-only
+ * filtered out almost everything: the user reported the floating
+ * GameLogWindow stayed empty for entire games. Card-color match closes
+ * that gap without re-introducing the "all 90% passes through" noise
+ * the audit was trying to fix — player teal {@code #20B2AA} and
+ * timestamp gold {@code #CCCC33} aren't in the card-color palette.
+ *
+ * <p>Card-color palette per {@code mage.util.GameLog}:
+ * <ul>
+ *   <li>{@code #90EE90} green, {@code #FF6347} red, {@code #87CEFA} blue</li>
+ *   <li>{@code #696969} black, {@code #F0E68C} white</li>
+ *   <li>{@code #DAA520} multi, {@code #B0C4DE} colorless</li>
+ * </ul>
  *
  * <p>Damage to a player is converted to life loss via
  * {@code damagePlayerOrPlaneswalker} → {@code loseLife}, so the
  * "loses N life" pattern catches combat damage too.
  */
 const CARD_OBJECT_RE = /<font\b[^>]*\bobject_id\s*=/i;
+const CARD_COLOR_RE =
+  /<font\b[^>]*\bcolor\s*=\s*['"]?#?(?:90EE90|FF6347|87CEFA|696969|F0E68C|DAA520|B0C4DE)\b/i;
 const LIFE_CHANGE_RE = /\b(?:gains|loses)\s+\d+\s+life\b/i;
 function shouldKeepGameLogEntry(message: string): boolean {
-  return CARD_OBJECT_RE.test(message) || LIFE_CHANGE_RE.test(message);
+  return (
+    CARD_COLOR_RE.test(message) ||
+    CARD_OBJECT_RE.test(message) ||
+    LIFE_CHANGE_RE.test(message)
+  );
 }
 
 /**

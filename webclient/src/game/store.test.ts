@@ -696,6 +696,70 @@ describe('useGameStore', () => {
     expect(useGameStore.getState().gameLog).toHaveLength(1);
   });
 
+  it('Slice D regression (2026-05-05) — keeps card-color highlight WITHOUT object_id (getColoredObjectName form)', () => {
+    // Upstream {@code mage.util.GameLog} has TWO highlight builders:
+    // {@code getColoredObjectIdName} emits object_id; the simpler
+    // {@code getColoredObjectName} omits it. Many card-play informs
+    // use the simpler form; the 2026-05-03 object_id-only filter
+    // dropped them all, leaving the floating GameLogWindow empty for
+    // entire games (user-reported 2026-05-05). Filter now also
+    // matches card-color hex values from upstream's palette.
+    for (const message of [
+      "alice plays <font color='#90EE90'>Forest</font>",
+      "Lightning Bolt deals 3 damage to <font color='#FF6347'>Goblin Guide</font>",
+      "alice casts <font color='#87CEFA'>Counterspell</font>",
+      "alice exiles <font color='#696969'>Doom Blade</font>",
+      "alice mills <font color='#F0E68C'>Wrath of God</font>",
+      "alice plays <font color='#DAA520'>Lightning Helix</font>",
+      "alice plays <font color='#B0C4DE'>Sol Ring</font>",
+    ]) {
+      useGameStore.getState().reset();
+      const wrap = webGameClientMessageSchema.parse({
+        gameView: null,
+        message,
+        targets: [],
+        cardsView1: {},
+        min: 0,
+        max: 0,
+        flag: false,
+        choice: null,
+      });
+      useGameStore.getState().applyFrame(frame('gameInform', wrap, 11), wrap);
+      expect(
+        useGameStore.getState().gameLog,
+        `expected card-color filter to keep: ${message}`,
+      ).toHaveLength(1);
+    }
+  });
+
+  it('Slice D — still drops phase / turn-boundary informs (no card-color, no object_id, no life change)', () => {
+    // Confirms the broader filter doesn't accidentally re-introduce
+    // the 2026-05-03 noise. Player teal #20B2AA and timestamp gold
+    // #CCCC33 must NOT be in the card-color palette.
+    for (const message of [
+      "<font color='#20B2AA'>alice</font>'s turn 5",
+      "Beginning of upkeep",
+      "<font color='#CCCC33'>16:45, T1.M1: </font>untap step",
+    ]) {
+      useGameStore.getState().reset();
+      const wrap = webGameClientMessageSchema.parse({
+        gameView: null,
+        message,
+        targets: [],
+        cardsView1: {},
+        min: 0,
+        max: 0,
+        flag: false,
+        choice: null,
+      });
+      useGameStore.getState().applyFrame(frame('gameInform', wrap, 12), wrap);
+      expect(
+        useGameStore.getState().gameLog,
+        `expected phase noise to be dropped: ${message}`,
+      ).toHaveLength(0);
+    }
+  });
+
   it('snapshots commanders from commandList into cardsByName when the commander is in the command zone', () => {
     // Audit fix 2026-05-03 — commanders living in the command zone
     // never appear in any of the `WebCardView` zones (battlefield /
