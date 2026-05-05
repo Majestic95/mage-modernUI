@@ -456,11 +456,21 @@ public final class LobbyService {
     }
 
     /**
-     * 99-Forest mainboard + 1 legendary green creature in the sideboard
-     * as the commander. We try a small list of widely-shipped legendary
-     * green creatures so a missing card from one set doesn't break the
-     * fallback. If none are available, throws — that's an unworkable
-     * card DB and we surface it loudly.
+     * Mono-green singleton 99-card mainboard + 1 mono-green legendary
+     * creature in the sideboard as the commander.
+     *
+     * <p>2026-05-04 — was 99 Forests + 1 commander, which made the AI
+     * literally unable to cast anything beyond its commander. Now a
+     * 60-Forest base + ~39 mono-green singletons (ramp / creatures /
+     * removal / draw) so MAD's simulation has actual decisions to
+     * make beyond "play land, pass". Each non-basic uses
+     * {@link #addEntryOrFallback} so a missing card silently
+     * substitutes a Forest — the deck stays at 99 even if the
+     * card DB is incomplete.
+     *
+     * <p>Commander candidates are now <b>mono-green only</b>
+     * (Gaddock Teeg dropped — green/white identity would invalidate
+     * a mono-green deck under the Commander validator).
      */
     private DeckCardLists buildCommanderFallbackDeck() {
         CardInfo forest = CardRepository.instance.findCard("Forest");
@@ -474,7 +484,6 @@ public final class LobbyService {
                 "Ezuri, Renegade Leader",
                 "Omnath, Locus of Mana",
                 "Ghalta, Primal Hunger",
-                "Gaddock Teeg",
         }) {
             CardInfo c = CardRepository.instance.findCard(candidate);
             if (c != null) {
@@ -484,14 +493,62 @@ public final class LobbyService {
         }
         if (commander == null) {
             throw new WebApiException(500, "UPSTREAM_ERROR",
-                    "Card DB has no legendary green creature — "
+                    "Card DB has no mono-green legendary creature — "
                             + "cannot build AI Commander fallback deck.");
         }
         DeckCardLists deck = new DeckCardLists();
         deck.setName("AI Commander Deck");
         deck.setAuthor("server");
         List<DeckCardInfo> cards = new ArrayList<>();
-        addEntry(cards, "Forest", forest, 99);
+        // 60 Forests as base. Singleton format allows unlimited basics.
+        addEntry(cards, "Forest", forest, 60);
+        // Ramp creatures + spells (~10 singletons) so MAD has cheap
+        // mana acceleration to evaluate early-turn.
+        addEntryOrFallback(cards, "Llanowar Elves", forest, 1);
+        addEntryOrFallback(cards, "Elvish Mystic", forest, 1);
+        addEntryOrFallback(cards, "Fyndhorn Elves", forest, 1);
+        addEntryOrFallback(cards, "Wood Elves", forest, 1);
+        addEntryOrFallback(cards, "Sakura-Tribe Elder", forest, 1);
+        addEntryOrFallback(cards, "Yavimaya Elder", forest, 1);
+        addEntryOrFallback(cards, "Cultivate", forest, 1);
+        addEntryOrFallback(cards, "Kodama's Reach", forest, 1);
+        addEntryOrFallback(cards, "Rampant Growth", forest, 1);
+        addEntryOrFallback(cards, "Explosive Vegetation", forest, 1);
+        // Low-CMC creatures + utility (~10 singletons) for early
+        // board development.
+        addEntryOrFallback(cards, "Elvish Visionary", forest, 1);
+        addEntryOrFallback(cards, "Llanowar Visionary", forest, 1);
+        addEntryOrFallback(cards, "Eternal Witness", forest, 1);
+        addEntryOrFallback(cards, "Reclamation Sage", forest, 1);
+        addEntryOrFallback(cards, "Beast Whisperer", forest, 1);
+        addEntryOrFallback(cards, "Wirewood Symbiote", forest, 1);
+        addEntryOrFallback(cards, "Werebear", forest, 1);
+        addEntryOrFallback(cards, "Wild Mongrel", forest, 1);
+        addEntryOrFallback(cards, "Centaur Courser", forest, 1);
+        addEntryOrFallback(cards, "Garruk's Companion", forest, 1);
+        // Mid-CMC creatures (~10 singletons).
+        addEntryOrFallback(cards, "Thragtusk", forest, 1);
+        addEntryOrFallback(cards, "Acidic Slime", forest, 1);
+        addEntryOrFallback(cards, "Wickerbough Elder", forest, 1);
+        addEntryOrFallback(cards, "Garruk's Packleader", forest, 1);
+        addEntryOrFallback(cards, "Soul of the Harvest", forest, 1);
+        addEntryOrFallback(cards, "Briarhorn", forest, 1);
+        addEntryOrFallback(cards, "Plated Slagwurm", forest, 1);
+        addEntryOrFallback(cards, "Steel Leaf Champion", forest, 1);
+        addEntryOrFallback(cards, "Charging Rhino", forest, 1);
+        addEntryOrFallback(cards, "Spider Spawning", forest, 1);
+        // Big finishers (5 singletons).
+        addEntryOrFallback(cards, "Craterhoof Behemoth", forest, 1);
+        addEntryOrFallback(cards, "Avenger of Zendikar", forest, 1);
+        addEntryOrFallback(cards, "Pelakka Wurm", forest, 1);
+        addEntryOrFallback(cards, "Terastodon", forest, 1);
+        addEntryOrFallback(cards, "Apex Devastator", forest, 1);
+        // Removal / utility (4 singletons).
+        addEntryOrFallback(cards, "Beast Within", forest, 1);
+        addEntryOrFallback(cards, "Naturalize", forest, 1);
+        addEntryOrFallback(cards, "Krosan Grip", forest, 1);
+        addEntryOrFallback(cards, "Plummet", forest, 1);
+        // Total: 60 + 10 + 10 + 10 + 5 + 4 = 99 ✓
         deck.setCards(cards);
         List<DeckCardInfo> sideboard = new ArrayList<>();
         addEntry(sideboard, commander.getName(), commander, 1);
