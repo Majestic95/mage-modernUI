@@ -61,7 +61,13 @@ public class AddManaOfAnyTypeProducedTest extends CardTestPlayerBase {
     }
 
     /**
-     * Vorinclex glitches with Gemstone Cavern
+     * Vorinclex glitches with Gemstone Cavern.
+     *
+     * FB#3 (2026-05-05) update: Gemstone Caverns with luck counter has
+     * a mana ability whose getNetMana returns "any color." Vorinclex's
+     * trigger now (per FB#3) presents the union-over-mana-abilities
+     * choice = all 5 colors instead of auto-picking the single tap
+     * output. So the trigger needs its own setChoice queued.
      */
     @Test
     public void testGemstoneCavern() {
@@ -82,7 +88,8 @@ public class AddManaOfAnyTypeProducedTest extends CardTestPlayerBase {
         setChoice(playerB, "Swamp");
 
         activateManaAbility(2, PhaseStep.PRECOMBAT_MAIN, playerB, "{T}: Add");
-        setChoice(playerB, "White");
+        setChoice(playerB, "White"); // Gemstone's own "any color" choice
+        setChoice(playerB, "White"); // FB#3 — Vorinclex trigger now also prompts (union of any-color)
         castSpell(2, PhaseStep.PRECOMBAT_MAIN, playerB, "Silvercoat Lion");
 
         setStrictChooseMode(true);
@@ -117,7 +124,12 @@ public class AddManaOfAnyTypeProducedTest extends CardTestPlayerBase {
         setChoice(playerB, "Swamp");
 
         activateManaAbility(2, PhaseStep.PRECOMBAT_MAIN, playerB, "{T}: Add {C}");
-        setChoice(playerB, "White");
+        setChoice(playerB, "White"); // Gemstone's own "any color" choice
+        // No Vorinclex trigger here — Vorinclex is in hand when Gemstone
+        // is tapped; trigger requires Vorinclex on battlefield. (FB#3
+        // updated testGemstoneCavern (Vorinclex pre-battlefield) but
+        // this test's Vorinclex enters via this castSpell, after the
+        // Gemstone tap.)
         castSpell(2, PhaseStep.PRECOMBAT_MAIN, playerB, "Vorinclex, Voice of Hunger");
 
         setStrictChooseMode(true);

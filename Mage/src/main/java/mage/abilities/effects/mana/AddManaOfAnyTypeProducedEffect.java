@@ -2,8 +2,10 @@ package mage.abilities.effects.mana;
 
 import mage.Mana;
 import mage.abilities.Ability;
+import mage.abilities.mana.ActivatedManaAbilityImpl;
 import mage.choices.Choice;
 import mage.choices.ChoiceColor;
+import mage.constants.Zone;
 import mage.game.Game;
 import mage.game.permanent.Permanent;
 import mage.players.Player;
@@ -78,25 +80,81 @@ public class AddManaOfAnyTypeProducedEffect extends ManaEffect {
             return newMana;
         }
 
+        // FB#3 (2026-05-05) — Mirari's Wake (and 15 sibling cards using
+        // this effect: Mana Flare, Heartbeat of Spring, Vorinclex Voice
+        // of Hunger, Zhur-Taa Ancient, Zendikar Resurgent, Roxanne
+        // Starfall Savant, Overabundance, Nikya of the Old Ways,
+        // Lavaleaper, Kinnan Bonder Prodigy, Keeper of Progenitus,
+        // Extraplanar Lens, Dictate of Karametra, Barbflare Gremlin,
+        // Winters Night) all carry the oracle text "add one mana of
+        // any type that land produced." User direction 2026-05-05:
+        // when a dual land is tapped for one color, the trigger should
+        // present the choice over BOTH colors the land could produce,
+        // not auto-add the same color. Pre-fix, tapping a Tundra for
+        // {W} caused the trigger to auto-add {W} (only one option in
+        // `types`); now it offers {W} + {U} for the player to pick.
+        // Basic lands and single-color lands still auto-pick (only one
+        // type in the union).
+        //
+        // Implementation: the choice set is the union of every
+        // activated mana ability's getNetMana() on the permanent at
+        // the time of resolution. Falls back to `types` (the single
+        // tap output) if the permanent has lost all mana abilities by
+        // resolution time, so the bonus mana is never wiped entirely.
+        //
+        // Implementation note for upstream-rebase: this block diverges
+        // from upstream/master's "build choices from `types`" pattern
+        // intentionally per user direction. Preserve the union-over-
+        // mana-abilities approach when merging.
+        Mana availableTypes = new Mana();
+        for (ActivatedManaAbilityImpl manaAbility :
+                permanent.getAbilities(game).getActivatedManaAbilities(Zone.BATTLEFIELD)) {
+            for (Mana possible : manaAbility.getNetMana(game)) {
+                if (possible.getWhite() > 0) availableTypes.setWhite(1);
+                if (possible.getBlue() > 0) availableTypes.setBlue(1);
+                if (possible.getBlack() > 0) availableTypes.setBlack(1);
+                if (possible.getRed() > 0) availableTypes.setRed(1);
+                if (possible.getGreen() > 0) availableTypes.setGreen(1);
+                if (possible.getColorless() > 0) availableTypes.setColorless(1);
+                if (possible.getAny() > 0) {
+                    // "Any color" lands (e.g., Forbidden Orchard,
+                    // Gemstone Caverns with luck counter) — the choice
+                    // covers all five colors.
+                    availableTypes.setWhite(1);
+                    availableTypes.setBlue(1);
+                    availableTypes.setBlack(1);
+                    availableTypes.setRed(1);
+                    availableTypes.setGreen(1);
+                }
+            }
+        }
+        // Defensive: if the permanent has lost all mana abilities by
+        // the time the trigger resolves, fall back to the single
+        // type that was actually produced so we don't wipe the
+        // bonus mana entirely.
+        if (availableTypes.count() == 0) {
+            availableTypes = types.copy();
+        }
+
         Choice choice = new ChoiceColor(true);
         choice.getChoices().clear();
         choice.setMessage("Pick the type of mana to produce");
-        if (types.getWhite() > 0) {
+        if (availableTypes.getWhite() > 0) {
             choice.getChoices().add("White");
         }
-        if (types.getBlue() > 0) {
+        if (availableTypes.getBlue() > 0) {
             choice.getChoices().add("Blue");
         }
-        if (types.getBlack() > 0) {
+        if (availableTypes.getBlack() > 0) {
             choice.getChoices().add("Black");
         }
-        if (types.getRed() > 0) {
+        if (availableTypes.getRed() > 0) {
             choice.getChoices().add("Red");
         }
-        if (types.getGreen() > 0) {
+        if (availableTypes.getGreen() > 0) {
             choice.getChoices().add("Green");
         }
-        if (types.getColorless() > 0) {
+        if (availableTypes.getColorless() > 0) {
             choice.getChoices().add("Colorless");
         }
 
