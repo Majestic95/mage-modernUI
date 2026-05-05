@@ -54,9 +54,11 @@ export function ManaCost({
 /**
  * Render a single {@code {X}} token as a Mana font icon. Same class
  * scheme as {@link ManaCost} but exposed for callers that need to
- * render symbols inline with surrounding text (see {@link ManaText}).
+ * render symbols inline with surrounding text (see {@link ManaText}
+ * and the {@code renderUpstreamMarkup} text-segment splitter that
+ * surfaces mana symbols inside upstream-emitted dialog / oracle text).
  */
-function ManaSymbol({ token }: { token: string }) {
+export function ManaSymbol({ token }: { token: string }) {
   const inner = token.slice(1, -1).toLowerCase().replace(/\//g, '');
   // The "tap" symbol comes through as either {T} or {tap}; the
   // mana-font class is `ms-tap` for both.

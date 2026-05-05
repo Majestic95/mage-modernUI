@@ -58,12 +58,19 @@ describe('ManaPayBanner', () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it('renders the cost message for gamePlayMana', () => {
+  it('renders the cost message for gamePlayMana with mana symbols', () => {
     setManaPayDialog('gamePlayMana', 'Pay {1}{R}');
     render(<ManaPayBanner stream={fakeStream()} />);
-    expect(screen.getByTestId('mana-pay-banner-message').textContent).toContain(
-      'Pay {1}{R}',
-    );
+    const message = screen.getByTestId('mana-pay-banner-message');
+    // Surrounding prose stays as text; {X} tokens render as Mana
+    // font icons (data-symbol attribute keeps the original token
+    // for assertion + accessibility).
+    expect(message.textContent).toContain('Pay');
+    const symbols = Array.from(message.querySelectorAll('[data-symbol]'));
+    expect(symbols.map((s) => s.getAttribute('data-symbol'))).toEqual([
+      '{1}',
+      '{R}',
+    ]);
   });
 
   it('cancel sends boolean false on the messageId from the store at click time', async () => {

@@ -1,4 +1,5 @@
 import type React from 'react';
+import { ManaSymbol } from '../ManaCost';
 
 /**
  * Render upstream's tiny HTML-flavored markup safely. Engine messages
@@ -43,7 +44,19 @@ export function renderUpstreamMarkup(text: string): React.ReactNode {
   let key = 0;
   for (const token of tokenizeUpstreamMarkup(text)) {
     if (token.kind === 'text') {
-      parts.push(token.text);
+      // Plain text segments may carry inline mana tokens like
+      // {1}{G}{W} (cost prompts), {T}: Add {U} (ability prompts),
+      // and oracle-text snippets in HoverCardDetail / CardSearch.
+      // Splitting on {X} here lets every renderUpstreamMarkup
+      // consumer surface mana symbols without each component
+      // having to wire its own splitter.
+      for (const piece of splitManaTokens(token.text)) {
+        if (piece.kind === 'text') {
+          parts.push(piece.text);
+        } else {
+          parts.push(<ManaSymbol key={`m-${key++}`} token={piece.token} />);
+        }
+      }
     } else if (token.kind === 'br') {
       parts.push(<br key={`br-${key++}`} />);
     } else {
@@ -59,6 +72,38 @@ export function renderUpstreamMarkup(text: string): React.ReactNode {
     }
   }
   return parts.length === 1 ? parts[0] : <>{parts}</>;
+}
+
+/**
+ * Split a plain text segment into ordered text + mana-token pieces.
+ * Token shape mirrors {@link ManaText} in {@code ManaCost.tsx}:
+ * {@code {2}}, {@code {G}}, {@code {W/U}}, {@code {2/W}}, {@code {T}},
+ * {@code {X}}, {@code {P}}. Any non-empty bracketed segment is treated
+ * as a mana token; the {@link ManaSymbol} component falls back to a
+ * harmless empty {@code <i>} when a token doesn't map to a Mana-font
+ * glyph, so unknown tokens degrade to invisible rather than breaking.
+ *
+ * <p>Engine messages do not contain literal {@code {...}} text outside
+ * mana costs (cost prompts always use the brace form, and free-form
+ * narration never bracket-wraps text), so the split is safe to apply
+ * unconditionally to every text segment {@code renderUpstreamMarkup}
+ * consumes.
+ */
+type ManaPiece = { kind: 'text'; text: string } | { kind: 'mana'; token: string };
+function splitManaTokens(text: string): ManaPiece[] {
+  const out: ManaPiece[] = [];
+  // Capture-group split keeps the {X} matches in the result array
+  // alongside the surrounding text segments.
+  const parts = text.split(/(\{[^}]+\})/g);
+  for (const part of parts) {
+    if (!part) continue;
+    if (/^\{[^}]+\}$/.test(part)) {
+      out.push({ kind: 'mana', token: part });
+    } else {
+      out.push({ kind: 'text', text: part });
+    }
+  }
+  return out;
 }
 
 /**
