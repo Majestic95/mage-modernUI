@@ -325,6 +325,43 @@ public final class AuthService implements AutoCloseable {
             validateUsername(resolvedUsername);
         }
         boolean isAnonymous = (password == null || password.isBlank());
+        // Slice F19 (2026-05-04, audit C1 + C3 fix) — WebApi-side
+        // password verification against the upstream
+        // AuthorizedUserRepository. F18 left this entirely to upstream's
+        // Session.connectUserHandling, which only verifies when
+        // configSettings().isAuthenticationActivated() is true (default
+        // false in xmage). That meant a registered user could be
+        // impersonated with any password. Now: if a row exists for
+        // this username, the supplied password MUST match the stored
+        // hash regardless of the upstream flag. Anonymous login for
+        // usernames WITHOUT a row continues to work unchanged.
+        mage.server.AuthorizedUser stored = mage.server.AuthorizedUserRepository
+                .getInstance().getByName(resolvedUsername);
+        if (stored != null) {
+            if (password == null || password.isBlank()) {
+                throw new WebApiException(401, "PASSWORD_REQUIRED",
+                        "Username '" + resolvedUsername
+                                + "' is registered. Provide the password.");
+            }
+            // Slice F19 — verify the password ourselves by reproducing
+            // upstream's SimpleHash math (see verifyPasswordReflective).
+            // This is the SECURITY-CRITICAL fix from audit C1: wrong
+            // passwords for a registered user MUST be rejected at the
+            // WebApi layer regardless of upstream's authenticationActivated
+            // flag. Right-password happy path past this point is currently
+            // broken by an unrelated upstream issue: Session.connectUser
+            // returns false for a known username when the password
+            // verifies but `authenticationActivated=false`. Tracking that
+            // as a flip-blocker in `docs/decisions/auth-roadmap.md`. F19's
+            // contribution is the wrong-password REJECTION; the right-
+            // password ACCEPT path follows in a separate slice that fixes
+            // upstream's connectUser interaction.
+            if (!verifyPasswordReflective(stored, password)) {
+                throw new WebApiException(401, "INVALID_CREDENTIALS",
+                        "Login failed. Check username and password.");
+            }
+            isAnonymous = false;
+        }
         String upstreamSessionId = UUID.randomUUID().toString();
 
         registerUpstreamSession(upstreamSessionId, resolvedUsername);
@@ -443,25 +480,104 @@ public final class AuthService implements AutoCloseable {
             throw new WebApiException(400, "INVALID_EMAIL",
                     "A valid email address is required.");
         }
-        // Pre-check for duplicate. Upstream's add() swallows SQLException
-        // on PK collision, so without this check a duplicate registration
-        // would silently no-op AND return 200 to the client — leaving
-        // them thinking they registered when the original owner's
-        // password is still in effect.
-        if (mage.server.AuthorizedUserRepository.getInstance().getByName(trimmed) != null) {
-            throw new WebApiException(409, "USERNAME_TAKEN",
-                    "Username '" + trimmed + "' is already registered.");
-        }
-        mage.server.AuthorizedUserRepository.getInstance().add(trimmed, password, email.trim());
-        // Verify by re-query — upstream's add() swallows SQLException so
-        // a non-PK error (e.g. malformed email field, DB lock) would
-        // leave the user thinking they registered when nothing happened.
-        if (mage.server.AuthorizedUserRepository.getInstance().getByName(trimmed) == null) {
-            throw new WebApiException(500, "UPSTREAM_ERROR",
-                    "Registration failed at the upstream repository "
-                    + "(no SQL error surfaced; see server logs).");
+        // Slice F19 (audit C2 fix) — synchronize the pre-check + add
+        // + verify on the repository singleton. Mirrors upstream's own
+        // Session.registerUser at line 94 of Session.java. Without
+        // this, two concurrent register calls for the same username
+        // race past the existence check and BOTH succeed (upstream
+        // add() swallows SQLException on PK collision). The lock is
+        // process-wide on the repo instance and is cheap enough for
+        // a low-rate path like registration.
+        synchronized (mage.server.AuthorizedUserRepository.getInstance()) {
+            // Pre-check for duplicate. Upstream's add() swallows
+            // SQLException on PK collision, so without this check a
+            // duplicate registration would silently no-op AND return
+            // 200 to the client — leaving them thinking they
+            // registered when the original owner's password is still
+            // in effect.
+            if (mage.server.AuthorizedUserRepository.getInstance().getByName(trimmed) != null) {
+                throw new WebApiException(409, "USERNAME_TAKEN",
+                        "Username '" + trimmed + "' is already registered.");
+            }
+            mage.server.AuthorizedUserRepository.getInstance().add(trimmed, password, email.trim());
+            // Verify by re-query — upstream's add() swallows SQLException
+            // so a non-PK error (e.g. malformed field, DB lock) would
+            // leave the user thinking they registered when nothing
+            // happened.
+            if (mage.server.AuthorizedUserRepository.getInstance().getByName(trimmed) == null) {
+                throw new WebApiException(500, "UPSTREAM_ERROR",
+                        "Registration failed; please try again.");
+            }
         }
         LOG.info("User registered: username={}", trimmed);
+    }
+
+    /**
+     * Slice F19 — manual password verification via reflection over
+     * upstream's {@code AuthorizedUser} fields. We cannot call
+     * {@code AuthorizedUser.doCredentialsMatch} because Shiro's
+     * {@code HashedCredentialsMatcher} doesn't enable salt by default
+     * unless {@code setHashSalted(true)} is set, and upstream's
+     * helper omits that call — so the built-in matcher returns false
+     * even for the right password. Recomputing the {@code SimpleHash}
+     * with the stored salt + algorithm + iterations and comparing the
+     * base64 strings sidesteps the bug.
+     *
+     * <p>Constant-time string comparison via
+     * {@code MessageDigest.isEqual} on the byte arrays prevents the
+     * timing side-channel that {@code String.equals} would leak.
+     */
+    private static boolean verifyPasswordReflective(
+            mage.server.AuthorizedUser stored, String password) {
+        try {
+            java.lang.reflect.Field saltField = mage.server.AuthorizedUser.class
+                    .getDeclaredField("salt");
+            java.lang.reflect.Field passwordField = mage.server.AuthorizedUser.class
+                    .getDeclaredField("password");
+            java.lang.reflect.Field algoField = mage.server.AuthorizedUser.class
+                    .getDeclaredField("hashAlgorithm");
+            java.lang.reflect.Field iterField = mage.server.AuthorizedUser.class
+                    .getDeclaredField("hashIterations");
+            saltField.setAccessible(true);
+            passwordField.setAccessible(true);
+            algoField.setAccessible(true);
+            iterField.setAccessible(true);
+
+            String saltB64 = (String) saltField.get(stored);
+            String storedHashB64 = (String) passwordField.get(stored);
+            String algo = (String) algoField.get(stored);
+            int iter = iterField.getInt(stored);
+
+            // Recompute the hash using java.security.MessageDigest
+            // directly, mirroring Shiro's SimpleHash.hash() byte-for-
+            // byte. Avoids Shiro's HashedCredentialsMatcher which has
+            // a salt-handling default that's incompatible with how
+            // upstream stored the original hash.
+            //
+            // SimpleHash sequence (from Shiro source): digest.update(salt),
+            // hash = digest.digest(input), loop (iter - 1) times: hash =
+            // digest.digest(hash). Result is base64-encoded for storage.
+            byte[] saltBytes = org.apache.shiro.codec.Base64.decode(saltB64);
+            byte[] inputBytes = password.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance(algo);
+            md.reset();
+            md.update(saltBytes);
+            byte[] hashed = md.digest(inputBytes);
+            for (int i = 0; i < iter - 1; i++) {
+                md.reset();
+                hashed = md.digest(hashed);
+            }
+            String recomputedB64 = java.util.Base64.getEncoder().encodeToString(hashed);
+            byte[] a = recomputedB64.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            byte[] b = storedHashB64.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            // Constant-time compare — no information leak via timing.
+            return java.security.MessageDigest.isEqual(a, b);
+        } catch (ReflectiveOperationException
+                | java.security.NoSuchAlgorithmException ex) {
+            LOG.error("Password verification reflection failed; " +
+                    "upstream AuthorizedUser shape or algorithm may have changed", ex);
+            return false;
+        }
     }
 
     /**
@@ -470,12 +586,25 @@ public final class AuthService implements AutoCloseable {
      * Default is disabled so the existing anonymous + named-no-
      * password flow stays the production path until an operator
      * explicitly opts in.
+     *
+     * <p>Slice F19 (test hook) — also reads the JVM system property
+     * {@code xmage.registrationEnabled} when the env var isn't set,
+     * so unit tests can toggle the gate without modifying the
+     * process environment (Java doesn't allow runtime env mutation).
+     * Env wins over property; either alone works.
      */
     public static boolean isRegistrationEnabled() {
         String env = System.getenv("XMAGE_REGISTRATION_ENABLED");
-        if (env == null) return false;
-        String norm = env.trim().toLowerCase();
-        return norm.equals("true") || norm.equals("1");
+        if (env != null) {
+            String norm = env.trim().toLowerCase();
+            return norm.equals("true") || norm.equals("1");
+        }
+        String prop = System.getProperty("xmage.registrationEnabled");
+        if (prop != null) {
+            String norm = prop.trim().toLowerCase();
+            return norm.equals("true") || norm.equals("1");
+        }
+        return false;
     }
 
     /**

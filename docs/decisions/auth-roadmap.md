@@ -21,6 +21,64 @@
     `{ "code": "REGISTRATION_DISABLED" }` and the client surfaces
     a friendly inline error.
 
+## F19 follow-up (2026-05-04)
+
+After F18 shipped, an agentic security review (recorded in
+`critic-pass-log.md` row F18) found three CRITICAL issues. F19
+addresses all of them:
+
+- **C1 fixed:** WebApi-side password verification via
+  `verifyPasswordReflective` in `AuthService.login()`. When a row
+  exists in `AuthorizedUserRepository` for the supplied username,
+  the password MUST match the stored hash regardless of upstream's
+  `authenticationActivated` flag. Wrong password → 401
+  INVALID_CREDENTIALS. Empty password → 401 PASSWORD_REQUIRED.
+- **C2 fixed:** `AuthService.register()` now wraps pre-check + add +
+  verify in `synchronized (AuthorizedUserRepository.getInstance())`,
+  mirroring upstream's own pattern. Concurrent register attempts
+  for the same username can no longer both succeed.
+- **C3 fixed (implicitly):** Because C1 verifies passwords at the
+  WebApi layer regardless of the upstream flag, the rows we write
+  on register are now actively consulted on login. They're no
+  longer "data we write that nobody reads."
+
+### F19 also fixed:
+- `verifyPasswordReflective` uses `MessageDigest.isEqual` for
+  constant-time comparison (no timing side-channel).
+- 11 integration tests in `AuthServiceRegisterTest` covering the
+  M7 audit-mandated scenarios.
+
+## ⚠️ Flip-blocker discovered during F19
+
+A separate upstream issue surfaced while writing F19's tests: when
+`authenticationActivated=false` (xmage's default config), upstream's
+`Session.connectUser()` returns `false` for a registered username
+even with an empty password. The reason is in `connectUserHandling`'s
+user-instance management path (`createUser` returns
+`Optional.of(newUser)` correctly, but a subsequent
+`connectToSession` or `getUserByName` check apparently rejects).
+Result: a user who registers + logs in with the right password
+gets a 401 from the WebApi because upstream rejects the session.
+
+This is NOT a security bug (no impersonation possible), but it is a
+hard UX blocker for flipping the flag. The disabled test
+`loginAfterRegister_correctPassword_returns200AndAuthenticated`
+in `AuthServiceRegisterTest` is the regression gate that will turn
+green when the upstream issue is resolved.
+
+**Do not set `XMAGE_REGISTRATION_ENABLED=true` in production until
+the flip-blocker is fixed.** The wrong-password rejection works
+correctly; the right-password happy path does not.
+
+The most likely paths to resolution (each ~half a day):
+1. Set `authenticationActivated=true` in the upstream config,
+   accepting that this may activate other auth-related upstream code
+   we haven't audited.
+2. Bypass upstream's `connectUser` for registered users; do the
+   user-instance creation through a more direct upstream API.
+3. Fork or wrap the upstream user-instance creation path to make it
+   idempotent under our auth model.
+
 ## How to flip it on
 
 The minimum to enable real authentication on prod:
