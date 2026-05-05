@@ -255,9 +255,20 @@ export function CardFace(props: CardFaceProps): JSX.Element {
   } = props;
   const spec = SIZE_SPECS[size];
   const [imageFailed, setImageFailed] = useState(false);
-  const url = scryfallImageUrl(card, spec.imageVersion);
-  const isCreature = !!(card.power || card.toughness);
-  const isPlaneswalker = !!card.startingLoyalty;
+  // 2026-05-04 — local flip state for double-faced cards. Lets the
+  // player preview the back face directly from the battlefield card
+  // (was hover-overlay only). Pure client-side toggle, no engine
+  // dispatch — viewing the back face doesn't transform the
+  // permanent. Counters / tapped / damage stay on the perm so they
+  // remain correct regardless of which face is showing.
+  const transformable = !!(card.transformable && card.secondCardFace);
+  const [flipped, setFlipped] = useState(false);
+  const face = transformable && flipped && card.secondCardFace
+    ? card.secondCardFace
+    : card;
+  const url = scryfallImageUrl(face, spec.imageVersion);
+  const isCreature = !!(face.power || face.toughness);
+  const isPlaneswalker = !!face.startingLoyalty;
   // Stack tiles never show P/T — the stack zone is for spells/abilities,
   // not creatures-as-creatures. Hand + battlefield render P/T or loyalty.
   const showPT = size !== 'stack' && (isCreature || isPlaneswalker);
@@ -357,8 +368,14 @@ export function CardFace(props: CardFaceProps): JSX.Element {
   // and StackZone FocalCard use; cardId-name match against
   // commandList in useCommanderColorsForCard.
   const commanderColors = useCommanderColorsForCard(card);
+  // 2026-05-04 — rotation moved from the inner card to the outer
+  // wrapper (below) so the commander color halo (a sibling element
+  // visually behind the card) rotates in sync when the card taps.
+  // Previously the halo stayed upright when a tapped commander
+  // turned 90°, leaving a visible diamond-shaped halo behind a
+  // sideways card.
   const cardFace = (
-    <motion.div
+    <div
       data-testid={spec.testid}
       data-card-face-size={size}
       data-commander={commanderColors ? 'true' : undefined}
@@ -375,9 +392,6 @@ export function CardFace(props: CardFaceProps): JSX.Element {
         (dialogPulseClass ? ' ' + dialogPulseClass : '')
       }
       style={sizeStyle}
-      initial={{ rotate: rotateInitial }}
-      animate={{ rotate: rotateAnimate }}
-      transition={rotateTransition}
     >
       {url && !imageFailed ? (
         <img
@@ -402,12 +416,12 @@ export function CardFace(props: CardFaceProps): JSX.Element {
               ' text-zinc-500 italic text-center leading-tight'
             }
           >
-            {card.name}
+            {face.name}
           </span>
         </div>
       )}
       {/* Mana cost overlay (top-right) */}
-      {card.manaCost && (
+      {face.manaCost && (
         <div
           className={
             'absolute ' +
@@ -418,7 +432,7 @@ export function CardFace(props: CardFaceProps): JSX.Element {
             spec.manaPad
           }
         >
-          <ManaCost cost={card.manaCost} size={spec.manaSize} />
+          <ManaCost cost={face.manaCost} size={spec.manaSize} />
         </div>
       )}
       {/* Counter chip (top-left). Hidden during combat so the
@@ -487,7 +501,7 @@ export function CardFace(props: CardFaceProps): JSX.Element {
             spec.bannerLeading
           ).trim()}
         >
-          {card.name}
+          {face.name}
         </p>
       </div>
       {/* P/T or loyalty (bottom-right, above the name banner). Stack
@@ -502,9 +516,31 @@ export function CardFace(props: CardFaceProps): JSX.Element {
           }
         >
           {isPlaneswalker
-            ? card.startingLoyalty
-            : `${card.power}/${card.toughness}`}
+            ? face.startingLoyalty
+            : `${face.power}/${face.toughness}`}
         </div>
+      )}
+      {/* 2026-05-04 — Flip button for double-faced cards. Only mounts
+          on the battlefield render (size==='battlefield') so it
+          doesn't clutter the hand fan / stack tile / focal tile (the
+          existing HoverCardDetail Flip in the hover popover stays as
+          the affordance for those contexts). Pure client-side state —
+          no engine dispatch; toggling shows the back face for
+          inspection. stopPropagation so clicking Flip doesn't also
+          fire the parent's tap/select onClick. */}
+      {transformable && size === 'battlefield' && (
+        <button
+          type="button"
+          data-testid="cardface-flip"
+          aria-label={flipped ? 'Show front face' : 'Show back face'}
+          onClick={(e) => {
+            e.stopPropagation();
+            setFlipped((f) => !f);
+          }}
+          className="absolute top-1 left-1 z-10 px-1 py-0.5 text-[10px] leading-none rounded bg-zinc-900/85 text-zinc-100 border border-zinc-600 hover:bg-zinc-800 focus:outline-none focus-visible:ring-1 focus-visible:ring-fuchsia-400"
+        >
+          {flipped ? '↺' : '↻'}
+        </button>
       )}
       {/* Slice 59 — damage flash overlay. Mounts when damageFlashKey
           increments (from a damage increase), pulses 0 → 0.4 → 0
@@ -540,15 +576,34 @@ export function CardFace(props: CardFaceProps): JSX.Element {
           aria-hidden="true"
         />
       )}
-    </motion.div>
+    </div>
   );
 
-  if (!commanderColors || commanderColors.length === 0) return cardFace;
+  // No-halo path — apply the rotation directly to the card.
+  if (!commanderColors || commanderColors.length === 0) {
+    return (
+      <motion.div
+        className="relative inline-block"
+        style={sizeStyle}
+        initial={{ rotate: rotateInitial }}
+        animate={{ rotate: rotateAnimate }}
+        transition={rotateTransition}
+      >
+        {cardFace}
+      </motion.div>
+    );
+  }
 
+  // Commander-halo path — wrap halo + card in a single rotating
+  // motion.div so they tap together. `isolation: isolate` keeps the
+  // negative-z halo behind only this card, not the whole stack.
   return (
-    <div
+    <motion.div
       className="relative inline-block"
       style={{ ...sizeStyle, isolation: 'isolate' }}
+      initial={{ rotate: rotateInitial }}
+      animate={{ rotate: rotateAnimate }}
+      transition={rotateTransition}
     >
       <div
         data-testid="commander-halo"
@@ -562,6 +617,6 @@ export function CardFace(props: CardFaceProps): JSX.Element {
         }}
       />
       {cardFace}
-    </div>
+    </motion.div>
   );
 }

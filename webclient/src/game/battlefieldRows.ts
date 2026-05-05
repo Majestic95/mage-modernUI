@@ -224,12 +224,19 @@ function stackKey(perm: WebPermanentView): string | null {
   const counterTotals = Object.values(perm.card.counters ?? {});
   if (counterTotals.some((n) => n > 0)) return null;
   if ((perm.goadingPlayerIds ?? []).length > 0) return null;
+  // 2026-05-04 — token-vs-non-token added to the key so a non-token
+  // creature never merges into the same stack as a same-named token
+  // (e.g. cast Llanowar Elves stays separate from a Llanowar Elves
+  // token created by an effect). Tapped/untapped already separate via
+  // the 'T'/'U' field below — preserved.
+  const isToken = perm.card.subtypes.includes('Token');
   return [
     perm.card.name,
     perm.card.expansionSetCode,
     perm.card.cardNumber,
     perm.tapped ? 'T' : 'U',
     perm.summoningSickness ? 'S' : 'N',
+    isToken ? 'TOK' : 'NON',
   ].join('|');
 }
 

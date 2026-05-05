@@ -71,8 +71,19 @@ export function SelectDialog({ dialog, stream, clearDialog }: ContentProps) {
 
   // Skip handling: the engine accepts the all-zeros UUID as "skip" /
   // "done with no selection" per upstream convention (mirrors the
-  // pattern in TargetDialog). Optional only when flag=false.
-  const onSkip = !dialog.data.flag
+  // pattern in TargetDialog).
+  //
+  // Show Skip when:
+  //   - flag=false (truly optional prompt — historic gate), OR
+  //   - min=0 (any-number partition; selecting zero is a valid
+  //     submission per CR 701.27 / 701.42 for scry / surveil).
+  // The min=0 clause covers scry / surveil partitions where the
+  // engine emits flag=true (mandatory acknowledgement) but zero-
+  // selection is rules-legal — without this, the user has no Skip
+  // affordance and is forced to advance via Next Phase. The all-
+  // zeros UUID still routes to the engine's skip handler regardless.
+  const allowSkip = !dialog.data.flag || dialog.data.min === 0;
+  const onSkip = allowSkip
     ? () => {
         stream?.sendPlayerResponse(
           dialog.messageId,

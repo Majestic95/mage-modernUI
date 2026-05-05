@@ -780,9 +780,13 @@ describe('Game page', () => {
       });
     });
     // The fixture's only permanent is TAPPED_FOREST_PERMANENT
-    // (tapped: true) — its inner face should carry the 90° rotation.
+    // (tapped: true). 2026-05-04 — rotation moved from the inner
+    // face div to the OUTER wrapper motion.div so the commander-color
+    // halo (sibling of the face) rotates with the card. Read the
+    // transform from the rotating ancestor rather than the face.
     const face = screen.getByTestId('battlefield-tile-face');
-    expect(face.style.transform).toContain('rotate(90deg)');
+    const rotatingWrapper = face.parentElement!;
+    expect(rotatingWrapper.style.transform).toContain('rotate(90deg)');
   });
 
   it('BattlefieldTile shows damage chip when damage > 0', () => {
