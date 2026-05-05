@@ -303,7 +303,11 @@ class AuthServiceRegisterTest {
         HttpResponse<String> login = postJson("/api/session",
                 "{\"username\":\"" + name + "\"}");
         assertEquals(401, login.statusCode(), login.body());
-        assertEquals("PASSWORD_REQUIRED",
+        // F21.7 — collapsed wire-shape for the enumeration oracle.
+        // Was PASSWORD_REQUIRED; now identical INVALID_CREDENTIALS
+        // to the wrong-password path. Server log captures the
+        // distinction for ops; the wire response does not.
+        assertEquals("INVALID_CREDENTIALS",
                 JSON.readTree(login.body()).get("code").asText());
     }
 

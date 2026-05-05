@@ -376,8 +376,19 @@ public final class AuthService implements AutoCloseable {
                                 + "Try again in " + remainingSec + " seconds.");
             }
             if (password == null || password.isBlank()) {
-                throw new WebApiException(401, "PASSWORD_REQUIRED",
-                        "This username is registered. Provide the password.");
+                // F21.7 (audit Sec B1, partial) — collapsed wire
+                // shape. Was 401 PASSWORD_REQUIRED with a distinct
+                // message; now 401 INVALID_CREDENTIALS matching the
+                // wrong-password path so an attacker probing
+                // username + empty-password can't read whether the
+                // username is registered from the response code or
+                // text. Telemetry note: server log records the
+                // distinction (LOG.info below) so operators can
+                // still see the difference; the wire response is
+                // uniform.
+                LOG.info("Login failed: user={} reason=password-required", resolvedUsername);
+                throw new WebApiException(401, "INVALID_CREDENTIALS",
+                        "Sign-in failed. Check your username and password.");
             }
             // Slice F19 — verify the password ourselves by reproducing
             // upstream's SimpleHash math (see verifyPasswordReflective).
@@ -407,8 +418,10 @@ public final class AuthService implements AutoCloseable {
                 // lockout so 5 wrong-password attempts trigger a
                 // 15-minute lock (with exponential backoff after).
                 loginAttempts.recordFailure(resolvedUsername);
+                LOG.info("Login failed: user={} reason=wrong-password", resolvedUsername);
+                // F21.7 — wire shape matches the empty-password path.
                 throw new WebApiException(401, "INVALID_CREDENTIALS",
-                        "Login failed. Check username and password.");
+                        "Sign-in failed. Check your username and password.");
             }
             // Verified — clear any prior failure streak.
             loginAttempts.recordSuccess(resolvedUsername);

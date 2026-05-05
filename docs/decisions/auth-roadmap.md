@@ -48,7 +48,46 @@ addresses all of them:
 - 11 integration tests in `AuthServiceRegisterTest` covering the
   M7 audit-mandated scenarios.
 
-## ⚠️ Flip-blocker discovered during F19
+## ✅ F21 (2026-05-04) — Auth-readiness milestone (mostly complete)
+
+User direction: "Fix everything so we can turn it on." Worked
+through the audit findings in priority order. Status:
+
+| # | Audit ref | What | Status |
+|---|---|---|---|
+| 11 | F19 flip-blocker | Username length cap mismatch (WebApi 1-32 vs upstream 14) | ✅ F21.1 |
+| 7 | Sec D3+D4 | Generic register-failure response (no enumeration oracle) | ✅ F21.2 |
+| 3 | Sec B2 | Per-account lockout (5 fails → 15 min, exponential) | ✅ F21.3 |
+| 6 | Sec E1 | Security response headers (HSTS / X-Content-Type / X-Frame / Referrer / CORP) | ✅ F21.4 |
+| 8 | Sec A4 | Password polish (128-char cap + NFKC normalization) | ✅ F21.5 |
+| 10 | Corr E1 | Startup self-test for verifyPasswordReflective | ✅ F21.6 |
+| 2 | Sec B1 | Collapse login response oracle (PASSWORD_REQUIRED → INVALID_CREDENTIALS) | ✅ F21.7 (partial) |
+| 1 | Sec A1 | Argon2id migration (versioned hash + transparent rehash) | ⏸ DEFERRED |
+| 4 | Sec C2 | Token off localStorage (HttpOnly cookie + CSRF) | ⏸ DEFERRED |
+| 5 | Sec A6 | H2 at-rest encryption | ⏸ DEFERRED |
+| 8 partial | Sec A5 | HIBP k-anonymity check | ⏸ DEFERRED |
+| 9 | Sec D1 | Email verification flow | ⏸ DEFERRED |
+
+The deferred items are defense-in-depth, not exploitation-blockers
+for our threat model:
+
+- **#1 Argon2id**: Existing SHA-256 × 1024 with random salt is
+  bad-by-2026-standards but still requires a DB compromise to
+  attack offline. Acceptable for a small-userbase casual game.
+- **#4 localStorage**: XSS hygiene + CSP would help. We have no
+  known XSS surfaces today; React's text-escape is the primary
+  defense.
+- **#5 H2 at-rest encryption**: File-level access to the user
+  data already implies broader server compromise.
+- **#8 HIBP**: 8-char minimum + lockout (#3) limit credential
+  stuffing without it.
+- **#9 Email verification**: Account squatting is a real risk but
+  a small userbase makes manual recovery feasible.
+
+These are queued for follow-up slices. None block flag-flip for
+the current playtest scope.
+
+## ⚠️ ORIGINAL Flip-blocker discovered during F19 — RESOLVED in F21.1
 
 A separate upstream issue surfaced while writing F19's tests: when
 `authenticationActivated=false` (xmage's default config), upstream's
