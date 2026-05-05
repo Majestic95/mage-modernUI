@@ -78,6 +78,21 @@ AI-8.0 → AI-8.4 (5 commits, 4 of them landing the heuristics + 1
 shipping doc/skeleton/wire-up). Live JVM picks up via the next
 `./scripts/playtest-up.sh` bounce.
 
+**Post-Tier-1 critic pass (AI-8.5, 2026-05-05).** Three parallel
+specialist critics (technical / Magic-rules / xmage-AI integration)
+reviewed all 6 items. Found 5 critical bugs and a file-size
+violation; fixed all 6 in AI-8.5:
+- **C1:** partner commander damage was summed (wrong) — now max'd per CR 903.14a
+- **C2:** lethal short-circuit didn't use commander damage as a kill path — now does
+- **C3:** lethal short-circuit ignored "can't lose" effects (Platinum Angel) — now skips them
+- **C4:** human-takeover hazard — overrides now gate on `isGameUnderControl()`
+- **C5:** chooseTarget didn't validate `canTarget()` — now does + post-add containment check
+- **C6:** file at 631 LOC over 500 hard cap — extracted into 4 sibling classes (218/194/192/146 LOC each, all under soft cap)
+
+5 high-priority polish items (H1-H5) and 3 nits (L1-L3) deferred
+to AI-8.6. See `docs/decisions/critic-pass-log.md` for the full
+critic findings + fix mapping.
+
 ## Tier 2 — Real lift (~1 week)
 
 These are the upgrades the upstream maintainers' own TODOs flag as

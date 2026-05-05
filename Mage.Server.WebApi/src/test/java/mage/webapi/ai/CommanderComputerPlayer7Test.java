@@ -16,18 +16,16 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Pins the AI-8.0 contract: our subclass exists, has the right
- * constructor shape for {@link PlayerFactory}'s reflective
- * instantiation, copies as the same type (so simulation cloning
- * preserves the heuristics), and gets registered as the
- * {@code "Computer - mad"} handler at boot time — overriding
- * upstream's default.
- *
- * <p>Behavior testing of the {@code chooseTarget} heuristic itself
- * requires a full game with multiple players + a real targetable
- * effect; that's the live smoke-test surface, not a unit test.
- * What we lock here is the surface that, if it drifts, silently
- * disables every other AI upgrade we'll layer on.
+ * Pins the AI subclass contract: factory-compatible constructor,
+ * subclass-typed copy(), inheritance chain (proxy + MAD), boot-time
+ * registration, and the override surface for the three heuristic
+ * helpers ({@link CommanderTargetingHeuristic},
+ * {@link CommanderActionFilter},
+ * {@link CommanderLethalShortCircuit}). Behavior testing of the
+ * heuristics themselves requires a full game with multiple players
+ * + real targetable effects; that's the live smoke-test surface,
+ * not a unit test. What we lock here is the surface that, if it
+ * drifts, silently disables every Tier 1 upgrade.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class CommanderComputerPlayer7Test {
@@ -55,8 +53,7 @@ class CommanderComputerPlayer7Test {
         // Simulation cloning calls copy() to snapshot the player into
         // each branch of the minimax tree. If copy() returned the
         // parent type, every simulation branch would lose the
-        // Commander overrides — heuristics would silently disable
-        // inside the search. Lock the type at every clone.
+        // Commander overrides.
         CommanderComputerPlayer7 original = new CommanderComputerPlayer7(
                 "test-ai", RangeOfInfluence.ALL, 4);
         CommanderComputerPlayer7 copy = original.copy();
@@ -68,9 +65,8 @@ class CommanderComputerPlayer7Test {
     void inheritanceChain_preservesProxyAndMad() {
         // Defensive: the upstream proxy adds the human-takeover hooks,
         // and ComputerPlayer7 IS the MAD bot. If either link breaks
-        // (e.g., proxy is removed upstream), the build fails fast at
-        // this line rather than at runtime when a human tries to take
-        // an AI seat under control.
+        // the build fails fast here rather than at runtime when a
+        // human tries to take an AI seat under control.
         CommanderComputerPlayer7 p = new CommanderComputerPlayer7(
                 "test-ai", RangeOfInfluence.ALL, 4);
         assertTrue(p instanceof ComputerPlayerControllableProxy,
@@ -80,117 +76,66 @@ class CommanderComputerPlayer7Test {
     }
 
     @Test
-    void pickThreatTargetIfApplicable_isPackagePrivate() {
-        // AI-8.1 renamed pickLowestLifeOpponentIfApplicable to
-        // pickThreatTargetIfApplicable to reflect that the score now
-        // considers commander damage + life as a unified "damage to
-        // dead" clock. Pin the rename so a future refactor doesn't
-        // silently lose the override (the wrapping chooseTarget call
-        // still routes through this method name).
-        var p = new CommanderComputerPlayer7("test-ai", RangeOfInfluence.ALL, 4);
-        try {
-            var method = CommanderComputerPlayer7.class.getDeclaredMethod(
-                    "pickThreatTargetIfApplicable",
-                    mage.constants.Outcome.class,
-                    mage.target.Target.class,
-                    mage.abilities.Ability.class,
-                    mage.game.Game.class);
-            assertNotNull(method, "pickThreatTargetIfApplicable must exist");
-        } catch (NoSuchMethodException ex) {
-            throw new AssertionError("Heuristic entry point renamed or removed — "
-                    + "chooseTarget override is no longer wired.", ex);
-        }
+    void overrides_arePresent() {
+        // Pin all three override entry points via reflection. If any
+        // override silently disappears (e.g., upstream changes
+        // signature), the corresponding heuristic stops firing — the
+        // class still compiles cleanly but ships a regression where
+        // the AI reverts to vanilla MAD behavior on that surface.
+        assertOverrideExists("chooseTarget",
+                mage.constants.Outcome.class,
+                mage.target.Target.class,
+                mage.abilities.Ability.class,
+                mage.game.Game.class);
+        assertOverrideExists("act", mage.game.Game.class);
+        assertOverrideExists("selectAttackers",
+                mage.game.Game.class, java.util.UUID.class);
     }
 
     @Test
-    void actOverride_isPresent() {
-        // AI-8.2 added a protected act(Game) override for empty-tree
-        // telemetry. The act() method is the inner-loop entry point
-        // for every priority window — if our override is silently
-        // lost (e.g., upstream changes signature), the telemetry
-        // stops measuring and the empty-tree bug becomes invisible
-        // again. Pin the override via reflection.
-        try {
-            var method = CommanderComputerPlayer7.class.getDeclaredMethod(
-                    "act", mage.game.Game.class);
-            assertNotNull(method, "act(Game) override must exist");
-            assertEquals(CommanderComputerPlayer7.class, method.getDeclaringClass(),
-                    "act(Game) must be declared on our subclass — if upstream's "
-                            + "signature changed it would resolve to the parent.");
-        } catch (NoSuchMethodException ex) {
-            throw new AssertionError("act(Game) override missing — telemetry disabled.", ex);
-        }
+    void targetingHeuristic_helperPresent() {
+        // AI-8.5 extracted the chooseTarget bias logic into
+        // CommanderTargetingHeuristic. Pin its public-static entry
+        // point so a future refactor can't silently break the
+        // chooseTarget delegation.
+        assertHelperMethodExists(CommanderTargetingHeuristic.class, "pickThreatTarget",
+                java.util.UUID.class,
+                mage.constants.Outcome.class,
+                mage.target.Target.class,
+                mage.abilities.Ability.class,
+                mage.game.Game.class);
+        assertHelperMethodExists(CommanderTargetingHeuristic.class,
+                "maxCommanderDamageDealtBy",
+                java.util.UUID.class, java.util.UUID.class, mage.game.Game.class);
     }
 
     @Test
-    void filterUnsafeActions_helpersExist() {
-        // AI-8.3 added two filter helpers driven by act() — pin
-        // their existence + signature so a future refactor can't
-        // silently disable the filter while keeping the act()
-        // override (which would compile cleanly + ship a regression
-        // where the AI starts recasting commanders into tax hell
-        // again).
-        try {
-            var unsafeRecast = CommanderComputerPlayer7.class.getDeclaredMethod(
-                    "isUnsafeCommanderRecast",
-                    mage.abilities.Ability.class,
-                    mage.game.Game.class);
-            assertNotNull(unsafeRecast, "isUnsafeCommanderRecast must exist");
-
-            var counterproductiveWipe = CommanderComputerPlayer7.class.getDeclaredMethod(
-                    "isCounterproductiveBoardWipe",
-                    mage.abilities.Ability.class,
-                    mage.game.Game.class);
-            assertNotNull(counterproductiveWipe, "isCounterproductiveBoardWipe must exist");
-        } catch (NoSuchMethodException ex) {
-            throw new AssertionError("AI-8.3 filter helper missing — "
-                    + "act() filter call may be a no-op now.", ex);
-        }
+    void actionFilter_helperPresent() {
+        // AI-8.5 extracted the act() filter logic into
+        // CommanderActionFilter. Pin both predicates + the filter
+        // entry point.
+        assertHelperMethodExists(CommanderActionFilter.class, "filterUnsafeActions",
+                java.util.LinkedList.class, java.util.UUID.class,
+                String.class, mage.game.Game.class);
+        assertHelperMethodExists(CommanderActionFilter.class, "isUnsafeCommanderRecast",
+                mage.abilities.Ability.class, java.util.UUID.class, mage.game.Game.class);
+        assertHelperMethodExists(CommanderActionFilter.class, "isCounterproductiveBoardWipe",
+                mage.abilities.Ability.class, java.util.UUID.class, mage.game.Game.class);
     }
 
     @Test
-    void selectAttackersOverride_isPresent() {
-        // AI-8.4 added a public selectAttackers(Game, UUID) override
-        // that injects a lethal-pre-check before the parent's expensive
-        // simulation. If the override silently disappears (e.g.,
-        // upstream changes signature), the parent's broken multi-
-        // opponent attack-target enumeration takes over again. Pin
-        // the override.
-        try {
-            var method = CommanderComputerPlayer7.class.getDeclaredMethod(
-                    "selectAttackers", mage.game.Game.class, java.util.UUID.class);
-            assertNotNull(method, "selectAttackers(Game, UUID) override must exist");
-            assertEquals(CommanderComputerPlayer7.class, method.getDeclaringClass(),
-                    "selectAttackers must be declared on our subclass — if upstream's "
-                            + "signature changed it would resolve to the parent.");
-        } catch (NoSuchMethodException ex) {
-            throw new AssertionError("selectAttackers override missing — "
-                    + "lethal short-circuit disabled.", ex);
-        }
-    }
-
-    @Test
-    void tryLethalShortCircuit_isPackagePrivate() {
-        // The helper is package-private for testability — pin its
-        // existence with a reflection check so it can't silently
-        // be deleted while leaving the override calling a stub.
-        try {
-            var method = CommanderComputerPlayer7.class.getDeclaredMethod(
-                    "tryLethalShortCircuit", mage.game.Game.class);
-            assertNotNull(method, "tryLethalShortCircuit must exist");
-        } catch (NoSuchMethodException ex) {
-            throw new AssertionError("tryLethalShortCircuit helper missing.", ex);
-        }
+    void lethalShortCircuit_helperPresent() {
+        // AI-8.5 extracted the selectAttackers lethal pre-check
+        // into CommanderLethalShortCircuit. Pin the entry point.
+        assertHelperMethodExists(CommanderLethalShortCircuit.class, "tryLethalShortCircuit",
+                java.util.UUID.class, String.class, mage.game.Game.class);
     }
 
     @Test
     void boot_registersOverrideAsComputerMadHandler() {
         // The override is installed in EmbeddedServer.installAiOverrides().
         // Confirm the registration actually replaced the upstream
-        // ComputerPlayerControllableProxy entry. PlayerFactory exposes
-        // the registered classes only via createPlayer (which
-        // instantiates), so we exercise the factory and inspect the
-        // returned class.
+        // ComputerPlayerControllableProxy entry.
         var created = PlayerFactory.instance.createPlayer(
                 PlayerType.COMPUTER_MAD, "registration-probe",
                 RangeOfInfluence.ALL, 4);
@@ -201,5 +146,31 @@ class CommanderComputerPlayer7Test {
                 "PlayerFactory still returns upstream ComputerPlayerControllableProxy "
                         + "instead of our subclass — installAiOverrides() did not run "
                         + "or ran before loadPlugins.");
+    }
+
+    // ---- helpers --------------------------------------------------------
+
+    private static void assertOverrideExists(String methodName, Class<?>... params) {
+        try {
+            var method = CommanderComputerPlayer7.class.getDeclaredMethod(methodName, params);
+            assertNotNull(method, methodName + " override must exist");
+            assertEquals(CommanderComputerPlayer7.class, method.getDeclaringClass(),
+                    methodName + " must be declared on our subclass — if upstream's "
+                            + "signature changed it would resolve to the parent.");
+        } catch (NoSuchMethodException ex) {
+            throw new AssertionError(methodName + " override missing — "
+                    + "corresponding heuristic disabled.", ex);
+        }
+    }
+
+    private static void assertHelperMethodExists(Class<?> helperClass, String methodName,
+                                                  Class<?>... params) {
+        try {
+            var method = helperClass.getDeclaredMethod(methodName, params);
+            assertNotNull(method, helperClass.getSimpleName() + "." + methodName + " must exist");
+        } catch (NoSuchMethodException ex) {
+            throw new AssertionError(helperClass.getSimpleName() + "." + methodName
+                    + " missing — heuristic delegation broken.", ex);
+        }
     }
 }
