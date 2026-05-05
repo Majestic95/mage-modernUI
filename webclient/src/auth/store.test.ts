@@ -78,7 +78,10 @@ describe('useAuthStore', () => {
 
     const state = useAuthStore.getState();
     expect(state.session).toBeNull();
-    expect(state.error).toContain('Login failed');
+    // F20 (2026-05-04) — INVALID_CREDENTIALS now maps to a friendly
+    // string via authErrorToMessage; replaces the verbatim server
+    // "Login failed." message.
+    expect(state.error).toContain('Sign-in failed');
     expect(state.loading).toBe(false);
   });
 

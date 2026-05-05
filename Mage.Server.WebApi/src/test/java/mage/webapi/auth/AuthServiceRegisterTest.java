@@ -11,6 +11,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.api.parallel.Execution;
+import org.junit.jupiter.api.parallel.ExecutionMode;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -46,6 +48,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * singleton over an H2 file) doesn't see collisions across runs.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+// F20 (audit correctness A5): force same-thread execution. The
+// `xmage.registrationEnabled` JVM property toggle in @BeforeEach +
+// @AfterEach is process-wide; if Surefire is ever flipped to
+// parallel-classes execution, the property leak would race
+// `register_flagOff_returns403` against happy-path tests and produce
+// flaky 403/201 confusion. SAME_THREAD pins this class even when
+// the project's surefire config relaxes.
+@Execution(ExecutionMode.SAME_THREAD)
 class AuthServiceRegisterTest {
 
     private static final String CONFIG_PATH = "../Mage.Server/config/config.xml";

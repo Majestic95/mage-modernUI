@@ -12,6 +12,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { ApiError, request } from '../api/client';
+import { authErrorToMessage } from './errorMessages';
 import { webSessionSchema, type WebSession } from '../api/schemas';
 
 interface AuthState {
@@ -51,13 +52,9 @@ export const useAuthStore = create<AuthState>()(
           });
           set({ session, loading: false });
         } catch (err) {
-          const message =
-            err instanceof ApiError
-              ? err.message
-              : err instanceof Error
-                ? err.message
-                : 'Login failed.';
-          set({ error: message, loading: false });
+          // F20 (audit UX C1) — friendly mapping for server error
+          // codes. Falls through to a generic for unknown codes.
+          set({ error: authErrorToMessage(err), loading: false });
           throw err;
         }
       },

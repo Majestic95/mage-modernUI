@@ -573,9 +573,20 @@ public final class AuthService implements AutoCloseable {
             // Constant-time compare — no information leak via timing.
             return java.security.MessageDigest.isEqual(a, b);
         } catch (ReflectiveOperationException
-                | java.security.NoSuchAlgorithmException ex) {
-            LOG.error("Password verification reflection failed; " +
-                    "upstream AuthorizedUser shape or algorithm may have changed", ex);
+                | java.security.NoSuchAlgorithmException
+                | IllegalArgumentException
+                | NullPointerException ex) {
+            // F20 (audit follow-up correctness B3): broadened catch.
+            // A corrupted / null row in the upstream user_data DB would
+            // throw IllegalArgumentException (Base64.decode rejecting
+            // a non-base64 salt/hash) or NPE (null field). Without
+            // this, a single bad row 500s every subsequent login. Now
+            // those errors fail-closed at 401 INVALID_CREDENTIALS,
+            // matching the wrong-password path. The error is logged
+            // server-side so an operator can clean up the offending
+            // row.
+            LOG.error("Password verification failed; row may be " +
+                    "corrupted or upstream AuthorizedUser shape changed", ex);
             return false;
         }
     }

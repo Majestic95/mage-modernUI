@@ -1,6 +1,10 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useAuthStore } from '../auth/store';
-import { ApiError, request } from '../api/client';
+import { request } from '../api/client';
+import {
+  authErrorToMessage,
+  rateLimitedCooldownSeconds,
+} from '../auth/errorMessages';
 import {
   webRegisterResponseSchema,
   type WebRegisterResponse,
@@ -31,22 +35,64 @@ export function Login() {
   const [registerError, setRegisterError] = useState<string | null>(null);
   const [registerOk, setRegisterOk] = useState<string | null>(null);
   const [registering, setRegistering] = useState(false);
+  // F20 (audit UX C4) — when the server returns 429 RATE_LIMITED, we
+  // pin a cooldownUntil timestamp + tick a countdown so the submit
+  // button is visibly disabled with a "Try again in Ns" label. A 1Hz
+  // ticker drives re-render; cleared on unmount.
+  const [cooldownUntil, setCooldownUntil] = useState<number | null>(null);
+  const [now, setNow] = useState(() => Date.now());
   const login = useAuthStore((s) => s.login);
   const loading = useAuthStore((s) => s.loading);
   const error = useAuthStore((s) => s.error);
+  const clearStoreError = useAuthStore((s) => s.clearError);
+
+  useEffect(() => {
+    if (cooldownUntil === null) return;
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [cooldownUntil]);
+
+  const cooldownRemaining =
+    cooldownUntil !== null
+      ? Math.max(0, Math.ceil((cooldownUntil - now) / 1000))
+      : 0;
+  const inCooldown = cooldownRemaining > 0;
+  // Auto-clear cooldown state once the timer expires so the next
+  // submit attempt isn't gated by the stale value.
+  useEffect(() => {
+    if (cooldownUntil !== null && now >= cooldownUntil) {
+      setCooldownUntil(null);
+    }
+  }, [now, cooldownUntil]);
+
+  const handleApiError = (err: unknown, setLocal: (msg: string) => void) => {
+    setLocal(authErrorToMessage(err));
+    const cooldown = rateLimitedCooldownSeconds(err);
+    if (cooldown > 0) {
+      setCooldownUntil(Date.now() + cooldown * 1000);
+    }
+  };
 
   const onSubmitLogin = async (e: FormEvent) => {
     e.preventDefault();
+    if (inCooldown) return;
     setRegisterError(null);
     try {
       await login(username || undefined, password || undefined);
-    } catch {
-      // Error already in store.error; nothing else to do.
+    } catch (err) {
+      // Login store already wrote a friendly message into
+      // useAuthStore.error via authErrorToMessage. Capture the cooldown
+      // signal here without overriding the store-managed error text.
+      const cooldown = rateLimitedCooldownSeconds(err);
+      if (cooldown > 0) {
+        setCooldownUntil(Date.now() + cooldown * 1000);
+      }
     }
   };
 
   const onSubmitRegister = async (e: FormEvent) => {
     e.preventDefault();
+    if (inCooldown) return;
     setRegisterError(null);
     setRegisterOk(null);
     setRegistering(true);
@@ -65,14 +111,12 @@ export function Login() {
       );
       setMode('login');
       setEmail('');
+      // Also clear any stale store error from a previous failed login.
+      clearStoreError();
       // Keep username + password in state so the user can hit Sign In
       // immediately without retyping.
     } catch (err) {
-      if (err instanceof ApiError) {
-        setRegisterError(err.message);
-      } else {
-        setRegisterError('Registration failed. Please try again.');
-      }
+      handleApiError(err, setRegisterError);
     } finally {
       setRegistering(false);
     }
@@ -177,17 +221,20 @@ export function Login() {
 
         <button
           type="submit"
-          disabled={isRegister ? registering : loading}
+          disabled={(isRegister ? registering : loading) || inCooldown}
+          aria-busy={isRegister ? registering : loading}
           data-testid={isRegister ? 'register-submit' : 'login-submit'}
           className="w-full bg-fuchsia-600 hover:bg-fuchsia-500 disabled:bg-zinc-700 disabled:cursor-not-allowed text-white font-medium rounded px-4 py-2 transition-colors"
         >
-          {isRegister
-            ? registering
-              ? 'Creating account…'
-              : 'Register'
-            : loading
-              ? 'Signing in…'
-              : 'Sign in'}
+          {inCooldown
+            ? `Try again in ${cooldownRemaining}s`
+            : isRegister
+              ? registering
+                ? 'Creating account…'
+                : 'Register'
+              : loading
+                ? 'Signing in…'
+                : 'Sign in'}
         </button>
 
         <div className="text-center text-sm text-zinc-400">
@@ -198,6 +245,10 @@ export function Login() {
               onClick={() => {
                 setMode('login');
                 setRegisterError(null);
+                // F20 (audit UX A3) — clear stale auth-store error so
+                // a prior failed login doesn't linger when the user
+                // returns from register mode.
+                clearStoreError();
               }}
               className="hover:text-zinc-200 underline"
             >
@@ -212,6 +263,8 @@ export function Login() {
                 onClick={() => {
                   setMode('register');
                   setRegisterOk(null);
+                  // F20 — same hygiene on the other direction.
+                  clearStoreError();
                 }}
                 className="text-fuchsia-400 hover:text-fuchsia-300 underline"
               >
