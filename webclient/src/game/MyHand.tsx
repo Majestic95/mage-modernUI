@@ -215,7 +215,14 @@ export function MyHand({
   // full mechanical-cleanup procedure when REDESIGN flips on.
   if (REDESIGN) {
     return (
-      <div data-testid="my-hand" className="relative">
+      // 2026-05-04 — pointer-events: none on the outer wrapper so
+      // empty space within the hand strip doesn't intercept clicks
+      // bound for the bottom-pod chip cluster (graveyard / library /
+      // exile icons sit underneath the hand fan in the tabletop
+      // layout). Interactive descendants (CommandZoneSlot,
+      // HandCardSlot) re-enable with `pointer-events-auto` so
+      // cards still respond to clicks / drags.
+      <div data-testid="my-hand" className="relative pointer-events-none">
         {/* 2026-05-03 — local floating mana pool relocated to the
             asymmetric T layout, positioned directly above the local
             portrait. Was rendered here at top-right of the hand
@@ -484,7 +491,11 @@ function HandCardSlot({
     <div
       data-drop-target={isDropTarget || undefined}
       className={
-        'absolute left-1/2 top-2 transition-transform ease-out origin-bottom ' +
+        // 2026-05-04 — `pointer-events-auto` re-enables clicks /
+        // drags on each card now that the MyHand outer wrapper
+        // is `pointer-events-none` (lets clicks on empty hand-strip
+        // space fall through to the bottom-pod chip cluster).
+        'absolute left-1/2 top-2 pointer-events-auto transition-transform ease-out origin-bottom ' +
         (isDropTarget ? 'ring-4 ring-sky-400/80 rounded' : '')
       }
       style={{
