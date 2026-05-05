@@ -312,6 +312,39 @@ class AuthServiceRegisterTest {
     }
 
     @Test
+    void login_unregisteredUsernameWithPassword_returns401() throws Exception {
+        // F22 — supplying a password for a username that doesn't have
+        // an AuthorizedUser row must REJECT (was: silently fell
+        // through to anon-by-name, ignoring the password entirely —
+        // both an enumeration oracle and a UX trap). User-reported
+        // 2026-05-04: "users can sign in with usernames and passwords
+        // that are not registered." This test pins the closed oracle.
+        String name = uniqueUsername();
+        // Do NOT register the user — just try to log in.
+        HttpResponse<String> login = postJson("/api/session",
+                "{\"username\":\"" + name + "\",\"password\":\"hunter2hunter2\"}");
+        assertEquals(401, login.statusCode(), login.body());
+        assertEquals("INVALID_CREDENTIALS",
+                JSON.readTree(login.body()).get("code").asText());
+    }
+
+    @Test
+    void login_unregisteredUsernameWithoutPassword_returns200Anon() throws Exception {
+        // F22 — empty-password + named user preserves the existing
+        // anon-by-name flow. Typing a username without a password
+        // is interpreted as "I want to play as this guest name,"
+        // not as authentication intent.
+        String name = uniqueUsername();
+        HttpResponse<String> login = postJson("/api/session",
+                "{\"username\":\"" + name + "\"}");
+        assertEquals(200, login.statusCode(), login.body());
+        JsonNode body = JSON.readTree(login.body());
+        assertEquals(name, body.get("username").asText());
+        assertEquals(true, body.get("isAnonymous").asBoolean(),
+                "Empty-password login of an unregistered name must remain anonymous.");
+    }
+
+    @Test
     void loginAfterRegister_lockoutAfterFiveFailures_returns429() throws Exception {
         // F21.3 (audit Sec B2) — five consecutive wrong-password
         // attempts trigger a 15-minute account lockout, even if the

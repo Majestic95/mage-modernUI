@@ -363,6 +363,30 @@ public final class AuthService implements AutoCloseable {
         // usernames WITHOUT a row continues to work unchanged.
         mage.server.AuthorizedUser stored = mage.server.AuthorizedUserRepository
                 .getInstance().getByName(resolvedUsername);
+        // F22 (audit Sec B1, full closure 2026-05-04) — close the
+        // residual login oracle. When the user supplies a non-empty
+        // password BUT the username has no AuthorizedUser row, the
+        // pre-F22 flow fell through to upstream's anon path and the
+        // user got an unauthenticated session under their typed
+        // name (with the password silently ignored). That was both:
+        //   (a) an enumeration oracle: probing a registered name
+        //       failed with 401, probing an unregistered name
+        //       succeeded with 200 — distinguishable on the wire.
+        //   (b) a UX trap: a user thought "I signed into my
+        //       account" but actually got anon-by-name.
+        // Now: a non-empty password is treated as authentication
+        // INTENT. If no row exists, the only honest answer is
+        // INVALID_CREDENTIALS. Empty password + named user
+        // preserves the existing anon-by-name flow ("I just want to
+        // play under this name as a guest"), which is the
+        // documented behavior for guest sessions.
+        boolean wantsAuth =
+                !(password == null || password.isBlank())
+                && username != null && !username.isBlank();
+        if (stored == null && wantsAuth) {
+            throw new WebApiException(401, "INVALID_CREDENTIALS",
+                    "Sign-in failed. Check your username and password.");
+        }
         if (stored != null) {
             // F21.3 (audit Sec B2) — per-username lockout check.
             // Fires BEFORE the password verify so a locked-out
