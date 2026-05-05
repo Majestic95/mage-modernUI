@@ -23,6 +23,7 @@ export function MyHand({
   onPointerDown,
   draggedCardId,
   stream,
+  onToggleHidden,
 }: {
   hand: Record<string, WebCardView>;
   /**
@@ -41,6 +42,16 @@ export function MyHand({
    * click; both paths route through {@code onObjectClick}.
    */
   onPointerDown: (cardId: string, ev: React.PointerEvent) => void;
+  /**
+   * 2026-05-04 — minimize-hand affordance. When provided, MyHand
+   * renders a small chevron button at the top-right of the strip
+   * that fires this callback. The parent (GameTable) flips its
+   * `handHidden` state which slides the hand-strip animator off-
+   * screen and surfaces a restore tab. Optional so contexts that
+   * don't want minimize support (legacy tests, fixture renders)
+   * just don't render the button.
+   */
+  onToggleHidden?: () => void;
   /**
    * Slice 36 — id of the card currently being dragged, if any.
    * The matching hand chip dims so the user can see which one is
@@ -241,6 +252,23 @@ export function MyHand({
           >
             {disabledHint}
           </span>
+        )}
+        {/* 2026-05-04 — minimize-hand chevron. Sits at top-right of
+            the hand strip so it's reliably above the cards in the
+            visible area (cards are anchored to the lower portion
+            with `top-2`). pointer-events-auto since the parent
+            section is pointer-events-none (slice F14). */}
+        {onToggleHidden && (
+          <button
+            type="button"
+            data-testid="hand-minimize-toggle"
+            onClick={onToggleHidden}
+            className="absolute right-2 top-2 z-20 h-6 w-6 rounded bg-zinc-800/85 hover:bg-zinc-700 border border-zinc-700 text-zinc-100 text-xs leading-none flex items-center justify-center pointer-events-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-400"
+            aria-label="Minimize hand"
+            title="Minimize hand"
+          >
+            <span aria-hidden="true">▼</span>
+          </button>
         )}
         {/* Slice 70-Z polish round 17 — right gutter expanded from
             150px to 200px to reserve room for the local PlayerFrame

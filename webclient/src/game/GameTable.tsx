@@ -1,4 +1,5 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
+import { motion } from 'framer-motion';
 import type { WebCardView, WebGameView } from '../api/schemas';
 import type { GameStream } from './stream';
 import { ActionButton } from './ActionButton';
@@ -151,6 +152,15 @@ export function GameTable({ gameId, gameView, stream }: Props) {
   const variant = useLayoutVariant();
   const sidePanelCollapsedRaw = useGameStore((s) => s.sidePanelCollapsed);
   const sidePanelCollapsed = variant === 'tabletop' || sidePanelCollapsedRaw;
+  // 2026-05-04 — minimize-hand affordance. When the local player's
+  // hand grows large it can occlude the play surface; this toggle
+  // slides the entire hand strip off the bottom of the viewport
+  // and replaces it with a small "Hand (N)" restore tab. Local
+  // state — resets on remount; deliberately not persisted because
+  // a stale "hidden" state across reloads would confuse a player
+  // who forgot they hid it. Auto-restore on hand-targeting dialogs
+  // is a queued follow-up if the manual toggle proves clumsy.
+  const [handHidden, setHandHidden] = useState(false);
   const me = useMemo(
     () => gameView.players.find((p) => p.playerId === gameView.myPlayerId) ?? null,
     [gameView.players, gameView.myPlayerId],
@@ -403,8 +413,22 @@ export function GameTable({ gameId, gameView, stream }: Props) {
           {/* pointer-events-none on the section + auto on the
               inner MyHand wrapper so empty stretches of the hand
               area let pod / battlefield content underneath stay
-              clickable; only the actual cards capture clicks. */}
-          <div className="pointer-events-auto">
+              clickable; only the actual cards capture clicks.
+              2026-05-04 — wrapped in a motion.div that translates
+              the strip down off the bottom of the viewport when
+              the player toggles hand-hidden (large hands can
+              occlude the play surface). 100% of the strip's own
+              height is enough to clear the visible portion since
+              the strip is already shifted 25% off-screen via the
+              section's `bottom` style. */}
+          <motion.div
+            data-testid="hand-strip-animator"
+            data-hand-hidden={handHidden || undefined}
+            className="pointer-events-auto"
+            animate={{ y: handHidden ? '100%' : 0 }}
+            transition={{ type: 'tween', duration: 0.25, ease: 'easeInOut' }}
+            initial={false}
+          >
             <MyHand
               hand={gameView.myHand}
               player={me}
@@ -415,9 +439,27 @@ export function GameTable({ gameId, gameView, stream }: Props) {
               onPointerDown={beginHandPress}
               draggedCardId={drag?.cardId ?? null}
               stream={stream}
+              onToggleHidden={() => setHandHidden(true)}
             />
-          </div>
+          </motion.div>
         </section>
+      )}
+      {/* 2026-05-04 — restore tab. Mounts at viewport bottom-center
+          when the hand is hidden. Click → setHandHidden(false), the
+          hand-strip animator slides the fan back into view. The pill
+          shows the live hand count so the player can see "5 cards
+          waiting" at a glance. */}
+      {REDESIGN && me && handHidden && (
+        <button
+          type="button"
+          data-testid="hand-restore-tab"
+          onClick={() => setHandHidden(false)}
+          className="fixed bottom-0 left-1/2 -translate-x-1/2 z-30 px-4 py-1 rounded-t-md bg-zinc-800/95 hover:bg-zinc-700 border border-b-0 border-zinc-700 text-zinc-100 text-xs uppercase tracking-wider shadow-lg flex items-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-400"
+          aria-label={`Show hand (${Object.keys(gameView.myHand ?? {}).length} cards)`}
+        >
+          <span aria-hidden="true">▲</span>
+          <span>Hand ({Object.keys(gameView.myHand ?? {}).length})</span>
+        </button>
       )}
 
       <aside
