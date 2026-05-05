@@ -151,9 +151,7 @@ describe('TabletopBuckets — bucket-title modal', () => {
     expect(container.querySelector(`[data-layout-id="${RING.card.cardId}"]`)).toBeInTheDocument();
   });
 
-  it('Slice B (2026-05-05) — small creature count uses gap mode (no peek-stacking) so cards do not overlap when the bucket has room', () => {
-    // 2 creatures in a horizontal pod's creatures bucket (threshold 8)
-    // → cards row should render in gap mode.
+  it('FB#10 (2026-05-05) — bucket card row always uses flex-wrap + vertical scroll (replaces FB#6 gap-vs-peek toggle)', () => {
     const { container } = render(
       <TabletopBuckets
         buckets={{
@@ -171,14 +169,16 @@ describe('TabletopBuckets — bucket-title modal', () => {
     );
     const row = container.querySelector('[data-testid="tabletop-bucket-creatures-cards"]');
     expect(row).not.toBeNull();
-    expect(row!.getAttribute('data-stacking')).toBe('gap');
-    expect(row!.getAttribute('data-no-peek-threshold')).toBe('8');
+    expect(row!.getAttribute('data-row-mode')).toBe('wrap');
+    // flex-wrap + overflow-y-auto are the load-bearing classes.
+    expect(row!.className).toContain('flex-wrap');
+    expect(row!.className).toContain('overflow-y-auto');
+    // No more horizontal-scroll fallback (FB#6's overflow-x-auto).
+    expect(row!.className).not.toContain('overflow-x-auto');
   });
 
-  it('Slice B — past the per-bucket threshold the row switches to peek-stacking (negative-margin overlap)', () => {
-    // 9 distinct creatures in a horizontal pod's creatures bucket
-    // (threshold 8) → past threshold → peek mode kicks in.
-    const creatures = Array.from({ length: 9 }, (_, i) =>
+  it('FB#10 — distinct creatures render as separate sibling cards (no negative-margin peek between them)', () => {
+    const creatures = Array.from({ length: 5 }, (_, i) =>
       makePerm(`Creature ${i}`, ['CREATURE'], `99999999-9999-4999-9999-9999999999${i.toString(16)}`),
     );
     const { container } = render(
@@ -193,33 +193,82 @@ describe('TabletopBuckets — bucket-title modal', () => {
         colorIdentity={[]}
       />,
     );
-    const row = container.querySelector('[data-testid="tabletop-bucket-creatures-cards"]');
-    expect(row).not.toBeNull();
-    expect(row!.getAttribute('data-stacking')).toBe('peek');
+    const row = container.querySelector('[data-testid="tabletop-bucket-creatures-cards"]')!;
+    // Each distinct card has its own [data-permanent-id] button.
+    const buttons = row.querySelectorAll('[data-permanent-id]');
+    expect(buttons.length).toBe(5);
+    // No data-stack-count on any wrapper (singletons only).
+    const stacks = row.querySelectorAll('[data-stack-count]');
+    expect(stacks.length).toBe(0);
   });
 
-  it('Slice B — left/right pods use vertical-orientation thresholds (7 across all buckets)', () => {
-    // 7 creatures in a left pod (vertical orientation) → at threshold,
-    // still gap mode.
-    const creatures = Array.from({ length: 7 }, (_, i) =>
-      makePerm(`Creature ${i}`, ['CREATURE'], `77777777-7777-4777-7777-7777777777${i.toString(16)}`),
-    );
+  it('FB#10 — duplicate stack (3 Forests) renders 3 click-through cards with peek offsets and a stack-count badge', () => {
+    const FOREST_COPIES = Array.from({ length: 3 }, (_, i) => {
+      const id = `bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbb${i.toString(16)}`;
+      return makePerm('Forest', ['LAND'], id);
+    });
     const { container } = render(
       <TabletopBuckets
         buckets={{
-          lands: [],
-          creatures,
+          lands: FOREST_COPIES,
+          creatures: [],
           artifactsEnchantments: [],
         }}
-        position="left"
+        position="bottom"
         playerName="alice"
         colorIdentity={[]}
       />,
     );
-    const row = container.querySelector('[data-testid="tabletop-bucket-creatures-cards"]');
-    expect(row).not.toBeNull();
-    expect(row!.getAttribute('data-stacking')).toBe('gap');
-    expect(row!.getAttribute('data-no-peek-threshold')).toBe('7');
+    const row = container.querySelector('[data-testid="tabletop-bucket-lands-cards"]')!;
+    // One container with data-stack-count=3 wraps the whole stack.
+    const stackContainer = row.querySelector('[data-stack-count="3"]');
+    expect(stackContainer).not.toBeNull();
+    // All 3 Forests are individually clickable buttons inside the container.
+    const buttons = stackContainer!.querySelectorAll('[data-permanent-id]');
+    expect(buttons.length).toBe(3);
+    // Stack-count badge present on the host (×3).
+    const badge = stackContainer!.querySelector('[data-testid="stack-count-badge"]');
+    expect(badge).not.toBeNull();
+    expect(badge!.textContent).toContain('×3');
+    // data-stack-index marks each card; host = 0, dups = 1..N-1.
+    const indices = Array.from(stackContainer!.querySelectorAll('[data-stack-index]'))
+      .map((el) => el.getAttribute('data-stack-index'))
+      .sort();
+    expect(indices).toEqual(['0', '1', '2']);
+  });
+
+  it('FB#10 — clicking a back-of-stack duplicate dispatches THAT card\'s id (not the host\'s)', async () => {
+    const user = userEvent.setup();
+    const onObjectClick = vi.fn();
+    const FOREST_HOST_ID = 'cccccccc-cccc-4ccc-cccc-cccccccccc01';
+    const FOREST_BACK_ID = 'cccccccc-cccc-4ccc-cccc-cccccccccc02';
+    const { container } = render(
+      <TabletopBuckets
+        buckets={{
+          lands: [
+            makePerm('Forest', ['LAND'], FOREST_HOST_ID),
+            makePerm('Forest', ['LAND'], FOREST_BACK_ID),
+          ],
+          creatures: [],
+          artifactsEnchantments: [],
+        }}
+        position="bottom"
+        playerName="alice"
+        colorIdentity={[]}
+        canAct
+        onObjectClick={onObjectClick}
+      />,
+    );
+    // Click the back card — its [data-permanent-id] should match the
+    // back Forest's id, not the host's.
+    const backButton = container.querySelector(
+      `[data-permanent-id="${FOREST_BACK_ID}"]`,
+    ) as HTMLButtonElement;
+    expect(backButton).not.toBeNull();
+    await user.click(backButton);
+    expect(onObjectClick).toHaveBeenCalledWith(FOREST_BACK_ID);
+    // And the click did NOT dispatch the host's id.
+    expect(onObjectClick).not.toHaveBeenCalledWith(FOREST_HOST_ID);
   });
 
   it('G4 — clicking a card while !canAct does NOT dispatch (silent gate)', async () => {

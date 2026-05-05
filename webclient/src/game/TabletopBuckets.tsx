@@ -42,12 +42,15 @@ import { motion } from 'framer-motion';
 import type { PlayerAreaPosition } from './PlayerArea';
 import type { TabletopBuckets as TabletopBucketsData } from './tabletopBattlefieldLayout';
 import type { WebCardView, WebPermanentView } from '../api/schemas';
-import { CardFace } from './CardFace';
-import { HoverCardDetail } from './HoverCardDetail';
 import { ZoneBrowser } from './ZoneBrowser';
 import { groupWithAttachmentsAndStacks } from './battlefieldRows';
 import { computePodCardSizeVars } from './podShrink';
-import { BucketCardsRow, type BucketKind } from './tabletopBucketStacking';
+import {
+  BucketCardsRow,
+  DuplicateStackContainer,
+  TabletopCardButton,
+  type BucketKind,
+} from './tabletopBucketStacking';
 
 const BUCKET_LABELS: Record<BucketKind, string> = {
   lands: 'Lands',
@@ -127,7 +130,6 @@ export function TabletopBuckets({
         label={BUCKET_LABELS.lands}
         cards={buckets.lands}
         flexBasis="25%"
-        orientation={isHorizontalArrangement ? 'horizontal' : 'vertical'}
         onOpen={() => setOpenKind('lands')}
         borderTint={tint}
         canAct={canAct}
@@ -141,7 +143,6 @@ export function TabletopBuckets({
         label={BUCKET_LABELS.creatures}
         cards={buckets.creatures}
         flexBasis="50%"
-        orientation={isHorizontalArrangement ? 'horizontal' : 'vertical'}
         onOpen={() => setOpenKind('creatures')}
         borderTint={tint}
         canAct={canAct}
@@ -155,7 +156,6 @@ export function TabletopBuckets({
         label={BUCKET_LABELS.artifactsEnchantments}
         cards={buckets.artifactsEnchantments}
         flexBasis="25%"
-        orientation={isHorizontalArrangement ? 'horizontal' : 'vertical'}
         onOpen={() => setOpenKind('artifactsEnchantments')}
         borderTint={tint}
         canAct={canAct}
@@ -192,7 +192,6 @@ function BucketBox({
   label,
   cards,
   flexBasis,
-  orientation,
   onOpen,
   borderTint,
   canAct,
@@ -205,7 +204,6 @@ function BucketBox({
   label: string;
   cards: readonly WebPermanentView[];
   flexBasis: string;
-  orientation: 'horizontal' | 'vertical';
   onOpen: () => void;
   borderTint: string;
   canAct: boolean;
@@ -284,94 +282,67 @@ function BucketBox({
           {label}
         </span>
       )}
-      {/* Slice B-13-D + polish-pass P1 — peek raised from 10% to
-          40% so cards inside a bucket are scannable at a glance
-          (audit 2026-05-03: 10% collapsed 20 cards into unreadable
-          stripes; 40% shows ~5-7 cards readably and matches the
-          reference's tabletop density). margin-left: -48px = -60%
-          of --card-size-medium 80px → each card after the first
-          shows its leftmost 40% (32px). T1 ✓ — bucket footprint
-          unchanged; cards adapt within the fixed box.
-          2026-05-05 (Slice B per user feedback) — gap mode default
-          when count is below the per-bucket threshold so 2-3
-          creatures don't overlap when the bucket has plenty of room.
-          Peek mode kicks in only past the threshold (matches the
-          spec'd shrink → stack → scroll chain; previously this row
-          was always in stack mode, skipping the "natural fit" rung).
-          The data-stacking attribute is the test hook. */}
+      {/* FB#10 (2026-05-05) — adaptation chain rewrite:
+          shrink → wrap → vertical-scroll. The prior gap-vs-peek
+          toggle is gone (FB#6); BucketCardsRow now always uses
+          flex-wrap. T1 ✓ — bucket footprint unchanged; cards
+          adapt within (wrap onto next row, then scroll vertically).
+          F5 — identical perms still group via groupWithAttachmentsAndStacks
+          but stacks now render as N click-through cards with a 16px
+          peek offset (DuplicateStackContainer) so each copy is
+          selectable individually (declare-blockers with N tokens,
+          pick which Forest taps for mana). F16 — attachment fan-out
+          path preserved: hosts with attached auras/equipment render
+          fan layers behind the host (mutually exclusive with
+          duplicates per stackKey rule). */}
       {count > 0 && (
-        <BucketCardsRow
-          kind={kind}
-          orientation={orientation}
-          visibleCount={visibleCount}
-        >
-          {/* F5 (audit W5, 2026-05-04) — group identical cards into
-              ×N stacks via the existing helper. 5 Forests render as
-              1 host card with a `×5` badge instead of 5 separate
-              cards in the row, reducing visual clutter and matching
-              variant=current's BattlefieldRowGroup convention.
-              2026-05-04 — grouping result is cached in `groupedCards`
-              above so per-bucket shrink can use the visible count.
-              F16 (W4 follow-up, 2026-05-04) — attachment fan-out
-              now ships: when a host has auras / equipment attached,
-              they render BEHIND the host with 30% peek offset
-              (mirrors legacy AttachmentGroupSlot in
-              BattlefieldRowGroup.tsx). Auras already routed to the
-              host's bucket in partitionForTabletop. */}
+        <BucketCardsRow kind={kind}>
           {groupedCards.map((group) => {
             const p = group.host;
-            const stackCount = group.stackedDuplicates.length + 1;
             const hasDuplicates = group.stackedDuplicates.length > 0;
             const hasAttachments = group.attachments.length > 0;
-            // Container width grows by 30% per fan layer (attachments
-            // only — duplicates already collapse to ×N badge so they
-            // don't add fan layers in tabletop). Without attachments
-            // the cluster is exactly one tile wide (back-compat).
+            const layoutId = p.card.cardId || undefined;
+
+            // Branch 1: duplicates-only path (most common for stacked
+            // basic lands and tokens). DuplicateStackContainer renders
+            // host + each duplicate as independently clickable.
+            if (hasDuplicates) {
+              return (
+                <DuplicateStackContainer
+                  key={p.card.id}
+                  host={p}
+                  duplicates={group.stackedDuplicates}
+                  hostLayoutId={layoutId}
+                  canAct={canAct}
+                  onObjectClick={onObjectClick}
+                  eligibleTargetIds={eligibleTargetIds}
+                  eligibleCombatIds={eligibleCombatIds}
+                  combatRoles={combatRoles}
+                />
+              );
+            }
+
+            // Branch 2: attachment fan-out (host + auras/equipment).
+            // Mutually exclusive with duplicates per stackKey rule.
+            // F16 — auras fan out to the right at 30% peek each;
+            // z-index descends so host stays on top, rightmost
+            // attachment at the bottom of the local stack.
             const FAN_OFFSET = 0.3;
             const fanCount = group.attachments.length;
             const baseW = 'var(--card-size-medium, 80px)';
+            const heightCalc = 'calc(var(--card-size-medium, 80px) * 7 / 5)';
             const containerWidth = hasAttachments
               ? `calc(${baseW} * (1 + ${fanCount} * ${FAN_OFFSET}))`
               : baseW;
             const hostZ = fanCount + 1;
-            // G3 (2026-05-03) — wrapper carries `data-permanent-id`
-            // so StackZone's combat-arrow geometry resolver can find
-            // the attacker's bounding rect via querySelector.
-            // G4 (2026-05-03) — wrapper is now a `<button>` so each
-            // card is clickable in tabletop. Forwards the click to
-            // `onObjectClick`, which the click router maps to
-            // tap/select/declare-attacker/etc. Mirrors what
-            // BattlefieldTile does for variant=current. Combat
-            // eligibility / role surface as data-* so the same CSS
-            // hooks BattlefieldTile uses can apply (combat-eligible
-            // pulse, attacker/blocker badge — visual treatment is
-            // a follow-up slice; the data is here for it).
+            const inCombatMode = (eligibleCombatIds?.size ?? 0) > 0;
             const isEligibleTarget = eligibleTargetIds?.has(p.card.id) ?? false;
             const isEligibleCombat = eligibleCombatIds?.has(p.card.id) ?? false;
-            const combatRole = combatRoles?.get(p.card.id);
-            // F4 (audit C2, 2026-05-04) — during combat
-            // (declareAttackers / declareBlockers), only cards in
-            // `eligibleCombatIds` should dispatch. Without this gate
-            // tabletop's lands and artifacts visibly remained clickable
-            // during combat and dispatched useless onObjectClicks the
-            // engine silently rejected. `eligibleCombatIds` is empty
-            // outside combat, so this is a no-op for any other phase.
-            const inCombatMode = (eligibleCombatIds?.size ?? 0) > 0;
+            const combatRole = combatRoles?.get(p.card.id) ?? null;
             const clickable =
               canAct &&
               !!onObjectClick &&
               (!inCombatMode || isEligibleCombat);
-            // G7 (2026-05-04) — wrap each tabletop bucket card with
-            // a `<motion.div layoutId={p.card.cardId} layout>` so
-            // Framer animates cross-zone glides into the bucket's
-            // rendered position (hand → stack → bucket, etc.).
-            // `cardId` is the stable cross-zone identity (per
-            // schemas.ts: "For non-stack zones cardId === id;
-            // stack-resolution may bump id but cardId stays put").
-            // Mirrors BattlefieldRowGroup.tsx's `motion.div
-            // layoutId={host.card.cardId}` pattern. Without this,
-            // cards popped into the bucket without an entrance glide.
-            const layoutId = p.card.cardId || undefined;
             return (
               <motion.div
                 key={p.card.id}
@@ -379,21 +350,6 @@ function BucketBox({
                 layoutId={layoutId}
                 data-layout-id={layoutId}
                 data-card-id={p.card.cardId || undefined}
-                // H2 + H3 (2026-05-04) — CardFace's `battlefield` size
-                // is `height: 100%` + aspect-ratio 5/7 (designed for
-                // BattlefieldTile's slot which has explicit pixel
-                // dimensions from row flex sizing). H2 set explicit
-                // `width/height` here so CardFace had numbers to
-                // resolve against; H3 fixes the missed second half:
-                // making the motion.div a `display: flex` so the
-                // intermediate HoverCardDetail span (inline-flex,
-                // sizes-to-content by default) STRETCHES to fill the
-                // motion.div's 112px height — and the button inside
-                // it stretches likewise (inline-flex stretches its
-                // children by default). Without `flex` here the chain
-                // collapsed: motion.div=block child sizes-to-content
-                // → span=intrinsic → button=intrinsic → CardFace
-                // height:100% resolved against 0.
                 data-attachment-host={hasAttachments || undefined}
                 data-attachment-count={
                   hasAttachments ? group.attachments.length : undefined
@@ -401,71 +357,23 @@ function BucketBox({
                 className="relative"
                 style={{
                   width: containerWidth,
-                  height: 'calc(var(--card-size-medium, 80px) * 7 / 5)',
+                  height: heightCalc,
                   flexShrink: 0,
                 }}
               >
-                {/* Host card sits at left:0 with the highest z so any
-                    attachments behind it peek to the right of the host.
-                    The flex wrapper inside re-establishes the H3 stretch
-                    chain through HoverCardDetail's inline-flex span. */}
                 <div
                   className="absolute top-0 left-0 flex"
-                  style={{
-                    width: baseW,
-                    height: 'calc(var(--card-size-medium, 80px) * 7 / 5)',
-                    zIndex: hostZ,
-                  }}
+                  style={{ width: baseW, height: heightCalc, zIndex: hostZ }}
                 >
-                  {hasDuplicates && (
-                    <span
-                      data-testid="stack-count-badge"
-                      aria-label={`${stackCount} copies`}
-                      className="absolute top-1 right-1 z-10 px-1.5 py-0.5 rounded-full bg-zinc-900/85 border border-zinc-600 text-[11px] font-mono font-semibold text-zinc-100 pointer-events-none shadow"
-                    >
-                      ×{stackCount}
-                    </span>
-                  )}
-                  <HoverCardDetail card={p.card}>
-                    <button
-                      type="button"
-                      data-permanent-id={p.card.id}
-                      data-tapped={p.tapped || undefined}
-                      data-combat-eligible={isEligibleCombat || undefined}
-                      data-combat-role={combatRole ?? undefined}
-                      data-targetable={isEligibleTarget || undefined}
-                      disabled={!clickable}
-                      onClick={
-                        clickable && onObjectClick
-                          ? () => onObjectClick(p.card.id)
-                          : undefined
-                      }
-                      className={
-                        'block p-0 m-0 bg-transparent border-0 outline-none ' +
-                        (clickable ? 'cursor-pointer' : 'cursor-default')
-                      }
-                      aria-label={p.card.name}
-                    >
-                      <CardFace
-                        card={p.card}
-                        size="battlefield"
-                        perm={p}
-                        tapped={p.tapped}
-                        isEligibleCombat={isEligibleCombat}
-                        combatRole={combatRole ?? null}
-                        targetableForDialog={isEligibleTarget}
-                      />
-                    </button>
-                  </HoverCardDetail>
+                  <TabletopCardButton
+                    perm={p}
+                    clickable={clickable}
+                    onObjectClick={onObjectClick}
+                    isEligibleTarget={isEligibleTarget}
+                    isEligibleCombat={isEligibleCombat}
+                    combatRole={combatRole}
+                  />
                 </div>
-                {/* F16 — attachments fan out to the right at 30% peek
-                    each. Each layer's z-index descends so the rightmost
-                    attachment is at the bottom of the local stack and
-                    the host stays on top. Auras are rarely actionable
-                    in casual play so they're rendered as a passive
-                    HoverCardDetail-wrapped CardFace; clicking them
-                    forwards to onObjectClick same as host (engine
-                    handles target validity). */}
                 {group.attachments.map((att, idx) => {
                   const attEligibleTarget =
                     eligibleTargetIds?.has(att.card.id) ?? false;
@@ -484,39 +392,18 @@ function BucketBox({
                       style={{
                         left: `calc(${baseW} * ${FAN_OFFSET} * ${idx + 1})`,
                         width: baseW,
-                        height:
-                          'calc(var(--card-size-medium, 80px) * 7 / 5)',
+                        height: heightCalc,
                         zIndex: hostZ - 1 - idx,
                       }}
                     >
-                      <HoverCardDetail card={att.card}>
-                        <button
-                          type="button"
-                          data-permanent-id={att.card.id}
-                          data-tapped={att.tapped || undefined}
-                          disabled={!attClickable}
-                          onClick={
-                            attClickable && onObjectClick
-                              ? () => onObjectClick(att.card.id)
-                              : undefined
-                          }
-                          className={
-                            'block p-0 m-0 bg-transparent border-0 outline-none ' +
-                            (attClickable ? 'cursor-pointer' : 'cursor-default')
-                          }
-                          aria-label={att.card.name}
-                        >
-                          <CardFace
-                            card={att.card}
-                            size="battlefield"
-                            perm={att}
-                            tapped={att.tapped}
-                            isEligibleCombat={attEligibleCombat}
-                            combatRole={null}
-                            targetableForDialog={attEligibleTarget}
-                          />
-                        </button>
-                      </HoverCardDetail>
+                      <TabletopCardButton
+                        perm={att}
+                        clickable={attClickable}
+                        onObjectClick={onObjectClick}
+                        isEligibleTarget={attEligibleTarget}
+                        isEligibleCombat={attEligibleCombat}
+                        combatRole={null}
+                      />
                     </div>
                   );
                 })}
