@@ -153,7 +153,11 @@ class AuthServiceRegisterTest {
         assertEquals(201, first.statusCode(), first.body());
         HttpResponse<String> second = postJson("/api/auth/register", body);
         assertEquals(409, second.statusCode(), second.body());
-        assertEquals("USERNAME_TAKEN",
+        // F21.2 — collapsed enumeration oracle: 409 returns the
+        // generic REGISTRATION_FAILED code regardless of whether the
+        // username OR the email collided. Server log distinguishes
+        // for ops; the wire response does not.
+        assertEquals("REGISTRATION_FAILED",
                 JSON.readTree(second.body()).get("code").asText());
     }
 
@@ -301,6 +305,39 @@ class AuthServiceRegisterTest {
         assertEquals(401, login.statusCode(), login.body());
         assertEquals("PASSWORD_REQUIRED",
                 JSON.readTree(login.body()).get("code").asText());
+    }
+
+    @Test
+    void loginAfterRegister_lockoutAfterFiveFailures_returns429() throws Exception {
+        // F21.3 (audit Sec B2) — five consecutive wrong-password
+        // attempts trigger a 15-minute account lockout, even if the
+        // attacker rotates IPs.
+        String name = uniqueUsername();
+        String pw = "hunter2hunter2";
+        HttpResponse<String> reg = postJson("/api/auth/register",
+                "{\"username\":\"" + name
+                        + "\",\"password\":\"" + pw + "\",\"email\":\""
+                        + uniqueEmail() + "\"}");
+        assertEquals(201, reg.statusCode(), reg.body());
+
+        // Five wrong-password attempts — first 4 return 401
+        // INVALID_CREDENTIALS, the 5th increments the counter past
+        // the threshold AND triggers the lockout, but the threshold
+        // check happens AFTER the verify so the 5th attempt ALSO
+        // returns 401 INVALID_CREDENTIALS.
+        for (int i = 0; i < LoginAttemptTracker.FAILURE_THRESHOLD; i++) {
+            HttpResponse<String> bad = postJson("/api/session",
+                    "{\"username\":\"" + name + "\",\"password\":\"wrong\"}");
+            assertEquals(401, bad.statusCode(),
+                    "Attempt " + (i + 1) + " expected 401, got: " + bad.body());
+        }
+
+        // The NEXT attempt (correct or not) must hit the lockout.
+        HttpResponse<String> locked = postJson("/api/session",
+                "{\"username\":\"" + name + "\",\"password\":\"" + pw + "\"}");
+        assertEquals(429, locked.statusCode(), locked.body());
+        assertEquals("ACCOUNT_LOCKED",
+                JSON.readTree(locked.body()).get("code").asText());
     }
 
     @Test

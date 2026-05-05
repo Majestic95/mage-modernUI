@@ -99,6 +99,13 @@ public final class AuthService implements AutoCloseable {
     private final WebSessionStore store;
     private final ScheduledExecutorService sweeper;
     /**
+     * Slice F21.3 (audit Sec B2) — per-username login-attempt
+     * lockout tracker. Defends against credential brute-force from
+     * rotating IPs (which defeat the per-IP rate limiter). In-
+     * memory; resets on JVM restart. See {@link LoginAttemptTracker}.
+     */
+    private final LoginAttemptTracker loginAttempts = new LoginAttemptTracker();
+    /**
      * Slice 70-H.5 — single shared {@link ScheduledExecutorService} for
      * the per-prompt disconnect-timers (per critic N11 of slice 70-H
      * technical critic). One daemon thread services every handler's
@@ -348,10 +355,20 @@ public final class AuthService implements AutoCloseable {
         mage.server.AuthorizedUser stored = mage.server.AuthorizedUserRepository
                 .getInstance().getByName(resolvedUsername);
         if (stored != null) {
+            // F21.3 (audit Sec B2) — per-username lockout check.
+            // Fires BEFORE the password verify so a locked-out
+            // attacker can't even time the verification call.
+            long lockedUntilMs = loginAttempts.lockedUntil(resolvedUsername);
+            if (lockedUntilMs > 0L) {
+                long remainingSec =
+                        Math.max(1L, (lockedUntilMs - System.currentTimeMillis()) / 1000L);
+                throw new WebApiException(429, "ACCOUNT_LOCKED",
+                        "Too many sign-in attempts for this account. "
+                                + "Try again in " + remainingSec + " seconds.");
+            }
             if (password == null || password.isBlank()) {
                 throw new WebApiException(401, "PASSWORD_REQUIRED",
-                        "Username '" + resolvedUsername
-                                + "' is registered. Provide the password.");
+                        "This username is registered. Provide the password.");
             }
             // Slice F19 — verify the password ourselves by reproducing
             // upstream's SimpleHash math (see verifyPasswordReflective).
@@ -367,9 +384,15 @@ public final class AuthService implements AutoCloseable {
             // password ACCEPT path follows in a separate slice that fixes
             // upstream's connectUser interaction.
             if (!verifyPasswordReflective(stored, password)) {
+                // F21.3 — count this failure toward per-username
+                // lockout so 5 wrong-password attempts trigger a
+                // 15-minute lock (with exponential backoff after).
+                loginAttempts.recordFailure(resolvedUsername);
                 throw new WebApiException(401, "INVALID_CREDENTIALS",
                         "Login failed. Check username and password.");
             }
+            // Verified — clear any prior failure streak.
+            loginAttempts.recordSuccess(resolvedUsername);
             isAnonymous = false;
         }
         String upstreamSessionId = UUID.randomUUID().toString();
@@ -499,24 +522,44 @@ public final class AuthService implements AutoCloseable {
         // process-wide on the repo instance and is cheap enough for
         // a low-rate path like registration.
         synchronized (mage.server.AuthorizedUserRepository.getInstance()) {
-            // Pre-check for duplicate. Upstream's add() swallows
-            // SQLException on PK collision, so without this check a
-            // duplicate registration would silently no-op AND return
-            // 200 to the client — leaving them thinking they
-            // registered when the original owner's password is still
-            // in effect.
+            // F21.2 (audit Sec D3 + D4) — pre-check for duplicate
+            // username AND duplicate email. Both surface a single
+            // generic 409 REGISTRATION_FAILED so an attacker can't
+            // tell which constraint fired (username-taken vs email-
+            // taken). The username-echo in the message body has been
+            // dropped — earlier 409s included the literal username,
+            // which functions as an enumeration oracle (try a
+            // username, see whether the response confirms it
+            // exists).
+            //
+            // Upstream's add() swallows SQLException on PK or unique-
+            // index collision, so without these pre-checks a
+            // duplicate would silently no-op AND return 200 — leaving
+            // the user thinking they registered when their data
+            // wasn't stored.
             if (mage.server.AuthorizedUserRepository.getInstance().getByName(trimmed) != null) {
-                throw new WebApiException(409, "USERNAME_TAKEN",
-                        "Username '" + trimmed + "' is already registered.");
+                throw new WebApiException(409, "REGISTRATION_FAILED",
+                        "Registration could not be completed. If you "
+                                + "already have an account, sign in. "
+                                + "If not, try a different username "
+                                + "or email.");
+            }
+            if (mage.server.AuthorizedUserRepository.getInstance().getByEmail(email.trim()) != null) {
+                throw new WebApiException(409, "REGISTRATION_FAILED",
+                        "Registration could not be completed. If you "
+                                + "already have an account, sign in. "
+                                + "If not, try a different username "
+                                + "or email.");
             }
             mage.server.AuthorizedUserRepository.getInstance().add(trimmed, password, email.trim());
-            // Verify by re-query — upstream's add() swallows SQLException
-            // so a non-PK error (e.g. malformed field, DB lock) would
-            // leave the user thinking they registered when nothing
-            // happened.
+            // Verify by re-query — upstream's add() swallows
+            // SQLException so a non-PK error (e.g. malformed field,
+            // DB lock) would leave the user thinking they registered
+            // when nothing happened. Generic 500 message — F20
+            // audit L2: don't leak "see server logs" detail.
             if (mage.server.AuthorizedUserRepository.getInstance().getByName(trimmed) == null) {
                 throw new WebApiException(500, "UPSTREAM_ERROR",
-                        "Registration failed; please try again.");
+                        "Server error during registration. Please try again.");
             }
         }
         LOG.info("User registered: username={}", trimmed);

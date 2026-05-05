@@ -40,6 +40,13 @@ export function authErrorToMessage(err: unknown): string {
         return 'Sign-in failed. Check your username and password.';
       case 'PASSWORD_REQUIRED':
         return 'This username is registered. Sign in with the password you set, or pick a different name to play as a guest.';
+      case 'ACCOUNT_LOCKED':
+        // F21.3 — server returns the remaining time inside the
+        // message; surface verbatim if it looks readable, else
+        // a generic placeholder.
+        return looksUserReadable(err.message)
+          ? err.message
+          : 'Too many sign-in attempts for this account. Try again later.';
 
       // Register-specific
       case 'REGISTRATION_DISABLED':
@@ -52,6 +59,11 @@ export function authErrorToMessage(err: unknown): string {
         return 'Please enter a valid email address.';
       case 'USERNAME_TAKEN':
         return 'That username is already registered. Try another name or sign in.';
+      case 'REGISTRATION_FAILED':
+        // F21.2 — generic register-failure code (replaces USERNAME_TAKEN
+        // + would-be EMAIL_TAKEN). Wording mirrors the server-side
+        // generic so an attacker can't probe the code path.
+        return 'Registration could not be completed. If you already have an account, sign in. If not, try a different username or email.';
       case 'RESERVED_PREFIX':
       case 'RESERVED_USERNAME':
         return 'That username is reserved. Please choose another.';
