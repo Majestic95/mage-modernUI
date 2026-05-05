@@ -80,3 +80,4 @@ mage-bundle.zip
 # subfolder has its own gitignore covering its node_modules; this
 # root rule catches stragglers.
 node_modules/
+.vercel
