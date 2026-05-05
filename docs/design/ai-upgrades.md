@@ -70,11 +70,13 @@ the methods we override still exist with compatible signatures.
 | 2 | **Commander damage tracking + finisher bias** — score targets by `min(life, 21 - cmdDamageDealt)`; whoever is closer to losing by either clock gets picked | Half-day | Medium-large | ✅ AI-8.1 |
 | 3 | **Don't recast commander into tax hell** — drop spell-ability when commander tax ≥ 8 (= died 4+ times) before invocation | 1 day | Medium | ✅ AI-8.3 |
 | 4 | **Don't wipe your own board** — drop board-wipe spell-ability when our creature count ≥ each opponent's max AND we have ≥ 2 creatures | 1 day | Medium | ✅ AI-8.3 |
-| 5 | **Lethal short-circuit** — when `CombatUtil.canKillOpponent` says yes, just attack instead of 12s of search | Half-day | Small but visible | Queued (AI-8.2) |
+| 5 | **Lethal short-circuit** — `selectAttackers` override walks all opponents (not just iterator-first), runs `CombatUtil.canKillOpponent`, declares the lethal set on first hit. Fixes the multiplayer-attack bug as a side effect. | 1 day | Medium-large | ✅ AI-8.4 |
 | 6 | **AI activity telemetry** — count actions vs priority handoffs per (turn, AI player); WARN when ≥20 passes occur within one turn with 0 actions (empty-tree bug signature) | Half-day | Diagnostic | ✅ AI-8.2 |
 
-**Tier 1 total when complete:** ~5 days, "turns the AI from comically bad
-to passably casual" per the Commander expert agent.
+**Tier 1 status: COMPLETE 2026-05-05.** All 6 items shipped across
+AI-8.0 → AI-8.4 (5 commits, 4 of them landing the heuristics + 1
+shipping doc/skeleton/wire-up). Live JVM picks up via the next
+`./scripts/playtest-up.sh` bounce.
 
 ## Tier 2 — Real lift (~1 week)
 

@@ -10,14 +10,18 @@ import mage.constants.RangeOfInfluence;
 import mage.constants.Zone;
 import mage.filter.StaticFilters;
 import mage.game.Game;
+import mage.game.combat.Combat;
 import mage.game.permanent.Permanent;
 import mage.player.ai.ComputerPlayerControllableProxy;
+import mage.player.ai.util.CombatUtil;
 import mage.players.Player;
 import mage.target.Target;
 import mage.watchers.common.CommanderInfoWatcher;
 import mage.watchers.common.CommanderPlaysCountWatcher;
 import org.apache.log4j.Logger;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
@@ -75,11 +79,20 @@ import java.util.UUID;
  *       opponent's max, drop the action. Prevents the "AI cast
  *       Wrath when its only creature was a Craterhoof Behemoth"
  *       failure mode.</li>
+ *   <li><b>Lethal short-circuit</b> (AI-8.4). At the
+ *       {@code selectAttackers} hook, run
+ *       {@link CombatUtil#canKillOpponent} per opponent before
+ *       the parent's expensive simulation. If lethal exists,
+ *       declare those attackers and return early — saves the
+ *       AI's 12-second think time on obvious closes AND fixes
+ *       the multiplayer-attack bug (parent only iterates the
+ *       first opponent; we check all of them). Multi-opponent
+ *       awareness as a side effect.</li>
  * </ul>
  *
- * Future heuristics (lethal short-circuit) land in subsequent
- * slices — see {@code docs/design/ai-upgrades.md} for the full
- * upgrade menu.
+ * Tier 1 of {@code docs/design/ai-upgrades.md} complete with
+ * AI-8.4. Tier 2 (multi-opponent evaluator, hand quality, removal
+ * conservation, smarter mulligans) and Tier 3 are queued.
  */
 public class CommanderComputerPlayer7 extends ComputerPlayerControllableProxy {
 
@@ -482,6 +495,112 @@ public class CommanderComputerPlayer7 extends ComputerPlayerControllableProxy {
         List<Permanent> creatures = game.getBattlefield().getActivePermanents(
                 StaticFilters.FILTER_PERMANENT_CREATURE, controllerId, game);
         return creatures == null ? 0 : creatures.size();
+    }
+
+    /**
+     * AI-8.4 — lethal short-circuit. Before delegating to the
+     * parent's full minimax simulation, check each opponent for an
+     * available lethal attack via {@link CombatUtil#canKillOpponent}.
+     * If lethal is found, declare that attacker set against that
+     * opponent and return — skipping the 12-second simulation
+     * entirely.
+     *
+     * <p>This is a strict superset of the parent's behavior on
+     * the lethal case (faster + correct) and a strict no-op
+     * everywhere else (defers to super). It also fixes the
+     * multiplayer-attack bug from {@code SimulatedPlayer2.java:240}
+     * as a side effect — the parent enumerates only
+     * {@code getOpponents().iterator().next()}, but our
+     * iteration walks all opponents looking for a lethal target.
+     *
+     * <p>Defensive: any failure during attacker registration
+     * (declareAttacker returning false partway through) defers to
+     * super so we never ship a half-declared attack.
+     */
+    @Override
+    public void selectAttackers(Game game, UUID attackingPlayerId) {
+        if (!game.isSimulation()
+                && playerId.equals(attackingPlayerId)
+                && tryLethalShortCircuit(game)) {
+            return;
+        }
+        super.selectAttackers(game, attackingPlayerId);
+    }
+
+    /**
+     * Returns true iff a lethal attack was found AND successfully
+     * declared. Iterates each opponent (not just the iterator-first
+     * one), gathers attackers + blockers, runs upstream
+     * {@link CombatUtil#canKillOpponent}. On the first lethal hit:
+     * declares each attacker via
+     * {@link Combat#declareAttacker(UUID, UUID, UUID, Game)} and
+     * returns true. On any per-attacker registration failure:
+     * returns false (caller falls through to super, which runs the
+     * normal simulation).
+     */
+    boolean tryLethalShortCircuit(Game game) {
+        Combat combat = game.getCombat();
+        if (combat == null) {
+            return false;
+        }
+        Set<UUID> opponents = game.getOpponents(playerId);
+        if (opponents == null || opponents.isEmpty()) {
+            return false;
+        }
+        List<Permanent> myCreatures = game.getBattlefield().getActivePermanents(
+                StaticFilters.FILTER_PERMANENT_CREATURE, playerId, game);
+        if (myCreatures == null || myCreatures.isEmpty()) {
+            return false;
+        }
+        for (UUID oppId : opponents) {
+            Player opp = game.getPlayer(oppId);
+            if (opp == null || !opp.isInGame()) {
+                continue;
+            }
+            List<Permanent> attackersForThisOpp = filterAttackersAgainst(myCreatures, oppId, game);
+            if (attackersForThisOpp.isEmpty()) {
+                continue;
+            }
+            List<Permanent> blockers = game.getBattlefield().getActivePermanents(
+                    StaticFilters.FILTER_PERMANENT_CREATURE, oppId, game);
+            if (blockers == null) {
+                blockers = Collections.emptyList();
+            }
+            List<Permanent> lethalSet = CombatUtil.canKillOpponent(
+                    game, attackersForThisOpp, blockers, opp);
+            if (lethalSet == null || lethalSet.isEmpty()) {
+                continue;
+            }
+            // Lethal exists — declare each attacker.
+            boolean allOk = true;
+            for (Permanent attacker : lethalSet) {
+                if (!combat.declareAttacker(attacker.getId(), oppId, playerId, game)) {
+                    allOk = false;
+                    break;
+                }
+            }
+            if (allOk) {
+                log.info(String.format(
+                        "AI '%s' lethal short-circuit: attacking %s with %d creatures (skipped simulation).",
+                        getName(), opp.getName(), lethalSet.size()));
+                return true;
+            }
+            // declareAttacker failed mid-way — caller defers to
+            // super. Combat may have a partial declaration; super's
+            // simulation will overlay or correct.
+            return false;
+        }
+        return false;
+    }
+
+    private List<Permanent> filterAttackersAgainst(List<Permanent> all, UUID defenderId, Game game) {
+        List<Permanent> out = new ArrayList<>(all.size());
+        for (Permanent p : all) {
+            if (p.canAttack(defenderId, game)) {
+                out.add(p);
+            }
+        }
+        return out;
     }
 
     int commanderDamageDealtTo(UUID opponentId, Game game) {

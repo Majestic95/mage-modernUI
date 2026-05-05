@@ -149,6 +149,41 @@ class CommanderComputerPlayer7Test {
     }
 
     @Test
+    void selectAttackersOverride_isPresent() {
+        // AI-8.4 added a public selectAttackers(Game, UUID) override
+        // that injects a lethal-pre-check before the parent's expensive
+        // simulation. If the override silently disappears (e.g.,
+        // upstream changes signature), the parent's broken multi-
+        // opponent attack-target enumeration takes over again. Pin
+        // the override.
+        try {
+            var method = CommanderComputerPlayer7.class.getDeclaredMethod(
+                    "selectAttackers", mage.game.Game.class, java.util.UUID.class);
+            assertNotNull(method, "selectAttackers(Game, UUID) override must exist");
+            assertEquals(CommanderComputerPlayer7.class, method.getDeclaringClass(),
+                    "selectAttackers must be declared on our subclass — if upstream's "
+                            + "signature changed it would resolve to the parent.");
+        } catch (NoSuchMethodException ex) {
+            throw new AssertionError("selectAttackers override missing — "
+                    + "lethal short-circuit disabled.", ex);
+        }
+    }
+
+    @Test
+    void tryLethalShortCircuit_isPackagePrivate() {
+        // The helper is package-private for testability — pin its
+        // existence with a reflection check so it can't silently
+        // be deleted while leaving the override calling a stub.
+        try {
+            var method = CommanderComputerPlayer7.class.getDeclaredMethod(
+                    "tryLethalShortCircuit", mage.game.Game.class);
+            assertNotNull(method, "tryLethalShortCircuit must exist");
+        } catch (NoSuchMethodException ex) {
+            throw new AssertionError("tryLethalShortCircuit helper missing.", ex);
+        }
+    }
+
+    @Test
     void boot_registersOverrideAsComputerMadHandler() {
         // The override is installed in EmbeddedServer.installAiOverrides().
         // Confirm the registration actually replaced the upstream
