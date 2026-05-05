@@ -18,6 +18,7 @@ import mage.server.util.ConfigWrapper;
 import mage.server.util.config.Config;
 import mage.server.util.config.GamePlugin;
 import mage.server.util.config.Plugin;
+import mage.webapi.ai.CommanderComputerPlayer7;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -85,6 +86,7 @@ public final class EmbeddedServer {
             RepositoryUtil.bootstrapLocalDb();
             CardScanner.scan();
             loadPlugins(config);
+            installAiOverrides();
 
             ManagerFactory factory = new MainManagerFactory(config);
             // Auditor #4 (2026-04-29) — admin password fail-closed.
@@ -185,5 +187,29 @@ public final class EmbeddedServer {
         } catch (ClassNotFoundException ex) {
             LOG.warn("Skipping deck type '{}': {}", p.getName(), ex.getMessage());
         }
+    }
+
+    /**
+     * Override the default {@code "Computer - mad"} registration with our
+     * Commander-aware subclass. Runs AFTER {@link #loadPlugins(ConfigSettings)}
+     * so the upstream config-driven registration has already completed —
+     * {@link mage.server.game.PlayerFactory#addPlayerType} stores by
+     * {@link mage.players.PlayerType} enum key, so a second call with the
+     * same name overwrites cleanly.
+     *
+     * <p>Why call it here, not later: if a game spawns an AI before this
+     * runs, the seat keeps the upstream class for that game's lifetime
+     * (the player is reflectively constructed at {@code roomJoinTable}
+     * time and never re-resolved from the factory). Registering during
+     * boot guarantees every game from JVM start uses the subclass.
+     *
+     * <p>See {@code docs/design/ai-upgrades.md} for the upgrade roadmap
+     * and {@code Mage.Server.WebApi/src/main/java/mage/webapi/ai/} for
+     * the subclass family.
+     */
+    private static void installAiOverrides() {
+        PlayerFactory.instance.addPlayerType("Computer - mad", CommanderComputerPlayer7.class);
+        LOG.info("AI override installed: 'Computer - mad' → {}",
+                CommanderComputerPlayer7.class.getName());
     }
 }

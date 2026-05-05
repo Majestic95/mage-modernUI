@@ -38,6 +38,19 @@
             <version>${upstream.version}</version>
         </dependency>
 
+        <!-- AI-8 (2026-05-05): the MAD AI plugin is a runtime-scope dep of
+             mage-server (same shape as mage-deck-constructed). For our
+             CommanderComputerPlayer7 subclass to compile against
+             ComputerPlayerControllableProxy, we need it at compile time.
+             Promoting to compile scope here doesn't change runtime
+             behavior (mage-server already loads it). Without this, the
+             AI-8 subclass can't extend the upstream class. -->
+        <dependency>
+            <groupId>org.mage</groupId>
+            <artifactId>mage-player-ai-ma</artifactId>
+            <version>${upstream.version}</version>
+        </dependency>
+
         <!-- Lightweight HTTP/WS framework (per ADR 0002). -->
         <dependency>
             <groupId>io.javalin</groupId>
