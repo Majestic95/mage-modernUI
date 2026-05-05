@@ -99,6 +99,7 @@ public final class WebApiServer {
     private final EmbeddedServer embedded;
     private final WebSessionStore sessionStore;
     private final AuthService authService;
+    private final mage.webapi.auth.RecoveryService recoveryService;
     private final LobbyService lobbyService;
     private final DeckValidationService deckValidationService;
     private final TableStreamHandler tableStreamHandler;
@@ -148,6 +149,11 @@ public final class WebApiServer {
         this.embedded = Objects.requireNonNull(embedded, "embedded server is required");
         this.sessionStore = new WebSessionStore();
         this.authService = new AuthService(embedded, sessionStore);
+        // F24.2 (2026-05-05) — recovery-code lifecycle extracted from
+        // AuthService into a sibling RecoveryService. Constructed
+        // after AuthService since it holds an AuthService reference
+        // for revokePriorTokensForSameUsername on successful recover.
+        this.recoveryService = new mage.webapi.auth.RecoveryService(authService);
         this.lobbyService = new LobbyService(embedded);
         this.deckValidationService = new DeckValidationService();
         // Slice L7 — wire the per-table broadcaster. Constructed after
@@ -333,12 +339,12 @@ public final class WebApiServer {
                         "Too many recovery attempts from this IP. "
                                 + "Wait a minute and retry.");
             }
-            if (!mage.webapi.auth.AuthService.isRecoveryEnabled()) {
+            if (!mage.webapi.auth.RecoveryService.isRecoveryEnabled()) {
                 throw new WebApiException(403, "REGISTRATION_DISABLED",
                         "Account recovery is disabled on this server.");
             }
             WebRecoverRequest req = ctx.bodyAsClass(WebRecoverRequest.class);
-            String fresh = authService.recoverPassword(
+            String fresh = recoveryService.recoverPassword(
                     req == null ? null : req.username(),
                     req == null ? null : req.recoveryCode(),
                     req == null ? null : req.newPassword());
