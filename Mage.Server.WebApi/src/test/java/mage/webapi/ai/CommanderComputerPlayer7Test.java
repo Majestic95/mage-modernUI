@@ -123,6 +123,32 @@ class CommanderComputerPlayer7Test {
     }
 
     @Test
+    void filterUnsafeActions_helpersExist() {
+        // AI-8.3 added two filter helpers driven by act() — pin
+        // their existence + signature so a future refactor can't
+        // silently disable the filter while keeping the act()
+        // override (which would compile cleanly + ship a regression
+        // where the AI starts recasting commanders into tax hell
+        // again).
+        try {
+            var unsafeRecast = CommanderComputerPlayer7.class.getDeclaredMethod(
+                    "isUnsafeCommanderRecast",
+                    mage.abilities.Ability.class,
+                    mage.game.Game.class);
+            assertNotNull(unsafeRecast, "isUnsafeCommanderRecast must exist");
+
+            var counterproductiveWipe = CommanderComputerPlayer7.class.getDeclaredMethod(
+                    "isCounterproductiveBoardWipe",
+                    mage.abilities.Ability.class,
+                    mage.game.Game.class);
+            assertNotNull(counterproductiveWipe, "isCounterproductiveBoardWipe must exist");
+        } catch (NoSuchMethodException ex) {
+            throw new AssertionError("AI-8.3 filter helper missing — "
+                    + "act() filter call may be a no-op now.", ex);
+        }
+    }
+
+    @Test
     void boot_registersOverrideAsComputerMadHandler() {
         // The override is installed in EmbeddedServer.installAiOverrides().
         // Confirm the registration actually replaced the upstream

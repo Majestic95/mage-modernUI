@@ -68,8 +68,8 @@ the methods we override still exist with compatible signatures.
 |---|---|---|---|---|
 | 1 | **Lowest-life targeting** — bias single-opponent harmful spells/abilities toward the player at lowest life | Half-day | **Large** | ✅ AI-8.0 |
 | 2 | **Commander damage tracking + finisher bias** — score targets by `min(life, 21 - cmdDamageDealt)`; whoever is closer to losing by either clock gets picked | Half-day | Medium-large | ✅ AI-8.1 |
-| 3 | **Don't recast commander into tax hell** — refuse recast when tax ≥ 6 and we don't have safe mana headroom | Half-day | Medium | Queued (AI-8.1) |
-| 4 | **Don't wipe your own board** — sanity check before board wipes | 1 day | Medium | Queued (AI-8.1) |
+| 3 | **Don't recast commander into tax hell** — drop spell-ability when commander tax ≥ 8 (= died 4+ times) before invocation | 1 day | Medium | ✅ AI-8.3 |
+| 4 | **Don't wipe your own board** — drop board-wipe spell-ability when our creature count ≥ each opponent's max AND we have ≥ 2 creatures | 1 day | Medium | ✅ AI-8.3 |
 | 5 | **Lethal short-circuit** — when `CombatUtil.canKillOpponent` says yes, just attack instead of 12s of search | Half-day | Small but visible | Queued (AI-8.2) |
 | 6 | **AI activity telemetry** — count actions vs priority handoffs per (turn, AI player); WARN when ≥20 passes occur within one turn with 0 actions (empty-tree bug signature) | Half-day | Diagnostic | ✅ AI-8.2 |
 

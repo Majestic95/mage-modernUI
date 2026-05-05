@@ -1,16 +1,25 @@
 package mage.webapi.ai;
 
 import mage.abilities.Ability;
+import mage.abilities.SpellAbility;
+import mage.abilities.effects.Effect;
+import mage.cards.Card;
 import mage.constants.CommanderCardType;
 import mage.constants.Outcome;
 import mage.constants.RangeOfInfluence;
+import mage.constants.Zone;
+import mage.filter.StaticFilters;
 import mage.game.Game;
+import mage.game.permanent.Permanent;
 import mage.player.ai.ComputerPlayerControllableProxy;
 import mage.players.Player;
 import mage.target.Target;
 import mage.watchers.common.CommanderInfoWatcher;
+import mage.watchers.common.CommanderPlaysCountWatcher;
 import org.apache.log4j.Logger;
 
+import java.util.Iterator;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -52,14 +61,25 @@ import java.util.UUID;
  *       a turn elapses with N consecutive passes and 0 actions —
  *       the structural signature of the upstream empty-tree bug
  *       at {@code ComputerPlayer7.java:119}. Pure observability;
- *       no behavior change. Surfaces how often the bug actually
- *       fires so we can decide whether further mitigation is
- *       worth the investment.</li>
+ *       no behavior change.</li>
+ *   <li><b>Don't recast commander into tax hell</b> (AI-8.3). When
+ *       the queued action is "cast my commander from the command
+ *       zone" AND commander tax ≥ 8 (= died 4+ times), drop the
+ *       action before invocation. Prevents the suicide loop where
+ *       a high-tax commander gets re-killed every turn for no
+ *       value.</li>
+ *   <li><b>Don't wipe own board</b> (AI-8.3). When the queued
+ *       action is a board-wipe spell (effect class contains
+ *       {@code DestroyAll} / {@code DamageAll} / {@code ExileAll})
+ *       AND we have ≥ 2 creatures AND our creature count ≥ each
+ *       opponent's max, drop the action. Prevents the "AI cast
+ *       Wrath when its only creature was a Craterhoof Behemoth"
+ *       failure mode.</li>
  * </ul>
  *
- * Future heuristics (recast-tax thresholds, board-wipe sanity,
- * lethal short-circuit) land in subsequent slices — see
- * {@code docs/design/ai-upgrades.md} for the full upgrade menu.
+ * Future heuristics (lethal short-circuit) land in subsequent
+ * slices — see {@code docs/design/ai-upgrades.md} for the full
+ * upgrade menu.
  */
 public class CommanderComputerPlayer7 extends ComputerPlayerControllableProxy {
 
@@ -83,6 +103,26 @@ public class CommanderComputerPlayer7 extends ComputerPlayerControllableProxy {
      * legitimate idle turns.
      */
     private static final int EMPTY_TREE_WARN_THRESHOLD = 20;
+
+    /**
+     * AI-8.3 — commander tax above which recasting is presumed
+     * unwise. Tax = 2 × (cast count - 1), so threshold 8 = died
+     * 4+ times. Each prior recast cost +2 generic, so a 4th
+     * recast at base CMC 4 would cost 4+8=12 mana — almost
+     * always wrong unless we're closing out the game. Lower
+     * thresholds (6, ~3rd recast) catch more cases but also
+     * over-restrict legitimate finisher recasts.
+     */
+    private static final int COMMANDER_RECAST_TAX_REFUSAL_THRESHOLD = 8;
+
+    /**
+     * AI-8.3 — minimum number of our creatures before the board-wipe
+     * filter cares about self-impact. With 0 or 1 creatures the wipe
+     * either doesn't hurt us or only loses one body — likely a fair
+     * trade. With 2+ creatures we're investing in a board state and
+     * would rather not flatten it ourselves.
+     */
+    private static final int BOARD_WIPE_OWN_CREATURE_FLOOR = 2;
 
     private long lastObservedTurnHash = -1L;
     private int passesThisTurn = 0;
@@ -257,6 +297,13 @@ public class CommanderComputerPlayer7 extends ComputerPlayerControllableProxy {
             passesThisTurn = 0;
             actionsThisTurn = 0;
         }
+        // AI-8.3 — filter the action queue BEFORE the parent invokes
+        // each ability. Drops entries that match unsafe patterns
+        // (high-tax commander recast, self-harming board wipe). The
+        // filter never runs in simulation contexts so the AI's own
+        // search-tree planning sees the unfiltered behavior — we only
+        // override at real-game execution time.
+        filterUnsafeActions(game);
         int actionsBefore = actions == null ? 0 : actions.size();
         super.act(game);
         int actionsAfter = actions == null ? 0 : actions.size();
@@ -284,6 +331,157 @@ public class CommanderComputerPlayer7 extends ComputerPlayerControllableProxy {
                             + "(ComputerPlayer7.java:119). Current turn: %d.",
                     getName(), passesThisTurn, game.getState().getTurnNum()));
         }
+    }
+
+    /**
+     * AI-8.3 — drop queued abilities matching unsafe patterns
+     * before {@code super.act()} drains them. Two filters:
+     * <ol>
+     *   <li>High-tax commander recast — when commander tax ≥ 8,
+     *       refuse the recast. Prevents the suicide loop where a
+     *       repeatedly-killed commander gets re-queued every turn.</li>
+     *   <li>Counterproductive board wipe — when the spell's effect
+     *       is a {@code DestroyAll}/{@code DamageAll}/{@code ExileAll}
+     *       AND we'd lose at least as many creatures as the most
+     *       affected opponent AND we have ≥ 2 creatures, refuse.
+     *       Catches "AI cast Wrath when its only creature was a
+     *       Craterhoof Behemoth" failures.</li>
+     * </ol>
+     *
+     * <p>Both filters are deliberately conservative — false negatives
+     * (let through a borderline case) are preferable to false
+     * positives (refuse a legitimate finisher). Aggressive thresholds
+     * are documented as constants ({@link #COMMANDER_RECAST_TAX_REFUSAL_THRESHOLD},
+     * {@link #BOARD_WIPE_OWN_CREATURE_FLOOR}) so tuning is one edit.
+     */
+    private void filterUnsafeActions(Game game) {
+        if (actions == null || actions.isEmpty()) {
+            return;
+        }
+        Iterator<Ability> iter = actions.iterator();
+        while (iter.hasNext()) {
+            Ability ability = iter.next();
+            if (isUnsafeCommanderRecast(ability, game)) {
+                log.info(String.format(
+                        "AI '%s' refusing commander recast — tax too high (threshold %d).",
+                        getName(), COMMANDER_RECAST_TAX_REFUSAL_THRESHOLD));
+                iter.remove();
+            } else if (isCounterproductiveBoardWipe(ability, game)) {
+                log.info(String.format(
+                        "AI '%s' refusing board wipe — would hurt us as much as any opponent.",
+                        getName()));
+                iter.remove();
+            }
+        }
+    }
+
+    /**
+     * Detects "I'm about to cast my own commander from the command
+     * zone at unsafe tax." Returns true iff the ability is a
+     * {@link SpellAbility} whose source card is one of our
+     * commanders, currently in {@link Zone#COMMAND}, AND the
+     * commander tax (2 × prior cast count) meets or exceeds
+     * {@link #COMMANDER_RECAST_TAX_REFUSAL_THRESHOLD}.
+     *
+     * <p>Defensive — every lookup is null-checked; returns false on
+     * any unexpected state.
+     */
+    boolean isUnsafeCommanderRecast(Ability ability, Game game) {
+        if (!(ability instanceof SpellAbility)) {
+            return false;
+        }
+        UUID sourceId = ability.getSourceId();
+        if (sourceId == null) {
+            return false;
+        }
+        Card sourceCard = game.getCard(sourceId);
+        if (sourceCard == null) {
+            return false;
+        }
+        Player me = game.getPlayer(playerId);
+        if (me == null) {
+            return false;
+        }
+        Set<UUID> myCommanders = game.getCommandersIds(
+                me, CommanderCardType.COMMANDER_OR_OATHBREAKER, false);
+        if (myCommanders == null
+                || !myCommanders.contains(sourceCard.getMainCard().getId())) {
+            return false;
+        }
+        // Must currently be in the command zone — non-COMMAND zone
+        // means it's a flicker/return-from-graveyard etc., which
+        // doesn't carry tax.
+        if (game.getState().getZone(sourceId) != Zone.COMMAND) {
+            return false;
+        }
+        CommanderPlaysCountWatcher watcher = game.getState()
+                .getWatcher(CommanderPlaysCountWatcher.class);
+        if (watcher == null) {
+            return false;
+        }
+        int playsCount = watcher.getPlaysCount(sourceCard.getMainCard().getId());
+        // Tax = 2 × prior casts (CR 903.8). The Nth cast pays
+        // 2 × (N-1) extra generic.
+        int tax = 2 * playsCount;
+        return tax >= COMMANDER_RECAST_TAX_REFUSAL_THRESHOLD;
+    }
+
+    /**
+     * Detects "I'm about to cast a board wipe that hurts me as
+     * much as it hurts each opponent." Looks for spell abilities
+     * whose effects' simple class names contain {@code DestroyAll},
+     * {@code DamageAll}, or {@code ExileAll} — covers the staple
+     * Commander wipes (Wrath of God, Damnation, Pyroclasm, Anger
+     * of the Gods, etc.). Falls through (returns false) if our
+     * creature count is below {@link #BOARD_WIPE_OWN_CREATURE_FLOOR}
+     * or if some opponent has more creatures than us (in which case
+     * the wipe is correct play).
+     */
+    boolean isCounterproductiveBoardWipe(Ability ability, Game game) {
+        if (!(ability instanceof SpellAbility)) {
+            return false;
+        }
+        if (!hasBoardWipeEffect(ability)) {
+            return false;
+        }
+        int ourCreatures = countCreaturesControlledBy(playerId, game);
+        if (ourCreatures < BOARD_WIPE_OWN_CREATURE_FLOOR) {
+            return false;
+        }
+        Set<UUID> opponents = game.getOpponents(playerId);
+        if (opponents == null || opponents.isEmpty()) {
+            return false;
+        }
+        int maxOppCreatures = 0;
+        for (UUID oppId : opponents) {
+            int n = countCreaturesControlledBy(oppId, game);
+            if (n > maxOppCreatures) {
+                maxOppCreatures = n;
+            }
+        }
+        // Refuse only when we'd lose AT LEAST as many as the most
+        // affected opponent. Strict-greater-than would let us wipe
+        // a tie, which is also bad in 4-player (we trade 1-for-1
+        // with one opponent while two others sit at parity).
+        return ourCreatures >= maxOppCreatures;
+    }
+
+    private boolean hasBoardWipeEffect(Ability ability) {
+        for (Effect effect : ability.getEffects()) {
+            String className = effect.getClass().getSimpleName();
+            if (className.contains("DestroyAll")
+                    || className.contains("DamageAll")
+                    || className.contains("ExileAll")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private int countCreaturesControlledBy(UUID controllerId, Game game) {
+        List<Permanent> creatures = game.getBattlefield().getActivePermanents(
+                StaticFilters.FILTER_PERMANENT_CREATURE, controllerId, game);
+        return creatures == null ? 0 : creatures.size();
     }
 
     int commanderDamageDealtTo(UUID opponentId, Game game) {
