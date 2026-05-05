@@ -49,10 +49,27 @@ export function useAudioCues(): void {
         return;
       }
       const settings = useAudioSettings.getState();
-      if (hasPriority && !prevPriority && settings.priorityEnabled) {
+      // FB#4: while the local player has a skip armed (Stop-skipping
+      // not yet triggered), suppress chimes. The engine still surfaces
+      // priority/turn frames during a skip — playing the chime each
+      // time is noisy and defeats the point of skipping. Edge tracking
+      // continues to update so the chime fires correctly on the first
+      // post-skip priority/turn rise once the skip clears.
+      const skipArmed = me.skipState !== '';
+      if (
+        hasPriority
+        && !prevPriority
+        && settings.priorityEnabled
+        && !skipArmed
+      ) {
         playChime('priority', settings.priorityVolume);
       }
-      if (isActive && !prevActive && settings.turnEnabled) {
+      if (
+        isActive
+        && !prevActive
+        && settings.turnEnabled
+        && !skipArmed
+      ) {
         playChime('turn', settings.turnVolume);
       }
       prevPriority = hasPriority;
