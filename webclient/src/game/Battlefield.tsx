@@ -334,9 +334,18 @@ export function Battlefield({
               ? ' flex items-stretch overflow-hidden min-h-0'
               : ' flex items-stretch pb-[18vh] overflow-hidden min-h-0';
           const isTabletop = variant === 'tabletop';
-          const podCardSizeVars = computePodCardSizeVars(
-            Object.keys(p.battlefield).length,
-          );
+          // 2026-05-04 — tabletop variant moved shrink to per-bucket
+          // (TabletopBuckets owns its own `--card-size-medium`
+          // override per bucket, computed from the visible card
+          // count after duplicate-stacking). Skip pod-level shrink
+          // here for tabletop so a pod with 10 stacked basics + 1
+          // creature doesn't shrink the creature bucket because the
+          // raw pod permanent count crosses the threshold. Asymmetric-T
+          // (current variant) keeps per-pod shrink — its rows aren't
+          // bucketed.
+          const podCardSizeVars = isTabletop
+            ? null
+            : computePodCardSizeVars(Object.keys(p.battlefield).length);
           const wrapperStyle = podCardSizeVars
             ? { gridArea: area, ...podCardSizeVars }
             : { gridArea: area };
@@ -473,11 +482,18 @@ export function Battlefield({
           // user's own crowded board overflowed silently because
           // local cards stayed at full 80px while opponents shrank.
           // Symmetric scaling restores parity across all 4 pods.
+          //
+          // 2026-05-04 — tabletop variant moved shrink to per-bucket
+          // (see opponent-pod block above for rationale). The bottom
+          // pod under variant=tabletop now relies on TabletopBuckets'
+          // own per-bucket shrink instead of pod-level. Currently no
+          // non-tabletop variant uses this bottom-pod path (asymmetric-
+          // T renders an entirely separate component), so the pod-
+          // level shrink here is now effectively dead for the only
+          // active variant — left in place as a defensive no-op for
+          // future variants.
           style={{
             gridArea: 'bottom',
-            ...(me && variant === 'tabletop'
-              ? computePodCardSizeVars(Object.keys(me.battlefield).length) ?? {}
-              : {}),
           }}
           className={
             'min-w-0' +

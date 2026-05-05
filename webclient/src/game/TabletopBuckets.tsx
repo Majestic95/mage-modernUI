@@ -37,7 +37,7 @@
  * orientation-aware layout + labels + fixed sizes are visible;
  * card rendering inside each bucket is deferred to B-13-C.
  */
-import { useState } from 'react';
+import { useMemo, useState, type CSSProperties } from 'react';
 import { motion } from 'framer-motion';
 import type { PlayerAreaPosition } from './PlayerArea';
 import type { TabletopBuckets as TabletopBucketsData } from './tabletopBattlefieldLayout';
@@ -46,6 +46,7 @@ import { CardFace } from './CardFace';
 import { HoverCardDetail } from './HoverCardDetail';
 import { ZoneBrowser } from './ZoneBrowser';
 import { groupWithAttachmentsAndStacks } from './battlefieldRows';
+import { computePodCardSizeVars } from './podShrink';
 
 const BUCKET_LABELS = {
   lands: 'Lands',
@@ -213,11 +214,29 @@ function BucketBox({
   // flex-shrink:0 lock the bucket to that height regardless of
   // content (T1 compliance).
   const count = cards.length;
+  // 2026-05-04 — per-bucket shrink (was per-pod). Group identical
+  // cards into ×N stacks once here so we can both (a) iterate the
+  // groups in JSX and (b) drive shrink off the visible-card count,
+  // not the raw permanent count. Without grouping, 10 basic lands
+  // would count as 10 perms and trigger a shrink on the WHOLE pod
+  // even though they collapse to a single host card with a `×10`
+  // badge in the rendered row. Per-bucket shrink keeps each zone's
+  // adaptation independent (per the user's mental model: cards
+  // shrink only when THEIR zone is too crowded, not because a
+  // sibling zone is full).
+  const groupedCards = useMemo(
+    () => groupWithAttachmentsAndStacks(cards as WebPermanentView[]),
+    [cards],
+  );
+  const visibleCount = groupedCards.length;
+  const bucketSizeVars: CSSProperties =
+    computePodCardSizeVars(visibleCount) ?? {};
   return (
     <div
       data-testid={`tabletop-bucket-${kind}`}
       data-bucket-kind={kind}
       data-card-count={count}
+      data-visible-card-count={visibleCount}
       // Slice B-13-E — visual tuning. Border bumped from
       // border-zinc-700/50 (very dim) → border-zinc-500/70 so the
       // bucket boundaries read clearly against the colored zone.
@@ -225,7 +244,7 @@ function BucketBox({
       // commander-identity gradient shows through (eliminates a
       // dim-overlay-on-color muddying the zone color).
       className="flex-shrink-0 flex-grow-0 min-h-0 min-w-0 relative rounded border overflow-hidden"
-      style={{ flexBasis, borderColor: borderTint }}
+      style={{ flexBasis, borderColor: borderTint, ...bucketSizeVars }}
     >
       {/* Label is a click target — opens a ZoneBrowser modal listing
           every card in this bucket at full size (user direction
@@ -290,9 +309,11 @@ function BucketBox({
               1 host card with a `×5` badge instead of 5 separate
               cards in the row, reducing visual clutter and matching
               variant=current's BattlefieldRowGroup convention.
+              2026-05-04 — grouping result is cached in `groupedCards`
+              above so per-bucket shrink can use the visible count.
               Attachments grouping (W4) is deferred — auras still
               render as separate cards in the same bucket for now. */}
-          {groupWithAttachmentsAndStacks(cards as WebPermanentView[]).map((group) => {
+          {groupedCards.map((group) => {
             const p = group.host;
             const stackCount = group.stackedDuplicates.length + 1;
             const hasDuplicates = group.stackedDuplicates.length > 0;

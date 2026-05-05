@@ -500,7 +500,17 @@ export function GameTable({ gameId, gameView, stream }: Props) {
           // room. Was `w-[clamp(220px,18vw,320px)] p-2` → action label
           // ("Pass to Next Turn") felt cramped vs the rest of the
           // tabletop chrome. Now `clamp(260,20vw,360) p-3 min-h-[120px]`.
-          className="fixed bottom-3 right-3 z-30 w-[clamp(260px,20vw,360px)] min-h-[120px]
+          // 2026-05-04 z-stack fix: bumped from z-30 to z-35 because
+          // the F2 floating CommanderDamageTracker (also z-30, mounted
+          // later in DOM order) was winning the global tie-break and
+          // covering the action dock's ellipsis menu when it opens
+          // upward. The menu's internal z-[55] only orders within the
+          // action dock's stacking context — the whole context still
+          // lives at the dock's z-index globally. z-35 puts the dock
+          // (and everything it contains, including the menu and its
+          // backdrop) above the tracker but below GameDialog at z-40,
+          // so prompt dialogs still cover the dock when open.
+          className="fixed bottom-3 right-3 z-[35] w-[clamp(260px,20vw,360px)] min-h-[120px]
             rounded-lg bg-bg-elevated/95 backdrop-blur-sm
             border border-zinc-800 shadow-xl p-3"
         >
