@@ -47,14 +47,13 @@ import { HoverCardDetail } from './HoverCardDetail';
 import { ZoneBrowser } from './ZoneBrowser';
 import { groupWithAttachmentsAndStacks } from './battlefieldRows';
 import { computePodCardSizeVars } from './podShrink';
+import { BucketCardsRow, type BucketKind } from './tabletopBucketStacking';
 
-const BUCKET_LABELS = {
+const BUCKET_LABELS: Record<BucketKind, string> = {
   lands: 'Lands',
   creatures: 'Creatures',
   artifactsEnchantments: 'Artifacts & Enchantments',
-} as const;
-
-type BucketKind = keyof typeof BUCKET_LABELS;
+};
 
 // Polish-pass P11 (audit nice-to-have #13, 2026-05-03) — bucket
 // border tinted by commander color identity at ~30% alpha so the
@@ -128,6 +127,7 @@ export function TabletopBuckets({
         label={BUCKET_LABELS.lands}
         cards={buckets.lands}
         flexBasis="25%"
+        orientation={isHorizontalArrangement ? 'horizontal' : 'vertical'}
         onOpen={() => setOpenKind('lands')}
         borderTint={tint}
         canAct={canAct}
@@ -141,6 +141,7 @@ export function TabletopBuckets({
         label={BUCKET_LABELS.creatures}
         cards={buckets.creatures}
         flexBasis="50%"
+        orientation={isHorizontalArrangement ? 'horizontal' : 'vertical'}
         onOpen={() => setOpenKind('creatures')}
         borderTint={tint}
         canAct={canAct}
@@ -154,6 +155,7 @@ export function TabletopBuckets({
         label={BUCKET_LABELS.artifactsEnchantments}
         cards={buckets.artifactsEnchantments}
         flexBasis="25%"
+        orientation={isHorizontalArrangement ? 'horizontal' : 'vertical'}
         onOpen={() => setOpenKind('artifactsEnchantments')}
         borderTint={tint}
         canAct={canAct}
@@ -190,6 +192,7 @@ function BucketBox({
   label,
   cards,
   flexBasis,
+  orientation,
   onOpen,
   borderTint,
   canAct,
@@ -198,10 +201,11 @@ function BucketBox({
   eligibleCombatIds,
   combatRoles,
 }: {
-  kind: 'lands' | 'creatures' | 'artifactsEnchantments';
+  kind: BucketKind;
   label: string;
   cards: readonly WebPermanentView[];
   flexBasis: string;
+  orientation: 'horizontal' | 'vertical';
   onOpen: () => void;
   borderTint: string;
   canAct: boolean;
@@ -287,22 +291,19 @@ function BucketBox({
           reference's tabletop density). margin-left: -48px = -60%
           of --card-size-medium 80px → each card after the first
           shows its leftmost 40% (32px). T1 ✓ — bucket footprint
-          unchanged; cards adapt within the fixed box. */}
+          unchanged; cards adapt within the fixed box.
+          2026-05-05 (Slice B per user feedback) — gap mode default
+          when count is below the per-bucket threshold so 2-3
+          creatures don't overlap when the bucket has plenty of room.
+          Peek mode kicks in only past the threshold (matches the
+          spec'd shrink → stack → scroll chain; previously this row
+          was always in stack mode, skipping the "natural fit" rung).
+          The data-stacking attribute is the test hook. */}
       {count > 0 && (
-        <div
-          data-testid={`tabletop-bucket-${kind}-cards`}
-          // F1 (audit H4, 2026-05-04) — overflow-x-auto so cards
-          // beyond the bucket's intrinsic width are reachable via
-          // horizontal scroll. Spec-prescribed adaptation chain
-          // (shrink → stack → scroll); scroll is the last fallback
-          // when peek-stacking still overflows.
-          //
-          // Peek is now scaled to the active card-size token so
-          // `--card-size-medium` overrides from podShrink keep a
-          // proportional 40% visible-strip per card instead of a
-          // hardcoded -48px that turns into 100% overlap when the
-          // card itself shrinks below 48px.
-          className="flex flex-row items-center h-full pl-12 pr-2 py-2 min-h-0 min-w-0 overflow-x-auto [&>*+*]:[margin-left:calc(-1*var(--card-size-medium,80px)*0.6)]"
+        <BucketCardsRow
+          kind={kind}
+          orientation={orientation}
+          visibleCount={visibleCount}
         >
           {/* F5 (audit W5, 2026-05-04) — group identical cards into
               ×N stacks via the existing helper. 5 Forests render as
@@ -522,7 +523,7 @@ function BucketBox({
               </motion.div>
             );
           })}
-        </div>
+        </BucketCardsRow>
       )}
     </div>
   );

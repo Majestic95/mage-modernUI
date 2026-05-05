@@ -151,6 +151,77 @@ describe('TabletopBuckets — bucket-title modal', () => {
     expect(container.querySelector(`[data-layout-id="${RING.card.cardId}"]`)).toBeInTheDocument();
   });
 
+  it('Slice B (2026-05-05) — small creature count uses gap mode (no peek-stacking) so cards do not overlap when the bucket has room', () => {
+    // 2 creatures in a horizontal pod's creatures bucket (threshold 8)
+    // → cards row should render in gap mode.
+    const { container } = render(
+      <TabletopBuckets
+        buckets={{
+          lands: [],
+          creatures: [
+            ELF,
+            makePerm('Grizzly Bears', ['CREATURE'], '44444444-4444-4444-4444-444444444444'),
+          ],
+          artifactsEnchantments: [],
+        }}
+        position="bottom"
+        playerName="alice"
+        colorIdentity={[]}
+      />,
+    );
+    const row = container.querySelector('[data-testid="tabletop-bucket-creatures-cards"]');
+    expect(row).not.toBeNull();
+    expect(row!.getAttribute('data-stacking')).toBe('gap');
+    expect(row!.getAttribute('data-no-peek-threshold')).toBe('8');
+  });
+
+  it('Slice B — past the per-bucket threshold the row switches to peek-stacking (negative-margin overlap)', () => {
+    // 9 distinct creatures in a horizontal pod's creatures bucket
+    // (threshold 8) → past threshold → peek mode kicks in.
+    const creatures = Array.from({ length: 9 }, (_, i) =>
+      makePerm(`Creature ${i}`, ['CREATURE'], `99999999-9999-4999-9999-9999999999${i.toString(16)}`),
+    );
+    const { container } = render(
+      <TabletopBuckets
+        buckets={{
+          lands: [],
+          creatures,
+          artifactsEnchantments: [],
+        }}
+        position="bottom"
+        playerName="alice"
+        colorIdentity={[]}
+      />,
+    );
+    const row = container.querySelector('[data-testid="tabletop-bucket-creatures-cards"]');
+    expect(row).not.toBeNull();
+    expect(row!.getAttribute('data-stacking')).toBe('peek');
+  });
+
+  it('Slice B — left/right pods use vertical-orientation thresholds (7 across all buckets)', () => {
+    // 7 creatures in a left pod (vertical orientation) → at threshold,
+    // still gap mode.
+    const creatures = Array.from({ length: 7 }, (_, i) =>
+      makePerm(`Creature ${i}`, ['CREATURE'], `77777777-7777-4777-7777-7777777777${i.toString(16)}`),
+    );
+    const { container } = render(
+      <TabletopBuckets
+        buckets={{
+          lands: [],
+          creatures,
+          artifactsEnchantments: [],
+        }}
+        position="left"
+        playerName="alice"
+        colorIdentity={[]}
+      />,
+    );
+    const row = container.querySelector('[data-testid="tabletop-bucket-creatures-cards"]');
+    expect(row).not.toBeNull();
+    expect(row!.getAttribute('data-stacking')).toBe('gap');
+    expect(row!.getAttribute('data-no-peek-threshold')).toBe('7');
+  });
+
   it('G4 — clicking a card while !canAct does NOT dispatch (silent gate)', async () => {
     const user = userEvent.setup();
     const onObjectClick = vi.fn();
