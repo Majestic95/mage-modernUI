@@ -135,7 +135,7 @@ most-wanted but never built. Build only after Tier 1 is shipped.
 | # | Upgrade | Effort | Impact | Status |
 |---|---|---|---|---|
 | 7 | **Multi-opponent evaluator** — wrap `GameStateEvaluator2.evaluate` to sum all opponents weighted by threat (low life × 1.5, big board × 1.2, has commander out × 1.3) | 1-2 days | **Large** — structural fix for problem #1 | ✅ AI-9 |
-| 8 | **Hand quality scoring** — replace `handSize × 5` with sum of `cardScore × 0.4`; drawing a Craterhoof no longer worth the same as drawing a Forest | 1 day | Medium | ⏸ DEFERRED — see AI-9 closeout below |
+| 8 | **Hand quality scoring** — replace `handSize × 5` with our own piecewise type-dispatched heuristic (`HandCardScorer`); drawing a Craterhoof no longer worth the same as drawing a Forest | 1 day | Medium | ✅ AI-12 |
 | 9 | **Removal conservation** — only fire removal when threats-on-board ratio is high or target is lethal-next-turn | 1-2 days | Medium | Queued (AI-10) |
 | 10 | **Smarter mulligans** — keep hands by curve + color castability; aggressively mull bad hands; commander-aware | 1 day | Small-medium | Queued (AI-11) |
 

@@ -1,5 +1,6 @@
 package mage.webapi.ai;
 
+import mage.cards.Card;
 import mage.constants.CommanderCardType;
 import mage.game.Game;
 import mage.game.permanent.Permanent;
@@ -89,20 +90,26 @@ import java.util.UUID;
  * (and the side-effect risk of those pumps interacting with
  * {@code LOSES}-listening triggered abilities mid-simulation).
  *
- * <h2>Tier 2 #8 (hand quality) — DEFERRED</h2>
+ * <h2>Tier 2 #8 (hand quality) — SHIPPED via {@link HandCardScorer}</h2>
  *
- * The original AI-9 build replaced upstream's {@code handSize × HAND_CARD_SCORE}
- * with {@code sum(getCardDefinitionScore(card) × 0.4)}. The Magic-rules
+ * The original AI-9 build attempted to replace upstream's
+ * {@code handSize × HAND_CARD_SCORE} with
+ * {@code sum(getCardDefinitionScore(card) × 0.4)}. The Magic-rules
  * critic pass found {@code ArtificialScoringSystem.getCardDefinitionScore}
  * uses a placeholder {@code value = 3} for ALL cards (its own TODO at
- * line 30: "add new rating system card value"). Result: Forest = 125,
- * Craterhoof Behemoth = 240, Lightning Bolt = 290 — bigger bombs score
- * <i>lower</i> than burn spells because the mana-value penalty dominates.
- * The substitution was anti-correlated with card power.
+ * line 30): Forest = 125, Craterhoof = 240, Lightning Bolt = 290 —
+ * anti-correlated with card power. AI-9 reverted to the upstream flat
+ * formula and queued Tier 2 #8.
  *
- * <p>Tier 2 #8 is deferred until upstream ships a real per-card rating
- * system (or until we write our own). Hand scoring in this evaluator
- * matches upstream's flat formula. See {@code docs/design/ai-upgrades.md}.
+ * <p>AI-12 ships our own cheap heuristic in {@link HandCardScorer} —
+ * piecewise type-dispatched scoring (lands / creatures / instants /
+ * sorceries / artifacts / enchantments / planeswalkers / battles) +
+ * cross-type modifiers (mana-curve penalty, rarity bonus, ability
+ * keyword scores via upstream's curated {@code MagicAbility.getAbilityScore}).
+ * Final per-card score lands in {@code [30, 160]} and produces a
+ * strategic ordering matching competent Commander intuition
+ * (Sol Ring &gt; Forest, Avacyn &gt; Lightning Bolt). See
+ * {@code HandCardScorer} class Javadoc for the algorithm.
  *
  * <h2>Behavior delta vs. upstream</h2>
  *
@@ -244,14 +251,14 @@ public final class MultiOpponentEvaluator {
 
         int myLifeScore = ArtificialScoringSystem.getLifeScore(player.getLife());
         int myPermanentScore = sumPermanentScores(player, game);
-        int myHandScore = handScore(player);
+        int myHandScore = handScore(player, game);
         int myScore = myLifeScore + myPermanentScore + myHandScore;
 
         double weightedOpponentSum = 0.0;
         for (Player opp : aliveOpponents) {
             int oppLifeScore = ArtificialScoringSystem.getLifeScore(opp.getLife());
             int oppPermanentScore = sumPermanentScores(opp, game);
-            int oppHandScore = handScore(opp);
+            int oppHandScore = handScore(opp, game);
             int oppRaw = oppLifeScore + oppPermanentScore + oppHandScore;
             weightedOpponentSum += threatWeight(playerId, opp, game, canLoseCache) * (double) oppRaw;
         }
@@ -297,13 +304,24 @@ public final class MultiOpponentEvaluator {
     }
 
     /**
-     * Tier 2 #8 (hand quality scoring) is DEFERRED — see class
-     * Javadoc. Hand scoring matches upstream's flat
-     * {@code handSize × HAND_CARD_SCORE} formula until upstream ships
-     * a real per-card rating system.
+     * Tier 2 #8 (hand quality scoring) — sums per-card heuristic
+     * scores via {@link HandCardScorer#score}. See HandCardScorer
+     * class Javadoc for the algorithm.
+     *
+     * <p>Iterates the hand UUID set directly and resolves via
+     * {@code game.getCard(id)} to avoid the {@code LinkedHashSet}
+     * allocation that {@code Cards.getCards(Game)} performs per call
+     * (post-fixer AI-N2 — saves ~2M allocations/turn at skill 4+).
      */
-    static int handScore(Player player) {
-        return player.getHand().size() * GameStateEvaluator2.HAND_CARD_SCORE;
+    static int handScore(Player player, Game game) {
+        int total = 0;
+        for (UUID id : player.getHand()) {
+            Card card = game.getCard(id);
+            if (card != null) {
+                total += HandCardScorer.score(card, game);
+            }
+        }
+        return total;
     }
 
     /**
