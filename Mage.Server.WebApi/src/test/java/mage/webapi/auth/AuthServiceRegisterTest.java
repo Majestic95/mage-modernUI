@@ -8,7 +8,6 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.parallel.Execution;
@@ -95,10 +94,12 @@ class AuthServiceRegisterTest {
     }
 
     private static String uniqueUsername() {
-        // Username pattern is [a-zA-Z0-9_-]{1,32}; UUID has dashes
-        // which are allowed. Truncate to 16 to leave room for a
-        // 1-char prefix.
-        return ("u" + UUID.randomUUID().toString().replace("-", "")).substring(0, 16);
+        // Username pattern is [a-zA-Z0-9_-]{3,14}. UUID has dashes
+        // which are allowed but we strip them to keep names short.
+        // Truncate to 14 (upstream's `maxUserNameLength` config cap)
+        // so each unique name fits the WebApi validation AND
+        // upstream's `Session.connectUserHandling` length check.
+        return ("u" + UUID.randomUUID().toString().replace("-", "")).substring(0, 14);
     }
 
     /**
@@ -235,17 +236,15 @@ class AuthServiceRegisterTest {
     }
 
     @Test
-    @Disabled("F19 flip-blocker: upstream Session.connectUser returns false " +
-            "for a registered username even with an empty password, when " +
-            "authenticationActivated=false. The WebApi-side password check " +
-            "verifies correctly (verifyPasswordReflective returns true for " +
-            "the right password) but upstream's session-creation path fails " +
-            "for a separate reason. Tracking in docs/decisions/auth-roadmap.md " +
-            "as the primary flip-blocker before XMAGE_REGISTRATION_ENABLED=true " +
-            "can ship to production. The wrong-password rejection path (audit " +
-            "C1 fix) IS verified by the sibling test " +
-            "loginAfterRegister_wrongPassword_returns401.")
     void loginAfterRegister_correctPassword_returns200AndAuthenticated() throws Exception {
+        // F21 (2026-05-04) — re-enabled after diagnosing the F19 "flip-
+        // blocker": upstream's connectUser was rejecting our test
+        // usernames because they exceeded `maxUserNameLength=14`
+        // (Session.java:153). Our WebApi validation was {1,32}; tightened
+        // to {3,14} to match upstream + uniqueUsername() in this test
+        // truncates to 14. With the cap aligned, the F19 password-verify
+        // path fully works end-to-end: register → login with correct
+        // password → 200 authenticated.
         String name = uniqueUsername();
         String pw = "hunter2hunter2";
         HttpResponse<String> reg = postJson("/api/auth/register",

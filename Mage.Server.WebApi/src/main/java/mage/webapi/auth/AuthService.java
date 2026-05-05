@@ -77,13 +77,23 @@ public final class AuthService implements AutoCloseable {
 
     /**
      * Slice 64 — allowed user-supplied usernames: alphanumeric,
-     * underscore, hyphen, 1-32 chars. Rejects spaces, control chars,
-     * unicode confusables, and HTML-injection bait. Generated guest
-     * names ({@link #GUEST_PREFIX}) are server-issued and bypass this
+     * underscore, hyphen. Rejects spaces, control chars, unicode
+     * confusables, and HTML-injection bait. Generated guest names
+     * ({@link #GUEST_PREFIX}) are server-issued and bypass this
      * check.
+     *
+     * <p>Slice F21 (2026-05-04) — length tightened from {1,32} to
+     * {3,14} to mirror upstream's hard cap. Upstream's
+     * {@code Session.connectUserHandling} reads
+     * {@code config.getMaxUserNameLength()} (default 14) and rejects
+     * longer names with "User name may not be longer than 14
+     * characters", returning false from {@code connectUser}. Our
+     * lenient pre-cap silently produced 401s on the upstream side.
+     * Min 3 because upstream rejects names ≤ 2 chars at line 156 of
+     * Session.java. Adjust BOTH if upstream's config changes.
      */
     private static final java.util.regex.Pattern USERNAME_PATTERN =
-            java.util.regex.Pattern.compile("[a-zA-Z0-9_-]{1,32}");
+            java.util.regex.Pattern.compile("[a-zA-Z0-9_-]{3,14}");
 
     private final EmbeddedServer embedded;
     private final WebSessionStore store;
@@ -825,8 +835,8 @@ public final class AuthService implements AutoCloseable {
     private void validateUsername(String username) {
         if (!USERNAME_PATTERN.matcher(username).matches()) {
             throw new WebApiException(400, "INVALID_USERNAME",
-                    "Username must match [a-zA-Z0-9_-]{1,32} (alphanumeric, "
-                    + "underscore, hyphen, 1-32 chars).");
+                    "Username must be 3-14 characters using letters, "
+                    + "numbers, hyphens, or underscores.");
         }
         if (username.toLowerCase().startsWith(GUEST_PREFIX)) {
             throw new WebApiException(400, "RESERVED_PREFIX",
