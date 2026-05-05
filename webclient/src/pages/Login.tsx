@@ -16,9 +16,13 @@ import {
  *
  * <p>Slice F18 (2026-05-04) — added a Register mode behind the
  * "Don't have an account? Register" toggle. The mode swap reuses
- * the same form chrome; in register mode an email field appears
- * and the submit button hits {@code POST /api/auth/register}
- * instead of {@code POST /api/session}. Registration is gated
+ * the same form chrome; in register mode the submit button hits
+ * {@code POST /api/auth/register} instead of {@code POST /api/session}.
+ *
+ * <p>Slice F23 (2026-05-04) — dropped the email field on user
+ * privacy direction. Just username + password.
+ *
+ * <p>Registration is gated
  * server-side by {@code XMAGE_REGISTRATION_ENABLED}; if the flag
  * is off the server returns 403 and we surface a friendly message
  * inline. After a successful register, the form auto-flips back
@@ -31,7 +35,6 @@ export function Login() {
   const [mode, setMode] = useState<Mode>('login');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [email, setEmail] = useState('');
   const [registerError, setRegisterError] = useState<string | null>(null);
   const [registerOk, setRegisterOk] = useState<string | null>(null);
   const [registering, setRegistering] = useState(false);
@@ -102,7 +105,7 @@ export function Login() {
         webRegisterResponseSchema,
         {
           method: 'POST',
-          body: { username, password, email },
+          body: { username, password },
         },
       );
       // Success → flip back to login mode with username + a banner.
@@ -110,7 +113,6 @@ export function Login() {
         `Account "${username}" created. Sign in below.`,
       );
       setMode('login');
-      setEmail('');
       // Also clear any stale store error from a previous failed login.
       clearStoreError();
       // Keep username + password in state so the user can hit Sign In
@@ -194,24 +196,6 @@ export function Login() {
             className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-zinc-100 focus:outline-none focus:border-fuchsia-500"
           />
         </div>
-
-        {isRegister && (
-          <div className="space-y-2">
-            <label className="block text-sm text-zinc-300" htmlFor="email">
-              Email <span className="text-zinc-500">(required)</span>
-            </label>
-            <input
-              id="email"
-              name="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              autoComplete="email"
-              required
-              className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-zinc-100 focus:outline-none focus:border-fuchsia-500"
-            />
-          </div>
-        )}
 
         {(isRegister ? registerError : error) && (
           <p role="alert" className="text-sm text-red-400">

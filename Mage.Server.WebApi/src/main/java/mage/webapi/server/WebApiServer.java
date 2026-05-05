@@ -310,8 +310,7 @@ public final class WebApiServer {
             WebRegisterRequest req = ctx.bodyAsClass(WebRegisterRequest.class);
             authService.register(
                     req == null ? null : req.username(),
-                    req == null ? null : req.password(),
-                    req == null ? null : req.email());
+                    req == null ? null : req.password());
             ctx.status(201);
             ctx.json(new WebRegisterResponse(
                     SchemaVersion.CURRENT,

@@ -55,8 +55,6 @@ export function authErrorToMessage(err: unknown): string {
         return 'Usernames must be 1–32 characters using letters, numbers, hyphens, or underscores.';
       case 'INVALID_PASSWORD':
         return 'Password must be at least 8 characters.';
-      case 'INVALID_EMAIL':
-        return 'Please enter a valid email address.';
       case 'USERNAME_TAKEN':
         return 'That username is already registered. Try another name or sign in.';
       case 'REGISTRATION_FAILED':

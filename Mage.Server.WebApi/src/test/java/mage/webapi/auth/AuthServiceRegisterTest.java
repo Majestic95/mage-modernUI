@@ -102,29 +102,18 @@ class AuthServiceRegisterTest {
         return ("u" + UUID.randomUUID().toString().replace("-", "")).substring(0, 14);
     }
 
-    /**
-     * 2026-05-04 — discovery during F19 test authoring: the upstream
-     * H2 schema enforces a UNIQUE constraint on the email column too,
-     * not just the username. Tests must use unique emails per call
-     * to avoid cross-test interference (the H2 file persists across
-     * test runs at {@code Mage.Server.WebApi/db/authorized_user.*}).
-     * Production note: this means the existing register endpoint
-     * returns 500 UPSTREAM_ERROR on a duplicate email collision —
-     * an audit follow-up should add an email-pre-check + return 409
-     * EMAIL_TAKEN instead. Out of scope for F19 (which fixes the
-     * critical login + race issues); queued as a polish item.
-     */
-    private static String uniqueEmail() {
-        return UUID.randomUUID().toString().substring(0, 8) + "@test.example.com";
-    }
+    // F23 (2026-05-04) — email field dropped from registration on
+    // user privacy direction. The server synthesizes
+    // `<username>@local.invalid` to satisfy upstream's UNIQUE email
+    // column without storing real PII. uniqueEmail() helper removed
+    // since tests no longer pass email through the wire.
 
     @Test
     void register_happyPath_returns201() throws Exception {
         String name = uniqueUsername();
         HttpResponse<String> r = postJson("/api/auth/register",
                 "{\"username\":\"" + name
-                        + "\",\"password\":\"hunter2hunter2\",\"email\":\""
-                        + uniqueEmail() + "\"}");
+                        + "\",\"password\":\"hunter2hunter2\"}");
         assertEquals(201, r.statusCode(), r.body());
         JsonNode body = JSON.readTree(r.body());
         assertEquals(name, body.get("username").asText());
@@ -136,8 +125,7 @@ class AuthServiceRegisterTest {
         System.clearProperty("xmage.registrationEnabled");
         HttpResponse<String> r = postJson("/api/auth/register",
                 "{\"username\":\"" + uniqueUsername()
-                        + "\",\"password\":\"hunter2hunter2\",\"email\":\""
-                        + uniqueEmail() + "\"}");
+                        + "\",\"password\":\"hunter2hunter2\"}");
         assertEquals(403, r.statusCode(), r.body());
         assertEquals("REGISTRATION_DISABLED",
                 JSON.readTree(r.body()).get("code").asText());
@@ -147,8 +135,7 @@ class AuthServiceRegisterTest {
     void register_duplicateUsername_returns409() throws Exception {
         String name = uniqueUsername();
         String body = "{\"username\":\"" + name
-                + "\",\"password\":\"hunter2hunter2\",\"email\":\""
-                + uniqueEmail() + "\"}";
+                + "\",\"password\":\"hunter2hunter2\"}";
         HttpResponse<String> first = postJson("/api/auth/register", body);
         assertEquals(201, first.statusCode(), first.body());
         HttpResponse<String> second = postJson("/api/auth/register", body);
@@ -164,8 +151,7 @@ class AuthServiceRegisterTest {
     @Test
     void register_invalidUsername_returns400() throws Exception {
         HttpResponse<String> r = postJson("/api/auth/register",
-                "{\"username\":\"bad name\",\"password\":\"hunter2hunter2\",\"email\":\""
-                        + uniqueEmail() + "\"}");
+                "{\"username\":\"bad name\",\"password\":\"hunter2hunter2\"}");
         assertEquals(400, r.statusCode(), r.body());
         assertEquals("INVALID_USERNAME",
                 JSON.readTree(r.body()).get("code").asText());
@@ -175,22 +161,14 @@ class AuthServiceRegisterTest {
     void register_shortPassword_returns400() throws Exception {
         HttpResponse<String> r = postJson("/api/auth/register",
                 "{\"username\":\"" + uniqueUsername()
-                        + "\",\"password\":\"short\",\"email\":\""
-                        + uniqueEmail() + "\"}");
+                        + "\",\"password\":\"short\"}");
         assertEquals(400, r.statusCode(), r.body());
         assertEquals("INVALID_PASSWORD",
                 JSON.readTree(r.body()).get("code").asText());
     }
 
-    @Test
-    void register_invalidEmail_returns400() throws Exception {
-        HttpResponse<String> r = postJson("/api/auth/register",
-                "{\"username\":\"" + uniqueUsername()
-                        + "\",\"password\":\"hunter2hunter2\",\"email\":\"no-at-sign\"}");
-        assertEquals(400, r.statusCode(), r.body());
-        assertEquals("INVALID_EMAIL",
-                JSON.readTree(r.body()).get("code").asText());
-    }
+    // F23 — register_invalidEmail_returns400 deleted along with the
+    // email field. No replacement needed; INVALID_EMAIL code retired.
 
     @Test
     void register_concurrentRace_exactlyOneSucceeds() throws Exception {
@@ -200,8 +178,7 @@ class AuthServiceRegisterTest {
         // succeed (which would corrupt the repo).
         String name = uniqueUsername();
         String body = "{\"username\":\"" + name
-                + "\",\"password\":\"hunter2hunter2\",\"email\":\""
-                + uniqueEmail() + "\"}";
+                + "\",\"password\":\"hunter2hunter2\"}";
         ExecutorService exec = Executors.newFixedThreadPool(2);
         CountDownLatch start = new CountDownLatch(1);
         AtomicInteger created = new AtomicInteger();
@@ -253,8 +230,7 @@ class AuthServiceRegisterTest {
         String pw = "hunter2hunter2";
         HttpResponse<String> reg = postJson("/api/auth/register",
                 "{\"username\":\"" + name
-                        + "\",\"password\":\"" + pw + "\",\"email\":\""
-                        + uniqueEmail() + "\"}");
+                        + "\",\"password\":\"" + pw + "\"}");
         assertEquals(201, reg.statusCode(), reg.body());
 
         HttpResponse<String> login = postJson("/api/session",
@@ -275,8 +251,7 @@ class AuthServiceRegisterTest {
         String name = uniqueUsername();
         HttpResponse<String> reg = postJson("/api/auth/register",
                 "{\"username\":\"" + name
-                        + "\",\"password\":\"hunter2hunter2\",\"email\":\""
-                        + uniqueEmail() + "\"}");
+                        + "\",\"password\":\"hunter2hunter2\"}");
         assertEquals(201, reg.statusCode(), reg.body());
 
         HttpResponse<String> login = postJson("/api/session",
@@ -296,8 +271,7 @@ class AuthServiceRegisterTest {
         String name = uniqueUsername();
         HttpResponse<String> reg = postJson("/api/auth/register",
                 "{\"username\":\"" + name
-                        + "\",\"password\":\"hunter2hunter2\",\"email\":\""
-                        + uniqueEmail() + "\"}");
+                        + "\",\"password\":\"hunter2hunter2\"}");
         assertEquals(201, reg.statusCode(), reg.body());
 
         HttpResponse<String> login = postJson("/api/session",
@@ -353,8 +327,7 @@ class AuthServiceRegisterTest {
         String pw = "hunter2hunter2";
         HttpResponse<String> reg = postJson("/api/auth/register",
                 "{\"username\":\"" + name
-                        + "\",\"password\":\"" + pw + "\",\"email\":\""
-                        + uniqueEmail() + "\"}");
+                        + "\",\"password\":\"" + pw + "\"}");
         assertEquals(201, reg.statusCode(), reg.body());
 
         // Five wrong-password attempts — first 4 return 401

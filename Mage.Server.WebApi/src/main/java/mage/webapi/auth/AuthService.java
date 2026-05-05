@@ -531,26 +531,30 @@ public final class AuthService implements AutoCloseable {
      * Does NOT issue a session token — the user must call
      * {@link #login(String, String)} as a second step.
      *
+     * <p>Slice F23 (2026-05-04) — dropped the email parameter on user
+     * privacy direction ("I don't want people's email addresses
+     * being used. Just username and password pairs"). Upstream's
+     * {@code AuthorizedUserRepository.add(name, password, email)}
+     * still requires a non-null unique email at the SQL layer; we
+     * synthesize a placeholder of the form {@code <username>@local.invalid}
+     * (RFC 6761 reserved TLD — guaranteed unresolvable). Stored but
+     * never displayed.
+     *
      * <p>Behaviour is gated by {@link #isRegistrationEnabled()} which
      * reads the {@code XMAGE_REGISTRATION_ENABLED} env var (default
-     * {@code false}). When the flag is off, this throws 403; the
-     * {@code POST /api/auth/register} route also enforces the same
-     * gate so the body is never parsed when registration is disabled.
+     * {@code false}).
      *
      * <p>Throws:
      * <ul>
      *   <li>403 {@code REGISTRATION_DISABLED} — flag is off</li>
      *   <li>400 {@code INVALID_USERNAME} — fails {@link #USERNAME_PATTERN}</li>
      *   <li>400 {@code RESERVED_PREFIX} / {@code RESERVED_USERNAME}</li>
-     *   <li>400 {@code INVALID_PASSWORD} — empty or under 8 chars</li>
-     *   <li>400 {@code INVALID_EMAIL} — no '@' or empty</li>
-     *   <li>409 {@code USERNAME_TAKEN} — already in the repository</li>
-     *   <li>500 {@code UPSTREAM_ERROR} — repository.add silently
-     *       failed (the upstream API swallows SQLException; we verify
-     *       by re-querying after add)</li>
+     *   <li>400 {@code INVALID_PASSWORD} — empty, under 8 chars, or over 128</li>
+     *   <li>409 {@code REGISTRATION_FAILED} — username already in the repository</li>
+     *   <li>500 {@code UPSTREAM_ERROR} — repository.add silently failed</li>
      * </ul>
      */
-    public void register(String username, String password, String email) {
+    public void register(String username, String password) {
         if (!isRegistrationEnabled()) {
             throw new WebApiException(403, "REGISTRATION_DISABLED",
                     "User registration is disabled on this server.");
@@ -581,49 +585,43 @@ public final class AuthService implements AutoCloseable {
             throw new WebApiException(400, "INVALID_PASSWORD",
                     "Password must be 128 characters or fewer.");
         }
-        if (email == null || email.isBlank() || !email.contains("@")) {
-            throw new WebApiException(400, "INVALID_EMAIL",
-                    "A valid email address is required.");
-        }
+        // F23 (2026-05-04) — synthesize a placeholder email from the
+        // username so upstream's required + UNIQUE-indexed email
+        // column is satisfied without storing real PII. The
+        // `@local.invalid` suffix uses RFC 6761's reserved TLD which
+        // cannot resolve to a real domain. Lowercased so case
+        // variants of the same username produce the same placeholder
+        // (matches upstream's case-insensitive AuthorizedUser.name
+        // index).
+        String placeholderEmail = trimmed.toLowerCase(java.util.Locale.ROOT)
+                + "@local.invalid";
         // Slice F19 (audit C2 fix) — synchronize the pre-check + add
         // + verify on the repository singleton. Mirrors upstream's own
-        // Session.registerUser at line 94 of Session.java. Without
-        // this, two concurrent register calls for the same username
-        // race past the existence check and BOTH succeed (upstream
-        // add() swallows SQLException on PK collision). The lock is
-        // process-wide on the repo instance and is cheap enough for
-        // a low-rate path like registration.
+        // Session.registerUser at line 94 of Session.java.
         synchronized (mage.server.AuthorizedUserRepository.getInstance()) {
-            // F21.2 (audit Sec D3 + D4) — pre-check for duplicate
-            // username AND duplicate email. Both surface a single
-            // generic 409 REGISTRATION_FAILED so an attacker can't
-            // tell which constraint fired (username-taken vs email-
-            // taken). The username-echo in the message body has been
-            // dropped — earlier 409s included the literal username,
-            // which functions as an enumeration oracle (try a
-            // username, see whether the response confirms it
-            // exists).
-            //
-            // Upstream's add() swallows SQLException on PK or unique-
-            // index collision, so without these pre-checks a
-            // duplicate would silently no-op AND return 200 — leaving
-            // the user thinking they registered when their data
-            // wasn't stored.
+            // F21.2 (audit Sec D3 + D4) — generic 409 hides which
+            // constraint fired. Upstream's add() swallows
+            // SQLException on PK or unique-index collision, so
+            // without this pre-check a duplicate would silently
+            // no-op AND return 200.
             if (mage.server.AuthorizedUserRepository.getInstance().getByName(trimmed) != null) {
                 throw new WebApiException(409, "REGISTRATION_FAILED",
                         "Registration could not be completed. If you "
                                 + "already have an account, sign in. "
-                                + "If not, try a different username "
-                                + "or email.");
+                                + "If not, try a different username.");
             }
-            if (mage.server.AuthorizedUserRepository.getInstance().getByEmail(email.trim()) != null) {
+            // F23 — also pre-check email column. The placeholder is
+            // username-derived so this only fires if a stale row
+            // from a previous deletion wasn't fully cleaned up; in
+            // normal operation the username pre-check above would
+            // catch the collision first.
+            if (mage.server.AuthorizedUserRepository.getInstance().getByEmail(placeholderEmail) != null) {
                 throw new WebApiException(409, "REGISTRATION_FAILED",
                         "Registration could not be completed. If you "
                                 + "already have an account, sign in. "
-                                + "If not, try a different username "
-                                + "or email.");
+                                + "If not, try a different username.");
             }
-            mage.server.AuthorizedUserRepository.getInstance().add(trimmed, password, email.trim());
+            mage.server.AuthorizedUserRepository.getInstance().add(trimmed, password, placeholderEmail);
             // Verify by re-query — upstream's add() swallows
             // SQLException so a non-PK error (e.g. malformed field,
             // DB lock) would leave the user thinking they registered

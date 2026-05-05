@@ -156,9 +156,11 @@ export type WebServerState = z.infer<typeof webServerStateSchema>;
 /* ---------- registration (slice F18) ---------- */
 
 export const webRegisterRequestSchema = z.object({
-  username: z.string().min(1).max(32),
-  password: z.string().min(8),
-  email: z.string().email(),
+  username: z.string().min(3).max(14),
+  password: z.string().min(8).max(128),
+  // F23 (2026-05-04) — email field dropped on user privacy
+  // direction. Server synthesizes a placeholder `<username>@local.invalid`
+  // for upstream's UNIQUE email column.
 });
 export type WebRegisterRequest = z.infer<typeof webRegisterRequestSchema>;
 
