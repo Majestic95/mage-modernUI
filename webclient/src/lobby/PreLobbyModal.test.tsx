@@ -143,7 +143,7 @@ describe('PreLobbyModal', () => {
     expect(onCreated).toHaveBeenCalledWith(NEW_TABLE_ID);
   });
 
-  it('builds COMPUTER seats and posts /ai for each when AI checkbox is on', async () => {
+  it('builds COMPUTER seats and posts /ai for each when AI seat count is set to max', async () => {
     const user = userEvent.setup();
     const fetchMock = vi
       .fn<typeof fetch>()
@@ -162,11 +162,12 @@ describe('PreLobbyModal', () => {
       />,
     );
 
-    // Toggle AI checkbox on (find within the toggle's label).
-    const aiToggle = screen
-      .getByTestId('pre-lobby-ai-toggle')
-      .querySelector('input[type="checkbox"]') as HTMLInputElement;
-    await user.click(aiToggle);
+    // Set AI seat count to 3 (= max for a 4-player table).
+    const aiSeatCount = screen.getByTestId(
+      'pre-lobby-ai-seat-count',
+    ) as HTMLInputElement;
+    await user.clear(aiSeatCount);
+    await user.type(aiSeatCount, '3');
 
     await user.click(screen.getByTestId('pre-lobby-create'));
 
@@ -213,11 +214,12 @@ describe('PreLobbyModal', () => {
       />,
     );
 
-    // Toggle AI on. The dropdown should now appear.
-    const aiToggle = screen
-      .getByTestId('pre-lobby-ai-toggle')
-      .querySelector('input[type="checkbox"]') as HTMLInputElement;
-    await user.click(aiToggle);
+    // Bump AI seat count above 0 so the type dropdown appears.
+    const aiSeatCount = screen.getByTestId(
+      'pre-lobby-ai-seat-count',
+    ) as HTMLInputElement;
+    await user.clear(aiSeatCount);
+    await user.type(aiSeatCount, '3');
 
     const aiTypeSelect = screen.getByTestId('pre-lobby-ai-type') as HTMLSelectElement;
     expect(aiTypeSelect.value).toBe('COMPUTER_MAD');
@@ -245,7 +247,7 @@ describe('PreLobbyModal', () => {
     }
   });
 
-  it('hides the AI-type dropdown when "Fill with AI" is unchecked', () => {
+  it('hides the AI-type dropdown when AI seat count is 0', () => {
     render(
       <PreLobbyModal
         roomId={ROOM_ID}
@@ -255,6 +257,51 @@ describe('PreLobbyModal', () => {
       />,
     );
     expect(screen.queryByTestId('pre-lobby-ai-type')).not.toBeInTheDocument();
+  });
+
+  it('builds a split lobby (1 AI + open HUMAN seats) when AI seat count is between 0 and max', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(tableResponse()) // POST /tables
+      .mockResolvedValueOnce(new Response(null, { status: 204 })); // POST /ai #1 only
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <PreLobbyModal
+        roomId={ROOM_ID}
+        serverState={SERVER_STATE}
+        onClose={() => {}}
+        onCreated={() => {}}
+      />,
+    );
+
+    // Set AI seat count to 1 (default 4-player game → 1 host + 1 AI
+    // + 2 open HUMAN slots for friends to join).
+    const aiSeatCount = screen.getByTestId(
+      'pre-lobby-ai-seat-count',
+    ) as HTMLInputElement;
+    await user.clear(aiSeatCount);
+    await user.type(aiSeatCount, '1');
+
+    await user.click(screen.getByTestId('pre-lobby-create'));
+
+    // 1 create + 1 AI fill (only one AI seat declared).
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    const createBody = JSON.parse(
+      fetchMock.mock.calls[0]?.[1]?.body as string,
+    ) as Record<string, unknown>;
+    expect(createBody).toMatchObject({
+      // Slot 0 = host HUMAN; slot 1 = AI; slots 2-3 = open HUMAN
+      // (friends will join from inside the lobby).
+      seats: ['HUMAN', 'COMPUTER_MAD', 'HUMAN', 'HUMAN'],
+    });
+
+    const aiBody = JSON.parse(
+      fetchMock.mock.calls[1]?.[1]?.body as string,
+    ) as Record<string, unknown>;
+    expect(aiBody).toEqual({ playerType: 'COMPUTER_MAD' });
   });
 
   it('clamps player count to the selected mode min/max', async () => {

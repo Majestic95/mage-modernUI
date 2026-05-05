@@ -339,9 +339,20 @@ public final class LobbyService {
                 if (!fresh.validate(loaded)) {
                     List<DeckValidatorError> errors =
                             fresh.getErrorsListSorted(DeckValidationMapper.DEFAULT_ERROR_LIMIT);
+                    // 2026-05-04 diagnostic — dump the errors so the
+                    // operator can see WHICH cards / rules tripped the
+                    // validator. The 422 body already carries them as
+                    // DTOs, but the WARN log was too quiet for fast
+                    // iteration. Each error gets one line so the log
+                    // stays grep-friendly.
                     LOG.warn("AI fallback deck failed validation for {} format; "
-                            + "skipping addAi to preserve table {}",
-                            fresh.getName(), tableId);
+                            + "skipping addAi to preserve table {}. Errors ({}):",
+                            fresh.getName(), tableId, errors.size());
+                    for (DeckValidatorError e : errors) {
+                        LOG.warn("  - [{}] group='{}' card='{}': {}",
+                                e.getErrorType(), e.getGroup(),
+                                e.getCardName(), e.getMessage());
+                    }
                     throw new WebApiException(422, "AI_DECK_INVALID",
                             "AI fallback deck does not validate for the "
                                     + fresh.getName() + " format. "
@@ -472,7 +483,12 @@ public final class LobbyService {
      * (Gaddock Teeg dropped — green/white identity would invalidate
      * a mono-green deck under the Commander validator).
      */
-    private DeckCardLists buildCommanderFallbackDeck() {
+    // Package-private 2026-05-04 so LobbyServiceTest can pin the
+    // generated deck against the Commander validator without booting
+    // a full embedded server. Was private; the visibility bump is
+    // strictly for testability — production callers stay inside this
+    // class.
+    DeckCardLists buildCommanderFallbackDeck() {
         CardInfo forest = CardRepository.instance.findCard("Forest");
         if (forest == null) {
             throw new WebApiException(500, "UPSTREAM_ERROR",
@@ -536,7 +552,11 @@ public final class LobbyService {
         addEntryOrFallback(cards, "Plated Slagwurm", forest, 1);
         addEntryOrFallback(cards, "Steel Leaf Champion", forest, 1);
         addEntryOrFallback(cards, "Charging Rhino", forest, 1);
-        addEntryOrFallback(cards, "Spider Spawning", forest, 1);
+        // 2026-05-04: was Spider Spawning, but its flashback cost
+        // (2B) gives it BG color identity — Commander validator
+        // rejects under mono-green commander. Heroic Intervention
+        // is mono-green and gives the AI a defensive spell to weigh.
+        addEntryOrFallback(cards, "Heroic Intervention", forest, 1);
         // Big finishers (5 singletons).
         addEntryOrFallback(cards, "Craterhoof Behemoth", forest, 1);
         addEntryOrFallback(cards, "Avenger of Zendikar", forest, 1);

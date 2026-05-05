@@ -98,7 +98,11 @@ export function PreLobbyModal({
   const minPlayers = selectedGameType?.minPlayers ?? 2;
   const maxPlayers = selectedGameType?.maxPlayers ?? minPlayers;
   const [playerCount, setPlayerCount] = useState(maxPlayers);
-  const [fillWithAi, setFillWithAi] = useState(false);
+  // 2026-05-04 — split-lobby support. Was a boolean `fillWithAi`
+  // toggle; now an integer count of AI seats so the host can mix
+  // AI opponents with open HUMAN slots that real friends can join.
+  // Range: 0 → playerCount - 1 (the host always occupies slot 0).
+  const [aiSeatCount, setAiSeatCount] = useState(0);
   const [aiType, setAiType] = useState<AiTypeValue>(DEFAULT_AI_TYPE);
 
   const [submitting, setSubmitting] = useState(false);
@@ -135,6 +139,16 @@ export function PreLobbyModal({
     });
   }, [minPlayers, maxPlayers]);
   const clampedCount = clamp(playerCount, minPlayers, maxPlayers);
+  // Re-clamp aiSeatCount whenever the player count shrinks below the
+  // user's previously-chosen AI seat count. e.g., user picked 3 AI in
+  // a 4-player game then dropped player count to 2 — must shrink AI
+  // seat count to 1 to keep room for the host.
+  const maxAiSeats = Math.max(0, clampedCount - 1);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setAiSeatCount((prev) => (prev > maxAiSeats ? maxAiSeats : prev));
+  }, [maxAiSeats]);
+  const clampedAiSeatCount = clamp(aiSeatCount, 0, maxAiSeats);
 
   const handleSubmit = async () => {
     if (!session) {
@@ -149,13 +163,18 @@ export function PreLobbyModal({
     setError(null);
 
     // Build the seats array. Slot 0 is always HUMAN (the creator
-    // auto-occupies it on table create). If "fill with AI" is on,
-    // remaining slots get the user-selected AI type so the table can
-    // start solo or with one human + several AI opponents.
+    // auto-occupies it on table create). The next `clampedAiSeatCount`
+    // slots are AI; any remaining slots stay HUMAN, leaving them
+    // open for friends to join from the lobby. Layout:
+    //   [HUMAN, ...N × aiType, ...rest HUMAN]
+    // 0 AI: classic all-human lobby. count = playerCount-1: classic
+    // all-AI fill. Anything in between: split lobby (this slice's
+    // value-add).
     const seats: string[] = [];
     seats.push('HUMAN');
     for (let i = 1; i < clampedCount; i++) {
-      seats.push(fillWithAi ? aiType : 'HUMAN');
+      const isAiSlot = i <= clampedAiSeatCount;
+      seats.push(isAiSlot ? aiType : 'HUMAN');
     }
 
     const body: Record<string, unknown> = {
@@ -181,8 +200,8 @@ export function PreLobbyModal({
     // Fill the declared COMPUTER seats sequentially. Concurrent /ai
     // calls race on the upstream "next available COMPUTER seat"
     // lookup, so we must serialize.
-    if (fillWithAi) {
-      const aiSeats = clampedCount - 1;
+    if (clampedAiSeatCount > 0) {
+      const aiSeats = clampedAiSeatCount;
       for (let i = 0; i < aiSeats; i++) {
         try {
           await request(
@@ -314,20 +333,32 @@ export function PreLobbyModal({
         </Field>
 
         <div className="flex flex-col gap-2">
-          <label
-            data-testid="pre-lobby-ai-toggle"
-            className="flex cursor-pointer items-center gap-2 text-sm text-text-primary"
+          <Field
+            label={`AI opponents (0–${maxAiSeats})`}
           >
             <input
-              type="checkbox"
-              checked={fillWithAi}
-              onChange={(e) => setFillWithAi(e.target.checked)}
-              className="h-4 w-4 accent-accent-primary"
+              type="number"
+              data-testid="pre-lobby-ai-seat-count"
+              min={0}
+              max={maxAiSeats}
+              value={clampedAiSeatCount}
+              onChange={(e) =>
+                setAiSeatCount(
+                  clamp(parseInt(e.target.value, 10) || 0, 0, maxAiSeats),
+                )
+              }
+              className={inputClass()}
             />
-            <span>Fill remaining seats with AI</span>
-          </label>
-          {fillWithAi && (
-            <div className="ml-6 flex flex-col gap-1">
+          </Field>
+          <p className="text-xs text-text-secondary">
+            {clampedAiSeatCount === 0
+              ? `${maxAiSeats} open seat${maxAiSeats === 1 ? '' : 's'} for friends.`
+              : clampedAiSeatCount === maxAiSeats
+                ? `Solo vs ${maxAiSeats} AI opponent${maxAiSeats === 1 ? '' : 's'}.`
+                : `${clampedAiSeatCount} AI + ${maxAiSeats - clampedAiSeatCount} open seat${maxAiSeats - clampedAiSeatCount === 1 ? '' : 's'} for friends.`}
+          </p>
+          {clampedAiSeatCount > 0 && (
+            <div className="flex flex-col gap-1">
               <label
                 htmlFor="pre-lobby-ai-type"
                 className="text-xs uppercase text-text-secondary"
