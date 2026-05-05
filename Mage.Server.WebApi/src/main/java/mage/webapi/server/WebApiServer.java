@@ -20,6 +20,8 @@ import mage.webapi.dto.WebError;
 import mage.webapi.dto.WebHealth;
 import mage.webapi.dto.WebJoinTableRequest;
 import mage.webapi.dto.WebMatchOptionsUpdate;
+import mage.webapi.dto.WebRegisterRequest;
+import mage.webapi.dto.WebRegisterResponse;
 import mage.webapi.dto.WebSeatReadyRequest;
 import mage.webapi.dto.WebSessionRequest;
 import mage.webapi.embed.EmbeddedServer;
@@ -260,6 +262,33 @@ public final class WebApiServer {
             }
             WebSessionRequest req = parseSessionRequest(ctx.body());
             ctx.json(authService.login(req.username(), req.password()));
+        });
+        // Slice F18 (2026-05-04) — register a new authorized user.
+        // Gated by XMAGE_REGISTRATION_ENABLED env var (default: off).
+        // When off, returns 403 without parsing the body. Same per-IP
+        // rate limit as session mint — registration is brute-force
+        // amplification surface (username enumeration via 409s) so we
+        // throttle the same way.
+        app.post("/api/auth/register", ctx -> {
+            String ip = ctx.ip();
+            if (!sessionMintLimiter.tryAcquire(ip)) {
+                throw new WebApiException(429, "RATE_LIMITED",
+                        "Too many registration attempts from this IP. "
+                                + "Wait a minute and retry.");
+            }
+            if (!mage.webapi.auth.AuthService.isRegistrationEnabled()) {
+                throw new WebApiException(403, "REGISTRATION_DISABLED",
+                        "User registration is disabled on this server.");
+            }
+            WebRegisterRequest req = ctx.bodyAsClass(WebRegisterRequest.class);
+            authService.register(
+                    req == null ? null : req.username(),
+                    req == null ? null : req.password(),
+                    req == null ? null : req.email());
+            ctx.status(201);
+            ctx.json(new WebRegisterResponse(
+                    SchemaVersion.CURRENT,
+                    req.username().trim()));
         });
         app.post("/api/session/admin", ctx -> {
             // Same per-IP cap on admin login attempts; failed admin

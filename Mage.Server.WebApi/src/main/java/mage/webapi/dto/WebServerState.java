@@ -18,6 +18,11 @@ public record WebServerState(
         List<String> playerTypes,
         List<String> deckTypes,
         List<String> draftCubes,
-        boolean testMode
+        boolean testMode,
+        // Slice F18 (2026-05-04) — true when XMAGE_REGISTRATION_ENABLED
+        // is set; lets the client hide / show the "Register account"
+        // button without a separate probe request. Additive field; old
+        // clients ignore it.
+        boolean registrationEnabled
 ) {
 }

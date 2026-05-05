@@ -146,8 +146,27 @@ export const webServerStateSchema = z.object({
   deckTypes: z.array(z.string()),
   draftCubes: z.array(z.string()),
   testMode: z.boolean(),
+  // Slice F18 (2026-05-04) — gates the "Register account" UI on the
+  // login page. Optional + default false so older servers (pre-F18)
+  // parse cleanly and the UI hides registration by default.
+  registrationEnabled: z.boolean().default(false),
 });
 export type WebServerState = z.infer<typeof webServerStateSchema>;
+
+/* ---------- registration (slice F18) ---------- */
+
+export const webRegisterRequestSchema = z.object({
+  username: z.string().min(1).max(32),
+  password: z.string().min(8),
+  email: z.string().email(),
+});
+export type WebRegisterRequest = z.infer<typeof webRegisterRequestSchema>;
+
+export const webRegisterResponseSchema = z.object({
+  schemaVersion: z.string(),
+  username: z.string(),
+});
+export type WebRegisterResponse = z.infer<typeof webRegisterResponseSchema>;
 
 /* ---------- cards ---------- */
 

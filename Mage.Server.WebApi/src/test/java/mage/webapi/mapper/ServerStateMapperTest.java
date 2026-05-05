@@ -60,10 +60,11 @@ class ServerStateMapperTest {
         WebServerState state = ServerStateMapper.fromState(embedded.server().getServerState());
         JsonNode node = JSON.readTree(JSON.writeValueAsString(state));
 
-        // Lock the top-level field set: 7 fields. Adding a field is a
+        // Lock the top-level field set: 8 fields. Adding a field is a
         // minor schema bump; this assertion forces an explicit change.
-        assertEquals(7, node.size(),
-                "WebServerState JSON must have exactly 7 fields; got: " + node);
+        // 2026-05-04 (slice F18) — added registrationEnabled.
+        assertEquals(8, node.size(),
+                "WebServerState JSON must have exactly 8 fields; got: " + node);
         assertTrue(node.has("schemaVersion"));
         assertTrue(node.has("gameTypes"));
         assertTrue(node.has("tournamentTypes"));
@@ -71,6 +72,7 @@ class ServerStateMapperTest {
         assertTrue(node.has("deckTypes"));
         assertTrue(node.has("draftCubes"));
         assertTrue(node.has("testMode"));
+        assertTrue(node.has("registrationEnabled"));
     }
 
     @Test

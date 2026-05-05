@@ -33,7 +33,8 @@ public final class ServerStateMapper {
                 Arrays.stream(state.getPlayerTypes()).map(PlayerType::toString).toList(),
                 List.of(state.getDeckTypes()),
                 List.of(state.getDraftCubes()),
-                state.isTestMode()
+                state.isTestMode(),
+                mage.webapi.auth.AuthService.isRegistrationEnabled()
         );
     }
 

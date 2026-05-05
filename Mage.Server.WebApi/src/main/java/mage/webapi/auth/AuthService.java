@@ -399,6 +399,86 @@ public final class AuthService implements AutoCloseable {
     }
 
     /**
+     * Slice F18 (2026-05-04) — register a new authorized user.
+     * Validates input, ensures the username isn't already taken, then
+     * delegates to upstream's {@code AuthorizedUserRepository.add()}.
+     * Does NOT issue a session token — the user must call
+     * {@link #login(String, String)} as a second step.
+     *
+     * <p>Behaviour is gated by {@link #isRegistrationEnabled()} which
+     * reads the {@code XMAGE_REGISTRATION_ENABLED} env var (default
+     * {@code false}). When the flag is off, this throws 403; the
+     * {@code POST /api/auth/register} route also enforces the same
+     * gate so the body is never parsed when registration is disabled.
+     *
+     * <p>Throws:
+     * <ul>
+     *   <li>403 {@code REGISTRATION_DISABLED} — flag is off</li>
+     *   <li>400 {@code INVALID_USERNAME} — fails {@link #USERNAME_PATTERN}</li>
+     *   <li>400 {@code RESERVED_PREFIX} / {@code RESERVED_USERNAME}</li>
+     *   <li>400 {@code INVALID_PASSWORD} — empty or under 8 chars</li>
+     *   <li>400 {@code INVALID_EMAIL} — no '@' or empty</li>
+     *   <li>409 {@code USERNAME_TAKEN} — already in the repository</li>
+     *   <li>500 {@code UPSTREAM_ERROR} — repository.add silently
+     *       failed (the upstream API swallows SQLException; we verify
+     *       by re-querying after add)</li>
+     * </ul>
+     */
+    public void register(String username, String password, String email) {
+        if (!isRegistrationEnabled()) {
+            throw new WebApiException(403, "REGISTRATION_DISABLED",
+                    "User registration is disabled on this server.");
+        }
+        if (username == null || username.isBlank()) {
+            throw new WebApiException(400, "INVALID_USERNAME",
+                    "Username is required.");
+        }
+        String trimmed = username.trim();
+        validateUsername(trimmed);
+        if (password == null || password.length() < 8) {
+            throw new WebApiException(400, "INVALID_PASSWORD",
+                    "Password must be at least 8 characters.");
+        }
+        if (email == null || email.isBlank() || !email.contains("@")) {
+            throw new WebApiException(400, "INVALID_EMAIL",
+                    "A valid email address is required.");
+        }
+        // Pre-check for duplicate. Upstream's add() swallows SQLException
+        // on PK collision, so without this check a duplicate registration
+        // would silently no-op AND return 200 to the client — leaving
+        // them thinking they registered when the original owner's
+        // password is still in effect.
+        if (mage.server.AuthorizedUserRepository.getInstance().getByName(trimmed) != null) {
+            throw new WebApiException(409, "USERNAME_TAKEN",
+                    "Username '" + trimmed + "' is already registered.");
+        }
+        mage.server.AuthorizedUserRepository.getInstance().add(trimmed, password, email.trim());
+        // Verify by re-query — upstream's add() swallows SQLException so
+        // a non-PK error (e.g. malformed email field, DB lock) would
+        // leave the user thinking they registered when nothing happened.
+        if (mage.server.AuthorizedUserRepository.getInstance().getByName(trimmed) == null) {
+            throw new WebApiException(500, "UPSTREAM_ERROR",
+                    "Registration failed at the upstream repository "
+                    + "(no SQL error surfaced; see server logs).");
+        }
+        LOG.info("User registered: username={}", trimmed);
+    }
+
+    /**
+     * Slice F18 — registration feature flag. Reads
+     * {@code XMAGE_REGISTRATION_ENABLED}; "true" or "1" enables.
+     * Default is disabled so the existing anonymous + named-no-
+     * password flow stays the production path until an operator
+     * explicitly opts in.
+     */
+    public static boolean isRegistrationEnabled() {
+        String env = System.getenv("XMAGE_REGISTRATION_ENABLED");
+        if (env == null) return false;
+        String norm = env.trim().toLowerCase();
+        return norm.equals("true") || norm.equals("1");
+    }
+
+    /**
      * Admin login. Upstream's {@code connectAdmin} throws
      * {@code MageException("Wrong password")} (with a built-in 3 s
      * delay) on bad credentials rather than returning false — we map
