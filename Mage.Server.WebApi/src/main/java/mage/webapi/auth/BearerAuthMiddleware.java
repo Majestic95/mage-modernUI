@@ -54,7 +54,14 @@ public final class BearerAuthMiddleware implements Handler {
             "GET /api/version",
             "GET /api/health",
             "POST /api/session",
-            "POST /api/session/admin"
+            "POST /api/session/admin",
+            // Slice F18 (2026-05-04) — registration is public by
+            // necessity: a user has no token before they have an
+            // account. The route itself is gated by
+            // XMAGE_REGISTRATION_ENABLED on the server side, so being
+            // in the public allow-list doesn't expose the writable
+            // path until an operator opts in.
+            "POST /api/auth/register"
     );
 
     private static final String BEARER_PREFIX = "Bearer ";
