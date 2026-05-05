@@ -234,6 +234,17 @@ export function GameTable({ gameId, gameView, stream }: Props) {
         ['--side-panel-width' as string]: sidePanelCollapsed
           ? '0px'
           : SIDE_PANEL_WIDTH,
+        // FB#5 (2026-05-05) — tabletop variant scales the central
+        // focal stack card 50% larger (128 → 192px wide). Halo bloom
+        // inset, fan-tile halfwidth math, and spotlight padding are
+        // all token-driven (tokens.css:344 comment), so this single
+        // override propagates correctly through StackZone. Scoped to
+        // tabletop so the legacy `current` escape-hatch keeps the
+        // round-21 (2026-04-30) tuning. T1 holds — grid tracks are
+        // unchanged; only the card inside the center cell grows.
+        ...(variant === 'tabletop'
+          ? { ['--card-size-focal' as string]: '192px' }
+          : {}),
         // Slice 70-F — added a `hand` row between battlefield and
         // action so MyHand sits in its own region per spec §4. The
         // side panel still spans every body row on the right.

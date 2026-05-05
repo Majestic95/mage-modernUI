@@ -259,3 +259,38 @@ describe('GameTable variant=tabletop floating GameLogWindow', () => {
     expect(screen.queryByTestId('game-log-window')).toBeNull();
   });
 });
+
+describe('GameTable focal-card size override (FB#5)', () => {
+  // FB#5 (2026-05-05) — tabletop variant scales the central focal
+  // stack card 50% larger (128 → 192px wide) by overriding
+  // --card-size-focal on GameTable's root inline style. Halo bloom +
+  // fan-tile halfwidth math + spotlight padding all token-driven, so
+  // the single override propagates correctly. Pinned here so a later
+  // refactor that reorganizes the inline-style block can't silently
+  // drop the variant gate or the bumped value.
+  beforeEach(() => {
+    flagState.redesign = true;
+  });
+  afterEach(() => {
+    variantState.variant = 'current';
+    flagState.redesign = false;
+  });
+
+  it('sets --card-size-focal: 192px on the root under variant=tabletop', () => {
+    variantState.variant = 'tabletop';
+    renderInLayoutGroup(
+      <GameTable gameId="test-game" gameView={makeGameView()} stream={null} />,
+    );
+    const root = screen.getByTestId('game-table');
+    expect(root.style.getPropertyValue('--card-size-focal')).toBe('192px');
+  });
+
+  it('does NOT override --card-size-focal under variant=current (token default applies)', () => {
+    variantState.variant = 'current';
+    renderInLayoutGroup(
+      <GameTable gameId="test-game" gameView={makeGameView()} stream={null} />,
+    );
+    const root = screen.getByTestId('game-table');
+    expect(root.style.getPropertyValue('--card-size-focal')).toBe('');
+  });
+});
