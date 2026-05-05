@@ -38,7 +38,11 @@ const MULLIGAN_TYPES = [
   'PARIS',
   'CANADIAN_HIGHLANDER',
 ] as const;
-const ATTACK_OPTIONS = ['LEFT', 'RIGHT', 'MULTIPLE'] as const;
+// 2026-05-05 (per user feedback) — MULTIPLE is the default for new
+// tables (set server-side in MatchOptionsBuilder). Listed first here so
+// hosts opening Edit Settings see the active default at the top of the
+// dropdown.
+const ATTACK_OPTIONS = ['MULTIPLE', 'LEFT', 'RIGHT'] as const;
 const RANGES = ['ALL', 'ONE', 'TWO'] as const;
 
 const TIME_LIMIT_LABEL: Record<string, string> = {
@@ -63,9 +67,9 @@ const MULLIGAN_LABEL: Record<string, string> = {
 };
 
 const ATTACK_OPTION_LABEL: Record<string, string> = {
-  LEFT: 'Left',
-  RIGHT: 'Right',
-  MULTIPLE: 'Multiple',
+  MULTIPLE: 'Any / multiple',
+  LEFT: 'Left neighbor only',
+  RIGHT: 'Right neighbor only',
 };
 
 const RANGE_LABEL: Record<string, string> = {

@@ -85,8 +85,15 @@ public final class MatchOptionsBuilder {
         options.setFreeMulligans(req.freeMulligans() == null ? 0 : req.freeMulligans());
         options.setMullgianType(parseEnum(MulliganType.class, req.mulliganType(),
                 MulliganType.GAME_DEFAULT, "mulliganType"));
+        // 2026-05-05 (per user feedback) — default to MULTIPLE so a
+        // freshly-created multiplayer table lets attackers pick any
+        // defending player rather than locking everyone into "attack
+        // your left neighbor". Hosts can still pick LEFT/RIGHT
+        // explicitly via Edit Settings; this only changes the
+        // unspecified default. 1v1 tables ignore the setting (only
+        // one defender exists), so the change is a no-op there.
         options.setAttackOption(parseEnum(MultiplayerAttackOption.class, req.attackOption(),
-                MultiplayerAttackOption.LEFT, "attackOption"));
+                MultiplayerAttackOption.MULTIPLE, "attackOption"));
         options.setRange(parseEnum(RangeOfInfluence.class, req.range(),
                 RangeOfInfluence.ALL, "range"));
         // Audit fix — MatchOptions.quitRatio defaults to 0 (java int

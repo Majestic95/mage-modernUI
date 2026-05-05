@@ -149,7 +149,10 @@ class MatchOptionsBuilderTest {
         assertEquals(SkillLevel.CASUAL, o.getSkillLevel());
         assertEquals(MatchTimeLimit.NONE, o.getMatchTimeLimit());
         assertEquals(MulliganType.GAME_DEFAULT, o.getMulliganType());
-        assertEquals(MultiplayerAttackOption.LEFT, o.getAttackOption());
+        // 2026-05-05 — default attackOption is MULTIPLE (was LEFT) so
+        // multiplayer tables don't force "attack-your-left-neighbor"
+        // by default. See MatchOptionsBuilder line ~89 rationale.
+        assertEquals(MultiplayerAttackOption.MULTIPLE, o.getAttackOption());
         assertEquals(RangeOfInfluence.ALL, o.getRange());
         assertEquals(true, o.isSpectatorsAllowed());
         assertEquals(false, o.isRated());

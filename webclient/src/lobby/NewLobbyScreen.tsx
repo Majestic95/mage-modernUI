@@ -59,7 +59,10 @@ const DEFAULT_INITIAL: EditableInitial = {
   mulliganType: 'GAME_DEFAULT',
   spectatorsAllowed: true,
   rated: false,
-  attackOption: 'LEFT',
+  // 2026-05-05 — mirrors the server default in MatchOptionsBuilder.
+  // Used as a fallback when WebTable doesn't carry the attackOption
+  // field (round-trip gap noted in initialFromTable below).
+  attackOption: 'MULTIPLE',
   range: 'ALL',
 };
 
