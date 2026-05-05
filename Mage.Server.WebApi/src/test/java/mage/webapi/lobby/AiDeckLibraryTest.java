@@ -11,7 +11,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
 import java.util.List;
-import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -49,41 +48,52 @@ class AiDeckLibraryTest {
 
     @Test
     void white_passesCommanderValidator() {
-        assertCommanderLegal("white", library::buildCommanderFallbackDeckWhite);
+        DeckCardLists deck = library.buildCommanderFallbackDeckWhite();
+        assertCommanderLegal("white", deck);
+        assertNoSilentSubstitutions("white commander deck", deck, "Plains", 36);
     }
 
     @Test
     void blue_passesCommanderValidator() {
-        assertCommanderLegal("blue", library::buildCommanderFallbackDeckBlue);
+        DeckCardLists deck = library.buildCommanderFallbackDeckBlue();
+        assertCommanderLegal("blue", deck);
+        assertNoSilentSubstitutions("blue commander deck", deck, "Island", 36);
     }
 
     @Test
     void black_passesCommanderValidator() {
-        assertCommanderLegal("black", library::buildCommanderFallbackDeckBlack);
+        DeckCardLists deck = library.buildCommanderFallbackDeckBlack();
+        assertCommanderLegal("black", deck);
+        assertNoSilentSubstitutions("black commander deck", deck, "Swamp", 36);
     }
 
     @Test
     void red_passesCommanderValidator() {
-        assertCommanderLegal("red", library::buildCommanderFallbackDeckRed);
+        DeckCardLists deck = library.buildCommanderFallbackDeckRed();
+        assertCommanderLegal("red", deck);
+        assertNoSilentSubstitutions("red commander deck", deck, "Mountain", 36);
     }
 
     @Test
     void green_passesCommanderValidator() {
-        assertCommanderLegal("green", library::buildCommanderFallbackDeckGreen);
+        DeckCardLists deck = library.buildCommanderFallbackDeckGreen();
+        assertCommanderLegal("green", deck);
+        assertNoSilentSubstitutions("green commander deck", deck, "Forest", 36);
     }
 
     /**
      * The non-Commander fallback deck has its own count contract — 60
      * cards mainboard, 0 sideboard. Doesn't need the Commander
-     * validator; just pin the totals.
+     * validator; just pin the totals + zero-substitution.
      */
     @Test
-    void bearsDeck_isSixtyCards_zeroSideboard() {
+    void bearsDeck_isSixtyCards_zeroSideboard_noSubstitutions() {
         DeckCardLists deck = library.buildFallbackBasicLandsDeck();
         int main = deck.getCards().stream().mapToInt(c -> c.getAmount()).sum();
         int side = deck.getSideboard().stream().mapToInt(c -> c.getAmount()).sum();
         assertEquals(60, main, "Bears deck mainboard must total 60 cards.");
         assertEquals(0, side, "Bears deck has no sideboard.");
+        assertNoSilentSubstitutions("bears deck", deck, "Forest", 24);
     }
 
     // ---- helpers --------------------------------------------------------
@@ -95,8 +105,7 @@ class AiDeckLibraryTest {
      * the validator's full error list — same diagnostic shape the
      * {@code addAi} route logs in production.
      */
-    private void assertCommanderLegal(String colorLabel, Supplier<DeckCardLists> builder) {
-        DeckCardLists deckCards = builder.get();
+    private void assertCommanderLegal(String colorLabel, DeckCardLists deckCards) {
         assertNotNull(deckCards, "Builder returned null for " + colorLabel);
 
         // Mainboard count: Commander mandates exactly 99 (or 100 for
@@ -106,6 +115,10 @@ class AiDeckLibraryTest {
         assertEquals(99, main, colorLabel + " deck mainboard must total 99 cards.");
         assertEquals(1, side, colorLabel + " deck sideboard must hold exactly 1 commander.");
 
+        // Strict load: ignoreErrors=false + mockCards=false. Throws
+        // GameException if any card name is unresolvable. Mock cards
+        // are explicitly forbidden because the AI cannot play them
+        // (per Deck.load javadoc warning at Deck.java:68).
         Deck loaded;
         try {
             loaded = Deck.load(deckCards, false, false);
@@ -130,6 +143,37 @@ class AiDeckLibraryTest {
             throw new AssertionError(sb.toString());
         }
         assertTrue(valid);
+    }
+
+    /**
+     * Detect silent fallback substitutions. {@code addEntryOrFallback}
+     * replaces a missing non-basic with the deck's basic land BEFORE
+     * the deck is built, so {@code Deck.load} sees only valid cards
+     * and never raises. The only signature of substitution is the
+     * basic-land count being higher than what the deck spec
+     * requested. Pin the expected count exactly — any excess basic
+     * indicates {@code addEntryOrFallback} fell into its substitute
+     * branch (visible in WARN logs as "missing from repository").
+     *
+     * <p>If this assertion ever fires, the deck has been silently
+     * degraded — the AI is playing a flooded mana base instead of
+     * the curve we designed. Fix by replacing the missing card with
+     * one that exists in the local DB.
+     */
+    private static void assertNoSilentSubstitutions(String label, DeckCardLists deck,
+                                                     String basicLandName,
+                                                     int expectedBasicCount) {
+        int actualBasicCount = deck.getCards().stream()
+                .filter(c -> c.getCardName().equals(basicLandName))
+                .mapToInt(c -> c.getAmount())
+                .sum();
+        assertEquals(expectedBasicCount, actualBasicCount,
+                label + " has " + actualBasicCount + " " + basicLandName
+                        + " — expected exactly " + expectedBasicCount + ". "
+                        + "Excess basics indicate addEntryOrFallback silently "
+                        + "substituted one or more missing non-basic cards. "
+                        + "Check WARN logs above for "
+                        + "'missing from repository — substituting' lines.");
     }
 
     private static DeckValidator newCommanderValidator() {
