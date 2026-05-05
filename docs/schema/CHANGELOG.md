@@ -56,6 +56,42 @@ emitted newest-first; only the client interpretation was wrong. No
 
 ---
 
+## 1.31 — 2026-05-04 — Passphrase recovery code on register/recover (slice F24)
+
+Adds the recovery surface that replaces the email-based password reset
+removed in F23. Two additive wire shapes:
+
+```diff
+ // WebRegisterResponse — additive field
+ {
+   "schemaVersion": "1.31",
+   "username": "alice",
++  "recoveryCode": "ABCD-EFGH-JKMN-PQRS-TVWX-YZ23"
+ }
+```
+
+```diff
++// WebRecoverResponse — new payload for POST /api/auth/recover
++{
++  "schemaVersion": "1.31",
++  "username": "alice",
++  "recoveryCode": "<freshly-rotated 24-char Crockford base32, hyphenated>"
++}
+```
+
+The `recoveryCode` field is shown to the user ONCE per register and ONCE
+per successful recover; only its SHA-256 hash + salt + iterations are
+persisted (in our own `db/webapi_recovery.h2`, separate from upstream's
+`authorized_user.h2`). On a successful recover the code is rotated
+atomically (single-use semantics), and the prior code is invalidated.
+
+Forward-compat: client zod schemas default `recoveryCode` to `""` so a
+1.30 server without the field still parses cleanly during a rolling
+upgrade. Requests on `POST /api/auth/recover` against a 1.30 server
+404; the client UI gates the "Forgot password?" affordance on the
+server-state `registrationEnabled` flag, which mirrors the recovery
+gate.
+
 ## 1.30 — 2026-05-02 — Per-player skip-priority state on WebPlayerView
 
 Adds one additive field — `WebPlayerView.skipState: string` — so the

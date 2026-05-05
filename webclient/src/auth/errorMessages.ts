@@ -66,6 +66,10 @@ export function authErrorToMessage(err: unknown): string {
       case 'RESERVED_USERNAME':
         return 'That username is reserved. Please choose another.';
 
+      // Recovery-specific (slice F24)
+      case 'INVALID_RECOVERY':
+        return 'Recovery failed. Check your username and the recovery code you saved at registration.';
+
       // Server hiccups — generic
       case 'UPSTREAM_ERROR':
         return 'The server hit a problem completing the request. Please try again.';

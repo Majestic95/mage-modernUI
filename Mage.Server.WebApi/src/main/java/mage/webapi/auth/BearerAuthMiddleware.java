@@ -61,7 +61,14 @@ public final class BearerAuthMiddleware implements Handler {
             // XMAGE_REGISTRATION_ENABLED on the server side, so being
             // in the public allow-list doesn't expose the writable
             // path until an operator opts in.
-            "POST /api/auth/register"
+            "POST /api/auth/register",
+            // Slice F24 (2026-05-04) — recovery is the only path back
+            // in for a user who's forgotten their password. By
+            // definition they have no valid token. Same env-gated
+            // server side: XMAGE_REGISTRATION_ENABLED also gates
+            // recovery (a server with registration disabled has no
+            // users with recovery codes anyway).
+            "POST /api/auth/recover"
     );
 
     private static final String BEARER_PREFIX = "Bearer ";

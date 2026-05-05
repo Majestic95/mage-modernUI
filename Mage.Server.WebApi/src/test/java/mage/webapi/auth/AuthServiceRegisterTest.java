@@ -117,7 +117,14 @@ class AuthServiceRegisterTest {
         assertEquals(201, r.statusCode(), r.body());
         JsonNode body = JSON.readTree(r.body());
         assertEquals(name, body.get("username").asText());
-        assertEquals("1.30", body.get("schemaVersion").asText());
+        assertEquals("1.31", body.get("schemaVersion").asText());
+        // F24 — register now ALWAYS issues a one-time recovery code.
+        // Format is 24 Crockford-base32 chars in 6 groups of 4
+        // separated by hyphens; total 29 chars including hyphens.
+        String code = body.get("recoveryCode").asText();
+        assertTrue(code.matches("[0-9A-HJKMNP-TV-Z]{4}(-[0-9A-HJKMNP-TV-Z]{4}){5}"),
+                "Recovery code must be 6 hyphen-separated 4-char Crockford "
+                        + "base32 groups; got: " + code);
     }
 
     @Test
@@ -370,6 +377,175 @@ class AuthServiceRegisterTest {
         assertNotNull(node.get("registrationEnabled"));
         assertTrue(node.get("registrationEnabled").asBoolean(),
                 "registrationEnabled must mirror the runtime flag value.");
+    }
+
+    // ---- F24 (2026-05-04) recovery-code tests ---- //
+
+    @Test
+    void recover_correctCode_resetsPasswordAndIssuesNewCode() throws Exception {
+        String name = uniqueUsername();
+        String oldPw = "hunter2hunter2";
+        String newPw = "newpassword42";
+        HttpResponse<String> reg = postJson("/api/auth/register",
+                "{\"username\":\"" + name
+                        + "\",\"password\":\"" + oldPw + "\"}");
+        assertEquals(201, reg.statusCode(), reg.body());
+        String code = JSON.readTree(reg.body()).get("recoveryCode").asText();
+
+        HttpResponse<String> rec = postJson("/api/auth/recover",
+                "{\"username\":\"" + name
+                        + "\",\"recoveryCode\":\"" + code
+                        + "\",\"newPassword\":\"" + newPw + "\"}");
+        assertEquals(200, rec.statusCode(), rec.body());
+        JsonNode body = JSON.readTree(rec.body());
+        assertEquals(name, body.get("username").asText());
+        // A fresh code is issued; it must NOT match the original.
+        String newCode = body.get("recoveryCode").asText();
+        assertNotEquals(code, newCode,
+                "Recovery must rotate the code (single-use semantics).");
+        assertTrue(newCode.matches("[0-9A-HJKMNP-TV-Z]{4}(-[0-9A-HJKMNP-TV-Z]{4}){5}"));
+
+        // Login with the NEW password — must succeed.
+        HttpResponse<String> loginNew = postJson("/api/session",
+                "{\"username\":\"" + name + "\",\"password\":\"" + newPw + "\"}");
+        assertEquals(200, loginNew.statusCode(), loginNew.body());
+        assertEquals(false, JSON.readTree(loginNew.body()).get("isAnonymous").asBoolean());
+
+        // Login with the OLD password — must fail.
+        HttpResponse<String> loginOld = postJson("/api/session",
+                "{\"username\":\"" + name + "\",\"password\":\"" + oldPw + "\"}");
+        assertEquals(401, loginOld.statusCode(), loginOld.body());
+    }
+
+    @Test
+    void recover_wrongCode_returns401InvalidRecovery() throws Exception {
+        String name = uniqueUsername();
+        HttpResponse<String> reg = postJson("/api/auth/register",
+                "{\"username\":\"" + name
+                        + "\",\"password\":\"hunter2hunter2\"}");
+        assertEquals(201, reg.statusCode(), reg.body());
+
+        HttpResponse<String> rec = postJson("/api/auth/recover",
+                "{\"username\":\"" + name
+                        + "\",\"recoveryCode\":\"WRONG-CODE-VALU-EFOR-TEST-XXXX\""
+                        + ",\"newPassword\":\"newpassword42\"}");
+        assertEquals(401, rec.statusCode(), rec.body());
+        assertEquals("INVALID_RECOVERY",
+                JSON.readTree(rec.body()).get("code").asText());
+    }
+
+    @Test
+    void recover_unknownUsername_returns401InvalidRecovery() throws Exception {
+        // Wire shape uniform with wrong-code path — no enumeration
+        // oracle distinguishing "username does not exist" from
+        // "code mismatch."
+        HttpResponse<String> rec = postJson("/api/auth/recover",
+                "{\"username\":\"" + uniqueUsername()
+                        + "\",\"recoveryCode\":\"AAAA-BBBB-CCCC-DDDD-EEEE-FFFF\""
+                        + ",\"newPassword\":\"newpassword42\"}");
+        assertEquals(401, rec.statusCode(), rec.body());
+        assertEquals("INVALID_RECOVERY",
+                JSON.readTree(rec.body()).get("code").asText());
+    }
+
+    @Test
+    void recover_codeIsSingleUse_secondAttemptFails() throws Exception {
+        String name = uniqueUsername();
+        HttpResponse<String> reg = postJson("/api/auth/register",
+                "{\"username\":\"" + name
+                        + "\",\"password\":\"hunter2hunter2\"}");
+        assertEquals(201, reg.statusCode(), reg.body());
+        String code = JSON.readTree(reg.body()).get("recoveryCode").asText();
+
+        HttpResponse<String> first = postJson("/api/auth/recover",
+                "{\"username\":\"" + name
+                        + "\",\"recoveryCode\":\"" + code
+                        + "\",\"newPassword\":\"newpassword42\"}");
+        assertEquals(200, first.statusCode(), first.body());
+
+        // Reuse the SAME (now-rotated-out) code — must fail.
+        HttpResponse<String> second = postJson("/api/auth/recover",
+                "{\"username\":\"" + name
+                        + "\",\"recoveryCode\":\"" + code
+                        + "\",\"newPassword\":\"thirdpassword42\"}");
+        assertEquals(401, second.statusCode(), second.body());
+        assertEquals("INVALID_RECOVERY",
+                JSON.readTree(second.body()).get("code").asText());
+    }
+
+    @Test
+    void recover_codeIsCaseAndHyphenAgnostic() throws Exception {
+        String name = uniqueUsername();
+        HttpResponse<String> reg = postJson("/api/auth/register",
+                "{\"username\":\"" + name
+                        + "\",\"password\":\"hunter2hunter2\"}");
+        assertEquals(201, reg.statusCode(), reg.body());
+        String code = JSON.readTree(reg.body()).get("recoveryCode").asText();
+        // Strip hyphens and lowercase — Crockford normalization at
+        // the verify boundary should still accept it.
+        String mangled = code.replace("-", "").toLowerCase();
+        HttpResponse<String> rec = postJson("/api/auth/recover",
+                "{\"username\":\"" + name
+                        + "\",\"recoveryCode\":\"" + mangled
+                        + "\",\"newPassword\":\"newpassword42\"}");
+        assertEquals(200, rec.statusCode(), rec.body());
+    }
+
+    @Test
+    void recover_lockoutAfterFiveFailures_returns429() throws Exception {
+        // F24.1 (post-review) — five wrong-code attempts trigger a
+        // 15-min recover-only lockout. The lockout bucket is SEPARATE
+        // from login lockout (so bad passwords don't lock recovery
+        // and vice-versa), but the threshold + backoff curve match.
+        String name = uniqueUsername();
+        HttpResponse<String> reg = postJson("/api/auth/register",
+                "{\"username\":\"" + name
+                        + "\",\"password\":\"hunter2hunter2\"}");
+        assertEquals(201, reg.statusCode(), reg.body());
+
+        // Five wrong-code attempts — first 4 return 401 INVALID_RECOVERY,
+        // the 5th increments past threshold AND triggers the lockout.
+        // Threshold check fires AFTER verify, so the 5th attempt also
+        // returns 401.
+        for (int i = 0; i < LoginAttemptTracker.FAILURE_THRESHOLD; i++) {
+            HttpResponse<String> bad = postJson("/api/auth/recover",
+                    "{\"username\":\"" + name
+                            + "\",\"recoveryCode\":\"WRON-GCOD-EFOR-THIS-USER-XXXX\""
+                            + ",\"newPassword\":\"newpassword42\"}");
+            assertEquals(401, bad.statusCode(),
+                    "Attempt " + (i + 1) + " expected 401, got: " + bad.body());
+        }
+
+        // The next recover attempt — even with the (still-valid)
+        // original code — must hit the lockout, not succeed.
+        String code = JSON.readTree(reg.body()).get("recoveryCode").asText();
+        HttpResponse<String> locked = postJson("/api/auth/recover",
+                "{\"username\":\"" + name
+                        + "\",\"recoveryCode\":\"" + code
+                        + "\",\"newPassword\":\"newpassword42\"}");
+        assertEquals(429, locked.statusCode(), locked.body());
+        assertEquals("ACCOUNT_LOCKED",
+                JSON.readTree(locked.body()).get("code").asText());
+    }
+
+    @Test
+    void recover_flagOff_returns403() throws Exception {
+        // Register first while flag is on, then disable to test recover.
+        String name = uniqueUsername();
+        HttpResponse<String> reg = postJson("/api/auth/register",
+                "{\"username\":\"" + name
+                        + "\",\"password\":\"hunter2hunter2\"}");
+        assertEquals(201, reg.statusCode(), reg.body());
+        String code = JSON.readTree(reg.body()).get("recoveryCode").asText();
+
+        System.clearProperty("xmage.registrationEnabled");
+        HttpResponse<String> rec = postJson("/api/auth/recover",
+                "{\"username\":\"" + name
+                        + "\",\"recoveryCode\":\"" + code
+                        + "\",\"newPassword\":\"newpassword42\"}");
+        assertEquals(403, rec.statusCode(), rec.body());
+        assertEquals("REGISTRATION_DISABLED",
+                JSON.readTree(rec.body()).get("code").asText());
     }
 
     private String mintAnonToken() throws Exception {

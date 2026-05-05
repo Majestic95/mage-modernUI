@@ -20,6 +20,8 @@ import mage.webapi.dto.WebError;
 import mage.webapi.dto.WebHealth;
 import mage.webapi.dto.WebJoinTableRequest;
 import mage.webapi.dto.WebMatchOptionsUpdate;
+import mage.webapi.dto.WebRecoverRequest;
+import mage.webapi.dto.WebRecoverResponse;
 import mage.webapi.dto.WebRegisterRequest;
 import mage.webapi.dto.WebRegisterResponse;
 import mage.webapi.dto.WebSeatReadyRequest;
@@ -308,13 +310,43 @@ public final class WebApiServer {
                         "User registration is disabled on this server.");
             }
             WebRegisterRequest req = ctx.bodyAsClass(WebRegisterRequest.class);
-            authService.register(
+            String recoveryCode = authService.registerWithRecoveryCode(
                     req == null ? null : req.username(),
                     req == null ? null : req.password());
             ctx.status(201);
             ctx.json(new WebRegisterResponse(
                     SchemaVersion.CURRENT,
-                    req.username().trim()));
+                    req.username().trim(),
+                    recoveryCode));
+        });
+        // Slice F24 (2026-05-04) — recover (reset) a forgotten
+        // password using the one-time recovery code shown at register.
+        // On success, the password is replaced AND a fresh code is
+        // returned (single-use rotation). Same per-IP rate limit as
+        // session mint and register — recovery is brute-force
+        // amplification surface (24-char Crockford base32 = 120 bits
+        // is unbrute-forceable but bots will still hammer).
+        app.post("/api/auth/recover", ctx -> {
+            String ip = ctx.ip();
+            if (!sessionMintLimiter.tryAcquire(ip)) {
+                throw new WebApiException(429, "RATE_LIMITED",
+                        "Too many recovery attempts from this IP. "
+                                + "Wait a minute and retry.");
+            }
+            if (!mage.webapi.auth.AuthService.isRecoveryEnabled()) {
+                throw new WebApiException(403, "REGISTRATION_DISABLED",
+                        "Account recovery is disabled on this server.");
+            }
+            WebRecoverRequest req = ctx.bodyAsClass(WebRecoverRequest.class);
+            String fresh = authService.recoverPassword(
+                    req == null ? null : req.username(),
+                    req == null ? null : req.recoveryCode(),
+                    req == null ? null : req.newPassword());
+            ctx.status(200);
+            ctx.json(new WebRecoverResponse(
+                    SchemaVersion.CURRENT,
+                    req.username().trim(),
+                    fresh));
         });
         app.post("/api/session/admin", ctx -> {
             // Same per-IP cap on admin login attempts; failed admin

@@ -167,8 +167,32 @@ export type WebRegisterRequest = z.infer<typeof webRegisterRequestSchema>;
 export const webRegisterResponseSchema = z.object({
   schemaVersion: z.string(),
   username: z.string(),
+  // Slice F24 (2026-05-04) — one-time passphrase shown ONCE on
+  // register. The user must save it off-screen; only the SHA-256
+  // hash is persisted. Default '' so older 1.30 servers (pre-F24)
+  // still parse cleanly during a rolling upgrade — those builds
+  // simply won't surface a recovery banner.
+  recoveryCode: z.string().default(''),
 });
 export type WebRegisterResponse = z.infer<typeof webRegisterResponseSchema>;
+
+/* ---------- recovery (slice F24) ---------- */
+
+export const webRecoverRequestSchema = z.object({
+  username: z.string().min(3).max(14),
+  recoveryCode: z.string().min(1),
+  newPassword: z.string().min(8).max(128),
+});
+export type WebRecoverRequest = z.infer<typeof webRecoverRequestSchema>;
+
+export const webRecoverResponseSchema = z.object({
+  schemaVersion: z.string(),
+  username: z.string(),
+  // Freshly-rotated one-time code returned on a successful recovery.
+  // The prior code was invalidated atomically server-side.
+  recoveryCode: z.string(),
+});
+export type WebRecoverResponse = z.infer<typeof webRecoverResponseSchema>;
 
 /* ---------- cards ---------- */
 
