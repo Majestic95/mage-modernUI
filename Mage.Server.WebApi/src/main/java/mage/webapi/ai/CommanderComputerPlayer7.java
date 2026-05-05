@@ -59,9 +59,10 @@ import java.util.UUID;
  *       bug signature ({@code ComputerPlayer7.java:119}).</li>
  *   <li><b>Don't recast commander into tax hell</b> (AI-8.3). Drops
  *       command-zone spell-abilities at tax ≥ 8.</li>
- *   <li><b>Don't wipe own board</b> (AI-8.3). Drops
+ *   <li><b>Don't wipe own board</b> (AI-8.3; AI-8.6 H3 fix). Drops
  *       {@code DestroyAll}/{@code DamageAll}/{@code ExileAll} when
- *       we'd lose ≥ each opponent's max.</li>
+ *       we'd lose strictly more than the sum of the rest of the
+ *       table's losses.</li>
  *   <li><b>Lethal short-circuit</b> (AI-8.4; AI-8.5 fix). Walks
  *       all opponents, checks both life-loss lethal AND commander-
  *       damage lethal, skips opponents under "can't lose" effects.</li>
@@ -92,6 +93,14 @@ public class CommanderComputerPlayer7 extends ComputerPlayerControllableProxy {
     private static final int EMPTY_TREE_WARN_THRESHOLD = 20;
 
     private long lastObservedTurnHash = -1L;
+    /**
+     * AI-8.6 H5 — track the turn number we last observed separately
+     * from the (turn,player)-hash so {@code maybeWarnEmptyTree} can
+     * log the turn the bug fired ON, not the turn we just transitioned
+     * INTO. Defaults to -1 so the first-ever transition is recognized
+     * as a boundary.
+     */
+    private int lastObservedTurnNum = -1;
     private int passesThisTurn = 0;
     private int actionsThisTurn = 0;
 
@@ -102,6 +111,7 @@ public class CommanderComputerPlayer7 extends ComputerPlayerControllableProxy {
     public CommanderComputerPlayer7(final CommanderComputerPlayer7 player) {
         super(player);
         this.lastObservedTurnHash = player.lastObservedTurnHash;
+        this.lastObservedTurnNum = player.lastObservedTurnNum;
         this.passesThisTurn = player.passesThisTurn;
         this.actionsThisTurn = player.actionsThisTurn;
     }
@@ -162,8 +172,9 @@ public class CommanderComputerPlayer7 extends ComputerPlayerControllableProxy {
         if (currentTurnHash != lastObservedTurnHash) {
             // Turn boundary — emit the prior turn's WARN if it
             // matches the empty-tree signature, then reset counters.
-            maybeWarnEmptyTree(game);
+            maybeWarnEmptyTree(lastObservedTurnNum);
             lastObservedTurnHash = currentTurnHash;
+            lastObservedTurnNum = game.getState().getTurnNum();
             passesThisTurn = 0;
             actionsThisTurn = 0;
         }
@@ -206,13 +217,25 @@ public class CommanderComputerPlayer7 extends ComputerPlayerControllableProxy {
                 ^ (activeId == null ? 0L : activeId.hashCode());
     }
 
-    private void maybeWarnEmptyTree(Game game) {
+    /**
+     * Emits a WARN when the prior turn matched the empty-tree-bug
+     * signature (≥ {@link #EMPTY_TREE_WARN_THRESHOLD} priority handoffs
+     * with zero actions taken). The {@code priorTurnNum} parameter is
+     * the turn the bug fired on — captured BEFORE the boundary
+     * transition so the message identifies the right turn rather than
+     * the turn we just crossed into (AI-8.6 H5 fix). Skipped on the
+     * first-ever observation when {@code priorTurnNum} is still -1.
+     */
+    private void maybeWarnEmptyTree(int priorTurnNum) {
+        if (priorTurnNum < 0) {
+            return;
+        }
         if (passesThisTurn >= EMPTY_TREE_WARN_THRESHOLD && actionsThisTurn == 0) {
             log.warn(String.format(
-                    "AI '%s' passed priority %d times across the prior turn without "
+                    "AI '%s' passed priority %d times during turn %d without "
                             + "producing any action — possible empty-tree bug "
-                            + "(ComputerPlayer7.java:119). Current turn: %d.",
-                    getName(), passesThisTurn, game.getState().getTurnNum()));
+                            + "(ComputerPlayer7.java:119).",
+                    getName(), passesThisTurn, priorTurnNum));
         }
     }
 }

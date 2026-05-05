@@ -134,18 +134,34 @@ final class CommanderActionFilter {
         if (watcher == null) {
             return false;
         }
+        // AI-8.6 H1 — verified upstream:
+        // CommanderPlaysCountWatcher.watch() increments on SPELL_CAST
+        // events whose origin Zone == COMMAND. The increment fires
+        // when the prior cast went on the stack — so at the time we
+        // inspect the action queue for the NEXT cast, getPlaysCount
+        // reflects RESOLVED prior casts ONLY. Tax for this pending
+        // cast = 2 × prior-casts (CR 903.8). With threshold 8 we
+        // refuse on the 5th cast attempt (after 4 resolved casts;
+        // = died 4+ times since the commander returns to command zone
+        // each death and pays the +2-per-prior-cast tax on every recast).
         int playsCount = watcher.getPlaysCount(sourceCard.getMainCard().getId());
-        // Tax = 2 × prior casts (CR 903.8). The Nth cast pays
-        // 2 × (N-1) extra generic.
         int tax = 2 * playsCount;
         return tax >= COMMANDER_RECAST_TAX_REFUSAL_THRESHOLD;
     }
 
     /**
-     * Detects "I'm about to cast a board wipe that hurts me as
-     * much as it hurts each opponent." Looks for spell abilities
-     * whose effect class names match the board-wipe pattern AND
-     * our creature count satisfies the self-harm gate.
+     * Detects "I'm about to cast a board wipe that costs us more
+     * tempo than the rest of the table combined." Looks for spell
+     * abilities whose effect class names match the board-wipe pattern
+     * AND our creature count satisfies the self-harm gate.
+     *
+     * <p><b>AI-8.6 H3 fix:</b> compare against the SUM of opponents'
+     * creatures, not the MAX. Previously, an asymmetric pod (us=4,
+     * opps=[4,2,0]) refused the wipe (max=4, 4 ≥ 4) even though we'd
+     * lose 4 and the table loses 6 — a clearly-positive trade for us.
+     * New rule: refuse only when we'd lose STRICTLY MORE than the
+     * table-wide sum (we destroy more of our own board than the rest
+     * of the table combined).
      */
     static boolean isCounterproductiveBoardWipe(Ability ability, UUID playerId, Game game) {
         if (!(ability instanceof SpellAbility)) {
@@ -162,16 +178,14 @@ final class CommanderActionFilter {
         if (opponents == null || opponents.isEmpty()) {
             return false;
         }
-        int maxOppCreatures = 0;
+        int sumOppCreatures = 0;
         for (UUID oppId : opponents) {
-            int n = countCreaturesControlledBy(oppId, game);
-            if (n > maxOppCreatures) {
-                maxOppCreatures = n;
-            }
+            sumOppCreatures += countCreaturesControlledBy(oppId, game);
         }
-        // Refuse only when we'd lose AT LEAST as many as the most
-        // affected opponent.
-        return ourCreatures >= maxOppCreatures;
+        // Refuse only when our loss is strictly bigger than the rest
+        // of the table's combined loss. Ties go to "wipe" — clearing
+        // the table is tempo-positive for us at parity.
+        return ourCreatures > sumOppCreatures;
     }
 
     private static boolean hasBoardWipeEffect(Ability ability) {

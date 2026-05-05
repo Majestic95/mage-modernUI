@@ -136,12 +136,30 @@ final class CommanderLethalShortCircuit {
         return out;
     }
 
+    /**
+     * Declares every attacker in {@code attackers} against the same
+     * {@code defenderId}. On any per-attacker failure: rolls back the
+     * already-declared attackers via
+     * {@link Combat#removeAttacker(UUID, Game)} so the parent's
+     * {@code super.selectAttackers} call sees a clean combat state
+     * rather than a half-committed lethal swing.
+     *
+     * <p><b>AI-8.6 H2 fix:</b> previously we returned false on
+     * mid-loop failure but left the partially-declared attackers in
+     * combat. The caller would then defer to super, which would
+     * re-enumerate attackers on top of our dirty partial state.
+     */
     private static boolean declareAll(Combat combat, List<Permanent> attackers,
                                        UUID defenderId, UUID playerId, Game game) {
+        List<UUID> declared = new ArrayList<>(attackers.size());
         for (Permanent attacker : attackers) {
             if (!combat.declareAttacker(attacker.getId(), defenderId, playerId, game)) {
+                for (UUID priorId : declared) {
+                    combat.removeAttacker(priorId, game);
+                }
                 return false;
             }
+            declared.add(attacker.getId());
         }
         return true;
     }

@@ -1,6 +1,6 @@
 # AI Upgrades — From "Plays Legally" to "Plays Like a Human"
 
-> **Status:** living doc. AI-8.0 (skeleton + lowest-life targeting) shipped 2026-05-05.
+> **Status:** living doc. Tier 1 closed 2026-05-05 with AI-8.6 polish pass.
 > Source: parallel research from an xmage-AI-internals expert agent and a
 > Commander-format strategy expert agent, synthesized 2026-05-05. See the
 > commit message of AI-8.0 for the full context.
@@ -92,6 +92,40 @@ violation; fixed all 6 in AI-8.5:
 5 high-priority polish items (H1-H5) and 3 nits (L1-L3) deferred
 to AI-8.6. See `docs/decisions/critic-pass-log.md` for the full
 critic findings + fix mapping.
+
+**AI-8.6 polish pass shipped 2026-05-05.** Closed all 5 H-items
+from the AI-8.5 deferral:
+- **H1:** verified `CommanderPlaysCountWatcher.getPlaysCount`
+  semantics (resolved-prior-casts, no upcoming cast). No math
+  change; clarifying comment added so the next reader doesn't
+  re-derive it. The 5th-cast refusal threshold is correct.
+- **H2:** `selectAttackers` partial-declaration leak. When
+  `declareAll` failed mid-loop, attackers already declared stayed
+  registered in `Combat`, leaving super to re-enumerate on top of
+  dirty state. Fix: track declared attackers, call
+  `combat.removeAttacker` for each on rollback.
+- **H3:** asymmetric wipe over-refusal. Old rule
+  (`our >= max(opp creature counts)`) refused wipes in cases where
+  the wipe was clearly tempo-positive (us=4 vs. opps=[4,2,0]: lose
+  4, table loses 6). New rule:
+  `ourCreatures > sum(opponentCreatures)` — refuse only when our
+  loss is strictly bigger than the rest of the table's combined
+  loss.
+- **H4:** lowest-life heuristic over-fired on `Outcome.Detriment`
+  spells where the targeted player BENEFITS (e.g., catch-all
+  Detriment-tagged "target opp draws three cards" effects).
+  Tightened the gate from `!outcome.isGood()` to a whitelist of
+  unambiguously-opponent-harming outcomes:
+  `{Damage, LoseLife, Discard, Sacrifice}`. Strictly no worse than
+  pre-AI-8.0 for outcomes that fall through.
+- **H5:** empty-tree-bug WARN message reported "current turn" =
+  the turn we transitioned into, not the turn the bug fired on.
+  Added a separate `lastObservedTurnNum` field and pass that into
+  `maybeWarnEmptyTree` so the message identifies the right turn.
+
+L1-L3 nits remain deferred — no specs were captured at AI-8.5
+time; treating as cleanup-as-encountered. **Tier 1 is fully
+closed.**
 
 ## Tier 2 — Real lift (~1 week)
 

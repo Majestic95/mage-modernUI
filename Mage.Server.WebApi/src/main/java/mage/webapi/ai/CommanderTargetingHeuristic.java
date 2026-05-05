@@ -8,6 +8,7 @@ import mage.players.Player;
 import mage.target.Target;
 import mage.watchers.common.CommanderInfoWatcher;
 
+import java.util.EnumSet;
 import java.util.Set;
 import java.util.UUID;
 
@@ -38,6 +39,25 @@ final class CommanderTargetingHeuristic {
     /** CR 903.14a — 21 combat damage from a single commander loses the game. */
     static final int COMMANDER_DAMAGE_LETHAL = 21;
 
+    /**
+     * AI-8.6 H4 — the heuristic only fires when the spell's
+     * {@link Outcome} is unambiguously bad for the targeted player.
+     * Previously we used {@code !outcome.isGood()}, which includes
+     * {@link Outcome#Detriment} — a catch-all "bad-for-target" tag
+     * that some cards mis-apply to opponent-benefit effects (e.g.,
+     * "target opponent draws three cards"). The whitelist below
+     * captures the outcomes where every printed card we know of
+     * harms the targeted player; anything else falls through to
+     * super (upstream's iterator-first pick), strictly no worse than
+     * pre-AI-8.0 behavior.
+     */
+    private static final Set<Outcome> OPPONENT_HARMING_OUTCOMES = EnumSet.of(
+            Outcome.Damage,
+            Outcome.LoseLife,
+            Outcome.Discard,
+            Outcome.Sacrifice
+    );
+
     private CommanderTargetingHeuristic() {
         // helper-only; do not instantiate
     }
@@ -49,7 +69,7 @@ final class CommanderTargetingHeuristic {
      */
     static UUID pickThreatTarget(UUID playerId, Outcome outcome, Target target,
                                   Ability source, Game game) {
-        if (outcome == null || outcome.isGood()) {
+        if (outcome == null || !OPPONENT_HARMING_OUTCOMES.contains(outcome)) {
             return null;
         }
         if (target.getMaxNumberOfTargets() != 1 || target.getMinNumberOfTargets() != 1) {
