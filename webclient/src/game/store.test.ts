@@ -974,6 +974,57 @@ describe('useGameStore', () => {
     expect(bucket[bucket.length - 1]?.message).toBe('msg-249');
   });
 
+  it("Slice D' (2026-05-05) — chatMessage with messageType=GAME and a card highlight ALSO promotes into gameLog", () => {
+    // Engine flow: informPlayers(text) → EventType.INFO →
+    // GameController.broadcast(MessageType.GAME). The GAME_UPDATE_AND_INFORM
+    // (wire 'gameInform') callback is reserved for "Waiting for X" status
+    // text — the actual card-play / damage / life-change content has been
+    // sitting in chatMessages this whole time. Promote MessageType=GAME
+    // into gameLog so the existing GameLog UI renders it.
+    const chatId = '99999999-9999-9999-9999-999999999999';
+    const payload = {
+      ...chatPayload(
+        "alice plays <font color='#90EE90' object_id='card-1'>Forest</font>",
+      ),
+      messageType: 'GAME' as const,
+    };
+    useGameStore.getState().applyFrame(chatFrame(chatId, payload, 42), payload);
+    expect(useGameStore.getState().chatMessages[chatId]).toHaveLength(1);
+    const log = useGameStore.getState().gameLog;
+    expect(log).toHaveLength(1);
+    expect(log[0]?.message).toBe(
+      "alice plays <font color='#90EE90' object_id='card-1'>Forest</font>",
+    );
+    expect(log[0]?.id).toBe(42);
+  });
+
+  it("Slice D' — chatMessage with messageType=TALK does NOT promote into gameLog (user chat stays in chat panel only)", () => {
+    const chatId = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+    const payload = chatPayload(
+      "<font color='#20B2AA'>alice</font>: gg wp",
+      'alice',
+    );
+    useGameStore.getState().applyFrame(chatFrame(chatId, payload, 43), payload);
+    expect(useGameStore.getState().chatMessages[chatId]).toHaveLength(1);
+    expect(useGameStore.getState().gameLog).toHaveLength(0);
+  });
+
+  it("Slice D' — chatMessage with messageType=GAME but no card highlight (status / phase boundary) is dropped from gameLog", () => {
+    // STATUS-event path: GameController fires MessageType=GAME with a
+    // phase / "Waiting for X" string that has no card highlight. The
+    // shouldKeepGameLogEntry filter drops these (no card-color font, no
+    // life change), keeping the log focused on card / life events per
+    // the 2026-05-03 directive.
+    const chatId = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+    const payload = {
+      ...chatPayload('PRECOMBAT_MAIN - Waiting for alice'),
+      messageType: 'GAME' as const,
+    };
+    useGameStore.getState().applyFrame(chatFrame(chatId, payload, 44), payload);
+    expect(useGameStore.getState().chatMessages[chatId]).toHaveLength(1);
+    expect(useGameStore.getState().gameLog).toHaveLength(0);
+  });
+
   it('reset clears chatMessages along with everything else', () => {
     const chatId = '55555555-5555-5555-5555-555555555555';
     useGameStore.getState().applyFrame(chatFrame(chatId, chatPayload('hi')), chatPayload('hi'));

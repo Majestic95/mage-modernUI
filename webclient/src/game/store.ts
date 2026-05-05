@@ -752,7 +752,7 @@ function reduceChatMessage(
   state: GameState,
   frame: WebStreamFrame,
   msg: WebChatMessage,
-): Pick<GameState, 'chatMessages'> | null {
+): Pick<GameState, 'chatMessages' | 'gameLog'> | null {
   // chatId comes from the envelope's objectId (per slice 2). Server
   // pushes the same chatId on every chat callback for a given chat.
   // If a frame arrives without a chatId we drop it — there's no
@@ -766,8 +766,45 @@ function reduceChatMessage(
   const next = prior.length >= CHAT_HISTORY_CAP
     ? [...prior.slice(prior.length - CHAT_HISTORY_CAP + 1), msg]
     : [...prior, msg];
+  // 2026-05-05 (FB#8 real fix) — engine's {@code informPlayers(text)}
+  // → {@code EventType.INFO} → {@code GameController} broadcasts via
+  // {@code chatManager.broadcast(MessageType.GAME, ...)} (line 126 of
+  // GameController.java). The {@code gameInform} wire frame only fires
+  // for "Waiting for player X" status text via
+  // {@code GameSessionWatcher.inform()}, NOT for card plays / damage
+  // / life changes. So every meaningful game-log entry has been sitting
+  // in {@code chatMessages} bucketed under the game's chatId, and the
+  // {@link GameLog} component (which reads from {@code state.gameLog})
+  // never saw any of it. Promote MessageType=GAME chat messages into
+  // gameLog so the existing UI surfaces them — same {@code shouldKeepGameLogEntry}
+  // filter already used by the (rare) gameInform path.
+  let nextGameLog = state.gameLog;
+  if (
+    msg.messageType === 'GAME' &&
+    msg.message &&
+    msg.message.length > 0 &&
+    shouldKeepGameLogEntry(msg.message)
+  ) {
+    const gv = state.gameView;
+    const entry: GameLogEntry = {
+      id: frame.messageId,
+      message: msg.message,
+      turn: gv?.turn ?? 0,
+      phase: gv?.step || gv?.phase || '',
+      // cardsByName built from the CURRENT gameView snapshot rather
+      // than a wrapped payload (chat frames don't carry a gameView).
+      // gameUpdate / gameInform frames keep the snapshot fresh; in
+      // practice the snapshot is correct as of the moment the engine
+      // emitted the message.
+      cardsByName: buildCardsByName(gv),
+    };
+    nextGameLog = nextGameLog.length >= GAME_LOG_CAP
+      ? [...nextGameLog.slice(nextGameLog.length - GAME_LOG_CAP + 1), entry]
+      : [...nextGameLog, entry];
+  }
   return {
     chatMessages: { ...buckets, [chatId]: next },
+    gameLog: nextGameLog,
   };
 }
 
