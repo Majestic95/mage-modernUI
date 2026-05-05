@@ -132,16 +132,57 @@ closed.**
 These are the upgrades the upstream maintainers' own TODOs flag as
 most-wanted but never built. Build only after Tier 1 is shipped.
 
-| # | Upgrade | Effort | Impact |
-|---|---|---|---|
-| 7 | **Multi-opponent evaluator** — wrap `GameStateEvaluator2.evaluate` to sum all opponents weighted by threat (low life × 1.5, big board × 1.2, has commander out × 1.3) | 1-2 days | **Large** — structural fix for problem #1 |
-| 8 | **Hand quality scoring** — replace `handSize × 5` with sum of `cardScore × 0.4`; drawing a Craterhoof no longer worth the same as drawing a Forest | 1 day | Medium |
-| 9 | **Removal conservation** — only fire removal when threats-on-board ratio is high or target is lethal-next-turn | 1-2 days | Medium |
-| 10 | **Smarter mulligans** — keep hands by curve + color castability; aggressively mull bad hands; commander-aware | 1 day | Small-medium |
+| # | Upgrade | Effort | Impact | Status |
+|---|---|---|---|---|
+| 7 | **Multi-opponent evaluator** — wrap `GameStateEvaluator2.evaluate` to sum all opponents weighted by threat (low life × 1.5, big board × 1.2, has commander out × 1.3) | 1-2 days | **Large** — structural fix for problem #1 | ✅ AI-9 |
+| 8 | **Hand quality scoring** — replace `handSize × 5` with sum of `cardScore × 0.4`; drawing a Craterhoof no longer worth the same as drawing a Forest | 1 day | Medium | ⏸ DEFERRED — see AI-9 closeout below |
+| 9 | **Removal conservation** — only fire removal when threats-on-board ratio is high or target is lethal-next-turn | 1-2 days | Medium | Queued (AI-10) |
+| 10 | **Smarter mulligans** — keep hands by curve + color castability; aggressively mull bad hands; commander-aware | 1 day | Small-medium | Queued (AI-11) |
 
-After Tier 2 the Commander expert estimates "~60% of the gap to a
-competent casual player." Diminishing returns kick in past this without
-changing AI architecture.
+**AI-9 closeout (2026-05-05).** Tier 2 #7 shipped via the
+`CommanderSimulatePriorityOverride` → `CommanderSearchTreeOverride`
+inheritance chain (4 sibling files in `Mage.Server.WebApi/src/main/java/mage/webapi/ai/`):
+
+- `MultiOpponentEvaluator` (drop-in evaluator) — sums all opponents
+  filtered by `isInGame()`, threat-weighted by effective life
+  (life vs. 21-cmd-damage clock), big board, and has-commander-out.
+- `CommanderSearchTreeOverride.addActions` + `calculateActions` —
+  replaces 6 leaf-eval call sites + the `currentScore` seed.
+- `CommanderSimulatePriorityOverride.simulatePriority` (parent
+  intermediate) — replaces 5 more leaf-eval call sites + inlines
+  `checkForRepeatedActionMultiOpp` to keep cycle-detection on the
+  same scoring scale.
+- Reflection-pin tests for upstream signatures (`addActions`,
+  `simulatePriority`, `calculateActions`, `checkForRepeatedAction`)
+  + protected-field shapes (`currentScore`, `maxNodes`, `maxDepth`,
+  `actions`, `combat`, `root`, `actionCache`).
+
+Post-builder 3-critic parallel pass (AI-internals + Magic-rules +
+Generic technical) found 11 blockers across all three lenses — all
+fixed in the AI-9 closeout. Notable patterns from the critic pass
+(captured in memory at `feedback_canLose_isInGame_checklist.md`):
+the AI-8.5 fix-C3 lesson (`canLose(game)` + `isInGame()` as the
+canonical alive gate) was re-introduced as a bug because the leaf
+evaluator was written from scratch — now codified as a hard
+checklist item for any future life-state-reading AI code.
+
+**Tier 2 #8 (hand quality) — DEFERRED.** Critic pass found
+`ArtificialScoringSystem.getCardDefinitionScore` (the upstream
+helper the slice would delegate to) uses placeholder `value = 3`
+for ALL cards. With the prescribed `cardScore × 0.4` math:
+Forest = 125, Craterhoof Behemoth = 240, **Lightning Bolt = 290**.
+Bigger bombs score *lower* than burn spells because the
+mana-value penalty dominates — the substitution is anti-correlated
+with card power. Reverted to upstream's `handSize × HAND_CARD_SCORE`
+flat formula. Tier 2 #8 stays queued; ships when upstream supplies
+a real per-card rating system OR we write our own. Until then the
+intent is captured in code via `MultiOpponentEvaluator.handScore`
+(named for the future replacement, currently delegating to upstream
+math).
+
+After Tier 2 #7 + #9 + #10 the Commander expert estimates "~60% of
+the gap to a competent casual player." Diminishing returns kick in
+past this without changing AI architecture.
 
 ## Tier 3 — Conditional (~1 week, only if Tier 1+2 still feels weak)
 
@@ -196,9 +237,14 @@ gives ~80% of the visible improvement without the infrastructure cost.
 - [`PlayerFactory.java`](../../Mage.Server/src/main/java/mage/server/game/PlayerFactory.java) — registration mechanism
 
 ### Our fork (where new subclasses + evaluators live)
-- `Mage.Server.WebApi/src/main/java/mage/webapi/ai/CommanderComputerPlayer7.java` — Tier 1 subclass
+- `Mage.Server.WebApi/src/main/java/mage/webapi/ai/CommanderComputerPlayer7.java` — Tier 1 decision-point heuristics (chooseTarget, act, selectAttackers)
+- `Mage.Server.WebApi/src/main/java/mage/webapi/ai/CommanderSearchTreeOverride.java` — Tier 2 #7 addActions + calculateActions overrides (AI-9)
+- `Mage.Server.WebApi/src/main/java/mage/webapi/ai/CommanderSimulatePriorityOverride.java` — Tier 2 #7 simulatePriority + inlined checkForRepeatedAction (AI-9 fixer)
+- `Mage.Server.WebApi/src/main/java/mage/webapi/ai/MultiOpponentEvaluator.java` — drop-in multi-opp threat-weighted evaluator (AI-9)
+- `Mage.Server.WebApi/src/main/java/mage/webapi/ai/Commander*.java` — Tier 1 stateless helpers (TargetingHeuristic, ActionFilter, LethalShortCircuit)
 - `Mage.Server.WebApi/src/main/java/mage/webapi/embed/EmbeddedServer.java` — boot-time override registration
-- `Mage.Server.WebApi/src/test/java/mage/webapi/ai/CommanderComputerPlayer7Test.java` — Tier 1 tests
+- `Mage.Server.WebApi/src/test/java/mage/webapi/ai/CommanderComputerPlayer7Test.java` — Tier 1 + chain pin tests
+- `Mage.Server.WebApi/src/test/java/mage/webapi/ai/MultiOpponentEvaluator{,Pin}Test.java` — Tier 2 #7 structural + reflection-pin tests
 
 ### Prior decisions
 - [`docs/decisions/mad-ai-no-plays-recon.md`](../decisions/mad-ai-no-plays-recon.md) — empty-tree bug recon (slice 47); skill=4 cliff rationale

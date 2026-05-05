@@ -4,18 +4,18 @@ import mage.abilities.Ability;
 import mage.constants.Outcome;
 import mage.constants.RangeOfInfluence;
 import mage.game.Game;
-import mage.player.ai.ComputerPlayerControllableProxy;
 import mage.target.Target;
 import org.apache.log4j.Logger;
 
 import java.util.UUID;
 
 /**
- * Commander-format-aware AI player. Subclasses upstream
- * {@link ComputerPlayerControllableProxy} (which extends
- * {@code ComputerPlayer7}, the MAD minimax bot) and injects
- * heuristics that the upstream evaluator gets wrong in 4-player
- * free-for-all.
+ * Commander-format-aware AI player. Subclasses
+ * {@link CommanderSearchTreeOverride} (our intermediate class that
+ * owns the AI-9 search-tree leaf evaluator wrap), which in turn
+ * subclasses upstream {@code ComputerPlayerControllableProxy} (which
+ * extends {@code ComputerPlayer7}, the MAD minimax bot). This class
+ * adds the per-decision-point heuristics on top.
  *
  * <p>Registered at {@code EmbeddedServer.boot()} time as the
  * {@code "Computer - mad"} handler — overrides the default
@@ -31,7 +31,7 @@ import java.util.UUID;
  *
  * <h2>Architecture (post-AI-8.5 split)</h2>
  *
- * Heuristic logic lives in three sibling helper classes — this file
+ * Heuristic logic lives in four sibling helper classes — this file
  * is the orchestrator that owns the override surface and the
  * telemetry state. Each helper is stateless / static-only so the
  * simulation cloning path doesn't need to copy heuristic state.
@@ -43,6 +43,8 @@ import java.util.UUID;
  *       into tax hell; don't wipe own board).</li>
  *   <li>{@link CommanderLethalShortCircuit} — selectAttackers
  *       lethal pre-check (life + commander-damage paths).</li>
+ *   <li>{@link MultiOpponentEvaluator} — multi-opponent
+ *       threat-weighted leaf evaluator (AI-9 / Tier 2 #7 + #8).</li>
  * </ul>
  *
  * <h2>Behavior delta vs. upstream MAD</h2>
@@ -66,6 +68,14 @@ import java.util.UUID;
  *   <li><b>Lethal short-circuit</b> (AI-8.4; AI-8.5 fix). Walks
  *       all opponents, checks both life-loss lethal AND commander-
  *       damage lethal, skips opponents under "can't lose" effects.</li>
+ *   <li><b>Multi-opponent threat-weighted leaf scoring</b> (AI-9 /
+ *       Tier 2 #7). Every minimax search-tree leaf scores against
+ *       <i>all</i> opponents weighted by threat (low life × 1.5, big
+ *       board × 1.2, has commander out × 1.3) — replaces upstream's
+ *       iterator-first single-opponent evaluator at every leaf the
+ *       overridden {@code addActions} reaches. Plus per-card hand
+ *       quality scoring (Tier 2 #8) — drawing a Craterhoof no
+ *       longer scores the same as drawing a Forest.</li>
  * </ul>
  *
  * <h2>Defensive guards baked in (AI-8.5 fix C4)</h2>
@@ -79,7 +89,7 @@ import java.util.UUID;
  * roadmap and {@code docs/decisions/critic-pass-log.md} for the
  * AI-8.5 critic findings that drove the post-Tier-1 fixes.
  */
-public class CommanderComputerPlayer7 extends ComputerPlayerControllableProxy {
+public class CommanderComputerPlayer7 extends CommanderSearchTreeOverride {
 
     private static final Logger log = Logger.getLogger(CommanderComputerPlayer7.class);
 
