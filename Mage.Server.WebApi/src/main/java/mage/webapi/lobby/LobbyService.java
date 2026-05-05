@@ -32,6 +32,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -75,6 +76,16 @@ public final class LobbyService {
     static final int AI_SKILL_MONTE_CARLO = 1;
     /** Alias kept for tests that still reference the old constant name. */
     static final int AI_SKILL = AI_SKILL_MAD;
+
+    /**
+     * 2026-05-04 — alternates the AI's auto-built Commander deck across
+     * mono-green and mono-red so a multi-AI table sees both colors.
+     * Index 0 = first AI fill since JVM start gets green; subsequent
+     * fills alternate. Predictable rotation rather than random gives
+     * the same lobby-create call producing the same color split each
+     * time, which is easier to reason about.
+     */
+    private final AtomicInteger aiDeckRotation = new AtomicInteger(0);
 
     private final EmbeddedServer embedded;
     private final SeatReadyTracker readyTracker;
@@ -461,7 +472,12 @@ public final class LobbyService {
                 ? "" : table.getValidator().getName();
         if (validatorName != null
                 && validatorName.toLowerCase().contains("commander")) {
-            return buildCommanderFallbackDeck();
+            // Alternate green/red across AI fills so a multi-AI lobby
+            // gets a mix of colors. Even index → green; odd → red.
+            int idx = aiDeckRotation.getAndIncrement();
+            return (idx % 2 == 0)
+                    ? buildCommanderFallbackDeckGreen()
+                    : buildCommanderFallbackDeckRed();
         }
         return buildFallbackBasicLandsDeck();
     }
@@ -488,7 +504,7 @@ public final class LobbyService {
     // a full embedded server. Was private; the visibility bump is
     // strictly for testability — production callers stay inside this
     // class.
-    DeckCardLists buildCommanderFallbackDeck() {
+    DeckCardLists buildCommanderFallbackDeckGreen() {
         CardInfo forest = CardRepository.instance.findCard("Forest");
         if (forest == null) {
             throw new WebApiException(500, "UPSTREAM_ERROR",
@@ -576,6 +592,107 @@ public final class LobbyService {
         return deck;
     }
 
+    /**
+     * Mono-red sibling of {@link #buildCommanderFallbackDeckGreen}.
+     * 60 Mountains + ~39 mono-red singletons + 1 mono-red commander.
+     * Same shape as the green deck so MAD's simulation has comparable
+     * decision density across both colors. {@link #aiDeckRotation}
+     * alternates between this and the green deck so multi-AI lobbies
+     * see both colors in play.
+     *
+     * <p>Card-pool philosophy: red's strengths are burn (creature +
+     * face removal in one keyword), goblins (token-based aggro), and
+     * dragons (late-game). Each appears across the curve so the
+     * simulation has plays at every CMC.
+     */
+    DeckCardLists buildCommanderFallbackDeckRed() {
+        CardInfo mountain = CardRepository.instance.findCard("Mountain");
+        if (mountain == null) {
+            throw new WebApiException(500, "UPSTREAM_ERROR",
+                    "Card DB has no Mountain — cannot build AI Commander deck.");
+        }
+        CardInfo commander = null;
+        for (String candidate : new String[]{
+                "Krenko, Mob Boss",
+                "Etali, Primal Storm",
+                "Heartless Hidetsugu",
+                "Krenko, Tin Street Kingpin",
+        }) {
+            CardInfo c = CardRepository.instance.findCard(candidate);
+            if (c != null) {
+                commander = c;
+                break;
+            }
+        }
+        if (commander == null) {
+            throw new WebApiException(500, "UPSTREAM_ERROR",
+                    "Card DB has no mono-red legendary creature — "
+                            + "cannot build AI Commander fallback deck.");
+        }
+        DeckCardLists deck = new DeckCardLists();
+        deck.setName("AI Commander Deck (Red)");
+        deck.setAuthor("server");
+        List<DeckCardInfo> cards = new ArrayList<>();
+        addEntry(cards, "Mountain", mountain, 60);
+        // Ramp / colorless rocks + red rituals (~10 singletons).
+        // Red has no mana dorks; rituals + colorless rocks fill the
+        // ramp role. All listed colorless artifacts have empty {} color
+        // identity (no colored mana symbols in cost or rules text), so
+        // they're legal under any commander.
+        addEntryOrFallback(cards, "Sol Ring", mountain, 1);
+        addEntryOrFallback(cards, "Arcane Signet", mountain, 1);
+        addEntryOrFallback(cards, "Mind Stone", mountain, 1);
+        addEntryOrFallback(cards, "Wayfarer's Bauble", mountain, 1);
+        addEntryOrFallback(cards, "Fellwar Stone", mountain, 1);
+        addEntryOrFallback(cards, "Worn Powerstone", mountain, 1);
+        addEntryOrFallback(cards, "Pyretic Ritual", mountain, 1);
+        addEntryOrFallback(cards, "Desperate Ritual", mountain, 1);
+        addEntryOrFallback(cards, "Seething Song", mountain, 1);
+        addEntryOrFallback(cards, "Generator Servant", mountain, 1);
+        // Burn / removal (10 singletons). Each is mono-red — costs
+        // are all R or generic-with-R, no hybrid symbols. Lava Spike
+        // can only target players (not creatures) but the AI happily
+        // points it at face for damage races.
+        addEntryOrFallback(cards, "Lightning Bolt", mountain, 1);
+        addEntryOrFallback(cards, "Shock", mountain, 1);
+        addEntryOrFallback(cards, "Lightning Strike", mountain, 1);
+        addEntryOrFallback(cards, "Magma Spray", mountain, 1);
+        addEntryOrFallback(cards, "Lava Spike", mountain, 1);
+        addEntryOrFallback(cards, "Searing Blaze", mountain, 1);
+        addEntryOrFallback(cards, "Pyroclasm", mountain, 1);
+        addEntryOrFallback(cards, "Anger of the Gods", mountain, 1);
+        addEntryOrFallback(cards, "Chaos Warp", mountain, 1);
+        addEntryOrFallback(cards, "Earthquake", mountain, 1);
+        // Low-CMC creatures (10 singletons).
+        addEntryOrFallback(cards, "Mogg Fanatic", mountain, 1);
+        addEntryOrFallback(cards, "Goblin Guide", mountain, 1);
+        addEntryOrFallback(cards, "Monastery Swiftspear", mountain, 1);
+        addEntryOrFallback(cards, "Goblin Piledriver", mountain, 1);
+        addEntryOrFallback(cards, "Goblin Warchief", mountain, 1);
+        addEntryOrFallback(cards, "Frenzied Goblin", mountain, 1);
+        addEntryOrFallback(cards, "Vexing Devil", mountain, 1);
+        addEntryOrFallback(cards, "Hellspark Elemental", mountain, 1);
+        addEntryOrFallback(cards, "Beetleback Chief", mountain, 1);
+        addEntryOrFallback(cards, "Hellrider", mountain, 1);
+        // Mid-CMC creatures (5 singletons).
+        addEntryOrFallback(cards, "Goblin Rabblemaster", mountain, 1);
+        addEntryOrFallback(cards, "Goblin Chainwhirler", mountain, 1);
+        addEntryOrFallback(cards, "Pyreheart Wolf", mountain, 1);
+        addEntryOrFallback(cards, "Goblin Trashmaster", mountain, 1);
+        addEntryOrFallback(cards, "Inferno Titan", mountain, 1);
+        // Big finishers (4 singletons).
+        addEntryOrFallback(cards, "Hellkite Charger", mountain, 1);
+        addEntryOrFallback(cards, "Goldspan Dragon", mountain, 1);
+        addEntryOrFallback(cards, "Drakuseth, Maw of Flames", mountain, 1);
+        addEntryOrFallback(cards, "Stalking Vengeance", mountain, 1);
+        // Total: 60 + 10 + 10 + 10 + 5 + 4 = 99 ✓
+        deck.setCards(cards);
+        List<DeckCardInfo> sideboard = new ArrayList<>();
+        addEntry(sideboard, commander.getName(), commander, 1);
+        deck.setSideboard(sideboard);
+        return deck;
+    }
+
     private static void addEntry(List<DeckCardInfo> out, String name, CardInfo info, int n) {
         out.add(new DeckCardInfo(name, info.getCardNumber(), info.getSetCode(), n));
     }
@@ -584,11 +701,14 @@ public final class LobbyService {
                                             CardInfo fallback, int n) {
         CardInfo info = CardRepository.instance.findCard(name);
         if (info == null) {
-            // Substitute basic lands so the 60-card target is preserved
-            // even if some cards are missing from the local DB.
-            LOG.warn("AI deck card '{}' missing from repository — substituting {} extra Forests",
-                    name, n);
-            out.add(new DeckCardInfo("Forest",
+            // Substitute the fallback basic so the 99-card target is
+            // preserved even if some cards are missing from the local
+            // DB. Uses fallback.getName() (was hardcoded "Forest" until
+            // 2026-05-04 when the red deck was added) so the same
+            // helper substitutes Mountain for the red deck path.
+            LOG.warn("AI deck card '{}' missing from repository — substituting {} extra {}",
+                    name, n, fallback.getName());
+            out.add(new DeckCardInfo(fallback.getName(),
                     fallback.getCardNumber(), fallback.getSetCode(), n));
             return;
         }
