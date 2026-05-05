@@ -1033,6 +1033,66 @@ describe('useGameStore', () => {
     expect(Object.keys(useGameStore.getState().chatMessages)).toHaveLength(0);
   });
 
+  /* ---------- FB#1 (2026-05-05): reveal-to-opponents ---------- */
+
+  it('FB#1 — chat MessageType=GAME with " reveals " text pushes a recentReveals entry', () => {
+    // Engine `revealCards` → `informPlayers(text)` → `MessageType.GAME`
+    // chat broadcast to every player. The mirror block in
+    // reduceGameInformOrOver is dead code (FB#8″ established that
+    // gameInform never carries reveal text in production), so before
+    // this fix nobody saw the toast. Detection on the chat path lights
+    // the toast for self + opponents.
+    const chatId = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+    const payload = {
+      ...chatPayload(
+        "alice reveals <font color='#90EE90' object_id='card-1'>Forest</font>",
+      ),
+      messageType: 'GAME' as const,
+    };
+    useGameStore.getState().applyFrame(chatFrame(chatId, payload, 100), payload);
+    const reveals = useGameStore.getState().recentReveals;
+    expect(reveals).toHaveLength(1);
+    expect(reveals[0]?.message).toContain('reveals');
+    expect(reveals[0]?.id).toBe(100);
+  });
+
+  it('FB#1 — chat MessageType=GAME without "reveals" text does NOT push a recentReveals entry', () => {
+    const chatId = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
+    const payload = {
+      ...chatPayload(
+        "alice plays <font color='#90EE90' object_id='card-1'>Forest</font>",
+      ),
+      messageType: 'GAME' as const,
+    };
+    useGameStore.getState().applyFrame(chatFrame(chatId, payload, 101), payload);
+    expect(useGameStore.getState().recentReveals).toHaveLength(0);
+    // Sanity: the play STILL promotes into gameLog (per Slice D' / FB#8″).
+    expect(useGameStore.getState().gameLog).toHaveLength(1);
+  });
+
+  it('FB#1 — chat MessageType=TALK with "reveals" text is ignored (no toast for non-game chat)', () => {
+    const chatId = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
+    const payload = chatPayload('that strategy reveals their hand', 'alice');
+    useGameStore.getState().applyFrame(chatFrame(chatId, payload, 102), payload);
+    expect(useGameStore.getState().recentReveals).toHaveLength(0);
+  });
+
+  it('FB#1 — recentReveals trims to REVEAL_QUEUE_CAP (8) under sustained reveals', () => {
+    const chatId = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
+    for (let i = 0; i < 12; i++) {
+      const payload = {
+        ...chatPayload(`alice reveals card-${i}`),
+        messageType: 'GAME' as const,
+      };
+      useGameStore.getState().applyFrame(chatFrame(chatId, payload, 200 + i), payload);
+    }
+    const reveals = useGameStore.getState().recentReveals;
+    expect(reveals).toHaveLength(8);
+    // Oldest dropped: queue keeps the most recent 8 entries.
+    expect(reveals[0]?.message).toContain('card-4');
+    expect(reveals[reveals.length - 1]?.message).toContain('card-11');
+  });
+
   /* ---------- slice 12: startGame auto-nav ---------- */
 
   it('startGame frame stashes a pendingStartGame entry', () => {

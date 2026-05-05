@@ -752,7 +752,7 @@ function reduceChatMessage(
   state: GameState,
   frame: WebStreamFrame,
   msg: WebChatMessage,
-): Pick<GameState, 'chatMessages' | 'gameLog'> | null {
+): Pick<GameState, 'chatMessages' | 'gameLog' | 'recentReveals'> | null {
   // chatId comes from the envelope's objectId (per slice 2). Server
   // pushes the same chatId on every chat callback for a given chat.
   // If a frame arrives without a chatId we drop it — there's no
@@ -802,9 +802,34 @@ function reduceChatMessage(
       ? [...nextGameLog.slice(nextGameLog.length - GAME_LOG_CAP + 1), entry]
       : [...nextGameLog, entry];
   }
+  // FB#1 (2026-05-05) — reveal-to-opponents. Engine `revealCards` →
+  // `informPlayers(text)` → `MessageType.GAME` chat broadcast to every
+  // player (self + opponents). The mirror block in reduceGameInformOrOver
+  // is dead code today (FB#8″ established that gameInform never carries
+  // reveal text in production), so before this fix nobody saw the toast.
+  // Detect reveal lines on the chat path and push to recentReveals so the
+  // RevealToast component fires for every player who's in the game.
+  let nextReveals = state.recentReveals;
+  if (
+    msg.messageType === 'GAME' &&
+    msg.message &&
+    msg.message.length > 0 &&
+    REVEAL_DETECTOR.test(msg.message)
+  ) {
+    const reveal = {
+      id: frame.messageId,
+      message: msg.message,
+      addedAt: Date.now(),
+    };
+    const grown = [...nextReveals, reveal];
+    nextReveals = grown.length > REVEAL_QUEUE_CAP
+      ? grown.slice(grown.length - REVEAL_QUEUE_CAP)
+      : grown;
+  }
   return {
     chatMessages: { ...buckets, [chatId]: next },
     gameLog: nextGameLog,
+    recentReveals: nextReveals,
   };
 }
 
