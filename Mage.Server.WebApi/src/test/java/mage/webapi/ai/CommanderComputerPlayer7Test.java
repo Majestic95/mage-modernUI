@@ -80,6 +80,29 @@ class CommanderComputerPlayer7Test {
     }
 
     @Test
+    void pickThreatTargetIfApplicable_isPackagePrivate() {
+        // AI-8.1 renamed pickLowestLifeOpponentIfApplicable to
+        // pickThreatTargetIfApplicable to reflect that the score now
+        // considers commander damage + life as a unified "damage to
+        // dead" clock. Pin the rename so a future refactor doesn't
+        // silently lose the override (the wrapping chooseTarget call
+        // still routes through this method name).
+        var p = new CommanderComputerPlayer7("test-ai", RangeOfInfluence.ALL, 4);
+        try {
+            var method = CommanderComputerPlayer7.class.getDeclaredMethod(
+                    "pickThreatTargetIfApplicable",
+                    mage.constants.Outcome.class,
+                    mage.target.Target.class,
+                    mage.abilities.Ability.class,
+                    mage.game.Game.class);
+            assertNotNull(method, "pickThreatTargetIfApplicable must exist");
+        } catch (NoSuchMethodException ex) {
+            throw new AssertionError("Heuristic entry point renamed or removed — "
+                    + "chooseTarget override is no longer wired.", ex);
+        }
+    }
+
+    @Test
     void boot_registersOverrideAsComputerMadHandler() {
         // The override is installed in EmbeddedServer.installAiOverrides().
         // Confirm the registration actually replaced the upstream

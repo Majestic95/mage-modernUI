@@ -67,7 +67,7 @@ the methods we override still exist with compatible signatures.
 | # | Upgrade | Effort | Impact | Status |
 |---|---|---|---|---|
 | 1 | **Lowest-life targeting** — bias single-opponent harmful spells/abilities toward the player at lowest life | Half-day | **Large** | ✅ AI-8.0 |
-| 2 | **Commander damage tracking + finisher bias** — track per-opponent commander damage; when one has taken 14+, prioritize 2 more attacks for the kill | 1-2 days | Medium-large | Queued (AI-8.1) |
+| 2 | **Commander damage tracking + finisher bias** — score targets by `min(life, 21 - cmdDamageDealt)`; whoever is closer to losing by either clock gets picked | Half-day | Medium-large | ✅ AI-8.1 |
 | 3 | **Don't recast commander into tax hell** — refuse recast when tax ≥ 6 and we don't have safe mana headroom | Half-day | Medium | Queued (AI-8.1) |
 | 4 | **Don't wipe your own board** — sanity check before board wipes | 1 day | Medium | Queued (AI-8.1) |
 | 5 | **Lethal short-circuit** — when `CombatUtil.canKillOpponent` says yes, just attack instead of 12s of search | Half-day | Small but visible | Queued (AI-8.2) |
