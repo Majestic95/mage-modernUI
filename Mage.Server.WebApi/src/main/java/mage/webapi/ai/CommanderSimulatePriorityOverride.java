@@ -99,6 +99,15 @@ public class CommanderSimulatePriorityOverride extends ComputerPlayerControllabl
      * {@code checkForRepeatedAction} call at L550. Everything else
      * is byte-equivalent including the alpha-beta logic, randomized
      * tie-breaking, and node lifecycle.
+     *
+     * <p>Two unavoidable substitutions: (1) {@code node.children.X()}
+     * direct-field access in upstream becomes {@code node.getChildren().X()}
+     * via the public getter — {@code SimulationNode2.children} is
+     * package-private to {@code mage.player.ai} and unreachable from
+     * {@code mage.webapi.ai}; the getter returns the same backing list.
+     * (2) {@code logger.X(...)} on the upstream private static logger
+     * becomes {@code log.X(...)} on this class's own logger — output is
+     * functionally identical, just labeled with this class name.
      */
     @Override
     protected int simulatePriority(SimulationNode2 node, Game game, int depth, int alpha, int beta) {
@@ -381,7 +390,9 @@ public class CommanderSimulatePriorityOverride extends ComputerPlayerControllabl
      * formatting.
      */
     private static String printDiffScore(int score) {
-        if (score > 0) {
+        // Match upstream's `score >= 0 → "+0"` semantics
+        // (ComputerPlayer6.java:803-808).
+        if (score >= 0) {
             return "+" + score;
         }
         return Integer.toString(score);

@@ -7,8 +7,12 @@ import mage.player.ai.score.ArtificialScoringSystem;
 import mage.player.ai.score.GameStateEvaluator2;
 import mage.players.Player;
 
+import mage.game.permanent.PermanentToken;
+
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -52,26 +56,38 @@ import java.util.UUID;
  *       {@code myScore - oppScore} (matches upstream).</li>
  * </ul>
  *
- * <h2>Rules-correctness gates (AI-9 fixer)</h2>
+ * <h2>Rules-correctness gates (AI-9 fixer + post-fixer)</h2>
  *
  * The 2026-05-05 critic pass found that the initial AI-9 build re-introduced
  * the AI-8.5 fix-C3 bug: filtering opponents by {@code !hasLost() && getLife() > 0}
  * misses Platinum Angel / Phyrexian Unlife / Worship / Gideon-emblem
- * effects (CR 614 replacement effects). The canonical xmage gates are:
+ * effects. The post-fixer Magic-rules pass found a secondary bug: the original
+ * fix relied solely on {@code canLose(game)}, which only fires the
+ * {@code LOSES} replacement event — Phyrexian Unlife uses
+ * {@code canLoseByZeroOrLessLife()}, a SEPARATE flag. The engine's own SBA
+ * gate at {@code GameImpl.java:2376} checks BOTH; we now match. The
+ * canonical gates are:
  *
  * <ul>
  *   <li>{@link Player#isInGame()} — {@code !hasQuit && !hasLost && !hasWon
  *       && !hasDrew && !hasLeft}; the right "is this player a real opponent"
- *       check.</li>
+ *       check (CR 800.7).</li>
  *   <li>{@link Player#canLose(Game)} — fires the {@code LOSES} replacement
- *       event so {@code can't lose} effects get a say. The right gate for
- *       "this player will actually lose if their life hits 0."</li>
+ *       event. Catches Platinum Angel ({@code CantLoseGameSourceControllerEffect})
+ *       and similar "can't lose" effects.</li>
+ *   <li>{@link Player#canLoseByZeroOrLessLife()} — boolean flag set by
+ *       {@code DontLoseByZeroOrLessLifeEffect}. Catches Phyrexian Unlife
+ *       (CR 614.12). Independent of {@code canLose}; the engine ANDs both
+ *       at the SBA gate, and we mirror that for our self-LOSE check.</li>
  * </ul>
  *
- * Both gates are checked. {@code canLose(game)} is cached per
- * {@code evaluate} call to avoid replacement-event spam in the hot
- * leaf-eval loop (called hundreds of thousands of times per turn at
- * skill ≥ 4).
+ * {@code canLose(game)} is cached per {@code evaluate} call (a small
+ * {@link java.util.HashMap}) to avoid replacement-event spam in the hot
+ * leaf-eval loop. Each call to {@code canLose} fires a replacement event
+ * that walks all continuous effects; at skill ≥ 4 with ~5000 simulated
+ * nodes/turn, the cache eliminates ~15k spurious replacement-event pumps
+ * (and the side-effect risk of those pumps interacting with
+ * {@code LOSES}-listening triggered abilities mid-simulation).
  *
  * <h2>Tier 2 #8 (hand quality) — DEFERRED</h2>
  *
@@ -177,7 +193,10 @@ public final class MultiOpponentEvaluator {
         if (player == null) {
             return GameStateEvaluator2.WIN_GAME_SCORE;
         }
-        if (game.checkIfGameIsOver()) {
+        // Hoist the game-over check into a local — called twice below
+        // and the engine implementation walks state-based actions.
+        boolean gameOver = game.checkIfGameIsOver();
+        if (gameOver) {
             if (player.hasLost()) {
                 return GameStateEvaluator2.LOSE_GAME_SCORE;
             }
@@ -185,10 +204,15 @@ public final class MultiOpponentEvaluator {
                 return GameStateEvaluator2.WIN_GAME_SCORE;
             }
         }
-        // Self-life-check is rules-aware: a Phyrexian Unlife / Platinum
-        // Angel build at -3 life is NOT lost. Only return LOSE when both
-        // mechanical state (life ≤ 0) AND rules state (canLose) agree.
-        if (player.getLife() <= 0 && player.canLose(game)) {
+        // Self-life-check is rules-aware. Mirrors the engine's SBA gate at
+        // GameImpl.java:2376: the player loses ONLY if both `canLose(game)`
+        // (catches Platinum Angel etc. via LOSES replacement) AND
+        // `canLoseByZeroOrLessLife()` (catches Phyrexian Unlife — its
+        // protection is a continuous flag, NOT a LOSES replacement) agree.
+        // Either gate alone misses one effect family.
+        if (player.getLife() <= 0
+                && player.canLose(game)
+                && player.canLoseByZeroOrLessLife()) {
             return GameStateEvaluator2.LOSE_GAME_SCORE;
         }
 
@@ -207,9 +231,16 @@ public final class MultiOpponentEvaluator {
         // the game-over gate, this could fire prematurely (e.g., during
         // simulated state where the engine hasn't yet processed
         // state-based actions following the last opponent's loss event).
-        if (aliveOpponents.isEmpty() && game.checkIfGameIsOver()) {
+        if (aliveOpponents.isEmpty() && gameOver) {
             return GameStateEvaluator2.WIN_GAME_SCORE;
         }
+
+        // Per-evaluate canLose cache. Each canLose() call fires a LOSES
+        // replacement event that walks all continuous effects; without
+        // this cache the threatWeight loop pumps replacement events
+        // 3× per opponent in 4-player FFA, multiplied by simulation-tree
+        // leaf count (50k–500k per turn at skill ≥ 4).
+        Map<UUID, Boolean> canLoseCache = new HashMap<>(4);
 
         int myLifeScore = ArtificialScoringSystem.getLifeScore(player.getLife());
         int myPermanentScore = sumPermanentScores(player, game);
@@ -222,10 +253,26 @@ public final class MultiOpponentEvaluator {
             int oppPermanentScore = sumPermanentScores(opp, game);
             int oppHandScore = handScore(opp);
             int oppRaw = oppLifeScore + oppPermanentScore + oppHandScore;
-            weightedOpponentSum += threatWeight(playerId, opp, game) * (double) oppRaw;
+            weightedOpponentSum += threatWeight(playerId, opp, game, canLoseCache) * (double) oppRaw;
         }
 
         return myScore - (int) Math.round(weightedOpponentSum);
+    }
+
+    /**
+     * Cached {@code canLose(game)} lookup. Fills the cache lazily; same
+     * semantics as {@link Player#canLose(Game)} but at-most-one call per
+     * opponent per {@code evaluate} invocation. Critical perf optimization
+     * for the hot leaf-eval loop (post-fixer PF2).
+     */
+    private static boolean cachedCanLose(Player opp, Game game, Map<UUID, Boolean> cache) {
+        Boolean cached = cache.get(opp.getId());
+        if (cached != null) {
+            return cached;
+        }
+        boolean canLose = opp.canLose(game);
+        cache.put(opp.getId(), canLose);
+        return canLose;
     }
 
     /**
@@ -271,15 +318,19 @@ public final class MultiOpponentEvaluator {
      * the smaller of life and {@code 21 - maxCommanderDamageDealt} per
      * CR 903.14a. Whichever loss-clock is closer triggers the threat
      * amplification, matching the Tier 1 targeting heuristic.
+     *
+     * <p>{@code canLoseCache} is the per-evaluate-call replacement-event
+     * cache; see {@link #cachedCanLose}.
      */
-    static double threatWeight(UUID playerId, Player opp, Game game) {
+    static double threatWeight(UUID playerId, Player opp, Game game,
+                                Map<UUID, Boolean> canLoseCache) {
         double weight = 1.0;
         // Effective life only fires when the opponent can actually lose
         // by life loss; opponents under "can't lose" effects (Platinum
         // Angel etc.) shouldn't get the LOW_LIFE finisher amplifier
         // because reducing their life is moot until the protection
-        // is removed.
-        if (opp.canLose(game)) {
+        // is removed. Uses cached canLose to avoid replacement-event spam.
+        if (cachedCanLose(opp, game, canLoseCache)) {
             int effectiveLife = CommanderTargetingHeuristic.effectiveLifeRemaining(
                     playerId, opp, opp.getId(), game);
             if (effectiveLife <= LOW_LIFE_THRESHOLD) {
@@ -311,6 +362,14 @@ public final class MultiOpponentEvaluator {
      * Direct {@code game.getPermanent(commanderId)} lookup would miss
      * flickered commanders because the new permanent's ID differs from
      * the original card's ID.
+     *
+     * <p>Token copies of commanders are explicitly filtered out per
+     * CR 707.10 / CR 903.13a — a token that's a copy of a commander
+     * is not itself a commander, even though its {@code getMainCard()}
+     * returns the original commander card. Without the token filter,
+     * Sakashima-of-a-Thousand-Faces / Mirror-Mockery / Wedding-Ring
+     * tokens would falsely trip the {@link #WEIGHT_COMMANDER_OUT}
+     * amplifier (post-fixer PF3).
      */
     static boolean hasCommanderOnBattlefield(Player opp, Game game) {
         Set<UUID> commanderIds = game.getCommandersIds(
@@ -319,6 +378,11 @@ public final class MultiOpponentEvaluator {
             return false;
         }
         for (Permanent perm : game.getBattlefield().getAllActivePermanents(opp.getId())) {
+            if (perm instanceof PermanentToken) {
+                // CR 707.10 / 903.13a — a token copy of a commander is
+                // not itself a commander.
+                continue;
+            }
             UUID matchId = perm.getMainCard() != null
                     ? perm.getMainCard().getId()
                     : perm.getId();

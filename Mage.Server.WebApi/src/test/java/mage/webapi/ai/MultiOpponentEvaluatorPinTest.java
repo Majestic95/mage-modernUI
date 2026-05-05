@@ -219,6 +219,83 @@ class MultiOpponentEvaluatorPinTest {
                 "getOpponents must return Set<UUID> (or compatible) for the iteration loop.");
     }
 
+    @Test
+    void player_runtimeApisPinned() {
+        // MultiOpponentEvaluator + CommanderSimulatePriorityOverride read
+        // these from Player. Renaming any of them in upstream would either
+        // compile-fail (good) or silently route to a new method via Java
+        // method resolution (bad — pin to make CI loud about it).
+        assertNotNull(findInterfaceMethod(mage.players.Player.class, "isInGame"),
+                "Player.isInGame() pin — alive-opponent gate.");
+        assertNotNull(findInterfaceMethod(mage.players.Player.class, "canLose", Game.class),
+                "Player.canLose(Game) pin — LOSES replacement gate (Platinum Angel).");
+        assertNotNull(findInterfaceMethod(mage.players.Player.class, "canLoseByZeroOrLessLife"),
+                "Player.canLoseByZeroOrLessLife() pin — Phyrexian Unlife gate. "
+                        + "Post-fixer PF1 added this gate; if upstream renames, our self-LOSE "
+                        + "regresses to falsely scoring Phyrexian Unlife builds as lost.");
+        assertNotNull(findInterfaceMethod(mage.players.Player.class, "getLife"),
+                "Player.getLife() pin — life-score input.");
+        assertNotNull(findInterfaceMethod(mage.players.Player.class, "hasLost"),
+                "Player.hasLost() pin — game-over branch.");
+        assertNotNull(findInterfaceMethod(mage.players.Player.class, "hasWon"),
+                "Player.hasWon() pin — game-over branch.");
+    }
+
+    @Test
+    void game_runtimeApisPinned() {
+        assertNotNull(findInterfaceMethod(Game.class, "checkIfGameIsOver"),
+                "Game.checkIfGameIsOver() pin — multi-opp WIN-shortcut + game-over gate.");
+        assertNotNull(findInterfaceMethod(Game.class, "getCommandersIds",
+                        mage.players.Player.class, mage.constants.CommanderCardType.class, boolean.class),
+                "Game.getCommandersIds(Player, CommanderCardType, boolean) pin — "
+                        + "hasCommanderOnBattlefield uses this for flicker-aware detection.");
+    }
+
+    @Test
+    void computerPlayer_passivityPenaltyPinned() throws Exception {
+        // CommanderSimulatePriorityOverride references this constant inline
+        // (line 257). Rename or sign-change would silently break the
+        // top-of-tree passivity bias.
+        Field f = mage.player.ai.ComputerPlayer.class.getDeclaredField("PASSIVITY_PENALTY");
+        assertEquals(int.class, f.getType(),
+                "PASSIVITY_PENALTY must remain int.");
+        assertTrue(Modifier.isStatic(f.getModifiers())
+                        && Modifier.isFinal(f.getModifiers()),
+                "PASSIVITY_PENALTY must remain static final.");
+    }
+
+    @Test
+    void computerPlayer6_protectedMethodsPinned() {
+        // Body-copies of addActions + simulatePriority + calculateActions
+        // call these. Compile would fail on rename, but a sneaky overload
+        // addition (e.g., `optimize(Game, List<Ability>, int)` joining the
+        // existing 2-arg form) could resolve our call to a different
+        // method. Pin signatures + visibility to lock the contract.
+        assertProtectedMethod(ComputerPlayer6.class, "optimize",
+                Game.class, java.util.List.class);
+        assertProtectedMethod(ComputerPlayer6.class, "allPassed", Game.class);
+        assertProtectedMethod(ComputerPlayer6.class, "resolve",
+                SimulationNode2.class, int.class, Game.class);
+        assertProtectedMethod(ComputerPlayer6.class, "minimaxAB",
+                SimulationNode2.class, int.class, int.class, int.class);
+        assertProtectedMethod(ComputerPlayer6.class, "addActionsTimed");
+        assertProtectedMethod(ComputerPlayer6.class, "getNextAction", Game.class);
+        assertProtectedMethod(ComputerPlayer6.class, "createSimulation", Game.class);
+        assertProtectedMethod(ComputerPlayer6.class, "getAbilityAndSourceInfo",
+                Game.class, mage.abilities.Ability.class, boolean.class);
+    }
+
+    private static void assertProtectedMethod(Class<?> cls, String name, Class<?>... params) {
+        try {
+            Method m = cls.getDeclaredMethod(name, params);
+            assertTrue(Modifier.isProtected(m.getModifiers())
+                            || Modifier.isPublic(m.getModifiers()),
+                    cls.getSimpleName() + "." + name + " must remain protected/public.");
+        } catch (NoSuchMethodException ex) {
+            fail(cls.getSimpleName() + "." + name + " missing — body-copy is broken.");
+        }
+    }
+
     // ---- helpers ------------------------------------------------------
 
     private static Method findDeclaredMethod(Class<?> cls, String name, Class<?>... params) {
