@@ -7,6 +7,7 @@ import { ActionPanel } from '../pages/ActionPanel';
 import { Battlefield } from './Battlefield';
 import { CommanderDamageTracker } from './CommanderDamageTracker';
 import { GameLog } from './GameLog';
+import { GameLogWindow } from './GameLogWindow';
 import { GameDialog } from './dialogs/GameDialog';
 import { RevealToast } from './RevealToast';
 import { CardFace } from './CardFace';
@@ -588,6 +589,17 @@ export function GameTable({ gameId, gameView, stream }: Props) {
             opponents={opponents}
           />
         </div>
+      )}
+
+      {/* Floating Game Log window for variant=tabletop. Side panel is
+          force-collapsed under tabletop (P4) which hides the in-aside
+          GameLog mount; this floats it as a draggable / resizable
+          window with its own open/close state persisted to
+          localStorage. Closed by default on first load (user opens via
+          the top-right "Game Log" pill). z-index 50 sits above all
+          other tabletop chrome including GameDialog (z-40). */}
+      {REDESIGN && variant === 'tabletop' && gameView && (
+        <GameLogWindow players={gameView.players} />
       )}
 
       {/* Slice 70-M (picture-catalog §6.1) — REDESIGN drops the

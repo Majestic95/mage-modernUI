@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { LayoutGroup, MotionConfig } from 'framer-motion';
 
@@ -6,24 +6,41 @@ import { LayoutGroup, MotionConfig } from 'framer-motion';
 // exercise the legacy 4-pod grid (four-pod-grid + data-side-pod
 // containment). Asymmetric-T layout has its own targeted suite in
 // asymmetricT.test.tsx.
+//
+// REDESIGN is hoisted so the new tabletop-floating-dock describe block
+// can flip it to true (production-like) for the floating GameLogWindow
+// branches; default false matches the existing suite's expectations
+// (legacy footer + header testIds that only render when !REDESIGN).
+const flagState = vi.hoisted(() => ({ redesign: false }));
 vi.mock('../featureFlags', async () => {
   const actual = await vi.importActual<typeof import('../featureFlags')>(
     '../featureFlags',
   );
-  return { ...actual, LAYOUT_BOUNDS: false };
+  return {
+    ...actual,
+    LAYOUT_BOUNDS: false,
+    get REDESIGN() {
+      return flagState.redesign;
+    },
+  };
 });
 
 // 2026-05-04 — graduation cutover flipped DEFAULT_VARIANT to `tabletop`.
 // This file pins the legacy `current`-variant side-panel + dialog-dock
 // CSS-variable contract (tabletop forces sidepanel collapsed via P4,
-// which short-circuits the `--side-panel-width` exposure). Pin
-// useLayoutVariant() to `'current'` so bare <GameTable> renders
-// inherit the legacy variant.
+// which short-circuits the `--side-panel-width` exposure). Variant
+// pinned via hoisted state so individual `describe` blocks can flip
+// to 'tabletop' to exercise the floating-dock branches (commander
+// damage dock, GameLogWindow). Default is 'current' to keep existing
+// suites unchanged.
+const variantState = vi.hoisted(
+  () => ({ variant: 'current' as 'current' | 'tabletop' }),
+);
 vi.mock('../layoutVariants', async () => {
   const actual = await vi.importActual<typeof import('../layoutVariants')>(
     '../layoutVariants',
   );
-  return { ...actual, useLayoutVariant: () => 'current' };
+  return { ...actual, useLayoutVariant: () => variantState.variant };
 });
 
 import { GameTable } from './GameTable';
@@ -209,5 +226,36 @@ describe('GameTable shell', () => {
       // Pre-fix class must NOT be present.
       expect(pod.className).not.toContain('items-center');
     });
+  });
+});
+
+describe('GameTable variant=tabletop floating GameLogWindow', () => {
+  beforeEach(() => {
+    variantState.variant = 'tabletop';
+    flagState.redesign = true;
+    window.localStorage.clear();
+  });
+  afterEach(() => {
+    variantState.variant = 'current';
+    flagState.redesign = false;
+    window.localStorage.clear();
+  });
+
+  it('mounts the floating GameLogWindow (closed pill by default)', () => {
+    renderInLayoutGroup(
+      <GameTable gameId="test-game" gameView={makeGameView()} stream={null} />,
+    );
+    // Closed-by-default → reopen pill renders, window does not.
+    expect(screen.getByTestId('game-log-reopen')).toBeInTheDocument();
+    expect(screen.queryByTestId('game-log-window')).toBeNull();
+  });
+
+  it('does NOT mount the floating GameLogWindow under variant=current (regression guard)', () => {
+    variantState.variant = 'current';
+    renderInLayoutGroup(
+      <GameTable gameId="test-game" gameView={makeGameView()} stream={null} />,
+    );
+    expect(screen.queryByTestId('game-log-reopen')).toBeNull();
+    expect(screen.queryByTestId('game-log-window')).toBeNull();
   });
 });
