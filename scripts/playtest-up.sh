@@ -250,6 +250,13 @@ export XMAGE_PROFILE=prod
 export XMAGE_CORS_ORIGINS="$CORS_ALLOWLIST"
 export XMAGE_ADMIN_PASSWORD
 export XMAGE_WEBAPI_PORT
+# F21 (2026-05-04) — registration is enabled. The auth-readiness
+# milestone's deploy-blockers are resolved (see
+# docs/decisions/auth-roadmap.md F21 section). Defense-in-depth
+# items still queued: Argon2id, token-off-localStorage, H2
+# encryption, HIBP, email verification. Acceptable residual risk
+# for the current small-userbase playtest scope.
+export XMAGE_REGISTRATION_ENABLED=true
 
 # Friend-facing summary
 cat <<BANNER >&2
