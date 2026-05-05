@@ -171,27 +171,43 @@ echo "$NGROK_URL" > "$STATE_DIR/ngrok.url"
 
 # --- 2. Deploy webclient to Vercel -----------------------------------
 log "Phase 2 — deploying webclient to Vercel"
-log "  VITE_XMAGE_WEBAPI_URL = $NGROK_URL"
+log "  VITE_XMAGE_WEBAPI_URL    = $NGROK_URL"
+log "  VITE_FEATURE_REDESIGN    = true (shell-override)"
 
 cd "$WEBCLIENT_DIR"
 VERCEL_LOG="$STATE_DIR/vercel.log"
 
-# Build locally with the env var, then push the prebuilt output to
+# Build locally with both env vars, then push the prebuilt output to
 # Vercel. Vercel's cloud build path doesn't see local env vars
 # (they need to be configured server-side via `vercel env add`),
 # but the prebuilt path uploads `.vercel/output/` directly so the
-# bundle has VITE_XMAGE_WEBAPI_URL baked in correctly.
-log "  Building bundle locally with VITE_XMAGE_WEBAPI_URL baked in"
-if ! VITE_XMAGE_WEBAPI_URL="$NGROK_URL" npm run build 2>&1 | tail -3; then
+# bundle has the values baked in correctly.
+#
+# VITE_FEATURE_REDESIGN MUST be shell-overridden on every build — the
+# Vercel project's stored value is `""` (empty string), which Vite
+# resolves as false, baking REDESIGN=false into the bundle and
+# rendering the unpolished legacy/partial tabletop layout. Empty-
+# string env-var bug is documented; the override here is the
+# canonical workaround until the Vercel project setting is
+# corrected to `true` literally. See memory
+# `feedback_vercel_env_redesign_empty.md`.
+log "  Building bundle locally with redesign + WebApi URL baked in"
+if ! VITE_XMAGE_WEBAPI_URL="$NGROK_URL" \
+     VITE_FEATURE_REDESIGN=true \
+     npm run build 2>&1 | tail -3; then
   err "Local webclient build failed"
   exit 1
 fi
 
 # `vercel build` consumes the local build output and writes
 # `.vercel/output/` in the format Vercel expects. Then `vercel
-# deploy --prebuilt --prod` uploads that directory.
+# deploy --prebuilt --prod` uploads that directory. The shell
+# override repeats here because vercel build re-reads env from the
+# shell.
 log "  Wrapping into Vercel build artifact"
-if ! VITE_XMAGE_WEBAPI_URL="$NGROK_URL" vercel build --prod --yes 2>&1 | tail -5; then
+if ! VITE_XMAGE_WEBAPI_URL="$NGROK_URL" \
+     VITE_FEATURE_REDESIGN=true \
+     vercel build --prod --yes 2>&1 | tail -5; then
   err "vercel build failed"
   exit 1
 fi
