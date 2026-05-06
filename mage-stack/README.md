@@ -6,9 +6,9 @@ A self-installing folder that runs the XMage WebApi server as a set of Windows S
 
 ---
 
-## Five-command operating manual
+## Six-command operating manual
 
-After install, your day-to-day surface is five commands. Run them from `F:\xmage\mage-stack\scripts\` (or add that to your PATH).
+After install, your day-to-day surface is six commands. Run them from `F:\xmage\mage-stack\scripts\` (or add that to your PATH).
 
 | Command | What it does |
 | --- | --- |
@@ -16,6 +16,7 @@ After install, your day-to-day surface is five commands. Run them from `F:\xmage
 | `.\mage-up.ps1` | Graceful start of all three services. Idempotent. |
 | `.\mage-down.ps1` | Graceful stop. Sets the intentional-down sentinel so the watchdog doesn't fight you. |
 | `.\mage-redeploy.ps1` | Stop → rebuild WebApi JAR + regenerate classpath → start. ~60s. Use after pulling new code. |
+| `.\mage-cors-refresh.ps1` | Re-apply WebApi env vars (CORS, port, profile) from `config.json` onto the running NSSM service + bounce the JVM. ~10s. Use after editing `config.webapi.*` fields without rebuilding the JAR. |
 | `.\mage-logs.ps1 [webapi\|tunnel\|watchdog]` | Tail the named service's log. Defaults to webapi. |
 
 ---

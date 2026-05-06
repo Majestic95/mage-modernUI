@@ -17,7 +17,8 @@
     "workingDirectory": "F:\\xmage\\Mage.Server.WebApi",
     "port": 18080,
     "profile": "prod",
-    "corsOrigins": "https://xmage-playtest.vercel.app,https://modern-mage.com,http://localhost:5173,http://localhost:4173",
+    "_corsOriginsHint": "List EVERY hostname from which the browser will fetch the API. Vercel's default redirects apex<->www when both are configured; if either is published, BOTH must appear here or browsers landing at the redirected host get a 'Can't reach the server' error from a CORS preflight that returns 200 without an Access-Control-Allow-Origin header. Lesson learned 2026-05-06; see ADR 0013 + reference_cloudflare_tunnel_gotchas.md memory.",
+    "corsOrigins": "https://xmage-playtest.vercel.app,https://modern-mage.com,https://www.modern-mage.com,http://localhost:5173,http://localhost:4173",
     "registrationEnabled": "true",
     "adminPasswordSource": "env"
   },
