@@ -24,13 +24,18 @@ no-autoupdate: true
 # fall through to a default 502 from the connector itself, which is
 # more confusing than a clean 404.
 ingress:
-  - hostname: <HOSTNAME>
+  # API route at api.<HOSTNAME>. The web app lives at the <HOSTNAME>
+  # apex via a Vercel custom domain (DNS-only/gray-cloud at Cloudflare),
+  # so cloudflared does not serve the apex - only api. is routed here.
+  # Cloudflare proxy MUST be enabled (orange cloud) on the api CNAME
+  # for tunnel routing to work; "DNS only" returns a private IPv6 ULA
+  # and TCP fails. See reference_cloudflare_tunnel_gotchas memory.
+  - hostname: api.<HOSTNAME>
     service: <LOCAL_SERVICE>
     originRequest:
-      # Javalin serves both REST and WebSocket on port 18080. Cloudflare
-      # auto-detects WS via the Upgrade header; this flag preserves
-      # connection-keep-alive longer for in-game streams that stay open
-      # for the duration of a match.
+      # Javalin serves both REST and WebSocket on the same port.
+      # Cloudflare auto-detects WS via the Upgrade header; these flags
+      # preserve connection-keep-alive longer for in-game streams.
       connectTimeout: 10s
       keepAliveTimeout: 90s
       noTLSVerify: false

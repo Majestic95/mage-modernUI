@@ -60,29 +60,53 @@ After install, your day-to-day surface is five commands. Run them from `F:\xmage
    ```
    Expected output:
    ```
-   ═══ Mage Stack Status ═════════════════════════════════
-   WebApi    (MageWebApi)    : ● up   PID 4204   uptime 5s
-   Tunnel    (MageTunnel)    : ● up   PID 8916   uptime 5s
-   Watchdog  (MageWatchdog)  : ● up   PID 12044  uptime 5s
+   === Mage Stack Status ====================================
+   WebApi    (MageWebApi    ) : [up]    PID 4204    uptime 5s
+   Tunnel    (MageTunnel    ) : [up]    PID 8916    uptime 5s
+   Watchdog  (MageWatchdog  ) : [up]    PID 12044   uptime 5s
 
-   Public URL : https://modern-mage.com → http://localhost:18080
-   Health     : 200 OK ({"schemaVersion":"1.x","status":"ready"})
-   Last action: install (2026-05-06 14:12:31)
+     Public URL : https://api.modern-mage.com -> http://localhost:18080
+     Health     : 200 OK ({"schemaVersion":"1.x","status":"ready"})
    ```
 
-4. **Smoke-test the public URL:** open `https://modern-mage.com/api/health` in a browser. Should return `{"status":"ready",...}`.
+4. **Smoke-test the public URLs:**
+   - `https://api.modern-mage.com/api/health` -> `{"status":"ready",...}` (Cloudflare-tunneled API)
+   - `https://modern-mage.com/` -> React app (Vercel-hosted; INFRA-2 subdomain split)
+   - `https://xmage-playtest.vercel.app/` -> same React app on Vercel default URL (still works)
 
 ---
 
 ## What's running where
 
 ```
-MageWebApi      → java.exe -cp <classpath> mage.webapi.WebApiMain  (port 18080)
-MageTunnel      → cloudflared.exe tunnel --config <config.yml> run modern-mage
-MageWatchdog    → powershell.exe -File mage-watchdog.ps1            (polls /api/health every 30s)
+MageWebApi      -> java.exe -cp <classpath> mage.webapi.WebApiMain  (port 18080)
+MageTunnel      -> cloudflared.exe tunnel --config <config.yml> run modern-mage
+MageWatchdog    -> powershell.exe -File mage-watchdog.ps1            (polls /api/health every 30s)
 ```
 
-All three are NSSM-managed. NSSM auto-restarts on crash; the watchdog restarts MageWebApi on hang (3 consecutive `/api/health` failures with 5s timeout). NSSM logs go to `logs\<service>.log` with rotation at 10 MB × 5 files.
+All three are NSSM-managed. NSSM auto-restarts on crash; the watchdog restarts MageWebApi on hang (3 consecutive `/api/health` failures with 5s timeout). NSSM logs go to `logs\<service>.log` with rotation at 10 MB x 5 files.
+
+## Public URL architecture (post-INFRA-2)
+
+```
+Friend's browser
+        |
+        v
+https://modern-mage.com/         <-- Vercel-hosted React app (apex; gray cloud at Cloudflare)
+        |
+        | (XHR + WebSocket calls)
+        v
+https://api.modern-mage.com/api/* <-- Cloudflare Tunnel (orange cloud, proxied)
+        |
+        v
+localhost:18080                   <-- MageWebApi service on this machine
+```
+
+Cloudflare DNS records for `modern-mage.com`:
+- Apex `@` -> Vercel A records (e.g. `216.198.79.1`) -- proxy: **DNS only / gray cloud**
+- `api` -> CNAME `<tunnel-uuid>.cfargotunnel.com` -- proxy: **Proxied / orange cloud**
+
+The orange/gray distinction is load-bearing. Tunnel CNAMEs require Cloudflare proxy; Vercel apex requires it OFF (double-proxy breaks SSL provisioning + WebSocket).
 
 ---
 
@@ -94,7 +118,7 @@ All three are NSSM-managed. NSSM auto-restarts on crash; the watchdog restarts M
 .\scripts\mage-redeploy.ps1
 ```
 
-That stops `MageWebApi`, runs `mvn -pl Mage.Server.WebApi -am package -DskipTests`, regenerates the classpath, then starts `MageWebApi`. Tunnel + watchdog stay up the whole time. Total ~60s.
+That stops `MageWebApi`, runs `mvn -f Mage.Server.WebApi/pom.xml package -DskipTests`, regenerates the classpath, then starts `MageWebApi`. Tunnel + watchdog stay up the whole time. Total ~60s.
 
 ### "The Vercel webclient is showing stale data"
 
