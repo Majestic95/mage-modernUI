@@ -28,8 +28,14 @@ import {
  * row — without this, hitting Done on an unchanged form often produces
  * a sub-totalMin sum and re-prompts.
  *
- * <p>Wire response: {@code playerResponse{kind:"string", value:"3,2,1"}}
- * — comma-separated integers in row order.
+ * <p>Wire response: {@code playerResponse{kind:"string", value:"3 2 1"}}
+ * — space-separated integers in row order. The separator is the engine
+ * contract: upstream {@code MultiAmountType.parseAnswer} splits on
+ * {@code " "} (see {@code Mage/src/main/java/mage/constants/MultiAmountType.java}).
+ * A comma-joined value silently fails {@code isGoodValues} (parse → [0],
+ * size mismatch with N rows) and the engine re-prompts forever — the
+ * symptom that motivated this contract being pinned by
+ * {@code MultiAmountWireContractTest} on the Java side.
  *
  * <p>First-strike / double-strike: per MTG rules validation, this
  * dialog can fire TWICE per double-strike trample (once per damage
@@ -89,10 +95,13 @@ export function MultiAmountDialog({
 
   const submit = () => {
     if (!submittable) return;
+    // Space-joined, NOT comma-joined — the upstream parser
+    // (MultiAmountType.parseAnswer) splits on " ". See class-level
+    // Javadoc and MultiAmountWireContractTest.
     stream?.sendPlayerResponse(
       dialog.messageId,
       'string',
-      values.join(','),
+      values.join(' '),
     );
     clearDialog();
   };

@@ -107,7 +107,7 @@ describe('MultiAmountDialog — trample damage assignment', () => {
       />,
     );
     await user.click(screen.getByRole('button', { name: /done/i }));
-    expect(stream.sendPlayerResponse).toHaveBeenCalledWith(42, 'string', '2,1,0');
+    expect(stream.sendPlayerResponse).toHaveBeenCalledWith(42, 'string', '2 1 0');
   });
 
   it('Done is disabled when sum < totalMin', () => {
@@ -153,7 +153,7 @@ describe('MultiAmountDialog — trample damage assignment', () => {
     await user.clear(r1);
     await user.type(r1, '0');
     await user.click(screen.getByRole('button', { name: /done/i }));
-    expect(stream.sendPlayerResponse).toHaveBeenCalledWith(42, 'string', '5,0');
+    expect(stream.sendPlayerResponse).toHaveBeenCalledWith(42, 'string', '5 0');
   });
 
   it('renders title from MultiAmountType options', () => {

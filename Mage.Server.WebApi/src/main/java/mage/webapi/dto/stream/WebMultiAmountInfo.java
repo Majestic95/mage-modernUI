@@ -29,8 +29,10 @@ import java.util.List;
  * pre-computes lethal-per-blocker for the trample case). Submitting
  * a sum below {@code totalMin} or above {@code totalMax} re-prompts.
  *
- * <p>Response shape: {@code playerResponse{kind:"string", value:"3,2,1"}}
- * — comma-separated integers in row order.
+ * <p>Response shape: {@code playerResponse{kind:"string", value:"3 2 1"}}
+ * — space-separated integers in row order. Separator is load-bearing:
+ * upstream {@code MultiAmountType.parseAnswer} (Mage/.../constants/MultiAmountType.java)
+ * splits on {@code " "}. Pinned by {@code MultiAmountWireContractTest}.
  */
 public record WebMultiAmountInfo(
         /**
