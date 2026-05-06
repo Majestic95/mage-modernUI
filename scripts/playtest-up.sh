@@ -2,6 +2,12 @@
 #
 # scripts/playtest-up.sh — boot the xmage multiplayer playtest stack.
 #
+# ⚠ DEPRECATED 2026-05-06 — superseded by mage-stack/.
+#   New flow: mage-stack/scripts/mage-up.ps1 (services run continuously).
+#   This script remains in place for transitional rollback only.
+#   Slice INFRA-1.1 will delete it once the new bundle is trusted.
+#   See mage-stack/MIGRATION.md for the side-by-side comparison.
+#
 # Phases (per docs/playtest-multiplayer.md):
 #   0. Pre-flight tool checks
 #   1. Start ngrok tunnel for the WebApi port, capture public URL

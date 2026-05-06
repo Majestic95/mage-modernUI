@@ -63,6 +63,10 @@ Utils/*implemented.txt
 mage-bundle.zip
 .env
 
+# local secrets — tunnel tokens, API keys, anything credential-shaped.
+# Never committed; read at runtime by ops scripts.
+.secrets/
+
 # build targets
 /deploy
 /temp

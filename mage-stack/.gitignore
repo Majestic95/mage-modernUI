@@ -1,0 +1,29 @@
+# Per-machine config — copied from config.json.template at install time.
+# Holds machine-specific paths (JAR location, credentials file, JDK home).
+config/config.json
+
+# cloudflared ingress config — generated from .template at install time
+# with the local tunnel UUID + credentials path substituted.
+config/cloudflared-config.yml
+
+# Generated classpath (output of `mvn dependency:build-classpath`).
+# Regenerated on every `mage redeploy`. Per-machine because paths are
+# absolute and Windows-style.
+config/classpath.txt
+
+# Vendored cloudflared.exe — downloaded on first install, not committed
+# (binary, ~25MB). NSSM is small enough to vendor; cloudflared is not.
+bin/cloudflared.exe
+
+# Service runtime logs.
+logs/*.log
+logs/*.log.*
+
+# State files written by the watchdog (last-restart timestamp,
+# intentional-down sentinel, etc).
+state/
+
+# Intentional-down sentinel — created by mage-down.ps1 so the watchdog
+# does not restart the service while the operator deliberately has it
+# stopped. Removed by mage-up.ps1.
+.intentional-down

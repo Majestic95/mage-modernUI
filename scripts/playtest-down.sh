@@ -3,6 +3,11 @@
 # scripts/playtest-down.sh — tear down a running playtest stack from
 # another shell.
 #
+# ⚠ DEPRECATED 2026-05-06 — superseded by mage-stack/.
+#   New flow: mage-stack/scripts/mage-down.ps1.
+#   This script remains in place for transitional rollback only.
+#   Slice INFRA-1.1 will delete it once the new bundle is trusted.
+#
 # Companion to scripts/playtest-up.sh. Up's foreground server traps
 # Ctrl-C and cleans up itself; this script is for the case where
 # the up shell is wedged or you forgot it was running.

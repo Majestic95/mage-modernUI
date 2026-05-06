@@ -1,0 +1,43 @@
+{
+  "_comment": "Copy this file to config.json and edit per your machine. config.json is gitignored.",
+
+  "tunnel": {
+    "name": "modern-mage",
+    "hostname": "modern-mage.com",
+    "credentialsFile": "F:\\xmage\\.secrets\\modern-mage-tunnel.json",
+    "configFile": "F:\\xmage\\mage-stack\\config\\cloudflared-config.yml"
+  },
+
+  "webapi": {
+    "_jarHint": "WebApi launches via java.exe with a classpath file (NOT mvn exec:java) so NSSM can PID-track a single JVM. The classpath file is generated at install time by `mvn dependency:build-classpath` and refreshed on every `mage redeploy`.",
+    "javaHome": "C:\\Program Files\\Eclipse Adoptium\\jdk-17.0.12.7-hotspot",
+    "mainClass": "mage.webapi.WebApiMain",
+    "classpathFile": "F:\\xmage\\mage-stack\\config\\classpath.txt",
+    "jvmArgsFile": "F:\\xmage\\mage-stack\\config\\jvm-args.txt",
+    "workingDirectory": "F:\\xmage\\Mage.Server.WebApi",
+    "port": 18080,
+    "profile": "prod",
+    "corsOrigins": "https://xmage-playtest.vercel.app,https://modern-mage.com,http://localhost:5173,http://localhost:4173",
+    "registrationEnabled": "true",
+    "adminPasswordSource": "env"
+  },
+
+  "watchdog": {
+    "healthUrl": "http://localhost:18080/api/health",
+    "intervalSeconds": 30,
+    "timeoutSeconds": 5,
+    "consecutiveFailuresBeforeRestart": 3
+  },
+
+  "services": {
+    "webapi": "MageWebApi",
+    "tunnel": "MageTunnel",
+    "watchdog": "MageWatchdog"
+  },
+
+  "logs": {
+    "directory": "F:\\xmage\\mage-stack\\logs",
+    "rotationMaxBytes": 10485760,
+    "rotationMaxFiles": 5
+  }
+}

@@ -118,14 +118,24 @@ make install    # clean + build + package
 
 ### Build just our module (faster iteration)
 ```bash
-mvn -pl Mage.Server.WebApi -am package -DskipTests
+# Mage.Server.WebApi is a STANDALONE pom — not registered in the parent
+# reactor (intentional, for upstream-rebase compat). Use `-f`, NOT `-pl`.
+mvn -f Mage.Server.WebApi/pom.xml package -DskipTests
 ```
 
 ### Run the server with WebApi attached
+
+**Canonical (post-INFRA-1, 2026-05-06):** the WebApi runs as a Windows
+Service via `mage-stack/`. See `mage-stack/README.md` for the 5-command
+operating manual (`mage-status`, `mage-up`, `mage-down`, `mage-redeploy`,
+`mage-logs`). Public URL: `https://modern-mage.com`.
+
+**Foreground dev (occasional, for live-tailing logs in one window):**
 ```bash
-# From F:\xmage\Mage.Server.WebApi (or wherever WebApiMain lives)
-java -cp <webapi-and-deps> mage.webapi.WebApiMain
-# Defaults: classic server on 17171, WebApi REST on 18080, WebApi WS on 18081
+# From F:\xmage\Mage.Server.WebApi
+./run.sh
+# Defaults: classic server on 17171, WebApi REST + WebSocket on 18080
+# (Javalin serves both on the same port; old "WS on 18081" doc was stale.)
 ```
 
 ### Webclient
@@ -143,7 +153,7 @@ pnpm typecheck    # tsc --noEmit
 ### Pre-commit gate
 ```bash
 # Java side (when WebApi has changed)
-mvn -pl Mage.Server.WebApi -am verify
+mvn -f Mage.Server.WebApi/pom.xml verify
 
 # Webclient side (when webclient has changed)
 cd webclient && pnpm typecheck && pnpm lint && pnpm test
