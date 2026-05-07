@@ -275,7 +275,31 @@ public final class LobbyService {
             throw new WebApiException(422, "UPSTREAM_REJECTED",
                     "Server rejected the join (wrong password, table full, already seated, etc.).");
         }
-        displayCards.set(tableId, name, displayCard);
+        // Audit fix (H1) — key the registry by the engine-canonical
+        // user name (User.getName()) so seat-listing reads via
+        // SeatView.getPlayerName() and the in-game forPlayer(...)
+        // path via Player.getName() always agree on the lookup
+        // string. Falling back to the supplied {@code name} only
+        // matters if the session was evicted between roomJoinTable
+        // success and this resolve; that's harmless because the
+        // registry's normalize() lowers/trims uniformly.
+        displayCards.set(tableId, engineUsernameOr(upstreamSessionId, name), displayCard);
+    }
+
+    /**
+     * Audit fix (H1) — resolve the engine-canonical user name from a
+     * webapi session id, falling back to {@code fallback} when the
+     * session/user lookup fails. Mirrors the resolve already used by
+     * {@link #leaveSeat} and {@link #swapDeck}.
+     */
+    private String engineUsernameOr(String upstreamSessionId, String fallback) {
+        return embedded.managerFactory().sessionManager()
+                .getSession(upstreamSessionId)
+                .map(Session::getUserId)
+                .flatMap(userId ->
+                        embedded.managerFactory().userManager().getUser(userId))
+                .map(u -> u.getName())
+                .orElse(fallback);
     }
 
     /**
