@@ -75,6 +75,43 @@ class CardViewMapperTokenTest {
     }
 
     @Test
+    void tokenCardView_isTokenFlag_emittedTrue() {
+        // Schema 1.32 (2026-05-08) — pin the additive isToken field.
+        // Webclient's scryfall.ts reads this flag to route token-type
+        // cards through Scryfall's named-lookup endpoint. Pre-1.32
+        // the wire had no token signal and the cardNumber-based path
+        // built wrong URLs (cards/dom/0 → 404 for typical TOK rows).
+        CardView cv = newEmptyCard(ID);
+        setProtected(cv, "isToken", true);
+        setProtected(cv, "imageNumber", 9);
+        setProtected(cv, "cardNumber", "0");
+        setProtected(cv, "expansionSetCode", "DOM");
+
+        WebCardView dto = CardViewMapper.toCardDto(cv);
+
+        assertEquals(true, dto.isToken(),
+                "token CardView must emit isToken=true on the wire so "
+                        + "the webclient routes it through Scryfall's "
+                        + "named-lookup endpoint with t-prefixed set code");
+    }
+
+    @Test
+    void nonTokenCardView_isTokenFlag_emittedFalse() {
+        CardView cv = newEmptyCard(ID);
+        setProtected(cv, "isToken", false);
+        setProtected(cv, "cardNumber", "161");
+        setProtected(cv, "expansionSetCode", "LEA");
+
+        WebCardView dto = CardViewMapper.toCardDto(cv);
+
+        assertEquals(false, dto.isToken(),
+                "non-token CardView must emit isToken=false; the flag "
+                        + "must NOT leak into the regular card path or "
+                        + "the webclient would build named-lookup URLs "
+                        + "for ordinary cards");
+    }
+
+    @Test
     void tokenCardView_zeroImageNumber_stillEmitsZero_noRegression() {
         // Upstream gap: some token-construction paths leave imageNumber
         // at its default of 0 (CardView.java:98). The wire still emits

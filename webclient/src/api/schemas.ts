@@ -545,6 +545,14 @@ export type WebCardView = {
    * for ordinary (non-ability) card views.
    */
   source: WebCardView | null;
+  /**
+   * Schema 1.32 (2026-05-08, token Scryfall URL fix). True when the
+   * upstream CardView reports isToken. Lets scryfallImageUrl route
+   * token-type cards through Scryfall's named-lookup endpoint with
+   * `t`-prefixed set codes — the cardNumber-based path returns the
+   * wrong card or 404 for tokens.
+   */
+  isToken: boolean;
 };
 export const webCardViewSchema: z.ZodType<WebCardView> = z.lazy(() =>
   z.object({
@@ -596,6 +604,15 @@ export const webCardViewSchema: z.ZodType<WebCardView> = z.lazy(() =>
     // permits the structure to nest arbitrarily on the type level, but
     // the wire format never carries more than one level.
     source: webCardViewSchema.nullable().default(null),
+    // Schema 1.32 (2026-05-08, token Scryfall URL fix). True when the
+    // upstream CardView reports isToken; lets scryfallImageUrl route
+    // tokens through Scryfall's named-lookup endpoint with t-prefixed
+    // set codes (the cardNumber-based path returns the wrong card or
+    // 404 for tokens). Default false so a ≤1.31 server still in
+    // rolling upgrade parses cleanly — tokens just render via the
+    // broken old path until both sides cut over (same as today, no
+    // regression on stale-server connections).
+    isToken: z.boolean().default(false),
   }),
 );
 

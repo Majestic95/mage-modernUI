@@ -56,6 +56,47 @@ emitted newest-first; only the client interpretation was wrong. No
 
 ---
 
+## 1.32 — 2026-05-08 — `isToken` flag on WebCardView (token Scryfall URL fix)
+
+Adds an additive boolean field to every `WebCardView` so the webclient
+can route token-type cards through Scryfall's named-lookup endpoint
+with `t`-prefixed set codes. Companion to FB#13 (which forwarded a
+useful `imageNumber` for the XMAGE-token subset) — this flag unlocks
+the broader MTG TOK subset whose `tokens-database.txt` rows have
+empty image-number columns and therefore arrive at the wire with
+`cardNumber="0"`.
+
+```diff
+ // WebCardView — additive field
+ {
+   "schemaVersion": "1.32",
+   "id": "...",
+   "name": "Goblin",
+   "expansionSetCode": "DOM",
+   "cardNumber": "0",
++  "isToken": true
+ }
+```
+
+Why this matters: the legacy Swing client maintained a hardcoded
+`set/name → URL` map in
+`Mage.Client/.../ScryfallImageSupportTokens.java` (e.g.
+`DOM/Goblin → cards/tdom/9`). Our WebApi/webclient pipeline never
+replicated that map and was relying on engine-stamped `imageNumber`,
+which is 0 for the typical TOK row. With `isToken: true` on the wire,
+the webclient now uses Scryfall's `/cards/named?fuzzy=<name>&set=t<set>&format=image`
+endpoint — Scryfall does the lookup, no maintenance burden.
+
+Forward-compat: client zod schema defaults `isToken` to `false` so a
+1.31 server without the field still parses cleanly during a rolling
+upgrade. New client + old server: tokens render via the (broken)
+old path — same as today, no regression.
+
+Out of scope: `XMAGE`-namespaced tokens (Copy / Morph / Manifest)
+whose set code can't be `t`-prefixed usefully. Those need a separate
+URL-pre-resolution path. Banana / un-databased tokens (no row in
+`tokens-database.txt`) likewise still 404 — engine-data gap.
+
 ## 1.31 — 2026-05-04 — Passphrase recovery code on register/recover (slice F24)
 
 Adds the recovery surface that replaces the email-based password reset

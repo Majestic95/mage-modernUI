@@ -92,6 +92,17 @@ import java.util.Map;
  *     {@code source} is always {@code null} on the wire (an ability
  *     of an ability is not a thing in MTG). For ordinary cards (any
  *     non-{@code AbilityView}) this is {@code null}.
+ * @param isToken         true when the upstream {@code CardView}
+ *     reports {@code isToken() == true}. Schema 1.32 — lets the
+ *     webclient route token-type cards through Scryfall's
+ *     named-lookup endpoint with t-prefixed set codes, since the
+ *     {@code cardNumber}-based URL path returns the wrong card or
+ *     404 for tokens (most {@code tokens-database.txt} rows have
+ *     empty image-number columns, so engine-stamped imageNumber is
+ *     0 for the typical TOK row). Companion to FB#13 — FB#13 forwarded
+ *     a usable imageNumber for the XMAGE-token subset; this flag
+ *     unlocks the named-lookup path for the broader MTG TOK subset.
+ *     False for ordinary (non-token) cards.
  */
 public record WebCardView(
         String id,
@@ -118,6 +129,7 @@ public record WebCardView(
         boolean transformed,
         WebCardView secondCardFace,
         String sourceLabel,
-        WebCardView source
+        WebCardView source,
+        boolean isToken
 ) {
 }

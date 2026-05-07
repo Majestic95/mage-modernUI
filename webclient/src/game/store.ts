@@ -273,6 +273,7 @@ function synthesizeCommanderCardView(
     secondCardFace: null,
     sourceLabel: '',
     source: null,
+    isToken: false,
   };
 }
 

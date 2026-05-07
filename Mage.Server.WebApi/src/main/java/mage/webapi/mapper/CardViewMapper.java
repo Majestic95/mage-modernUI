@@ -127,7 +127,8 @@ public final class CardViewMapper {
                 transformed,
                 secondFace,
                 extractSourceLabel(cv),
-                extractSource(cv, allowSource)
+                extractSource(cv, allowSource),
+                cv != null && cv.isToken()
         );
     }
 

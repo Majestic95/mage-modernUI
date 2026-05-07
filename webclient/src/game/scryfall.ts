@@ -22,8 +22,38 @@ export function scryfallImageUrl(
   card: WebCardView,
   version: ScryfallVersion = 'normal',
 ): string | null {
-  if (!card.expansionSetCode || !card.cardNumber) return null;
+  if (!card.expansionSetCode) return null;
   const set = card.expansionSetCode.toLowerCase();
+
+  // Schema 1.32 — tokens route through Scryfall's named-lookup endpoint
+  // with `t`-prefixed set codes. Engine-stamped imageNumber is 0 for
+  // most TOK-database rows (the third column is empty), so the
+  // cardNumber-based path returns the wrong card or 404. Named-lookup
+  // eliminates the imageNumber dependency entirely. The legacy Swing
+  // client maintained a hardcoded set/name → URL map
+  // (Mage.Client/.../ScryfallImageSupportTokens.java with rows like
+  // "DOM/Goblin → tdom/9"); we get the same resolution from Scryfall
+  // directly without the maintenance burden. Companion to the FB#13
+  // mapper fix — FB#13 forwarded a useful imageNumber for the
+  // XMAGE-token subset, this routes the broader MTG TOK subset.
+  //
+  // Uses `?exact=` (not `?fuzzy=`) for consistency with the rest of
+  // the webclient — token names from the engine are well-formed and
+  // exact-matched in Scryfall's database. The double-`t` prefix
+  // (e.g. `tthb` for Theros Beyond Death tokens) is correct and
+  // distinct from the regular set code `thb`; verified against
+  // Scryfall's set listing.
+  //
+  // Out of scope: XMAGE-namespaced tokens (Copy / Morph / Manifest)
+  // whose set code can't be `t`-prefixed usefully — those still 404
+  // and need a separate URL pre-resolution path.
+  if (card.isToken) {
+    if (!card.name) return null;
+    const name = encodeURIComponent(card.name);
+    return `https://api.scryfall.com/cards/named?exact=${name}&set=t${set}&format=image&version=${version}`;
+  }
+
+  if (!card.cardNumber) return null;
   const num = encodeURIComponent(card.cardNumber);
   return `https://api.scryfall.com/cards/${set}/${num}?format=image&version=${version}`;
 }

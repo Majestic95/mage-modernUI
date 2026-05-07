@@ -55,13 +55,14 @@ class CardViewMapperTest {
                 false,
                 null,
                 "",
-                null
+                null,
+                false
         );
         JsonNode node = JSON.valueToTree(dto);
 
-        assertEquals(25, node.size(),
-                "WebCardView must have exactly 25 fields "
-                        + "(slice 70-Z added source for ability-stack rendering); got: " + node);
+        assertEquals(26, node.size(),
+                "WebCardView must have exactly 26 fields "
+                        + "(slice schema-1.32 added isToken for token Scryfall URL routing); got: " + node);
         // Snapshot the field set explicitly so adding a field forces
         // a CHANGELOG bump. transformable/transformed/secondCardFace
         // landed in 1.12 — DFC + MDFC support per audit §3.
@@ -71,6 +72,9 @@ class CardViewMapperTest {
         // source landed in 1.26 (slice 70-Z) — full source CardView
         // for ability stack objects so the focal stack can render the
         // source card's visual instead of a blank "Ability" placeholder.
+        // isToken landed in 1.32 (2026-05-08) — lets webclient route
+        // tokens through Scryfall's named-lookup endpoint (companion
+        // to FB#13's imageNumber forwarding for the XMAGE subset).
         for (String field : List.of(
                 "id", "cardId", "name", "displayName", "expansionSetCode",
                 "cardNumber", "manaCost", "manaValue", "typeLine",
@@ -78,7 +82,7 @@ class CardViewMapperTest {
                 "power", "toughness", "startingLoyalty", "rules",
                 "faceDown", "counters",
                 "transformable", "transformed", "secondCardFace",
-                "sourceLabel", "source")) {
+                "sourceLabel", "source", "isToken")) {
             assertTrue(node.has(field), "missing field: " + field);
         }
     }
@@ -106,7 +110,7 @@ class CardViewMapperTest {
                         "3", "2", "",
                         List.of("Goad target creature."),
                         false, Map.of(),
-                        false, false, null, "", null),
+                        false, false, null, "", null, false),
                 "alice", false, false, false, true, false, 0,
                 List.of(), "", false,
                 // Slice 69c: populated by mapper from
@@ -129,7 +133,7 @@ class CardViewMapperTest {
                 List.of("Forest"), List.of(), "COMMON",
                 "", "", "", List.of("({T}: Add {G}.)"),
                 false, Map.of(),
-                false, false, null, "", null);
+                false, false, null, "", null, false);
         WebPermanentView dto = new WebPermanentView(
                 card, "alice", false, false, false, true, false, 0,
                 List.of(), "", false, List.of());
@@ -146,7 +150,7 @@ class CardViewMapperTest {
             assertTrue(node.has(field), "missing field: " + field);
         }
         // Composition: the nested card carries the full WebCardView shape.
-        assertEquals(25, node.get("card").size(),
+        assertEquals(26, node.get("card").size(),
                 "permanent.card must be a full WebCardView");
         // Schema 1.20 wire shape: empty array until slice 69b plumbs
         // live Permanent access through the mapper (ADR 0010 v2 D3c).

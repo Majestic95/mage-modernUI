@@ -348,6 +348,7 @@ export function PlayerFrameRedesigned({
               secondCardFace: null,
               sourceLabel: '',
               source: null,
+              isToken: false,
             }}
           >
             <span

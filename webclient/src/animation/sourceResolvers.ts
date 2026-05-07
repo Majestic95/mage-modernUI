@@ -157,5 +157,6 @@ export function stubCardFromCommandList(
     secondCardFace: null,
     sourceLabel: '',
     source: null,
+    isToken: false,
   };
 }
