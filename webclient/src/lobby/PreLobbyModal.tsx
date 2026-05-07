@@ -24,6 +24,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ApiError, request } from '../api/client';
 import { webTableSchema, type WebServerState } from '../api/schemas';
 import { useAuthStore } from '../auth/store';
+import { getFormatInfo } from './formatInfo';
 
 interface Props {
   roomId: string;
@@ -95,6 +96,11 @@ export function PreLobbyModal({
     () => serverState.gameTypes.find((g) => g.name === gameType) ?? null,
     [gameType, serverState.gameTypes],
   );
+  // T4 — static description + banlist URL for the chosen format.
+  // Returns null for unknown formats (custom plugins, future upstream
+  // additions we haven't curated copy for); the panel just doesn't
+  // render in that case.
+  const formatInfo = useMemo(() => getFormatInfo(deckType), [deckType]);
   const minPlayers = selectedGameType?.minPlayers ?? 2;
   const maxPlayers = selectedGameType?.maxPlayers ?? minPlayers;
   const [playerCount, setPlayerCount] = useState(maxPlayers);
@@ -291,6 +297,30 @@ export function PreLobbyModal({
             ))}
           </select>
         </Field>
+
+        {formatInfo && (
+          <div
+            data-testid="pre-lobby-format-info"
+            className="-mt-3 flex flex-col gap-1 rounded-md border px-3 py-2 text-xs"
+            style={{
+              borderColor: 'var(--color-card-frame-default)',
+              background: 'var(--color-bg-elevated-subtle, var(--color-bg-elevated))',
+            }}
+          >
+            <p className="text-text-secondary">{formatInfo.description}</p>
+            {formatInfo.banlistUrl && (
+              <a
+                href={formatInfo.banlistUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="self-start text-status-info hover:underline"
+                data-testid="pre-lobby-format-banlist"
+              >
+                View banlist <span aria-hidden="true">↗</span>
+              </a>
+            )}
+          </div>
+        )}
 
         <Field label="Mode">
           <select

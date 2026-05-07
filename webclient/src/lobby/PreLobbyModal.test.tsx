@@ -337,6 +337,40 @@ describe('PreLobbyModal', () => {
     expect(createBody.seats).toEqual(['HUMAN', 'HUMAN']);
   });
 
+  it('renders the format-info panel for a known format and hides it for an unknown one', async () => {
+    const user = userEvent.setup();
+    // SERVER_STATE.deckTypes[0] === 'Constructed - Vintage' (known);
+    // we add a fake "Some Custom Format" so we can switch to an unknown
+    // entry and verify the panel disappears.
+    const stateWithCustom: WebServerState = {
+      ...SERVER_STATE,
+      deckTypes: [...SERVER_STATE.deckTypes, 'Some Custom Format'],
+    };
+    render(
+      <PreLobbyModal
+        roomId={ROOM_ID}
+        serverState={stateWithCustom}
+        onClose={() => {}}
+        onCreated={() => {}}
+      />,
+    );
+
+    // Default selection is Commander (matches SERVER_STATE) — info
+    // panel should be visible with a banlist link.
+    expect(screen.getByTestId('pre-lobby-format-info')).toBeInTheDocument();
+    expect(screen.getByTestId('pre-lobby-format-banlist')).toHaveAttribute(
+      'href',
+      expect.stringContaining('mtgcommander.net'),
+    );
+
+    // Switch to the unknown format — panel should disappear.
+    await user.selectOptions(
+      screen.getByTestId('pre-lobby-deck-type'),
+      'Some Custom Format',
+    );
+    expect(screen.queryByTestId('pre-lobby-format-info')).not.toBeInTheDocument();
+  });
+
   it('surfaces a server error and does not invoke onCreated', async () => {
     const user = userEvent.setup();
     const fetchMock = vi
