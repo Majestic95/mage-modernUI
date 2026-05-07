@@ -108,7 +108,7 @@ public final class CardViewMapper {
                 nullToEmpty(cv.getName()),
                 nullToEmpty(cv.getDisplayName()),
                 nullToEmpty(cv.getExpansionSetCode()),
-                nullToEmpty(cv.getCardNumber()),
+                resolveWireCardNumber(cv),
                 nullToEmpty(cv.getManaCostStr()),
                 cv.getManaValue(),
                 nullToEmpty(safeTypeText(cv)),
@@ -145,6 +145,42 @@ public final class CardViewMapper {
         }
         UUID fallback = cv == null ? null : cv.getId();
         return fallback == null ? "" : fallback.toString();
+    }
+
+    /**
+     * Resolve the wire {@code cardNumber} value, working around an
+     * upstream {@link CardView} quirk for tokens.
+     *
+     * <p>For ordinary cards {@code cv.getCardNumber()} is the real
+     * collector-number string ("161", "84a", etc) and we pass it
+     * through. For tokens, upstream hardcodes {@code cardNumber = "0"}
+     * (see {@code CardView.java:1037, 1102}) and stores the meaningful
+     * Scryfall-side identifier in the {@code int imageNumber} field
+     * instead. The webclient builds Scryfall image URLs from
+     * {@code expansionSetCode + cardNumber} via
+     * {@code webclient/src/game/scryfall.ts}; with {@code "0"} every
+     * URL 404s and tokens render as blank rectangles.
+     *
+     * <p>Translation: when {@code cv.isToken()} is true, emit
+     * {@code String.valueOf(cv.getImageNumber())} so the existing
+     * client URL builder produces e.g. {@code /cards/tafr/11} which
+     * Scryfall accepts. {@code imageNumber} is a primitive int with
+     * default 0, so {@code String.valueOf} is null-safe; tokens with
+     * imageNumber 0 still emit "0" (same as today's broken state — no
+     * regression, just doesn't fix that subset which is an engine-side
+     * gap).
+     *
+     * <p>Schema unchanged: {@code WebCardView.cardNumber} stays
+     * {@code String}; only the value content for the token case
+     * changes. Same precedent as the FB#11 multi-amount space-vs-comma
+     * fix — pre-fix value had zero working consumers (every token URL
+     * built from "0" 404s).
+     */
+    private static String resolveWireCardNumber(CardView cv) {
+        if (cv != null && cv.isToken()) {
+            return String.valueOf(cv.getImageNumber());
+        }
+        return nullToEmpty(cv == null ? null : cv.getCardNumber());
     }
 
     /**
