@@ -1,0 +1,147 @@
+[
+  {
+    "name": "Lightning Bolt",
+    "layout": "normal",
+    "legalities": { "pauper": "legal", "modern": "legal" }
+  },
+  {
+    "name": "Counterspell",
+    "layout": "normal",
+    "legalities": { "pauper": "legal" }
+  },
+  {
+    "name": "Brainstorm",
+    "layout": "normal",
+    "legalities": { "pauper": "legal" }
+  },
+  {
+    "name": "Llanowar Elves",
+    "layout": "normal",
+    "legalities": { "pauper": "legal" }
+  },
+  {
+    "name": "Forest",
+    "layout": "normal",
+    "legalities": { "pauper": "legal" }
+  },
+  {
+    "name": "Treasure Cruise",
+    "layout": "normal",
+    "legalities": { "pauper": "banned" }
+  },
+  {
+    "name": "Daze",
+    "layout": "normal",
+    "legalities": { "pauper": "banned" }
+  },
+  {
+    "name": "Cloudpost",
+    "layout": "normal",
+    "legalities": { "pauper": "banned" }
+  },
+  {
+    "name": "Sojourner's Companion",
+    "layout": "normal",
+    "legalities": { "pauper": "banned" }
+  },
+  {
+    "name": "Galvanic Relay",
+    "layout": "normal",
+    "legalities": { "pauper": "banned" }
+  },
+  {
+    "name": "Chatterstorm",
+    "layout": "normal",
+    "legalities": { "pauper": "banned" }
+  },
+  {
+    "name": "Atog",
+    "layout": "normal",
+    "legalities": { "pauper": "banned" }
+  },
+  {
+    "name": "Hada Freeblade",
+    "layout": "normal",
+    "legalities": { "pauper": "not_legal" }
+  },
+  {
+    "name": "Force of Will",
+    "layout": "normal",
+    "legalities": { "pauper": "not_legal" }
+  },
+  {
+    "name": "Black Lotus",
+    "layout": "normal",
+    "legalities": { "pauper": "not_legal" }
+  },
+  {
+    "name": "Sol Ring",
+    "layout": "normal",
+    "legalities": { "pauper": "not_legal" }
+  },
+  {
+    "name": "Ancestral Recall",
+    "layout": "normal",
+    "legalities": { "pauper": "not_legal" }
+  },
+  {
+    "name": "Synthetic Restricted Card",
+    "layout": "normal",
+    "legalities": { "pauper": "restricted" }
+  },
+  {
+    "name": "Lim-Dûl's Vault",
+    "layout": "normal",
+    "legalities": { "pauper": "not_legal" }
+  },
+  {
+    "name": "Aether Spellbomb",
+    "layout": "normal",
+    "legalities": { "pauper": "legal" }
+  },
+  {
+    "name": "Fire // Ice",
+    "layout": "split",
+    "legalities": { "pauper": "legal" }
+  },
+  {
+    "name": "Delver of Secrets // Insectile Aberration",
+    "layout": "transform",
+    "legalities": { "pauper": "legal" }
+  },
+  {
+    "name": "Synthetic Token Goblin",
+    "layout": "token",
+    "legalities": { "pauper": "not_legal" }
+  },
+  {
+    "name": "Synthetic Emblem",
+    "layout": "emblem",
+    "legalities": { "pauper": "not_legal" }
+  },
+  {
+    "name": "Synthetic Double Faced Token",
+    "layout": "double_faced_token",
+    "legalities": { "pauper": "not_legal" }
+  },
+  {
+    "name": "Synthetic Art Series Card",
+    "layout": "art_series",
+    "legalities": { "pauper": "not_legal" }
+  },
+  {
+    "name": "Akroma, Angel of Wrath Avatar",
+    "layout": "vanguard",
+    "legalities": { "pauper": "not_legal" }
+  },
+  {
+    "name": "Synthetic Plane Card",
+    "layout": "scheme",
+    "legalities": { "pauper": "not_legal" }
+  },
+  {
+    "name": "Edge of Malacol",
+    "layout": "planar",
+    "legalities": { "pauper": "not_legal" }
+  }
+]

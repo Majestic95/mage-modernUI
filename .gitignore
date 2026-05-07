@@ -75,6 +75,11 @@ mage-bundle.zip
 # tunnel URL, vercel deploy log here. Per-session ephemeral.
 /.playtest/
 
+# T2.A — Scryfall oracle_cards bulk-data cache. Populated at WebApi
+# boot by PauperLegalityService (~30-40 MB JSON, refreshed daily).
+# Never committed; regenerated on demand at runtime.
+mage-stack/cache/
+
 # vercel project link (per-deployer, not committed) — webclient
 # directory only; root vercel deploys aren't expected
 /webclient/.vercel/
