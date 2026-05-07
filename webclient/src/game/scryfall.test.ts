@@ -71,10 +71,13 @@ describe('scryfallImageUrl — non-token path (regression-pin)', () => {
 });
 
 describe('scryfallImageUrl — token path (schema 1.32)', () => {
-  it('routes tokens through /cards/named with t-prefixed set + exact name', () => {
+  it('routes tokens through /cards/named with t-prefixed set + exact name (stripping " Token" suffix)', () => {
+    // Engine surfaces "Goblin Token" (FoodToken-class constructors all
+    // pass "<X> Token") but Scryfall stores it as bare "Goblin" — the
+    // suffix is stripped before building the URL.
     const url = scryfallImageUrl(
       makeCard({
-        name: 'Goblin',
+        name: 'Goblin Token',
         expansionSetCode: 'DOM',
         // cardNumber is "0" post-FB#13 for tokens whose database row
         // has empty image-number column. Token path ignores it.
@@ -90,7 +93,7 @@ describe('scryfallImageUrl — token path (schema 1.32)', () => {
   it('uses the version param on the token path too', () => {
     const url = scryfallImageUrl(
       makeCard({
-        name: 'Goblin',
+        name: 'Goblin Token',
         expansionSetCode: 'DOM',
         cardNumber: '0',
         isToken: true,
@@ -100,6 +103,51 @@ describe('scryfallImageUrl — token path (schema 1.32)', () => {
     expect(url).toBe(
       'https://api.scryfall.com/cards/named?exact=Goblin&set=tdom&format=image&version=art_crop',
     );
+  });
+
+  it('strips " Token" suffix for Food → exact=Food&set=teld (the trigger for this fix)', () => {
+    // Direct regression-pin for the food-tokens-not-showing-on-live
+    // bug: FoodToken's engine constructor passes "Food Token" but
+    // Scryfall has it as "Food".
+    const url = scryfallImageUrl(
+      makeCard({
+        name: 'Food Token',
+        expansionSetCode: 'ELD',
+        cardNumber: '1',
+        isToken: true,
+      }),
+    );
+    expect(url).toBe(
+      'https://api.scryfall.com/cards/named?exact=Food&set=teld&format=image&version=normal',
+    );
+  });
+
+  it('leaves bare-named tokens (Avacyn, Banana) unchanged', () => {
+    // Tokens whose engine constructor passes a name without the
+    // " Token" suffix (legendary tokens, food riders, custom-named
+    // tokens) must not be stripped. Avacyn comes from the Avacyn,
+    // the Purifier meld printing in EMN.
+    const url = scryfallImageUrl(
+      makeCard({
+        name: 'Avacyn',
+        expansionSetCode: 'EMN',
+        isToken: true,
+      }),
+    );
+    expect(url).toContain('exact=Avacyn&');
+    expect(url).not.toContain('exact=&');
+  });
+
+  it('passes a bare "Token" name through unstripped (degenerate case)', () => {
+    // No engine token actually has the literal name "Token" alone — the
+    // strip regex requires a leading space, so this hypothetical case
+    // builds a normal URL. Scryfall will 404, the client handles missing
+    // art gracefully. Test pins behavior so a future refactor doesn't
+    // accidentally start mangling such names.
+    const url = scryfallImageUrl(
+      makeCard({ name: 'Token', expansionSetCode: 'DOM', isToken: true }),
+    );
+    expect(url).toContain('exact=Token&');
   });
 
   it('URL-encodes spaces in the name', () => {

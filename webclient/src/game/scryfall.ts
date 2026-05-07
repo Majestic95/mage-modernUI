@@ -49,7 +49,15 @@ export function scryfallImageUrl(
   // and need a separate URL pre-resolution path.
   if (card.isToken) {
     if (!card.name) return null;
-    const name = encodeURIComponent(card.name);
+    // Strip trailing " Token" suffix: engine constructors stamp names
+    // like "Food Token" / "Goblin Token" / "Treasure Token", but
+    // Scryfall stores those as bare "Food" / "Goblin" / "Treasure" —
+    // including the suffix 404s every common token. Only strip a
+    // suffix; bare-named tokens (Avacyn, Angelo, Banana) pass through
+    // unchanged. After strip, fall back to null if name became empty.
+    const stripped = card.name.replace(/ Token$/, '');
+    if (!stripped) return null;
+    const name = encodeURIComponent(stripped);
     return `https://api.scryfall.com/cards/named?exact=${name}&set=t${set}&format=image&version=${version}`;
   }
 
