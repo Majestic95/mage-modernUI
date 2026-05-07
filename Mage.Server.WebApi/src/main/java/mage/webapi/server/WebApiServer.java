@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.javalin.Javalin;
 import io.javalin.http.BadRequestResponse;
 import io.javalin.http.Context;
+import mage.cards.decks.DeckValidatorFactory;
 import mage.cards.repository.CardRepository;
 import mage.players.PlayerType;
 import mage.webapi.SchemaVersion;
@@ -27,6 +28,8 @@ import mage.webapi.dto.WebRegisterResponse;
 import mage.webapi.dto.WebSeatReadyRequest;
 import mage.webapi.dto.WebSessionRequest;
 import mage.webapi.embed.EmbeddedServer;
+import mage.webapi.format.PauperLegalityService;
+import mage.webapi.format.WebApiPauperValidator;
 import mage.webapi.lobby.DeckValidationService;
 import mage.webapi.lobby.LobbyService;
 import mage.webapi.mapper.CardInfoMapper;
@@ -42,6 +45,7 @@ import mage.webapi.ws.SpectatorStreamHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -173,6 +177,57 @@ public final class WebApiServer {
         // Browsers don't apply same-origin to WebSocket upgrades, so
         // without this an attacker can drive cross-origin WS reads.
         this.tableStreamHandler.allowOrigins(this.corsOrigins);
+        return this;
+    }
+
+    /**
+     * Construct a {@link PauperLegalityService} from the given cache
+     * dir, register {@link WebApiPauperValidator} against the global
+     * {@link DeckValidatorFactory} for {@code "Constructed - Pauper"},
+     * and store the service in the validator's static holder. If the
+     * service throws
+     * {@link PauperLegalityService.LegalityDataUnavailableException}
+     * at boot (cold cache + network down), log WARN and continue
+     * without the override — upstream's stock Pauper validator stays
+     * in place, exactly as it was at T0.
+     *
+     * <p>Builder-style return value mirrors {@link #allowCorsOrigins}.
+     *
+     * <p><b>Boot-ordering contract.</b> {@link DeckValidatorFactory}
+     * holds a non-thread-safe {@link java.util.LinkedHashMap}, so
+     * concurrent {@code addDeckType} calls would race. This method
+     * relies on the call site running it strictly AFTER
+     * {@link mage.webapi.embed.EmbeddedServer#boot} returns: upstream's
+     * plugin loader populates the factory inside that boot path and
+     * is quiescent by the time the call site continues. The
+     * {@code WebApiMain} wiring respects this; tests that rebuild a
+     * server mid-JVM should similarly call this only after their own
+     * embedded boot. {@link WebApiPauperValidator#setService} is
+     * called BEFORE {@code addDeckType} so a validation request can
+     * never construct a {@code WebApiPauperValidator} that sees a
+     * null held service.
+     *
+     * @param cacheDir directory for the cached oracle_cards JSON, or
+     *                 {@code null} to skip the override entirely
+     *                 (useful for tests that don't want Scryfall in
+     *                 the loop).
+     */
+    public WebApiServer withLegalityCacheDir(Path cacheDir) {
+        if (cacheDir == null) {
+            LOG.info("Pauper-validator override skipped (no cache dir provided)");
+            return this;
+        }
+        try {
+            PauperLegalityService service = new PauperLegalityService(cacheDir);
+            WebApiPauperValidator.setService(service);
+            DeckValidatorFactory.instance.addDeckType(
+                    "Constructed - Pauper", WebApiPauperValidator.class);
+            LOG.info("Pauper validator overridden with Scryfall-backed service "
+                    + "({} entries)", service.knownCardCount());
+        } catch (PauperLegalityService.LegalityDataUnavailableException ex) {
+            LOG.warn("Could not load Scryfall legality data; Pauper falls back "
+                    + "to upstream rarity-walk + 38-card banlist", ex);
+        }
         return this;
     }
 

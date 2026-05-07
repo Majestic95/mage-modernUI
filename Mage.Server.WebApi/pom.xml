@@ -51,6 +51,18 @@
             <version>${upstream.version}</version>
         </dependency>
 
+        <!-- Same precedent as the MAD AI promotion above:
+             mage-deck-constructed is runtime-scope on mage-server, but the
+             WebApiPauperValidator subclass needs Pauper.class on the compile
+             classpath. Promoting here doesn't change runtime behavior
+             (mage-server already loads it via DeckValidatorFactory wiring
+             in config.xml); without this, the subclass cannot compile. -->
+        <dependency>
+            <groupId>org.mage</groupId>
+            <artifactId>mage-deck-constructed</artifactId>
+            <version>${upstream.version}</version>
+        </dependency>
+
         <!-- Lightweight HTTP/WS framework (per ADR 0002). -->
         <dependency>
             <groupId>io.javalin</groupId>

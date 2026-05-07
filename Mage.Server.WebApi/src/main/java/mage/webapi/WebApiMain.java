@@ -5,6 +5,7 @@ import mage.webapi.server.WebApiServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -28,6 +29,13 @@ import java.util.stream.Collectors;
  *       without an explicit {@code XMAGE_CORS_ORIGINS} so a misdeploy
  *       cannot accidentally serve the dev-default localhost origins to
  *       the public internet.</li>
+ *   <li>{@code XMAGE_LEGALITY_CACHE_DIR} — directory for the cached
+ *       Scryfall {@code oracle_cards} bulk-data JSON used by the
+ *       Pauper-validator override. Default
+ *       {@code mage-stack/cache}. Created on first use. If both the
+ *       network fetch and any cached file are unusable at boot, the
+ *       override is silently skipped and upstream's stock Pauper
+ *       validator stays in place.</li>
  * </ul>
  */
 public final class WebApiMain {
@@ -36,6 +44,7 @@ public final class WebApiMain {
 
     private static final int DEFAULT_PORT = 18080;
     private static final String DEFAULT_CONFIG_PATH = "../Mage.Server/config/config.xml";
+    private static final String DEFAULT_LEGALITY_CACHE_DIR = "mage-stack/cache";
 
     private WebApiMain() {
     }
@@ -65,8 +74,12 @@ public final class WebApiMain {
         LOG.info("Booting embedded Mage server (config: {})", configPath);
         EmbeddedServer embedded = EmbeddedServer.boot(configPath);
 
+        Path legalityCacheDir = readLegalityCacheDir();
+        LOG.info("Pauper legality cache dir resolved to {}", legalityCacheDir);
+
         WebApiServer server = new WebApiServer(embedded)
                 .allowCorsOrigins(corsOrigins)
+                .withLegalityCacheDir(legalityCacheDir)
                 .start(port);
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             LOG.info("Shutdown signal received; stopping WebApi");
@@ -78,6 +91,22 @@ public final class WebApiMain {
     private static String readConfigPath() {
         String env = System.getenv("XMAGE_CONFIG_PATH");
         return (env == null || env.isBlank()) ? DEFAULT_CONFIG_PATH : env.trim();
+    }
+
+    private static Path readLegalityCacheDir() {
+        String env = System.getenv("XMAGE_LEGALITY_CACHE_DIR");
+        String resolved = (env == null || env.isBlank())
+                ? DEFAULT_LEGALITY_CACHE_DIR
+                : env.trim();
+        // Always resolve to absolute. Under a Windows service launch
+        // (mage-stack/scripts/run.ps1, INFRA-1) the JVM's working dir
+        // is determined by the SCM "Start in" parameter, not the
+        // launcher script's cwd — a relative path would silently land
+        // in C:\Windows\System32. Normalizing here makes the resolved
+        // path observable in the boot log so a misconfigured "Start
+        // in" surfaces at first run rather than via mysterious empty
+        // legality data.
+        return Path.of(resolved).toAbsolutePath().normalize();
     }
 
     private static int readPort() {

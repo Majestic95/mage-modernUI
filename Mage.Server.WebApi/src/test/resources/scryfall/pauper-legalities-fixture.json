@@ -65,6 +65,11 @@
     "legalities": { "pauper": "not_legal" }
   },
   {
+    "name": "Pradesh Gypsies",
+    "layout": "normal",
+    "legalities": { "pauper": "banned" }
+  },
+  {
     "name": "Force of Will",
     "layout": "normal",
     "legalities": { "pauper": "not_legal" }

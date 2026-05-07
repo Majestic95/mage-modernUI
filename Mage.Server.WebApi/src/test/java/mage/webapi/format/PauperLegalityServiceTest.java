@@ -72,13 +72,23 @@ class PauperLegalityServiceTest {
         assertEquals(PauperLegality.NOT_LEGAL, service.legalityOf("Black Lotus"));
         assertEquals(PauperLegality.NOT_LEGAL, service.legalityOf("Sol Ring"));
         assertEquals(PauperLegality.NOT_LEGAL, service.legalityOf("Ancestral Recall"));
+        // Pradesh Gypsies: in upstream Constructed's structural-ban
+        // list (4ED #265, COMMON; banned officially by Wizards in the
+        // 2020 racism removals across all formats). T2.B's
+        // WebApiPauperValidator clears upstream's hardcoded banlist
+        // when the service is wired, so Scryfall's banned verdict has
+        // to re-flag this name or the cleared-banlist path becomes a
+        // regression. Pinned here so fixture maintenance keeps the
+        // entry — see WebApiPauperValidatorTest's coverage of the
+        // structural-ban path.
+        assertEquals(PauperLegality.BANNED, service.legalityOf("Pradesh Gypsies"));
 
         assertEquals(PauperLegality.RESTRICTED, service.legalityOf("Synthetic Restricted Card"));
 
         // knownCardCount excludes the 7 token / emblem / art_series /
         // vanguard / scheme / planar / double_faced_token entries in
-        // the fixture. 29 entries total - 7 excluded = 22.
-        assertEquals(22, service.knownCardCount());
+        // the fixture. 30 entries total - 7 excluded = 23.
+        assertEquals(23, service.knownCardCount());
     }
 
     @Test
