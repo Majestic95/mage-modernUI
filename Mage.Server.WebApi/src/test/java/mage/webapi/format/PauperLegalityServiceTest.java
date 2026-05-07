@@ -53,6 +53,15 @@ class PauperLegalityServiceTest {
 
     private static final String FIXTURE_RESOURCE = "/scryfall/pauper-legalities-fixture.json";
 
+    /**
+     * Number of card entries the parser is expected to surface from
+     * the fixture: 30 total entries minus 7 layout-excluded
+     * (token / emblem / double_faced_token / art_series / vanguard /
+     * scheme / planar) = 23. Update both this constant AND the
+     * fixture file together; the comment is the contract.
+     */
+    private static final int EXPECTED_DECK_LEGAL_COUNT = 23;
+
     @Test
     void loadsLegalitiesFromFixture(@TempDir Path tmp) throws IOException {
         stageFreshFixture(tmp);
@@ -89,10 +98,7 @@ class PauperLegalityServiceTest {
 
         assertEquals(PauperLegality.RESTRICTED, service.legalityOf("Synthetic Restricted Card"));
 
-        // knownCardCount excludes the 7 token / emblem / art_series /
-        // vanguard / scheme / planar / double_faced_token entries in
-        // the fixture. 30 entries total - 7 excluded = 23.
-        assertEquals(23, service.knownCardCount());
+        assertEquals(EXPECTED_DECK_LEGAL_COUNT, service.knownCardCount());
     }
 
     @Test

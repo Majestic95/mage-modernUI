@@ -21,6 +21,8 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 
+
+
 /**
  * Fetches Scryfall's {@code oracle_cards} bulk-data file and parses it
  * for Pauper legality verdicts. The client is deliberately a single,
@@ -61,17 +63,11 @@ public class ScryfallBulkDataClient {
     private static final Logger LOG = LoggerFactory.getLogger(ScryfallBulkDataClient.class);
 
     /**
-     * Manifest endpoint listing every bulk-data export. The
-     * {@code oracle_cards} entry's {@code download_uri} is a CDN URL
-     * (it changes whenever Scryfall regenerates the file, ~daily) so
-     * we resolve it fresh every fetch.
-     */
-    private static final String BULK_DATA_MANIFEST_URL = "https://api.scryfall.com/bulk-data";
-
-    /**
      * Per Scryfall's API guidelines. The version is intentionally
      * "0.0.1" until we ship a real release tag; the GitHub URL is the
-     * only contact path that's stable across forks.
+     * only contact path that's stable across forks. Shared with
+     * {@link ScryfallManifest} so both Scryfall calls present the
+     * same identity.
      */
     private static final String USER_AGENT =
             "xmage-modernUI/0.0.1 (https://github.com/Majestic95/mage-modernUI)";
@@ -104,20 +100,13 @@ public class ScryfallBulkDataClient {
     private static final int ERROR_BODY_PEEK_BYTES = 1024;
 
     /**
-     * Tree-mode mapper for the small (~3 KB) bulk-data manifest only.
-     * Class-level singleton avoids re-allocating per fetch. Cannot reuse
-     * {@code WebApiServer.JSON} cleanly (private field of a sibling
-     * package), and constructing one per call is wasteful.
-     */
-    private static final ObjectMapper TREE_MAPPER = new ObjectMapper();
-
-    /**
      * Lazily-shared singleton — {@link HttpClient} is thread-safe and
      * holds a connection pool we'd rather not rebuild on every refresh.
      * Constructed once per service instance.
      */
     private final HttpClient http;
     private final JsonFactory jsonFactory;
+    private final ScryfallManifest manifest;
 
     public ScryfallBulkDataClient() {
         this(HttpClient.newBuilder()
@@ -131,6 +120,7 @@ public class ScryfallBulkDataClient {
     ScryfallBulkDataClient(HttpClient http, JsonFactory jsonFactory) {
         this.http = http;
         this.jsonFactory = jsonFactory;
+        this.manifest = new ScryfallManifest(http, USER_AGENT, RESPONSE_TIMEOUT);
     }
 
     /**
@@ -143,7 +133,7 @@ public class ScryfallBulkDataClient {
      *                     {@link PauperLegalityService.LegalityDataUnavailableException}.
      */
     public void fetchOracleCardsTo(Path destination) throws IOException {
-        String downloadUri = resolveOracleCardsDownloadUri();
+        String downloadUri = manifest.resolveOracleCardsDownloadUri();
         LOG.info("Downloading Scryfall oracle_cards from {}", downloadUri);
 
         HttpRequest req = HttpRequest.newBuilder(URI.create(downloadUri))
@@ -282,59 +272,18 @@ public class ScryfallBulkDataClient {
     }
 
     /**
-     * GET the manifest, find the {@code oracle_cards} entry, return
-     * its {@code download_uri}. Uses {@link ObjectMapper} (tree mode)
-     * because the manifest is tiny (~3 KB, 6 entries) and tree code
-     * is more readable than streaming for this size.
-     */
-    private String resolveOracleCardsDownloadUri() throws IOException {
-        HttpRequest manifestReq = HttpRequest.newBuilder(URI.create(BULK_DATA_MANIFEST_URL))
-                .header("User-Agent", USER_AGENT)
-                .header("Accept", "application/json")
-                .timeout(RESPONSE_TIMEOUT)
-                .GET()
-                .build();
-
-        HttpResponse<String> resp;
-        try {
-            resp = http.send(manifestReq, HttpResponse.BodyHandlers.ofString());
-        } catch (InterruptedException ex) {
-            Thread.currentThread().interrupt();
-            throw new IOException("Interrupted while fetching Scryfall manifest", ex);
-        }
-        if (resp.statusCode() / 100 != 2) {
-            throw new IOException(buildHttpErrorMessage(
-                    "manifest GET", BULK_DATA_MANIFEST_URL, resp.statusCode(),
-                    asInputStream(resp.body())));
-        }
-
-        var root = TREE_MAPPER.readTree(resp.body());
-        var data = root.get("data");
-        if (data == null || !data.isArray()) {
-            throw new IOException("Scryfall manifest missing 'data' array");
-        }
-        for (var entry : data) {
-            var type = entry.get("type");
-            if (type != null && "oracle_cards".equals(type.asText())) {
-                var uri = entry.get("download_uri");
-                if (uri == null) {
-                    throw new IOException("oracle_cards manifest entry missing download_uri");
-                }
-                return uri.asText();
-            }
-        }
-        throw new IOException("Scryfall manifest contained no oracle_cards entry");
-    }
-
-    /**
      * Build a diagnostic message for non-2xx HTTP responses. Includes
      * the request label, URL, status, and up to
      * {@link #ERROR_BODY_PEEK_BYTES} of the response body — enough to
      * surface Scryfall's machine-readable {@code object:"error"}
      * envelope without dumping a giant HTML error page.
+     *
+     * <p>Package-private so {@link ScryfallManifest} can format manifest
+     * GET errors with the same shape; both Scryfall paths produce
+     * uniform diagnostic output for the operator.
      */
-    private static String buildHttpErrorMessage(String label, String url, int status,
-                                                 InputStream body) {
+    static String buildHttpErrorMessage(String label, String url, int status,
+                                         InputStream body) {
         String bodyPeek = "(unreadable)";
         try (InputStream stream = body) {
             byte[] buf = stream.readNBytes(ERROR_BODY_PEEK_BYTES);
@@ -348,15 +297,5 @@ public class ScryfallBulkDataClient {
         }
         return "Scryfall " + label + " " + url + " returned HTTP " + status
                 + "; body preview: " + bodyPeek;
-    }
-
-    /**
-     * Wrap an in-memory string body as an {@link InputStream} so we can
-     * route it through {@link #buildHttpErrorMessage} on the manifest
-     * path (which fetches as String for parse convenience).
-     */
-    private static InputStream asInputStream(String body) {
-        return new java.io.ByteArrayInputStream(
-                body == null ? new byte[0] : body.getBytes());
     }
 }
