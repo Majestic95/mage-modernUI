@@ -256,6 +256,7 @@ export const webDeckCardListsSchema = z.object({
   author: z.string(),
   cards: z.array(webDeckCardInfoSchema),
   sideboard: z.array(webDeckCardInfoSchema),
+  displayCard: webDeckCardInfoSchema.nullable().default(null),
 });
 export type WebDeckCardLists = z.infer<typeof webDeckCardListsSchema>;
 
@@ -309,6 +310,9 @@ export const webSeatSchema = z.object({
   // editor. Empty default keeps forward-compat with 1.28 servers.
   commanderSetCode: z.string().default(''),
   commanderCardNumber: z.string().default(''),
+  displayCardName: z.string().default(''),
+  displayCardSetCode: z.string().default(''),
+  displayCardNumber: z.string().default(''),
 });
 export type WebSeat = z.infer<typeof webSeatSchema>;
 
@@ -757,6 +761,9 @@ export const webPlayerViewSchema = z.object({
     ])
     .catch('')
     .default(''),
+  displayCardName: z.string().default(''),
+  displayCardSetCode: z.string().default(''),
+  displayCardNumber: z.string().default(''),
 });
 export type WebPlayerView = z.infer<typeof webPlayerViewSchema>;
 export type SkipState = WebPlayerView['skipState'];

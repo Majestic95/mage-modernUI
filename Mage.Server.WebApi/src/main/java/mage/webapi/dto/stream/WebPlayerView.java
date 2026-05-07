@@ -90,6 +90,12 @@ import java.util.Map;
  *     {@link #SKIP_STATE_END_OF_TURN}, {@link #SKIP_STATE_NEXT_MAIN},
  *     {@link #SKIP_STATE_STACK_RESOLVED},
  *     {@link #SKIP_STATE_END_STEP_BEFORE_MY_TURN}. Added in schema 1.30.
+ *
+ * @param displayCardName cosmetic display-card name for non-Commander
+ *     portrait rendering. Empty when unset or when commander art exists.
+ * @param displayCardSetCode set code for the chosen display-card printing.
+ * @param displayCardNumber collector number for the chosen display-card
+ *     printing.
  */
 public record WebPlayerView(
         String playerId,
@@ -116,7 +122,10 @@ public record WebPlayerView(
         String teamId,
         List<String> colorIdentity,
         String connectionState,
-        String skipState
+        String skipState,
+        String displayCardName,
+        String displayCardSetCode,
+        String displayCardNumber
 ) {
 
     /** {@link #connectionState} — player has ≥1 active game-stream socket. */

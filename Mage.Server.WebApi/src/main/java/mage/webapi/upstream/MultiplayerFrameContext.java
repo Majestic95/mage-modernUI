@@ -4,6 +4,7 @@ import mage.constants.RangeOfInfluence;
 import mage.game.Game;
 import mage.game.permanent.Permanent;
 import mage.players.Player;
+import mage.webapi.lobby.DisplayCardRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -59,7 +60,8 @@ public final class MultiplayerFrameContext {
     public static final MultiplayerFrameContext EMPTY =
             new MultiplayerFrameContext(
                     Map.of(),
-                    WebSocketConnectionTracker.EVERY_PLAYER_CONNECTED);
+                    WebSocketConnectionTracker.EVERY_PLAYER_CONNECTED,
+                    Map.of());
 
     /**
      * Permanent UUID → set of player UUIDs that have goaded this
@@ -82,14 +84,19 @@ public final class MultiplayerFrameContext {
      * {@link #withConnectionTracker(WebSocketConnectionTracker)}.
      */
     private final WebSocketConnectionTracker connectionTracker;
+    private final Map<UUID, DisplayCardRegistry.DisplayCard> displayCardsByPlayer;
 
     private MultiplayerFrameContext(
             Map<UUID, Set<UUID>> goadingByPermanent,
-            WebSocketConnectionTracker connectionTracker) {
+            WebSocketConnectionTracker connectionTracker,
+            Map<UUID, DisplayCardRegistry.DisplayCard> displayCardsByPlayer) {
         this.goadingByPermanent = goadingByPermanent;
         this.connectionTracker = connectionTracker == null
                 ? WebSocketConnectionTracker.EVERY_PLAYER_CONNECTED
                 : connectionTracker;
+        this.displayCardsByPlayer = displayCardsByPlayer == null
+                ? Map.of()
+                : displayCardsByPlayer;
     }
 
     /**
@@ -112,7 +119,19 @@ public final class MultiplayerFrameContext {
         if (effective == this.connectionTracker) {
             return this;
         }
-        return new MultiplayerFrameContext(this.goadingByPermanent, effective);
+        return new MultiplayerFrameContext(
+                this.goadingByPermanent, effective, this.displayCardsByPlayer);
+    }
+
+    public MultiplayerFrameContext withDisplayCards(
+            Map<UUID, DisplayCardRegistry.DisplayCard> displayCards) {
+        Map<UUID, DisplayCardRegistry.DisplayCard> effective =
+                displayCards == null ? Map.of() : displayCards;
+        if (effective.isEmpty() && this.displayCardsByPlayer.isEmpty()) {
+            return this;
+        }
+        return new MultiplayerFrameContext(
+                this.goadingByPermanent, this.connectionTracker, effective);
     }
 
     /**
@@ -126,6 +145,11 @@ public final class MultiplayerFrameContext {
             return mage.webapi.dto.stream.WebPlayerView.CONNECTION_STATE_CONNECTED;
         }
         return connectionTracker.connectionStateFor(playerId);
+    }
+
+    public DisplayCardRegistry.DisplayCard displayCardFor(UUID playerId) {
+        if (playerId == null) return null;
+        return displayCardsByPlayer.get(playerId);
     }
 
     /**
@@ -146,7 +170,8 @@ public final class MultiplayerFrameContext {
             Map<UUID, Set<UUID>> goadingByPermanent) {
         return new MultiplayerFrameContext(
                 goadingByPermanent == null ? Map.of() : goadingByPermanent,
-                WebSocketConnectionTracker.EVERY_PLAYER_CONNECTED);
+                WebSocketConnectionTracker.EVERY_PLAYER_CONNECTED,
+                Map.of());
     }
 
     /**
@@ -183,7 +208,8 @@ public final class MultiplayerFrameContext {
                     ? EMPTY
                     : new MultiplayerFrameContext(
                             goading,
-                            WebSocketConnectionTracker.EVERY_PLAYER_CONNECTED);
+                            WebSocketConnectionTracker.EVERY_PLAYER_CONNECTED,
+                            Map.of());
         } catch (RuntimeException ex) {
             LOG.debug("MultiplayerFrameContext.extract failed; returning empty: {}",
                     ex.toString());

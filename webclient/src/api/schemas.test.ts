@@ -433,6 +433,13 @@ describe('webPlayerViewSchema — schema 1.30 skipState', () => {
     expect(parsed.skipState).toBe('');
   });
 
+  it('defaults display-card fields to empty strings when missing', () => {
+    const parsed = webPlayerViewSchema.parse(fields());
+    expect(parsed.displayCardName).toBe('');
+    expect(parsed.displayCardSetCode).toBe('');
+    expect(parsed.displayCardNumber).toBe('');
+  });
+
   it('passes through known skipState enum values', () => {
     for (const v of [
       'ALL_TURNS',

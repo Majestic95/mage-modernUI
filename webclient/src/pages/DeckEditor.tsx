@@ -172,6 +172,10 @@ export function DeckEditor({ deckId, onClose }: Props) {
     updateDeck(deck.id, { [lane]: updated });
   };
 
+  const setDisplayCard = (entry: WebDeckCardInfo) => {
+    updateDeck(deck.id, { displayCard: entry });
+  };
+
   // Add a card from the search panel into the mainboard. Bumps an
   // existing entry's qty if the same printing is already there;
   // otherwise inserts a new entry with amount=1. Reads fresh state
@@ -282,6 +286,8 @@ export function DeckEditor({ deckId, onClose }: Props) {
             previousAmount: entry.amount,
           })
         }
+        displayCard={deck.displayCard}
+        onSetDisplayCard={setDisplayCard}
       />
 
       <DeckLane
@@ -303,6 +309,8 @@ export function DeckEditor({ deckId, onClose }: Props) {
             previousAmount: entry.amount,
           })
         }
+        displayCard={deck.displayCard}
+        onSetDisplayCard={setDisplayCard}
       />
 
       {artPicker && (
@@ -335,6 +343,8 @@ function DeckLane({
   commanderHint,
   onSetQty,
   onSwapArt,
+  displayCard,
+  onSetDisplayCard,
 }: {
   title: string;
   lane: Lane;
@@ -349,6 +359,8 @@ function DeckLane({
     nextAmount: number,
   ) => void;
   onSwapArt: (lane: Lane, entry: WebDeckCardInfo) => void;
+  displayCard: WebDeckCardInfo | null;
+  onSetDisplayCard: (entry: WebDeckCardInfo) => void;
 }) {
   // Audit fix (HIGH #6) — bucket entries by content, NOT by index.
   // Index-based bucketing meant cards re-mounted whenever a prior
@@ -423,12 +435,18 @@ function DeckLane({
                   && entry.setCode === commanderEntry.setCode
                   && entry.cardNumber === commanderEntry.cardNumber;
                 const key = `${entry.cardName}|${entry.setCode}|${entry.cardNumber}`;
+                const isDisplayCard =
+                  displayCard !== null
+                  && entry.cardName === displayCard.cardName
+                  && entry.setCode === displayCard.setCode
+                  && entry.cardNumber === displayCard.cardNumber;
                 return (
                   <li key={key}>
                     <CardRow
                       entry={entry}
                       card={byName.get(entry.cardName) ?? null}
                       isCommanderSlot={isCommanderSlot}
+                      isDisplayCard={isDisplayCard}
                       onIncrement={() =>
                         onSetQty(
                           lane, entry.cardName, entry.setCode,
@@ -450,6 +468,7 @@ function DeckLane({
                         );
                       }}
                       onSwapArt={() => onSwapArt(lane, entry)}
+                      onSetDisplayCard={() => onSetDisplayCard(entry)}
                     />
                   </li>
                 );
@@ -466,18 +485,22 @@ function CardRow({
   entry,
   card,
   isCommanderSlot,
+  isDisplayCard,
   onIncrement,
   onDecrement,
   onDelete,
   onSwapArt,
+  onSetDisplayCard,
 }: {
   entry: WebDeckCardInfo;
   card: WebCardInfo | null;
   isCommanderSlot: boolean;
+  isDisplayCard: boolean;
   onIncrement: () => void;
   onDecrement: () => void;
   onDelete: () => void;
   onSwapArt: () => void;
+  onSetDisplayCard: () => void;
 }) {
   const artUrl = scryfallArtCropUrl(entry.setCode, entry.cardNumber);
   // Audit fix (LOW) — Scryfall doesn't have art for some xmage promo
@@ -527,8 +550,29 @@ function CardRow({
           {entry.setCode} #{entry.cardNumber}
           {card ? ` · CMC ${card.manaValue}` : ''}
         </p>
+        {isDisplayCard && (
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-fuchsia-300">
+            Display card
+          </p>
+        )}
       </div>
       <div className="flex items-center gap-1 flex-shrink-0">
+        <button
+          type="button"
+          data-testid="deck-editor-display-card"
+          aria-label="Use as display card"
+          aria-pressed={isDisplayCard}
+          onClick={onSetDisplayCard}
+          title="Use this card as your non-Commander portrait"
+          className={
+            'h-6 rounded px-2 text-[10px] font-semibold uppercase tracking-wide '
+            + (isDisplayCard
+              ? 'bg-fuchsia-600 text-white'
+              : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700')
+          }
+        >
+          Face
+        </button>
         <button
           type="button"
           data-testid="deck-editor-decrement"

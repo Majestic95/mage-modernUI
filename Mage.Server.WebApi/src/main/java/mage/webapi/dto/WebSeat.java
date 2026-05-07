@@ -43,6 +43,11 @@ import java.util.List;
  *     without a submitted deck. Used by the lobby to fetch the right Scryfall art.
  * @param commanderCardNumber   collector number string of the same printing
  *     (e.g. "1", "281", "287a"). Empty when no commander.
+ * @param displayCardName       cosmetic display-card name for non-Commander
+ *     formats. Empty when unset or when commander art takes precedence.
+ * @param displayCardSetCode    set code for the chosen display-card printing.
+ * @param displayCardNumber     collector number for the chosen display-card
+ *     printing.
  */
 public record WebSeat(
         String playerName,
@@ -56,6 +61,9 @@ public record WebSeat(
         int deckSizeRequired,
         List<String> colorIdentity,
         String commanderSetCode,
-        String commanderCardNumber
+        String commanderCardNumber,
+        String displayCardName,
+        String displayCardSetCode,
+        String displayCardNumber
 ) {
 }

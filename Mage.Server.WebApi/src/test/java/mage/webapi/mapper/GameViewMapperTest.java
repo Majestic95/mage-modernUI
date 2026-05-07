@@ -98,7 +98,7 @@ class GameViewMapperTest {
     }
 
     @Test
-    void playerView_jsonShape_locksTwentyFiveFields_schema130() throws Exception {
+    void playerView_jsonShape_locksTwentyEightFields_schema133() throws Exception {
         // Schema 1.20 (slice 69a, ADR 0010 v2 D3a) added teamId.
         // Schema 1.22 (slice 70-D, ADR 0011 D5) added colorIdentity.
         // Schema 1.23 (slice 70-H, ADR 0011 D3 / ADR 0010 v2 D11(e))
@@ -116,10 +116,11 @@ class GameViewMapperTest {
                         List.of(), List.of(), null, List.of(),
                         mage.webapi.dto.stream.WebPlayerView
                                 .CONNECTION_STATE_CONNECTED,
-                        mage.webapi.dto.stream.WebPlayerView.SKIP_STATE_NONE);
+                        mage.webapi.dto.stream.WebPlayerView.SKIP_STATE_NONE,
+                        "", "", "");
         JsonNode node = JSON.valueToTree(dto);
-        assertEquals(25, node.size(),
-                "WebPlayerView must have exactly 25 fields; got: " + node);
+        assertEquals(28, node.size(),
+                "WebPlayerView must have exactly 28 fields; got: " + node);
         for (String field : List.of(
                 "playerId", "name", "life", "wins", "winsNeeded",
                 "libraryCount", "handCount", "graveyard", "exile",
@@ -127,7 +128,8 @@ class GameViewMapperTest {
                 "isHuman", "isActive", "hasPriority", "hasLeft",
                 "monarch", "initiative", "designationNames",
                 "commandList", "teamId", "colorIdentity",
-                "connectionState", "skipState")) {
+                "connectionState", "skipState",
+                "displayCardName", "displayCardSetCode", "displayCardNumber")) {
             assertTrue(node.has(field), "missing field: " + field);
         }
         assertTrue(node.get("teamId").isNull(),

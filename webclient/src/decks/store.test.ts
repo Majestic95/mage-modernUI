@@ -25,6 +25,7 @@ describe('useDecksStore', () => {
     expect(deck.name).toBe('Forest Test');
     expect(deck.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(deck.cards).toEqual([FOREST]);
+    expect(deck.displayCard).toEqual(FOREST);
     expect(useDecksStore.getState().decks).toHaveLength(1);
   });
 
@@ -73,6 +74,21 @@ describe('useDecksStore', () => {
     expect(after?.cards[0]?.cardNumber).toBe('347');
   });
 
+  it('updates display card and clears it back to first card if removed', () => {
+    const island: WebDeckCardInfo = {
+      cardName: 'Island',
+      setCode: 'M21',
+      cardNumber: '280',
+      amount: 4,
+    };
+    const deck = useDecksStore.getState().add('Pick Face', [FOREST, island]);
+    useDecksStore.getState().update(deck.id, { displayCard: island });
+    expect(useDecksStore.getState().decks[0]?.displayCard).toEqual(island);
+
+    useDecksStore.getState().update(deck.id, { cards: [FOREST] });
+    expect(useDecksStore.getState().decks[0]?.displayCard).toEqual(FOREST);
+  });
+
   it('updates a deck patch — name rename, blank falls back to Untitled', () => {
     const deck = useDecksStore.getState().add('Original', [FOREST]);
     useDecksStore.getState().update(deck.id, { name: 'Renamed' });
@@ -105,6 +121,7 @@ describe('toRequestBody', () => {
       author: 'alice',
       cards: [FOREST],
       sideboard: [],
+      displayCard: FOREST,
     });
   });
 });

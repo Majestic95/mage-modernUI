@@ -56,6 +56,43 @@ emitted newest-first; only the client interpretation was wrong. No
 
 ---
 
+## 1.33 — 2026-05-07 — Display-card portrait fields
+
+Adds cosmetic display-card metadata so non-Commander decks can choose a
+card from the mainboard as their player portrait source. Commander art
+continues to take precedence.
+
+```diff
+ // WebDeckCardLists — additive request field
+ {
+   "name": "Kuldotha Red",
+   "author": "alice",
+   "cards": [...],
+   "sideboard": [],
++  "displayCard": {
++    "cardName": "Monastery Swiftspear",
++    "setCode": "KTK",
++    "cardNumber": "118",
++    "amount": 4
++  }
+ }
+```
+
+```diff
+ // WebSeat / WebPlayerView — additive response fields
+ {
+   "playerName": "alice",
++  "displayCardName": "Monastery Swiftspear",
++  "displayCardSetCode": "KTK",
++  "displayCardNumber": "118"
+ }
+```
+
+Forward-compat: client zod schemas default missing response fields to
+empty strings and missing request `displayCard` to `null`, so rolling
+upgrades keep rendering existing Commander portraits and old non-
+Commander fallback avatars.
+
 ## 1.32 — 2026-05-08 — `isToken` flag on WebCardView (token Scryfall URL fix)
 
 Adds an additive boolean field to every `WebCardView` so the webclient

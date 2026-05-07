@@ -40,6 +40,8 @@ export interface LobbyDeck {
   commanderName: string;
   /** Scryfall-style art-crop URL or null for fallback. */
   commanderArtUrl: string | null;
+  displayCardName: string;
+  displayCardArtUrl: string | null;
   /** Mainboard size, e.g. 100. */
   mainboardSize: number;
   /** Required size for the format, e.g. 100 for Commander. */
@@ -70,6 +72,9 @@ export interface LobbySeat {
   commanderCardImageUrl: string | null;
   /** Art-crop for the portrait halo. */
   commanderArtUrl: string | null;
+  displayCardName: string;
+  displayCardArtUrl: string | null;
+  displayCardImageUrl: string | null;
   colorIdentity: LobbyColor[];
   deckName: string;
   deckSize: number;
@@ -104,6 +109,8 @@ const ATRAXA_DECK: LobbyDeck = {
   name: 'Proliferate Control',
   commanderName: "Atraxa, Praetors' Voice",
   commanderArtUrl: scryfallByName("Atraxa, Praetors' Voice", 'art_crop'),
+  displayCardName: '',
+  displayCardArtUrl: null,
   mainboardSize: 100,
   requiredSize: 100,
   colorIdentity: ['W', 'U', 'B', 'G'],
@@ -122,6 +129,8 @@ const URDRAGON_DECK: LobbyDeck = {
   name: 'Tyrant Tribal',
   commanderName: 'The Ur-Dragon',
   commanderArtUrl: scryfallByName('The Ur-Dragon', 'art_crop'),
+  displayCardName: '',
+  displayCardArtUrl: null,
   mainboardSize: 100,
   requiredSize: 100,
   colorIdentity: ['W', 'U', 'B', 'R', 'G'],
@@ -140,6 +149,8 @@ const KARN_DECK: LobbyDeck = {
   name: 'Artifact Mayhem',
   commanderName: 'Karn, Scion of Urza',
   commanderArtUrl: scryfallByName('Karn, Scion of Urza', 'art_crop'),
+  displayCardName: '',
+  displayCardArtUrl: null,
   mainboardSize: 100,
   requiredSize: 100,
   colorIdentity: [],
@@ -158,6 +169,8 @@ const TROSTANI_DECK: LobbyDeck = {
   name: 'Tokens Everywhere',
   commanderName: "Trostani, Selesnya's Voice",
   commanderArtUrl: scryfallByName("Trostani, Selesnya's Voice", 'art_crop'),
+  displayCardName: '',
+  displayCardArtUrl: null,
   mainboardSize: 100,
   requiredSize: 100,
   colorIdentity: ['W', 'G'],
@@ -192,6 +205,9 @@ export const LOBBY_FIXTURE: LobbyFixture = {
       commanderName: "Atraxa, Praetors' Voice",
       commanderCardImageUrl: scryfallByName("Atraxa, Praetors' Voice", 'normal'),
       commanderArtUrl: scryfallByName("Atraxa, Praetors' Voice", 'art_crop'),
+      displayCardName: '',
+      displayCardArtUrl: null,
+      displayCardImageUrl: null,
       colorIdentity: ['W', 'U', 'B', 'G'],
       deckName: 'Proliferate Control',
       deckSize: 100,
@@ -207,6 +223,9 @@ export const LOBBY_FIXTURE: LobbyFixture = {
       commanderName: 'Nicol Bolas, Dragon-God',
       commanderCardImageUrl: scryfallByName('Nicol Bolas, Dragon-God', 'normal'),
       commanderArtUrl: scryfallByName('Nicol Bolas, Dragon-God', 'art_crop'),
+      displayCardName: '',
+      displayCardArtUrl: null,
+      displayCardImageUrl: null,
       colorIdentity: ['U', 'B', 'R'],
       deckName: 'Everything is Mine',
       deckSize: 100,
@@ -222,6 +241,9 @@ export const LOBBY_FIXTURE: LobbyFixture = {
       commanderName: 'Kenrith, the Returned King',
       commanderCardImageUrl: scryfallByName('Kenrith, the Returned King', 'normal'),
       commanderArtUrl: scryfallByName('Kenrith, the Returned King', 'art_crop'),
+      displayCardName: '',
+      displayCardArtUrl: null,
+      displayCardImageUrl: null,
       colorIdentity: ['W', 'U', 'B', 'R', 'G'],
       deckName: 'Goodstuff Toolbox',
       deckSize: 100,
@@ -237,6 +259,9 @@ export const LOBBY_FIXTURE: LobbyFixture = {
       commanderName: '',
       commanderCardImageUrl: null,
       commanderArtUrl: null,
+      displayCardName: '',
+      displayCardArtUrl: null,
+      displayCardImageUrl: null,
       colorIdentity: [],
       deckName: '',
       deckSize: 0,

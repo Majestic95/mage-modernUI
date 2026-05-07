@@ -47,7 +47,7 @@
 import { type CSSProperties, useMemo } from 'react';
 import type { WebPlayerView } from '../api/schemas';
 import { computeHaloBackground, manaTokenForCode } from './halo';
-import { scryfallCommanderImageUrl } from './scryfall';
+import { scryfallCommanderImageUrl, scryfallPrintingImageUrl } from './scryfall';
 import { useGameStore } from './store';
 import { usePlayerCommanders } from './usePlayerCommanders';
 
@@ -139,7 +139,9 @@ export function PlayerPortrait({
       : (colorIdentitySnapshot ?? player.colorIdentity ?? []);
   const imageUrl = commander
     ? scryfallCommanderImageUrl(commander, 'art_crop')
-    : null;
+    : scryfallPrintingImageUrl(
+        player.displayCardSetCode, player.displayCardNumber, 'art_crop')
+      ?? null;
 
   const eliminated = player.hasLeft;
   const disconnected =
@@ -154,6 +156,8 @@ export function PlayerPortrait({
     ariaLabel ??
     (commander
       ? `${player.name || 'Unknown player'} portrait, commander ${commander.name}`
+      : player.displayCardName
+      ? `${player.name || 'Unknown player'} portrait, display card ${player.displayCardName}`
       : `${player.name || 'Unknown player'} portrait`);
 
   // Portrait filter for state variants. Eliminated is heavier

@@ -167,13 +167,15 @@ public final class WebApiServer {
         // for revokePriorTokensForSameUsername on successful recover.
         this.recoveryService = new mage.webapi.auth.RecoveryService(authService);
         this.lobbyService = new LobbyService(embedded);
+        this.authService.setDisplayCardRegistry(lobbyService.displayCards());
         this.deckValidationService = new DeckValidationService();
         // Slice L7 — wire the per-table broadcaster. Constructed after
         // LobbyService so the handler can read the same SeatReadyTracker
         // when rebuilding WebTable snapshots; LobbyService gets a back-
         // reference so its mutation methods can fire the broadcast.
         this.tableStreamHandler = new TableStreamHandler(
-                authService, embedded, lobbyService.readyTracker());
+                authService, embedded, lobbyService.readyTracker(),
+                lobbyService.displayCards());
         lobbyService.setStreamBroadcaster(tableStreamHandler::broadcast);
     }
 
@@ -584,7 +586,8 @@ public final class WebApiServer {
                     ? session.username() : req.name().trim();
             int skill = req.skill() == null ? 1 : req.skill();
             lobbyService.joinTable(session.upstreamSessionId(), roomId, tableId, name,
-                    skill, DeckMapper.toUpstream(req.deck()), req.password());
+                    skill, DeckMapper.toUpstream(req.deck()), req.password(),
+                    req.deck() == null ? null : req.deck().displayCard());
             ctx.status(204);
         });
         app.post("/api/rooms/{roomId}/tables/{tableId}/ai", ctx -> {
@@ -646,7 +649,8 @@ public final class WebApiServer {
             int skill = req.skill() == null ? 1 : req.skill();
             lobbyService.swapDeck(session.upstreamSessionId(), roomId, tableId,
                     name, skill, DeckMapper.toUpstream(req.deck()),
-                    req.password());
+                    req.password(),
+                    req.deck() == null ? null : req.deck().displayCard());
             ctx.status(204);
         });
         app.delete("/api/rooms/{roomId}/tables/{tableId}/seat", ctx -> {

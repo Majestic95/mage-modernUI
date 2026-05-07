@@ -418,5 +418,6 @@ describe('end-to-end printing identity through deck submission', () => {
       cardNumber: '347',
       amount: 24,
     });
+    expect(body.displayCard).toEqual(body.cards[0]);
   });
 });

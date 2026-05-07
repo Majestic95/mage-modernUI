@@ -14,7 +14,8 @@ interface Props {
 }
 
 export function CommanderPreviewPanel({ deck }: Props) {
-  const commanderName = deck?.commanderName?.trim() ?? '';
+  const commanderName =
+    deck?.commanderName?.trim() || deck?.displayCardName?.trim() || '';
   const { card, loading, error } = useScryfallCard(
     commanderName.length > 0 ? commanderName : null,
   );
@@ -33,7 +34,7 @@ export function CommanderPreviewPanel({ deck }: Props) {
           className="text-xs font-semibold uppercase text-text-primary"
           style={{ letterSpacing: '0.14em' }}
         >
-          Commander Preview
+          {deck?.commanderName ? 'Commander Preview' : 'Display Card Preview'}
         </h2>
         {loading && (
           <span
@@ -64,6 +65,7 @@ export function CommanderPreviewPanel({ deck }: Props) {
             // (older deck without setCode/cardNumber, etc.).
             imageUrl={
               chosenPrintingNormalUrl(deck.commanderArtUrl)
+              ?? chosenPrintingNormalUrl(deck.displayCardArtUrl)
               ?? card?.imageUrl
               ?? lobbyCardImageUrl(commanderName)
             }

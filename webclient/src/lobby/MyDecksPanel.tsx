@@ -132,9 +132,9 @@ function DeckRow({
         className="h-8 w-8 flex-shrink-0 overflow-hidden rounded-md"
         style={{ background: 'var(--color-bg-elevated)' }}
       >
-        {deck.commanderArtUrl ? (
+        {deck.commanderArtUrl ?? deck.displayCardArtUrl ? (
           <img
-            src={deck.commanderArtUrl}
+            src={(deck.commanderArtUrl ?? deck.displayCardArtUrl)!}
             alt=""
             loading="lazy"
             referrerPolicy="no-referrer"
@@ -152,7 +152,7 @@ function DeckRow({
           {deck.name}
         </p>
         <p className="truncate text-[10px] text-text-secondary">
-          {deck.commanderName}
+          {deck.commanderName || deck.displayCardName}
         </p>
       </div>
       <ColorPipRow colors={deck.colorIdentity} size="sm" />

@@ -32,7 +32,7 @@ export function SeatCard({ seat, isCurrentUser }: Props) {
       <div className="flex w-full flex-col items-center gap-1 pt-1">
         <LobbySeatPortrait
           name={seat.playerName}
-          artUrl={seat.commanderArtUrl}
+          artUrl={seat.commanderArtUrl ?? seat.displayCardArtUrl}
           colorIdentity={seat.colorIdentity}
           isHost={seat.isHost}
           isReady={seat.ready}
@@ -61,8 +61,8 @@ export function SeatCard({ seat, isCurrentUser }: Props) {
           the column width. This is the height-driven sizing pattern
           that lets the seat row fit any viewport. */}
       <CommanderCard
-        cardImageUrl={seat.commanderCardImageUrl}
-        commanderName={seat.commanderName}
+        cardImageUrl={seat.commanderCardImageUrl ?? seat.displayCardImageUrl}
+        commanderName={seat.commanderName || seat.displayCardName}
       />
 
       {/* Deck plate — fixed natural height. */}
@@ -70,7 +70,7 @@ export function SeatCard({ seat, isCurrentUser }: Props) {
         deckName={seat.deckName}
         size={seat.deckSize}
         required={seat.deckRequired}
-        artUrl={seat.commanderArtUrl}
+        artUrl={seat.commanderArtUrl ?? seat.displayCardArtUrl}
       />
 
       {/* Ready status — fixed natural height. */}

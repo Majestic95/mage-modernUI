@@ -14,6 +14,7 @@ import mage.webapi.SchemaVersion;
 import mage.webapi.dto.WebSeat;
 import mage.webapi.dto.WebTable;
 import mage.webapi.dto.WebTableListing;
+import mage.webapi.lobby.DisplayCardRegistry;
 import mage.webapi.lobby.SeatReadyTracker;
 
 import java.time.Instant;
@@ -51,17 +52,17 @@ public final class TableMapper {
     }
 
     public static WebTableListing listing(List<TableView> views) {
-        return listing(views, null, null, null);
+        return listing(views, null, null, null, null);
     }
 
     public static WebTableListing listing(List<TableView> views, TableManager tableManager) {
-        return listing(views, tableManager, null, null);
+        return listing(views, tableManager, null, null, null);
     }
 
     public static WebTableListing listing(List<TableView> views,
                                            TableManager tableManager,
                                            SeatReadyTracker readyTracker) {
-        return listing(views, tableManager, readyTracker, null);
+        return listing(views, tableManager, readyTracker, null, null);
     }
 
     /**
@@ -76,30 +77,47 @@ public final class TableMapper {
                                            TableManager tableManager,
                                            SeatReadyTracker readyTracker,
                                            String viewerUsername) {
+        return listing(views, tableManager, readyTracker, viewerUsername, null);
+    }
+
+    public static WebTableListing listing(List<TableView> views,
+                                           TableManager tableManager,
+                                           SeatReadyTracker readyTracker,
+                                           String viewerUsername,
+                                           DisplayCardRegistry displayCards) {
         List<WebTable> tables = views.stream()
-                .map((TableView v) -> table(v, tableManager, readyTracker, viewerUsername))
+                .map((TableView v) -> table(v, tableManager, readyTracker,
+                        viewerUsername, displayCards))
                 .toList();
         return new WebTableListing(SchemaVersion.CURRENT, tables);
     }
 
     public static WebTable table(TableView v) {
-        return table(v, null, null, null);
+        return table(v, null, null, null, null);
     }
 
     public static WebTable table(TableView v, TableManager tableManager) {
-        return table(v, tableManager, null, null);
+        return table(v, tableManager, null, null, null);
     }
 
     public static WebTable table(TableView v,
                                   TableManager tableManager,
                                   SeatReadyTracker readyTracker) {
-        return table(v, tableManager, readyTracker, null);
+        return table(v, tableManager, readyTracker, null, null);
     }
 
     public static WebTable table(TableView v,
                                   TableManager tableManager,
                                   SeatReadyTracker readyTracker,
                                   String viewerUsername) {
+        return table(v, tableManager, readyTracker, viewerUsername, null);
+    }
+
+    public static WebTable table(TableView v,
+                                  TableManager tableManager,
+                                  SeatReadyTracker readyTracker,
+                                  String viewerUsername,
+                                  DisplayCardRegistry displayCards) {
         Objects.requireNonNull(v, "TableView is null");
         Match match = lookupMatch(v.getTableId(), tableManager);
         String deckType = emptyIfNull(v.getDeckType());
@@ -149,7 +167,7 @@ public final class TableMapper {
             seats = v.getSeats().stream()
                     .map(s -> {
                         WebSeat full = seat(s, match, deckSizeRequired,
-                                readyTracker, tableId, hostUsername);
+                                readyTracker, tableId, hostUsername, displayCards);
                         return redactSeats ? redact(full) : full;
                     })
                     .toList();
@@ -198,7 +216,10 @@ public final class TableMapper {
                 full.deckSizeRequired(),
                 List.of(),  // colorIdentity redacted
                 "",   // commanderSetCode redacted
-                ""    // commanderCardNumber redacted
+                "",   // commanderCardNumber redacted
+                "",   // displayCardName redacted
+                "",   // displayCardSetCode redacted
+                ""    // displayCardNumber redacted
         );
     }
 
@@ -245,10 +266,11 @@ public final class TableMapper {
                                  int deckSizeRequired,
                                  SeatReadyTracker readyTracker,
                                  UUID tableId,
-                                 String hostUsername) {
+                                 String hostUsername,
+                                 DisplayCardRegistry displayCards) {
         if (s == null) {
             return new WebSeat("", "", false, "", 0, false, "", 0,
-                    deckSizeRequired, List.of(), "", "");
+                    deckSizeRequired, List.of(), "", "", "", "", "");
         }
         boolean occupied = s.getPlayerId() != null;
         PlayerType type = s.getPlayerType();
@@ -287,6 +309,9 @@ public final class TableMapper {
         String deckName = "";
         int deckSize = 0;
         List<String> colorIdentity = List.of();
+        String displayCardName = "";
+        String displayCardSetCode = "";
+        String displayCardNumber = "";
         if (occupied && match != null) {
             try {
                 MatchPlayer mp = match.getPlayer(s.getPlayerId());
@@ -306,6 +331,15 @@ public final class TableMapper {
                         commanderCardNumber = emptyIfNull(commander.getCardNumber());
                         colorIdentity = colorIdentityCodes(commander);
                     }
+                    DisplayCardRegistry.DisplayCard display =
+                            displayCards == null
+                                    ? null
+                                    : displayCards.forSeat(tableId, seatPlayerName(s));
+                    if (display != null && commanderName.isEmpty()) {
+                        displayCardName = display.name();
+                        displayCardSetCode = display.setCode();
+                        displayCardNumber = display.cardNumber();
+                    }
                 }
             } catch (RuntimeException ex) {
                 // Defensive — fall back to empty commander preview;
@@ -317,6 +351,9 @@ public final class TableMapper {
                 deckName = "";
                 deckSize = 0;
                 colorIdentity = List.of();
+                displayCardName = "";
+                displayCardSetCode = "";
+                displayCardNumber = "";
             }
         }
         // Slice L5 — per-seat ready state:
@@ -355,8 +392,15 @@ public final class TableMapper {
                 deckSizeRequired,
                 colorIdentity,
                 commanderSetCode,
-                commanderCardNumber
+                commanderCardNumber,
+                displayCardName,
+                displayCardSetCode,
+                displayCardNumber
         );
+    }
+
+    private static String seatPlayerName(SeatView s) {
+        return s == null ? "" : emptyIfNull(s.getPlayerName());
     }
 
     /**

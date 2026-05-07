@@ -107,6 +107,14 @@ function commanderName(deck: SavedDeck): string {
   return deck.sideboard[0]?.cardName ?? '';
 }
 
+function displayCardArt(deck: SavedDeck, kind: 'art_crop' | 'normal'): string | null {
+  const display = deck.displayCard ?? deck.cards[0] ?? null;
+  if (!display) return null;
+  return display.setCode && display.cardNumber
+    ? scryfallByPrinting(display.setCode, display.cardNumber, kind)
+    : scryfallByName(display.cardName, kind);
+}
+
 export function useLiveDecks(selectedDeckId: string | null): UseLiveDecksResult {
   const session = useAuthStore((s) => s.session);
   const savedDecks = useDecksStore((s) => s.decks);
@@ -251,12 +259,16 @@ function savedToLobbyDeck(deck: SavedDeck, isSelected: boolean): LobbyDeck {
       : cmdrName
       ? scryfallByName(cmdrName, 'art_crop')
       : null;
+  const displayCardName = deck.displayCard?.cardName ?? deck.cards[0]?.cardName ?? '';
+  const displayCardArtUrl = displayCardArt(deck, 'art_crop');
 
   return {
     id: deck.id,
     name: deck.name || 'Untitled',
     commanderName: cmdrName,
     commanderArtUrl,
+    displayCardName,
+    displayCardArtUrl,
     mainboardSize,
     requiredSize,
     colorIdentity,

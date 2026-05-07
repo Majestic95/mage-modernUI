@@ -445,6 +445,12 @@ function LobbyShell({
         selectedDeck.commanderArtUrl
           ? selectedDeck.commanderArtUrl.replace('art_crop', 'normal')
           : s.commanderCardImageUrl,
+      displayCardName: selectedDeck.displayCardName || s.displayCardName,
+      displayCardArtUrl: selectedDeck.displayCardArtUrl ?? s.displayCardArtUrl,
+      displayCardImageUrl:
+        selectedDeck.displayCardArtUrl
+          ? selectedDeck.displayCardArtUrl.replace('art_crop', 'normal')
+          : s.displayCardImageUrl,
       colorIdentity:
         selectedDeck.colorIdentity.length > 0
           ? selectedDeck.colorIdentity
@@ -528,6 +534,7 @@ function LobbyShell({
               author: session.username,
               cards,
               sideboard,
+              displayCard: saved.displayCard,
             },
           },
         },

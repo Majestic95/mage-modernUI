@@ -13,6 +13,7 @@ import mage.webapi.dto.WebTable;
 import mage.webapi.dto.stream.WebStreamFrame;
 import mage.webapi.embed.EmbeddedServer;
 import mage.webapi.lobby.SeatReadyTracker;
+import mage.webapi.lobby.DisplayCardRegistry;
 import mage.webapi.mapper.TableMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -65,6 +66,7 @@ public final class TableStreamHandler implements Consumer<WsConfig> {
     private final AuthService authService;
     private final EmbeddedServer embedded;
     private final SeatReadyTracker readyTracker;
+    private final DisplayCardRegistry displayCards;
 
     /** tableId → set of subscribed contexts. */
     private final ConcurrentHashMap<UUID, Set<WsContext>> subscribers =
@@ -93,10 +95,12 @@ public final class TableStreamHandler implements Consumer<WsConfig> {
 
     public TableStreamHandler(AuthService authService,
                                EmbeddedServer embedded,
-                               SeatReadyTracker readyTracker) {
+                               SeatReadyTracker readyTracker,
+                               DisplayCardRegistry displayCards) {
         this.authService = authService;
         this.embedded = embedded;
         this.readyTracker = readyTracker;
+        this.displayCards = displayCards;
     }
 
     /** Slice L7 review — install the Origin allowlist post-ctor. */
@@ -298,7 +302,8 @@ public final class TableStreamHandler implements Consumer<WsConfig> {
             mage.game.Table table = tcOpt.get().getTable();
             if (table == null) return null;
             TableView view = new TableView(table);
-            return TableMapper.table(view, tableManager, readyTracker);
+            return TableMapper.table(view, tableManager, readyTracker,
+                    null, displayCards);
         } catch (RuntimeException ex) {
             LOG.warn("Snapshot failed for table {}: {}", tableId, ex.getMessage());
             return null;

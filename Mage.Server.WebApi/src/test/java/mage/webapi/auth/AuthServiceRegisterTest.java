@@ -117,7 +117,8 @@ class AuthServiceRegisterTest {
         assertEquals(201, r.statusCode(), r.body());
         JsonNode body = JSON.readTree(r.body());
         assertEquals(name, body.get("username").asText());
-        assertEquals("1.32", body.get("schemaVersion").asText());
+        assertEquals(mage.webapi.SchemaVersion.CURRENT,
+                body.get("schemaVersion").asText());
         // F24 — register now ALWAYS issues a one-time recovery code.
         // Format is 24 Crockford-base32 chars in 6 groups of 4
         // separated by hyphens; total 29 chars including hyphens.

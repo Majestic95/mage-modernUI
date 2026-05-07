@@ -21,12 +21,15 @@ export interface SavedDeck {
    * this to {@code []} so older saves continue to load.
    */
   sideboard: WebDeckCardInfo[];
+  /** Cosmetic portrait card for non-Commander formats. */
+  displayCard: WebDeckCardInfo | null;
 }
 
 interface DeckUpdatePatch {
   name?: string;
   cards?: WebDeckCardInfo[];
   sideboard?: WebDeckCardInfo[];
+  displayCard?: WebDeckCardInfo | null;
 }
 
 interface DecksState {
@@ -66,6 +69,7 @@ export const useDecksStore = create<DecksState>()(
           createdAt: new Date().toISOString(),
           cards,
           sideboard,
+          displayCard: defaultDisplayCard(cards),
         };
         set((s) => ({ decks: [deck, ...s.decks] }));
         return deck;
@@ -80,6 +84,7 @@ export const useDecksStore = create<DecksState>()(
           patch.name === undefined
           && patch.cards === undefined
           && patch.sideboard === undefined
+          && patch.displayCard === undefined
         ) {
           return;
         }
@@ -93,6 +98,10 @@ export const useDecksStore = create<DecksState>()(
                 : (patch.name.trim() || 'Untitled deck'),
               cards: patch.cards ?? d.cards,
               sideboard: patch.sideboard ?? d.sideboard,
+              displayCard: reconcileDisplayCard(
+                patch.displayCard === undefined ? d.displayCard : patch.displayCard,
+                patch.cards ?? d.cards,
+              ),
             };
           }),
         }));
@@ -104,12 +113,12 @@ export const useDecksStore = create<DecksState>()(
     }),
     {
       name: 'mage-decks',
-      version: 2,
+      version: 3,
       storage: createJSONStorage(() => localStorage),
-      // Migration v1 → v2: backfill sideboard:[] on every existing deck.
+      // Migration v1 → v2: backfill sideboard:[].
+      // Migration v2 → v3: backfill displayCard from the first mainboard card.
       migrate: (persisted, version) => {
         if (!persisted || typeof persisted !== 'object') return persisted;
-        if (version >= 2) return persisted as DecksState;
         const state = persisted as { decks?: Partial<SavedDeck>[] };
         const decks = (state.decks ?? []).map((d) => ({
           id: d.id ?? uuid(),
@@ -117,6 +126,9 @@ export const useDecksStore = create<DecksState>()(
           createdAt: d.createdAt ?? new Date().toISOString(),
           cards: d.cards ?? [],
           sideboard: d.sideboard ?? [],
+          displayCard: version >= 3
+            ? reconcileDisplayCard(d.displayCard ?? null, d.cards ?? [])
+            : defaultDisplayCard(d.cards ?? []),
         }));
         return { ...state, decks } as DecksState;
       },
@@ -134,5 +146,22 @@ export function toRequestBody(deck: SavedDeck, author: string): WebDeckCardLists
     author,
     cards: deck.cards,
     sideboard: deck.sideboard ?? [],
+    displayCard: reconcileDisplayCard(deck.displayCard ?? null, deck.cards),
   };
+}
+
+function defaultDisplayCard(cards: WebDeckCardInfo[]): WebDeckCardInfo | null {
+  return cards[0] ?? null;
+}
+
+function reconcileDisplayCard(
+  displayCard: WebDeckCardInfo | null,
+  cards: WebDeckCardInfo[],
+): WebDeckCardInfo | null {
+  if (!displayCard) return defaultDisplayCard(cards);
+  return cards.find((c) =>
+    c.cardName === displayCard.cardName
+    && c.setCode === displayCard.setCode
+    && c.cardNumber === displayCard.cardNumber,
+  ) ?? defaultDisplayCard(cards);
 }

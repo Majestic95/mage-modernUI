@@ -11,11 +11,14 @@ import java.util.List;
  * @param author    deck author (user-supplied)
  * @param cards     mainboard
  * @param sideboard sideboard; empty list when not applicable
+ * @param displayCard cosmetic portrait card for non-Commander formats;
+ *     nullable/absent for older clients and decks with no explicit pick
  */
 public record WebDeckCardLists(
         String name,
         String author,
         List<WebDeckCardInfo> cards,
-        List<WebDeckCardInfo> sideboard
+        List<WebDeckCardInfo> sideboard,
+        WebDeckCardInfo displayCard
 ) {
 }

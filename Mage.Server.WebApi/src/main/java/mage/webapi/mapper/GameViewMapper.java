@@ -29,6 +29,7 @@ import mage.webapi.dto.stream.WebMultiAmountInfo;
 import mage.webapi.dto.stream.WebMultiAmountRow;
 import mage.webapi.dto.stream.WebPlayerView;
 import mage.webapi.dto.stream.WebStartGameInfo;
+import mage.webapi.lobby.DisplayCardRegistry;
 import mage.webapi.upstream.MultiplayerFrameContext;
 
 import java.util.ArrayList;
@@ -225,6 +226,8 @@ public final class GameViewMapper {
             throw new IllegalArgumentException("PlayerView must not be null");
         }
         MultiplayerFrameContext effective = mpCtx == null ? MultiplayerFrameContext.EMPTY : mpCtx;
+        DisplayCardRegistry.DisplayCard displayCard =
+                effective.displayCardFor(pv.getPlayerId());
         return new WebPlayerView(
                 pv.getPlayerId() == null ? "" : pv.getPlayerId().toString(),
                 nullToEmpty(pv.getName()),
@@ -273,7 +276,10 @@ public final class GameViewMapper {
                 // one is set at a time (each PASS action calls
                 // resetPlayerPassedActions() first); empty string
                 // means no skip is armed.
-                deriveSkipState(pv)
+                deriveSkipState(pv),
+                displayCard == null ? "" : displayCard.name(),
+                displayCard == null ? "" : displayCard.setCode(),
+                displayCard == null ? "" : displayCard.cardNumber()
         );
     }
 

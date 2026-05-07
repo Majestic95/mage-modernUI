@@ -102,3 +102,14 @@ export function scryfallCommanderImageUrl(
   const num = encodeURIComponent(collectorNumber);
   return `https://api.scryfall.com/cards/${set}/${num}?format=image&version=${version}`;
 }
+
+export function scryfallPrintingImageUrl(
+  setCode: string,
+  cardNumber: string,
+  version: ScryfallVersion = 'art_crop',
+): string | null {
+  if (!setCode || !cardNumber) return null;
+  const set = setCode.toLowerCase();
+  const num = encodeURIComponent(cardNumber);
+  return `https://api.scryfall.com/cards/${set}/${num}?format=image&version=${version}`;
+}

@@ -18,6 +18,7 @@ import mage.server.Session;
 import mage.server.TableController;
 import mage.view.TableView;
 import mage.webapi.WebApiException;
+import mage.webapi.dto.WebDeckCardInfo;
 import mage.webapi.dto.WebMatchOptionsUpdate;
 import mage.webapi.dto.WebRoomRef;
 import mage.webapi.dto.WebTable;
@@ -83,6 +84,7 @@ public final class LobbyService {
 
     private final EmbeddedServer embedded;
     private final SeatReadyTracker readyTracker;
+    private final DisplayCardRegistry displayCards;
     /**
      * Slice L7 — pushed-to on every mutation that changes the wire
      * shape (ready toggles, deck swaps, seat join/leave, settings
@@ -94,18 +96,31 @@ public final class LobbyService {
     private volatile TableStreamBroadcaster streamBroadcaster;
 
     public LobbyService(EmbeddedServer embedded) {
-        this(embedded, new SeatReadyTracker());
+        this(embedded, new SeatReadyTracker(), new DisplayCardRegistry());
     }
 
     /** Visible-for-test ctor — test pins a tracker instance. */
     LobbyService(EmbeddedServer embedded, SeatReadyTracker readyTracker) {
+        this(embedded, readyTracker, new DisplayCardRegistry());
+    }
+
+    /** Visible-for-test ctor — test pins tracker + cosmetic sidecar. */
+    LobbyService(EmbeddedServer embedded, SeatReadyTracker readyTracker,
+                 DisplayCardRegistry displayCards) {
         this.embedded = embedded;
         this.readyTracker = readyTracker;
+        this.displayCards = displayCards == null
+                ? new DisplayCardRegistry()
+                : displayCards;
     }
 
     /** Visible for {@link mage.webapi.ws.TableStreamHandler} + tests. */
     public SeatReadyTracker readyTracker() {
         return readyTracker;
+    }
+
+    public DisplayCardRegistry displayCards() {
+        return displayCards;
     }
 
     /** Slice L7 — minimal broadcast contract; satisfied by TableStreamHandler. */
@@ -180,7 +195,8 @@ public final class LobbyService {
                     views == null ? List.of() : views,
                     embedded.managerFactory().tableManager(),
                     readyTracker,
-                    viewerUsername
+                    viewerUsername,
+                    displayCards
             );
         } catch (MageException ex) {
             throw upstream("listing tables", ex);
@@ -203,7 +219,9 @@ public final class LobbyService {
                     view.getTableId(), roomId, hostUsername);
             return TableMapper.table(view,
                     embedded.managerFactory().tableManager(),
-                    readyTracker);
+                    readyTracker,
+                    null,
+                    displayCards);
         } catch (MageException ex) {
             throw upstream("creating table", ex);
         }
@@ -237,7 +255,8 @@ public final class LobbyService {
      * password, no seats, already joined.
      */
     public void joinTable(String upstreamSessionId, UUID roomId, UUID tableId,
-                          String name, int skill, DeckCardLists deck, String password) {
+                          String name, int skill, DeckCardLists deck, String password,
+                          WebDeckCardInfo displayCard) {
         preValidateDeck(tableId, deck);
 
         boolean ok;
@@ -256,6 +275,7 @@ public final class LobbyService {
             throw new WebApiException(422, "UPSTREAM_REJECTED",
                     "Server rejected the join (wrong password, table full, already seated, etc.).");
         }
+        displayCards.set(tableId, name, displayCard);
     }
 
     /**
@@ -444,6 +464,7 @@ public final class LobbyService {
         }
         // Slice L5 — drop the ready-tracker entry; the table is gone.
         readyTracker.removeTable(tableId);
+        displayCards.removeTable(tableId);
         LOG.info("Table removed: {} from room {}", tableId, roomId);
         // Slice L7 — broadcast so any subscribers get a final close
         // (the handler returns null from currentSnapshot for a removed
@@ -476,6 +497,7 @@ public final class LobbyService {
         }
         if (username != null) {
             readyTracker.setReady(tableId, username, false);
+            displayCards.remove(tableId, username);
         }
         broadcast(tableId);
     }
@@ -552,7 +574,7 @@ public final class LobbyService {
      */
     public void swapDeck(String upstreamSessionId, UUID roomId, UUID tableId,
                           String name, int skill, DeckCardLists deck,
-                          String password) {
+                          String password, WebDeckCardInfo displayCard) {
         UUID userId = embedded.managerFactory().sessionManager()
                 .getSession(upstreamSessionId)
                 .map(Session::getUserId)
@@ -578,7 +600,8 @@ public final class LobbyService {
         if (!tc.hasPlayer(userId)) {
             // First-time take seat path. joinTable runs deck pre-
             // validation; if it throws, swap fails cleanly.
-            joinTable(upstreamSessionId, roomId, tableId, name, skill, deck, password);
+            joinTable(upstreamSessionId, roomId, tableId, name, skill, deck,
+                    password, displayCard);
             // joinTable doesn't touch the ready tracker, so nothing
             // to reset here on first-take.
             broadcast(tableId);
@@ -637,6 +660,7 @@ public final class LobbyService {
             }
         }
         readyTracker.setReady(tableId, username, false);
+        displayCards.set(tableId, username, displayCard);
         LOG.info("Deck swapped: table={} user={} room={} (name/skill/password "
                 + "only consumed on first-take path)",
                 tableId, username, roomId);
@@ -850,7 +874,9 @@ public final class LobbyService {
         TableView freshView = new TableView(table);
         result = TableMapper.table(freshView,
                 embedded.managerFactory().tableManager(),
-                readyTracker);
+                readyTracker,
+                null,
+                displayCards);
         } // end synchronized (tc)
         // Slice L5 — settings change resets all guests to un-ready.
         // Host stays ready (preserved via resetToHost). Outside the

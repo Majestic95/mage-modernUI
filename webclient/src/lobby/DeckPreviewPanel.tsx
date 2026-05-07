@@ -79,7 +79,7 @@ export function DeckPreviewPanel({ deck, statsLoading = false }: Props) {
         style={{ gridTemplateColumns: 'auto 1fr' }}
       >
         <CommanderCardArt
-          name={deck.commanderName}
+          name={deck.commanderName || deck.displayCardName}
           // Audit fix — honor the user's chosen commander printing.
           // deck.commanderArtUrl is the printing-aware art_crop URL;
           // promote it to the normal-version URL for the card image.
@@ -87,7 +87,8 @@ export function DeckPreviewPanel({ deck, statsLoading = false }: Props) {
           // URL isn't available (older deck without setCode/cardNumber).
           imageUrl={
             chosenPrintingNormalUrl(deck.commanderArtUrl)
-            ?? lobbyCardImageUrl(deck.commanderName)
+            ?? chosenPrintingNormalUrl(deck.displayCardArtUrl)
+            ?? lobbyCardImageUrl(deck.commanderName || deck.displayCardName)
           }
         />
 

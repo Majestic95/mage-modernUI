@@ -138,6 +138,20 @@ function mapSeat(
     : webSeat.commanderName
     ? scryfallByName(webSeat.commanderName, 'normal')
     : null;
+  const hasDisplayPrinting =
+    !!webSeat.displayCardSetCode && !!webSeat.displayCardNumber;
+  const displayArtUrl = hasDisplayPrinting
+    ? scryfallByPrinting(
+        webSeat.displayCardSetCode, webSeat.displayCardNumber, 'art_crop')
+    : webSeat.displayCardName
+    ? scryfallByName(webSeat.displayCardName, 'art_crop')
+    : null;
+  const displayCardUrl = hasDisplayPrinting
+    ? scryfallByPrinting(
+        webSeat.displayCardSetCode, webSeat.displayCardNumber, 'normal')
+    : webSeat.displayCardName
+    ? scryfallByName(webSeat.displayCardName, 'normal')
+    : null;
   const subtitle = subtitleFromCommanderName(webSeat.commanderName);
   return {
     seatId: `${webTable.tableId}:${index}`,
@@ -149,6 +163,9 @@ function mapSeat(
     commanderName: webSeat.commanderName,
     commanderCardImageUrl: cardUrl,
     commanderArtUrl: artUrl,
+    displayCardName: webSeat.displayCardName,
+    displayCardArtUrl: displayArtUrl,
+    displayCardImageUrl: displayCardUrl,
     colorIdentity,
     deckName: webSeat.deckName,
     deckSize: webSeat.deckSize,

@@ -113,6 +113,8 @@ public final class AuthService implements AutoCloseable {
 
     private final EmbeddedServer embedded;
     private final WebSessionStore store;
+    private mage.webapi.lobby.DisplayCardRegistry displayCards =
+            new mage.webapi.lobby.DisplayCardRegistry();
     private final ScheduledExecutorService sweeper;
     /**
      * Slice F21.3 (audit Sec B2) — per-username login-attempt
@@ -216,6 +218,13 @@ public final class AuthService implements AutoCloseable {
      */
     public int disconnectTimeoutSeconds() {
         return disconnectTimeoutSeconds;
+    }
+
+    public void setDisplayCardRegistry(
+            mage.webapi.lobby.DisplayCardRegistry displayCards) {
+        if (displayCards != null) {
+            this.displayCards = displayCards;
+        }
     }
 
     /**
@@ -1115,7 +1124,7 @@ public final class AuthService implements AutoCloseable {
         // single-use hint for the auto-pass code path.
         WebSocketCallbackHandler handler =
                 new WebSocketCallbackHandler(
-                        username, embedded, this, upstreamSessionId);
+                        username, embedded, this, upstreamSessionId, displayCards);
         handlersBySessionId.put(upstreamSessionId, handler);
         // Slice 70-X.13 (Wave 3) — overwrite-OK on the username key.
         // If a stale OLD handler is still indexed here under the same

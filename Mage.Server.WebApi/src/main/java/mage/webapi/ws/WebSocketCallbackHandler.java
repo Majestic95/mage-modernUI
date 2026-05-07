@@ -15,6 +15,7 @@ import mage.players.Player;
 import mage.webapi.auth.AuthService;
 import mage.webapi.dto.stream.WebStreamFrame;
 import mage.webapi.embed.EmbeddedServer;
+import mage.webapi.lobby.DisplayCardRegistry;
 import mage.webapi.mapper.ChatMessageMapper;
 import mage.webapi.mapper.DeckViewMapper;
 import mage.webapi.mapper.GameViewMapper;
@@ -216,6 +217,7 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
      * then no-ops, but the dialogClear-TIMEOUT broadcast still fires.
      */
     private final String upstreamSessionId;
+    private final DisplayCardRegistry displayCards;
     /**
      * Slice 70-H.5 — per-game record of the most recent prompt method
      * sent to this handler's user. Set on every prompt frame
@@ -388,7 +390,7 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
      * that exercise mapping in isolation use this overload.
      */
     public WebSocketCallbackHandler(String username) {
-        this(username, null, null, null);
+        this(username, null, null, null, null);
     }
 
     /**
@@ -399,7 +401,7 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
      * that don't stand up an AuthService.
      */
     public WebSocketCallbackHandler(String username, EmbeddedServer embedded) {
-        this(username, embedded, null, null);
+        this(username, embedded, null, null, null);
     }
 
     /**
@@ -411,7 +413,7 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
     public WebSocketCallbackHandler(String username,
                                     EmbeddedServer embedded,
                                     AuthService authService) {
-        this(username, embedded, authService, null);
+        this(username, embedded, authService, null, null);
     }
 
     /**
@@ -431,10 +433,19 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
                                     EmbeddedServer embedded,
                                     AuthService authService,
                                     String upstreamSessionId) {
+        this(username, embedded, authService, upstreamSessionId, null);
+    }
+
+    public WebSocketCallbackHandler(String username,
+                                    EmbeddedServer embedded,
+                                    AuthService authService,
+                                    String upstreamSessionId,
+                                    DisplayCardRegistry displayCards) {
         this.username = username;
         this.embedded = embedded;
         this.authService = authService;
         this.upstreamSessionId = upstreamSessionId;
+        this.displayCards = displayCards;
     }
 
     /**
@@ -1257,6 +1268,9 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
                 liveGame.getState(), liveGame, recipientPlayerId, null);
         Map<UUID, UUID> stackHint = StackCardIdHint.extract(liveGame);
         MultiplayerFrameContext mpCtx = MultiplayerFrameContext.extract(liveGame);
+        if (displayCards != null) {
+            mpCtx = mpCtx.withDisplayCards(displayCards.snapshotForGame(liveGame));
+        }
         if (authService != null) {
             final UUID self = recipientPlayerId;
             final UUID frameGameId = gameId;
@@ -1613,6 +1627,9 @@ public final class WebSocketCallbackHandler implements AsynchInvokerCallbackHand
         MultiplayerFrameContext mpCtx = liveGame == null
                 ? MultiplayerFrameContext.EMPTY
                 : MultiplayerFrameContext.extract(liveGame);
+        if (liveGame != null && displayCards != null) {
+            mpCtx = mpCtx.withDisplayCards(displayCards.snapshotForGame(liveGame));
+        }
         UUID recipientPlayerId = liveGame == null
                 ? null
                 : resolveRecipientPlayerId(gameId);
