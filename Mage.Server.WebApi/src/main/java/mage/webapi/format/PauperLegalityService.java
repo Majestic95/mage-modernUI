@@ -5,55 +5,99 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Loads Scryfall's oracle_cards bulk-data once at startup and exposes
- * a name → {@link PauperLegality} lookup. T2.A scope: build + unit
- * tests; not yet wired into deck validation. T2.B will plug
- * {@link #legalityOf(String)} into the Pauper validator override.
+ * Loads Scryfall's oracle_cards bulk-data at startup and exposes a
+ * name → {@link PauperLegality} lookup. T2.A scope: build + unit tests.
+ * T2.B wires {@link #legalityOf(String)} into the Pauper validator
+ * override. T2.C adds a scheduled background refresh so the banlist
+ * tracks Wizards' B&amp;R updates without redeploying.
  *
  * <p>Design decisions:
  * <ul>
- *   <li><b>Load-once-at-startup, in-memory after.</b> The
- *       oracle_cards file is ~30-40 MB on disk; the parsed map is
- *       ~1-2 MB heap (just String keys and a 5-value enum). Re-parsing
- *       on every validation would be measurably slow; lazy-loading on
- *       first call would push a 5-10 second hitch onto the first
- *       deck validator request. Boot-time load makes the cost
- *       deterministic.</li>
- *   <li><b>Stale-cache fallback.</b> If the network is down at boot
- *       and a stale cache exists on disk, we use it and log WARN.
- *       Refusing to serve any Pauper validation because Scryfall's
- *       CDN had a hiccup would be worse for users than serving a
- *       banlist that's a day or two behind. If both network and cache
- *       fail, the constructor throws and the caller decides — T2.B
- *       will fall back to upstream's rarity-based check.</li>
- *   <li><b>Immutable result map.</b> {@link Map#copyOf(Map)} freezes
- *       the parsed map; lookups are concurrent-safe without locking.
- *       The map field is {@code final}; replacing it would require a
- *       new service instance.</li>
+ *   <li><b>Initial load is synchronous.</b> Boot-time load makes the
+ *       cost deterministic and lets the validator override fail fast
+ *       (or fall back) before the first deck-validation request lands.
+ *       </li>
+ *   <li><b>Refresh is scheduled.</b> A daemon
+ *       {@link ScheduledExecutorService} re-fetches oracle_cards at a
+ *       configurable interval (default 24h). Wizards announces Pauper
+ *       bans on the Format Panel's schedule (typically Monday); a
+ *       daily refresh tracks them within ≤24h. Pass
+ *       {@link Duration#ZERO} (or negative) to disable scheduling and
+ *       keep the historical "load once at boot" behavior — used by
+ *       tests so unit-test JVMs don't accumulate timer threads.</li>
+ *   <li><b>Atomic snapshot swap.</b> Refresh writes a brand-new
+ *       {@link LegalitySnapshot} into the {@link AtomicReference};
+ *       readers ({@link #legalityOf}) see either the old map paired
+ *       with the old timestamp or the new map paired with the new
+ *       timestamp — never a torn pair. The map inside each snapshot
+ *       is itself immutable ({@link Map#copyOf}), so no further
+ *       synchronization is needed for concurrent readers.</li>
+ *   <li><b>Refresh failure keeps the prior snapshot.</b>
+ *       {@link #refreshOnce()} catches {@link Throwable} (not just
+ *       {@link IOException}) defensively. A
+ *       {@link ScheduledExecutorService} suppresses all subsequent
+ *       ticks if a runnable throws — catching everything keeps the
+ *       loop alive across any unexpected fault, and a transient
+ *       Scryfall outage just leaves us serving the previous snapshot
+ *       until the next tick succeeds.</li>
+ *   <li><b>Stale-cache fallback at boot.</b> If the network is down at
+ *       startup and a stale cache exists on disk, we use it and log
+ *       WARN. Refusing to serve any Pauper validation because Scryfall
+ *       had a hiccup would be worse for users than serving a banlist
+ *       a day or two behind. If both network and cache fail, the
+ *       constructor throws and the caller decides — T2.B falls back to
+ *       upstream's rarity-based check.</li>
  * </ul>
  */
-public final class PauperLegalityService {
+public final class PauperLegalityService implements AutoCloseable {
 
     private static final Logger LOG = LoggerFactory.getLogger(PauperLegalityService.class);
 
-    private final Map<String, PauperLegality> legalities;
-    private final Instant lastRefreshedAt;
+    private final LegalityCacheStore store;
+    private final ScryfallBulkDataClient client;
+    private final AtomicReference<LegalitySnapshot> snapshot;
+    private final ScheduledExecutorService refreshExecutor;
 
     /**
      * Production constructor. Wires a real
-     * {@link ScryfallBulkDataClient} that talks to {@code api.scryfall.com}.
+     * {@link ScryfallBulkDataClient} that talks to {@code api.scryfall.com}
+     * and starts a background refresh on the supplied interval.
      *
      * @param cacheDir directory for the on-disk cache file. Created
      *                 if missing.
+     * @param refreshInterval how often to re-fetch from Scryfall after
+     *                        the initial boot load. Pass
+     *                        {@link Duration#ZERO} or a negative
+     *                        duration to disable scheduling and keep
+     *                        the load-once-at-boot behavior.
      * @throws LegalityDataUnavailableException if both the network
      *         fetch and any stale cache are unusable.
      */
-    public PauperLegalityService(Path cacheDir) {
-        this(new LegalityCacheStore(cacheDir), new ScryfallBulkDataClient(), false);
+    public PauperLegalityService(Path cacheDir, Duration refreshInterval) {
+        this(new LegalityCacheStore(cacheDir), new ScryfallBulkDataClient(),
+                false, refreshInterval);
+    }
+
+    /**
+     * Backwards-compat overload for tests written before T2.C. Delegates
+     * to the 4-arg test seam with {@link Duration#ZERO} (no scheduled
+     * refresh). Kept so T2.B's {@code WebApiPauperValidatorTest}
+     * continues to compile after the scheduling field landed; do NOT
+     * call this from new tests — be explicit about the interval.
+     */
+    PauperLegalityService(LegalityCacheStore store,
+                          ScryfallBulkDataClient client,
+                          boolean skipNetwork) {
+        this(store, client, skipNetwork, Duration.ZERO);
     }
 
     /**
@@ -62,6 +106,10 @@ public final class PauperLegalityService {
      * The {@code skipNetwork} flag short-circuits the
      * fetch-on-stale-cache path so tests with a fresh fixture file
      * never reach for the wire.
+     *
+     * <p>Tests pass {@link Duration#ZERO} for {@code refreshInterval}
+     * to disable the scheduler — unit tests don't want a background
+     * thread polling Scryfall while they assert against a fixture.
      *
      * <p>This shape was chosen over an extracted {@code LegalityLoader}
      * interface because there's exactly one production wire-bound
@@ -72,12 +120,37 @@ public final class PauperLegalityService {
      */
     PauperLegalityService(LegalityCacheStore store,
                           ScryfallBulkDataClient client,
-                          boolean skipNetwork) {
+                          boolean skipNetwork,
+                          Duration refreshInterval) {
+        this.store = store;
+        this.client = client;
         var loaded = loadOrRefresh(store, client, skipNetwork);
-        this.legalities = Map.copyOf(loaded.map);
-        this.lastRefreshedAt = loaded.refreshedAt;
+        this.snapshot = new AtomicReference<>(
+                new LegalitySnapshot(Map.copyOf(loaded.map), loaded.refreshedAt));
         LOG.info("PauperLegalityService initialized with {} card entries (refreshed at {})",
-                legalities.size(), lastRefreshedAt);
+                loaded.map.size(), loaded.refreshedAt);
+
+        if (refreshInterval != null
+                && !refreshInterval.isZero()
+                && !refreshInterval.isNegative()) {
+            this.refreshExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "webapi-pauper-legality-refresh");
+                t.setDaemon(true);
+                return t;
+            });
+            long millis = refreshInterval.toMillis();
+            // initialDelay == period — the snapshot we just loaded IS
+            // a fresh refresh from the operator's standpoint; the next
+            // tick should fire one full interval later.
+            // Milliseconds (not seconds) so sub-second test intervals
+            // like Duration.ofMillis(50) don't truncate to 0 and crash
+            // scheduleAtFixedRate's "period > 0" precondition.
+            this.refreshExecutor.scheduleAtFixedRate(
+                    this::refreshOnce, millis, millis, TimeUnit.MILLISECONDS);
+            LOG.info("Scheduled Scryfall legality refresh every {}ms", millis);
+        } else {
+            this.refreshExecutor = null;
+        }
     }
 
     /**
@@ -90,12 +163,12 @@ public final class PauperLegalityService {
         if (cardName == null) {
             return PauperLegality.UNKNOWN;
         }
-        return legalities.getOrDefault(cardName, PauperLegality.UNKNOWN);
+        return snapshot.get().legalities().getOrDefault(cardName, PauperLegality.UNKNOWN);
     }
 
     /** Number of card names in the in-memory map. Diagnostic-only. */
     public int knownCardCount() {
-        return legalities.size();
+        return snapshot.get().legalities().size();
     }
 
     /**
@@ -104,7 +177,53 @@ public final class PauperLegalityService {
      * file's mtime (cache hit).
      */
     public Instant lastRefreshedAt() {
-        return lastRefreshedAt;
+        return snapshot.get().refreshedAt();
+    }
+
+    /**
+     * Re-fetch oracle_cards from Scryfall and atomically swap the
+     * snapshot on success. On failure, log WARN and leave the prior
+     * snapshot in place — readers continue to see consistent data
+     * until the next tick succeeds.
+     *
+     * <p>Package-private so tests can drive a manual refresh without
+     * waiting for the scheduler.
+     *
+     * <p><b>Catches {@link Throwable}, not just {@link IOException}.</b>
+     * A scheduled runnable that throws suppresses all future ticks of
+     * its own schedule. Catching everything keeps the refresh loop
+     * alive across any unexpected fault — corrupted JSON, OOM during
+     * parse, an I/O glitch we didn't anticipate. The trade-off is
+     * intentional: refresh failure is operationally a non-event (we
+     * still have the prior snapshot); a permanently dead refresh
+     * thread is a silent operational regression that wouldn't surface
+     * until the next redeploy.
+     */
+    void refreshOnce() {
+        LOG.debug("Scheduled Scryfall legality refresh starting");
+        try {
+            Path cacheFile = store.filePath();
+            client.fetchOracleCardsTo(cacheFile);
+            Map<String, PauperLegality> map = client.parseLegalitiesFromFile(cacheFile);
+            snapshot.set(new LegalitySnapshot(Map.copyOf(map), Instant.now()));
+            LOG.info("Scheduled Scryfall refresh succeeded ({} entries)", map.size());
+        } catch (Throwable ex) {
+            LOG.warn("Scheduled Scryfall refresh failed; keeping prior snapshot: {}",
+                    ex.getMessage());
+        }
+    }
+
+    /**
+     * Stops the background refresh executor (if any). Idempotent and
+     * null-safe. Called from {@link mage.webapi.server.WebApiServer#stop()}
+     * so the JVM shutdown hook doesn't leak a daemon thread when
+     * tests rebuild a server mid-process.
+     */
+    @Override
+    public void close() {
+        if (refreshExecutor != null) {
+            refreshExecutor.shutdownNow();
+        }
     }
 
     private static LoadResult loadOrRefresh(LegalityCacheStore store,
@@ -173,6 +292,17 @@ public final class PauperLegalityService {
 
     /** Tuple of (parsed map, wall-clock at load). */
     private record LoadResult(Map<String, PauperLegality> map, Instant refreshedAt) {
+    }
+
+    /**
+     * Atomic-swap unit holding both the immutable lookup map and its
+     * wall-clock refresh time. Stored in a single
+     * {@link AtomicReference} so a refresh can publish them as a pair
+     * — no consumer ever sees a map from one fetch paired with a
+     * timestamp from another.
+     */
+    private record LegalitySnapshot(Map<String, PauperLegality> legalities,
+                                     Instant refreshedAt) {
     }
 
     /**

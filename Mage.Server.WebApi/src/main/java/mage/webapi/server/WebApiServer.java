@@ -46,6 +46,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -148,6 +149,13 @@ public final class WebApiServer {
     }
     private List<String> corsOrigins = List.of();
     private Javalin app;
+    /**
+     * T2.C — held so {@link #stop()} can call {@code close()} on the
+     * service and release its scheduled refresh executor. {@code null}
+     * when the override was skipped (no cache dir provided, or
+     * Scryfall data unavailable at boot).
+     */
+    private PauperLegalityService legalityService;
 
     public WebApiServer(EmbeddedServer embedded) {
         this.embedded = Objects.requireNonNull(embedded, "embedded server is required");
@@ -211,19 +219,38 @@ public final class WebApiServer {
      *                 {@code null} to skip the override entirely
      *                 (useful for tests that don't want Scryfall in
      *                 the loop).
+     * @param refreshInterval how often to re-fetch oracle_cards from
+     *                        Scryfall after the initial boot load.
+     *                        T2.C — pass
+     *                        {@link java.time.Duration#ofHours(long)
+     *                        Duration.ofHours(24)} for the canonical
+     *                        production cadence; {@link Duration#ZERO}
+     *                        disables the scheduler (load-once-at-boot).
      */
-    public WebApiServer withLegalityCacheDir(Path cacheDir) {
+    public WebApiServer withLegalityCacheDir(Path cacheDir, Duration refreshInterval) {
         if (cacheDir == null) {
             LOG.info("Pauper-validator override skipped (no cache dir provided)");
             return this;
         }
+        // Defensive: if a caller wires this twice, close the prior
+        // service so its scheduled-refresh executor doesn't leak. The
+        // canonical WebApiMain path calls this exactly once, but the
+        // builder API doesn't enforce that and a re-invocation would
+        // otherwise leave an orphaned daemon thread the JVM-shutdown
+        // hook can't reach.
+        if (this.legalityService != null) {
+            LOG.warn("withLegalityCacheDir called more than once; closing prior service");
+            this.legalityService.close();
+            this.legalityService = null;
+        }
         try {
-            PauperLegalityService service = new PauperLegalityService(cacheDir);
-            WebApiPauperValidator.setService(service);
+            this.legalityService = new PauperLegalityService(cacheDir, refreshInterval);
+            WebApiPauperValidator.setService(legalityService);
             DeckValidatorFactory.instance.addDeckType(
                     "Constructed - Pauper", WebApiPauperValidator.class);
             LOG.info("Pauper validator overridden with Scryfall-backed service "
-                    + "({} entries)", service.knownCardCount());
+                    + "({} entries, refresh interval {})",
+                    legalityService.knownCardCount(), refreshInterval);
         } catch (PauperLegalityService.LegalityDataUnavailableException ex) {
             LOG.warn("Could not load Scryfall legality data; Pauper falls back "
                     + "to upstream rarity-walk + 38-card banlist", ex);
@@ -323,11 +350,26 @@ public final class WebApiServer {
     }
 
     public void stop() {
-        if (app != null) {
-            app.stop();
-            app = null;
+        try {
+            if (app != null) {
+                app.stop();
+                app = null;
+            }
+        } finally {
+            // T2.C — release the Pauper legality service's scheduled
+            // refresh executor whether or not Javalin shutdown threw.
+            // Wrapped in try-finally so a Jetty hiccup can't leak the
+            // daemon thread (visible across test rebuilds of the
+            // server within a single JVM).
+            try {
+                if (legalityService != null) {
+                    legalityService.close();
+                    legalityService = null;
+                }
+            } finally {
+                authService.close();
+            }
         }
-        authService.close();
     }
 
     // ---------- routes ----------

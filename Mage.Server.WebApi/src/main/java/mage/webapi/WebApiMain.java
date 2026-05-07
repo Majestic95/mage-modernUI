@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -36,6 +37,13 @@ import java.util.stream.Collectors;
  *       network fetch and any cached file are unusable at boot, the
  *       override is silently skipped and upstream's stock Pauper
  *       validator stays in place.</li>
+ *   <li>{@code XMAGE_LEGALITY_REFRESH_INTERVAL_HOURS} — how often the
+ *       Pauper-validator override re-fetches Scryfall's
+ *       {@code oracle_cards} after the initial boot load. Integer
+ *       hours. Default {@code 24} (matches the Pauper Format Panel's
+ *       Monday B&amp;R cadence). Pass {@code 0} to disable scheduling
+ *       and keep the boot snapshot until the next process restart.
+ *       Negative values rejected at boot.</li>
  * </ul>
  */
 public final class WebApiMain {
@@ -45,6 +53,13 @@ public final class WebApiMain {
     private static final int DEFAULT_PORT = 18080;
     private static final String DEFAULT_CONFIG_PATH = "../Mage.Server/config/config.xml";
     private static final String DEFAULT_LEGALITY_CACHE_DIR = "mage-stack/cache";
+    /**
+     * Default Pauper legality refresh interval. 24h matches Wizards'
+     * Pauper Format Panel B&amp;R cadence (announcements typically
+     * Mondays); a daily refresh tracks them within ≤24h without
+     * needing a redeploy.
+     */
+    private static final int DEFAULT_LEGALITY_REFRESH_HOURS = 24;
 
     private WebApiMain() {
     }
@@ -75,11 +90,13 @@ public final class WebApiMain {
         EmbeddedServer embedded = EmbeddedServer.boot(configPath);
 
         Path legalityCacheDir = readLegalityCacheDir();
-        LOG.info("Pauper legality cache dir resolved to {}", legalityCacheDir);
+        Duration legalityRefreshInterval = readLegalityRefreshInterval();
+        LOG.info("Pauper legality cache dir resolved to {}, refresh interval {}",
+                legalityCacheDir, legalityRefreshInterval);
 
         WebApiServer server = new WebApiServer(embedded)
                 .allowCorsOrigins(corsOrigins)
-                .withLegalityCacheDir(legalityCacheDir)
+                .withLegalityCacheDir(legalityCacheDir, legalityRefreshInterval)
                 .start(port);
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             LOG.info("Shutdown signal received; stopping WebApi");
@@ -91,6 +108,26 @@ public final class WebApiMain {
     private static String readConfigPath() {
         String env = System.getenv("XMAGE_CONFIG_PATH");
         return (env == null || env.isBlank()) ? DEFAULT_CONFIG_PATH : env.trim();
+    }
+
+    private static Duration readLegalityRefreshInterval() {
+        String env = System.getenv("XMAGE_LEGALITY_REFRESH_INTERVAL_HOURS");
+        if (env == null || env.isBlank()) {
+            return Duration.ofHours(DEFAULT_LEGALITY_REFRESH_HOURS);
+        }
+        int hours;
+        try {
+            hours = Integer.parseInt(env.trim());
+        } catch (NumberFormatException ex) {
+            throw new IllegalArgumentException(
+                    "XMAGE_LEGALITY_REFRESH_INTERVAL_HOURS must be an integer (0 to "
+                            + "disable, positive for hour-period), got: " + env, ex);
+        }
+        if (hours < 0) {
+            throw new IllegalArgumentException(
+                    "XMAGE_LEGALITY_REFRESH_INTERVAL_HOURS must be >= 0, got: " + hours);
+        }
+        return Duration.ofHours(hours);
     }
 
     private static Path readLegalityCacheDir() {
