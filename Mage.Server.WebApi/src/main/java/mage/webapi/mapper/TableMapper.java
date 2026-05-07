@@ -201,8 +201,13 @@ public final class TableMapper {
      * occupancy + ready state stay visible (so the table list still
      * reads "alice / open / open / open"); the deck-builder details
      * are scrubbed.
+     *
+     * <p>Package-private so {@code TableMapperTest} can lock the
+     * snapshot of which fields get zeroed (audit-fix M2 gate). Adding
+     * a new {@link WebSeat} field that carries deck-builder info MUST
+     * either appear in this redaction or be argued for in a comment.
      */
-    private static WebSeat redact(WebSeat full) {
+    static WebSeat redact(WebSeat full) {
         if (full == null) return null;
         return new WebSeat(
                 full.playerName(),

@@ -3,6 +3,7 @@ package mage.webapi.mapper;
 import mage.cards.Card;
 import mage.cards.decks.Deck;
 import mage.filter.FilterMana;
+import mage.webapi.dto.WebSeat;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -206,6 +207,58 @@ class TableMapperTest {
         // Default stub returns null for getColorIdentity (non-primitive).
         Card c = stubCard("UnknownCard", "1");
         assertTrue(TableMapper.colorIdentityCodesForTest(c).isEmpty());
+    }
+
+    // ---- redact (audit-fix M2 gate) — passworded-table seat visibility
+    // filter MUST scrub every deck-builder field, including the schema
+    // 1.33 displayCard triple. The test pins the field-by-field snapshot
+    // so a future seat-field addition that omits redaction breaks loudly.
+
+    @Test
+    void redact_zerosAllDeckBuilderFields_andKeepsIdentityFields() {
+        WebSeat full = new WebSeat(
+                "alice",            // playerName — kept
+                "Human",            // playerType — kept
+                true,               // occupied — kept
+                "Atraxa, Praetors' Voice",  // commanderName — redact
+                281,                // commanderImageNumber — redact
+                true,               // ready — kept
+                "Proliferate",      // deckName — redact
+                100,                // deckSize — redact
+                100,                // deckSizeRequired — kept
+                List.of("W", "U", "B", "G"), // colorIdentity — redact
+                "C16",              // commanderSetCode — redact
+                "281",              // commanderCardNumber — redact
+                "Monastery Swiftspear", // displayCardName — redact
+                "KTK",              // displayCardSetCode — redact
+                "118"               // displayCardNumber — redact
+        );
+
+        WebSeat redacted = TableMapper.redact(full);
+
+        // Identity fields — kept verbatim.
+        assertEquals("alice", redacted.playerName());
+        assertEquals("Human", redacted.playerType());
+        assertTrue(redacted.occupied());
+        assertTrue(redacted.ready());
+        assertEquals(100, redacted.deckSizeRequired());
+
+        // Deck-builder fields — scrubbed.
+        assertEquals("", redacted.commanderName());
+        assertEquals(0, redacted.commanderImageNumber());
+        assertEquals("", redacted.deckName());
+        assertEquals(0, redacted.deckSize());
+        assertTrue(redacted.colorIdentity().isEmpty());
+        assertEquals("", redacted.commanderSetCode());
+        assertEquals("", redacted.commanderCardNumber());
+        assertEquals("", redacted.displayCardName());
+        assertEquals("", redacted.displayCardSetCode());
+        assertEquals("", redacted.displayCardNumber());
+    }
+
+    @Test
+    void redact_nullSeat_returnsNull() {
+        assertNull(TableMapper.redact(null));
     }
 
     @Test
