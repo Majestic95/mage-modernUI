@@ -54,6 +54,33 @@ describe('TargetingArrow', () => {
     );
   });
 
+  it('defaults opacity to 1 when omitted (cursor-tracking call sites unchanged)', () => {
+    render(
+      <TargetingArrow
+        source={{ x: 0, y: 0 }}
+        to={{ x: 10, y: 10 }}
+      />,
+    );
+    const path = screen
+      .getByTestId('targeting-arrow')
+      .querySelector('path[marker-end]');
+    expect(path?.getAttribute('opacity')).toBe('1');
+  });
+
+  it('forwards an explicit opacity onto the path', () => {
+    render(
+      <TargetingArrow
+        source={{ x: 0, y: 0 }}
+        to={{ x: 10, y: 10 }}
+        opacity={0.25}
+      />,
+    );
+    const path = screen
+      .getByTestId('targeting-arrow')
+      .querySelector('path[marker-end]');
+    expect(path?.getAttribute('opacity')).toBe('0.25');
+  });
+
   it('respects a custom color override', () => {
     render(
       <TargetingArrow

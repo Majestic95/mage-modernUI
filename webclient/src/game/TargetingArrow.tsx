@@ -33,9 +33,16 @@ interface Props {
   to?: { x: number; y: number };
   /** CSS color. Defaults to {@code --color-targeting-arrow}. */
   color?: string;
+  /**
+   * Per-arrow opacity (0..1). Defaults to 1. Used by CombatArrows'
+   * hover-isolation: non-hovered arrows render at ~0.25 while the
+   * hovered arrow stays at 1. Cursor-tracking targeting arrows
+   * (target selection) omit this prop and render at full opacity.
+   */
+  opacity?: number;
 }
 
-export function TargetingArrow({ source, to, color }: Props) {
+export function TargetingArrow({ source, to, color, opacity }: Props) {
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
 
   // Track cursor only when the arrow is active AND no static
@@ -102,6 +109,12 @@ export function TargetingArrow({ source, to, color }: Props) {
         fill="none"
         strokeLinecap="round"
         markerEnd="url(#targeting-arrow-head)"
+        opacity={opacity ?? 1}
+        // Opacity-only fade — exempt from prefers-reduced-motion per
+        // WCAG 2.1 SC 2.3.3 (motion targets translation/parallax/
+        // autoplay, not fades). Short 120ms keeps hover-isolation
+        // feedback snappy without feeling instant.
+        style={{ transition: 'opacity 120ms ease-out' }}
       />
     </svg>
   );

@@ -1,5 +1,13 @@
+// File-size discipline (CLAUDE.md): this file is currently 655 LOC,
+// over the 500 hard cap. The combat-arrow surface was extracted to
+// CombatArrows.tsx (2026-05-08), dropping the original 865 LOC
+// down. The remaining content is the focal-stack-fan rendering
+// (legacy strip + REDESIGN focal mode + halo / glow helpers +
+// ZoneBrowser mount); the next planned split is StackFan into its
+// own sibling file once another slice has reason to touch it.
+// Tracking down toward the cap incrementally rather than churning
+// the surface for size alone.
 import {
-  useLayoutEffect,
   useMemo,
   useState,
   type CSSProperties,
@@ -8,7 +16,6 @@ import { AnimatePresence, motion } from 'framer-motion';
 import type {
   WebCardView,
   WebCombatGroupView,
-  WebPermanentView,
 } from '../api/schemas';
 import { slow, SLOWMO } from '../animation/debug';
 import {
@@ -19,7 +26,7 @@ import { CardFace } from './CardFace';
 import { HoverCardDetail } from './HoverCardDetail';
 import { REDESIGN } from '../featureFlags';
 import { computeHaloBackground } from './halo';
-import { TargetingArrow } from './TargetingArrow';
+import { CombatArrows } from './CombatArrows';
 import { useIsCinematicCastActive } from '../animation/useIsCinematicCastActive';
 import { ZoneBrowser } from './ZoneBrowser';
 
@@ -643,223 +650,6 @@ function FocalCard({
   );
 }
 
-// ---------------------------------------------------------------
-// Combat-arrow mode (§3.2)
-// ---------------------------------------------------------------
-
-interface ArrowSpec {
-  key: string;
-  source: { x: number; y: number };
-  target: { x: number; y: number };
-  color: string;
-}
-
-/**
- * Slice 70-N — renders an SVG TargetingArrow per attacker→defender
- * (or attacker→blocker) pair. Source / target coordinates come from
- * {@code getBoundingClientRect()} on the BattlefieldTile DOM nodes
- * (matched by {@code data-permanent-id}) and the defending player's
- * PlayerPortrait (matched by {@code data-portrait-target-player-id};
- * Tech critic IMPORTANT-4 fix — picture-catalog §3.2 specs "portrait"
- * not the outer pod).
- */
-function CombatArrows({ combat }: { combat: readonly WebCombatGroupView[] }) {
-  const arrows = useCombatArrowGeometry(combat);
-
-  if (arrows.length === 0) {
-    return (
-      <div
-        data-testid="stack-zone"
-        data-stack-mode="combat-pending"
-        aria-hidden="true"
-      />
-    );
-  }
-
-  return (
-    <div
-      data-testid="stack-zone"
-      data-stack-mode="combat"
-      data-arrow-count={arrows.length}
-      aria-hidden="true"
-    >
-      {arrows.map((spec) => (
-        <TargetingArrow
-          key={spec.key}
-          source={spec.source}
-          to={spec.target}
-          color={spec.color}
-        />
-      ))}
-    </div>
-  );
-}
-
-/**
- * Slice 70-N — measures combat-arrow source / target geometry from
- * the DOM. Re-runs on combat changes, window resize, and document
- * resize-observed mutations. Returns viewport coordinates (matches
- * the {@code position: fixed} TargetingArrow SVG).
- *
- * <p><b>Critic-pass changes:</b>
- * <ul>
- *   <li>Tech critic CRITICAL-2 — {@code cancelled} flag in the
- *       cleanup guards {@code setArrows} from firing after the
- *       effect tears down. Combat array identity changes every
- *       gameUpdate frame, so this race window is real.</li>
- *   <li>Tech critic CRITICAL-2 — combat groups are reduced to a
- *       string fingerprint via {@link useCombatFingerprint} so
- *       reference-identity churn on equal-content frames doesn't
- *       force a fresh measurement run.</li>
- *   <li>Tech critic CRITICAL-3 — scroll listener is {@code passive:
- *       true} without {@code capture: true} so a game-log
- *       auto-scroll during combat doesn't trigger a measurement
- *       cascade.</li>
- * </ul>
- */
-function useCombatArrowGeometry(
-  combat: readonly WebCombatGroupView[],
-): readonly ArrowSpec[] {
-  const [arrows, setArrows] = useState<readonly ArrowSpec[]>([]);
-
-  // Reduce the combat array to a stable fingerprint so referentially-
-  // distinct but content-equal frames (the typical gameUpdate case
-  // — server emits a fresh JSON-deserialized array each tick) don't
-  // tear down + re-create the listener stack.
-  const combatFingerprint = useCombatFingerprint(combat);
-
-  useLayoutEffect(() => {
-    let cancelled = false;
-    const measure = () => {
-      if (cancelled) return;
-      const next: ArrowSpec[] = [];
-      for (const group of combat) {
-        const attackerEntries = Object.values(group.attackers);
-        const blockerEntries = Object.values(group.blockers);
-        for (const attacker of attackerEntries) {
-          const sourceRect = rectForPermanent(attacker);
-          if (!sourceRect) continue;
-          const sourcePoint = centerOf(sourceRect);
-
-          if (blockerEntries.length > 0) {
-            for (const blocker of blockerEntries) {
-              const targetRect = rectForPermanent(blocker);
-              if (!targetRect) continue;
-              next.push({
-                key: `${attacker.card.id}->${blocker.card.id}`,
-                source: sourcePoint,
-                target: centerOf(targetRect),
-                color: 'var(--color-targeting-arrow)',
-              });
-            }
-          } else {
-            const targetRect = rectForPlayer(group.defenderId);
-            if (!targetRect) continue;
-            next.push({
-              key: `${attacker.card.id}->player:${group.defenderId}`,
-              source: sourcePoint,
-              target: centerOf(targetRect),
-              color: 'var(--color-targeting-arrow)',
-            });
-          }
-        }
-      }
-      if (!cancelled) setArrows(next);
-    };
-
-    measure();
-
-    const onChange = () => measure();
-    window.addEventListener('resize', onChange);
-    // Tech critic CRITICAL-3 — passive scroll listener at the document
-    // level (no capture). Avoids cascade fires from nested scrollers
-    // like the game log's auto-scroll. Also passive so the browser's
-    // scroll path stays jank-free.
-    window.addEventListener('scroll', onChange, { passive: true });
-
-    const observer =
-      typeof ResizeObserver !== 'undefined'
-        ? new ResizeObserver(onChange)
-        : null;
-    if (observer) observer.observe(document.body);
-
-    return () => {
-      cancelled = true;
-      window.removeEventListener('resize', onChange);
-      window.removeEventListener('scroll', onChange);
-      if (observer) observer.disconnect();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [combatFingerprint]);
-
-  return arrows;
-}
-
-/**
- * Slice 70-N — derives a stable string fingerprint from a combat
- * group array. Two arrays with the same attackers/blockers/defenders
- * produce the same fingerprint regardless of object identity, so
- * the geometry effect doesn't churn on every gameUpdate.
- *
- * <p>Uses card IDs only (not full views) because all the geometry
- * hook needs is the set of attacker/blocker UUIDs to query and the
- * defender's UUID — no rendering state.
- */
-function useCombatFingerprint(
-  combat: readonly WebCombatGroupView[],
-): string {
-  return useMemo(() => {
-    return combat
-      .map((g) => {
-        const att = Object.keys(g.attackers).sort().join(',');
-        const blk = Object.keys(g.blockers).sort().join(',');
-        return `${g.defenderId}|${att}|${blk}`;
-      })
-      .join(';');
-  }, [combat]);
-}
-
-function rectForPermanent(perm: WebPermanentView): DOMRect | null {
-  const id = perm.card.id;
-  if (!id) return null;
-  const selector = `[data-permanent-id="${cssEscape(id)}"]`;
-  const node = document.querySelector(selector);
-  if (!node) return null;
-  return (node as HTMLElement).getBoundingClientRect();
-}
-
-function rectForPlayer(playerId: string): DOMRect | null {
-  if (!playerId) return null;
-  // Slice 70-N Tech critic IMPORTANT-4 — prefer the PlayerPortrait
-  // selector (catalog §3.2 says arrow target is the "portrait").
-  // Falls back to the pod-level data-player-id when the portrait
-  // isn't mounted (e.g. PlayerArea legacy branch, or a future pod
-  // variant that suppresses the portrait).
-  const portraitSelector = `[data-portrait-target-player-id="${cssEscape(playerId)}"]`;
-  const portrait = document.querySelector(portraitSelector);
-  if (portrait) return (portrait as HTMLElement).getBoundingClientRect();
-
-  const podSelector = `[data-player-id="${cssEscape(playerId)}"]`;
-  const pod = document.querySelector(podSelector);
-  if (!pod) return null;
-  return (pod as HTMLElement).getBoundingClientRect();
-}
-
-function centerOf(rect: DOMRect): { x: number; y: number } {
-  return {
-    x: rect.left + rect.width / 2,
-    y: rect.top + rect.height / 2,
-  };
-}
-
-function cssEscape(value: string): string {
-  if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
-    return CSS.escape(value);
-  }
-  // Inside a quoted attribute selector value the only characters
-  // that need escaping are `"` and `\`. Engine UUIDs match
-  // /[0-9a-f-]/i which contains neither — this branch is dead code
-  // for the documented identifier scheme but defends against future
-  // identifier formats that include a quote or backslash.
-  return value.replace(/(["\\])/g, '\\$1');
-}
+// Combat-arrow mode (§3.2) extracted to ./CombatArrows.tsx
+// (2026-05-08). The component is imported above and used in the
+// `if (stackEmpty && combatActive)` branch of FocalContent.
