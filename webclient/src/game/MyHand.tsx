@@ -253,17 +253,26 @@ export function MyHand({
             {disabledHint}
           </span>
         )}
-        {/* 2026-05-04 — minimize-hand chevron. Sits at top-right of
-            the hand strip so it's reliably above the cards in the
-            visible area (cards are anchored to the lower portion
-            with `top-2`). pointer-events-auto since the parent
-            section is pointer-events-none (slice F14). */}
+        {/* 2026-05-04 — minimize-hand chevron. Sits at top-LEFT of
+            the hand strip. Originally placed at top-right but the
+            floating CommanderDamageTracker dock (game-table-commander-
+            damage-floating-dock at `fixed bottom-36 right-3 z-30 w-360px
+            max-h-55vh`) overlaps the same right-edge corridor at the
+            same z-30 with later DOM order, fully covering the chevron
+            in tabletop. Reported by user 2026-05-06. The right corridor
+            is increasingly claimed (tracker + action dock + GameLog pill
+            + local mana pool); the left corridor is open above the
+            local-command-zone (which is bottom-anchored) and the
+            'Empty hand.' hint (which lives inside the pl-[140px] inner
+            card-row, 140px right of the outer container's left edge).
+            pointer-events-auto since the parent section is
+            pointer-events-none (slice F14). */}
         {onToggleHidden && (
           <button
             type="button"
             data-testid="hand-minimize-toggle"
             onClick={onToggleHidden}
-            className="absolute right-2 top-2 z-20 h-6 w-6 rounded bg-zinc-800/85 hover:bg-zinc-700 border border-zinc-700 text-zinc-100 text-xs leading-none flex items-center justify-center pointer-events-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-400"
+            className="absolute left-2 top-2 z-20 h-6 w-6 rounded bg-zinc-800/85 hover:bg-zinc-700 border border-zinc-700 text-zinc-100 text-xs leading-none flex items-center justify-center pointer-events-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-400"
             aria-label="Minimize hand"
             title="Minimize hand"
           >
