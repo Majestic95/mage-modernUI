@@ -301,6 +301,8 @@ export function PreLobbyModal({
         {formatInfo && (
           <div
             data-testid="pre-lobby-format-info"
+            role="status"
+            aria-live="polite"
             className="-mt-3 flex flex-col gap-1 rounded-md border px-3 py-2 text-xs"
             style={{
               borderColor: 'var(--color-card-frame-default)',

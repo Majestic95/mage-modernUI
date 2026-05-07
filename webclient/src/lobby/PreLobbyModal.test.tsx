@@ -358,10 +358,18 @@ describe('PreLobbyModal', () => {
     // Default selection is Commander (matches SERVER_STATE) — info
     // panel should be visible with a banlist link.
     expect(screen.getByTestId('pre-lobby-format-info')).toBeInTheDocument();
-    expect(screen.getByTestId('pre-lobby-format-banlist')).toHaveAttribute(
+    const banlistLink = screen.getByTestId('pre-lobby-format-banlist');
+    expect(banlistLink).toHaveAttribute(
       'href',
       expect.stringContaining('mtgcommander.net'),
     );
+    // External-link safety pins: target=_blank lets the link open in
+    // a new tab; rel="noopener noreferrer" prevents the new tab from
+    // accessing window.opener (security) and from leaking referrer.
+    // A future refactor that drops either would silently regress
+    // until this assertion fails.
+    expect(banlistLink).toHaveAttribute('target', '_blank');
+    expect(banlistLink).toHaveAttribute('rel', 'noopener noreferrer');
 
     // Switch to the unknown format — panel should disappear.
     await user.selectOptions(
