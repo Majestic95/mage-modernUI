@@ -568,7 +568,7 @@ function CardRow({
             aria-label="Use as display card"
             aria-pressed={isDisplayCard}
             onClick={onSetDisplayCard}
-            title="Use this card as your non-Commander portrait"
+            title="Use this card as your portrait (non-Commander formats only)"
             className={
               'h-6 rounded px-2 text-[10px] font-semibold uppercase tracking-wide '
               + (isDisplayCard
@@ -576,7 +576,7 @@ function CardRow({
                 : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700')
             }
           >
-            Face
+            Display
           </button>
         )}
         <button

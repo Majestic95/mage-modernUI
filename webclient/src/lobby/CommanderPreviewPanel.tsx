@@ -280,7 +280,7 @@ function EmptyState() {
         border: '1px solid var(--color-card-frame-default)',
       }}
     >
-      No commander selected
+      No card selected
     </div>
   );
 }

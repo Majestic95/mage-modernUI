@@ -119,7 +119,7 @@ function CommanderCard({
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center p-3 text-center text-xs text-text-muted">
-            {commanderName || 'No commander selected'}
+            {commanderName || 'No card selected'}
           </div>
         )}
       </div>
