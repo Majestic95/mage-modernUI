@@ -8,8 +8,8 @@
  * StackZone.test.tsx combat-mode block. This file adds coverage for
  * the new behavior the slice introduces.
  */
-import { afterEach, describe, expect, it } from 'vitest';
-import { render, fireEvent } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, render, fireEvent } from '@testing-library/react';
 import {
   webCardViewSchema,
   webCombatGroupViewSchema,
@@ -19,6 +19,35 @@ import {
   type WebPermanentView,
 } from '../api/schemas';
 import { CombatArrows } from './CombatArrows';
+
+class ResizeObserverMock {
+  static instances: ResizeObserverMock[] = [];
+  readonly observed = new Set<Element>();
+  readonly callback: ResizeObserverCallback;
+
+  constructor(callback: ResizeObserverCallback) {
+    this.callback = callback;
+    ResizeObserverMock.instances.push(this);
+  }
+
+  observe = (target: Element) => {
+    this.observed.add(target);
+  };
+
+  unobserve = (target: Element) => {
+    this.observed.delete(target);
+  };
+
+  disconnect = () => {
+    this.observed.clear();
+  };
+
+  fire = () => {
+    this.callback([], this as unknown as ResizeObserver);
+  };
+}
+
+const originalResizeObserver = globalThis.ResizeObserver;
 
 function makeCard(overrides: Partial<WebCardView> = {}): WebCardView {
   return webCardViewSchema.parse({
@@ -83,26 +112,35 @@ function makeCombatGroup(
  * getBoundingClientRect() returns deterministic coordinates in
  * jsdom (which would otherwise return all zeros).
  */
-function mountPermanentNode(id: string, rect: { x: number; y: number; w: number; h: number }) {
+function mountPermanentNode(
+  id: string,
+  rect: { x: number; y: number; w: number; h: number },
+) {
   const node = document.createElement('div');
   node.setAttribute('data-permanent-id', id);
+  let currentRect = rect;
   Object.defineProperty(node, 'getBoundingClientRect', {
     value: () =>
       ({
-        x: rect.x,
-        y: rect.y,
-        left: rect.x,
-        top: rect.y,
-        right: rect.x + rect.w,
-        bottom: rect.y + rect.h,
-        width: rect.w,
-        height: rect.h,
+        x: currentRect.x,
+        y: currentRect.y,
+        left: currentRect.x,
+        top: currentRect.y,
+        right: currentRect.x + currentRect.w,
+        bottom: currentRect.y + currentRect.h,
+        width: currentRect.w,
+        height: currentRect.h,
         toJSON: () => ({}),
       }) as DOMRect,
     configurable: true,
   });
   document.body.appendChild(node);
-  return node;
+  return {
+    node,
+    setRect: (next: { x: number; y: number; w: number; h: number }) => {
+      currentRect = next;
+    },
+  };
 }
 
 function mountPortraitNode(playerId: string, rect: { x: number; y: number; w: number; h: number }) {
@@ -127,7 +165,16 @@ function mountPortraitNode(playerId: string, rect: { x: number; y: number; w: nu
   return node;
 }
 
+beforeEach(() => {
+  vi.useFakeTimers();
+  ResizeObserverMock.instances = [];
+  globalThis.ResizeObserver =
+    ResizeObserverMock as unknown as typeof ResizeObserver;
+});
+
 afterEach(() => {
+  vi.useRealTimers();
+  globalThis.ResizeObserver = originalResizeObserver;
   document.body.innerHTML = '';
 });
 
@@ -210,6 +257,95 @@ describe('CombatArrows — endpoint fanning', () => {
   });
 });
 
+// --- Dynamic geometry -------------------------------------------------
+
+describe('CombatArrows — dynamic geometry', () => {
+  it('remeasures attacker position when a nested scroll container scrolls', async () => {
+    const defenderId = '00000000-0000-0000-0000-00000000aaaa';
+    const attackerNode = mountPermanentNode('att-1', {
+      x: 100,
+      y: 300,
+      w: 80,
+      h: 112,
+    });
+    mountPortraitNode(defenderId, { x: 1000, y: 100, w: 60, h: 60 });
+
+    const attacker = makeCard({ id: 'att-1', cardId: 'att-1' });
+    const group = makeCombatGroup({
+      defenderId,
+      attackers: { 'att-1': makePerm(attacker) },
+    });
+    const { container } = render(<CombatArrows combat={[group]} />);
+
+    const path = () => container.querySelector('path[marker-end]');
+    expect(path()?.getAttribute('d')).toMatch(/^M 140 356 /);
+
+    attackerNode.setRect({ x: 100, y: 180, w: 80, h: 112 });
+    const scroller = document.createElement('div');
+    document.body.appendChild(scroller);
+    scroller.dispatchEvent(new Event('scroll', { bubbles: false }));
+
+    await act(async () => {
+      vi.runOnlyPendingTimers();
+    });
+
+    expect(path()?.getAttribute('d')).toMatch(/^M 140 236 /);
+  });
+
+  it('observes combat endpoint nodes and remeasures on resize observer callbacks', async () => {
+    const defenderId = '00000000-0000-0000-0000-00000000aaaa';
+    const attackerNode = mountPermanentNode('att-1', {
+      x: 100,
+      y: 300,
+      w: 80,
+      h: 112,
+    });
+    const portraitNode = mountPortraitNode(defenderId, {
+      x: 1000,
+      y: 100,
+      w: 60,
+      h: 60,
+    });
+
+    const attacker = makeCard({ id: 'att-1', cardId: 'att-1' });
+    const group = makeCombatGroup({
+      defenderId,
+      attackers: { 'att-1': makePerm(attacker) },
+    });
+    const { container } = render(<CombatArrows combat={[group]} />);
+    const observer = ResizeObserverMock.instances[0]!;
+    expect(observer.observed.has(document.body)).toBe(true);
+    expect(observer.observed.has(attackerNode.node)).toBe(true);
+    expect(observer.observed.has(portraitNode)).toBe(true);
+
+    const path = () => container.querySelector('path[marker-end]');
+    expect(path()?.getAttribute('d')).toMatch(/^M 140 356 /);
+    attackerNode.setRect({ x: 100, y: 180, w: 80, h: 112 });
+    observer.fire();
+
+    await act(async () => {
+      vi.runOnlyPendingTimers();
+    });
+
+    expect(path()?.getAttribute('d')).toMatch(/^M 140 236 /);
+  });
+
+  it('cancels a queued measurement after unmount', () => {
+    const defenderId = '00000000-0000-0000-0000-00000000aaaa';
+    mountPermanentNode('att-1', { x: 100, y: 300, w: 80, h: 112 });
+    mountPortraitNode(defenderId, { x: 1000, y: 100, w: 60, h: 60 });
+    const attacker = makeCard({ id: 'att-1', cardId: 'att-1' });
+    const group = makeCombatGroup({
+      defenderId,
+      attackers: { 'att-1': makePerm(attacker) },
+    });
+    const { unmount } = render(<CombatArrows combat={[group]} />);
+    document.dispatchEvent(new Event('scroll', { bubbles: false }));
+    unmount();
+    expect(() => vi.runOnlyPendingTimers()).not.toThrow();
+  });
+});
+
 // --- Hover isolation -------------------------------------------------
 
 describe('CombatArrows — hover isolation', () => {
@@ -237,7 +373,12 @@ describe('CombatArrows — hover isolation', () => {
 
   it('dims non-matching arrows when an attacker is hovered', () => {
     const defenderId = '00000000-0000-0000-0000-00000000aaaa';
-    const att1Node = mountPermanentNode('att-1', { x: 100, y: 200, w: 80, h: 112 });
+    const { node: att1Node } = mountPermanentNode('att-1', {
+      x: 100,
+      y: 200,
+      w: 80,
+      h: 112,
+    });
     mountPermanentNode('att-2', { x: 300, y: 200, w: 80, h: 112 });
     mountPortraitNode(defenderId, { x: 1200, y: 100, w: 60, h: 60 });
 
@@ -274,7 +415,12 @@ describe('CombatArrows — hover isolation', () => {
 
   it('full-opacity restored when hover moves to a non-combat element', () => {
     const defenderId = '00000000-0000-0000-0000-00000000aaaa';
-    const att1Node = mountPermanentNode('att-1', { x: 100, y: 200, w: 80, h: 112 });
+    const { node: att1Node } = mountPermanentNode('att-1', {
+      x: 100,
+      y: 200,
+      w: 80,
+      h: 112,
+    });
     mountPermanentNode('att-2', { x: 300, y: 200, w: 80, h: 112 });
     mountPortraitNode(defenderId, { x: 1200, y: 100, w: 60, h: 60 });
 

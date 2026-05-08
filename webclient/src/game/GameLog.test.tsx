@@ -250,6 +250,19 @@ describe('GameLog — REDESIGN flag on (slice 70-L)', () => {
     expect(cardName).toHaveStyle({ color: '#90EE90' });
   });
 
+  it('cleans upstream hint tokens and entities in redesigned log text', () => {
+    flagState.redesign = true;
+    storeState.gameLog = [
+      makeEntry({
+        message: 'ICON_RESTRICTCan&apos;t block &mdash; tapped.',
+      }),
+    ];
+    render(<GameLog players={[makePlayer({ name: 'alice' })]} />);
+    const entry = screen.getByTestId('game-log-entry');
+    expect(entry).toHaveTextContent("Can't block — tapped.");
+    expect(entry).not.toHaveTextContent('ICON_RESTRICT');
+  });
+
   it('renders a placeholder gutter when actor cannot be resolved', () => {
     // Engine emits messages without a player-name leading word
     // — e.g. event narration, system announcements. Layout

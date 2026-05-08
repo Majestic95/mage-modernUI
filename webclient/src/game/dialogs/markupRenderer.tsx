@@ -75,6 +75,50 @@ export function renderUpstreamMarkup(text: string): React.ReactNode {
 }
 
 /**
+ * Normalize upstream text before markup tokenization. Card rules and
+ * hints are shared with the Swing client; some strings contain Swing-
+ * side icon placeholders (ICON_BAD, ICON_RESTRICT, etc.) and HTML
+ * entities such as &mdash;. The web UI renders its own styling, so raw
+ * placeholders should never leak into player-facing text.
+ */
+export function normalizeUpstreamText(text: string): string {
+  return decodeHtmlEntities(stripHintIconTokens(text));
+}
+
+const HINT_ICON_RE =
+  /(^|[^A-Z0-9_])ICON_(?:GOOD|BAD|RESTRICT|REQUIRE|DUNGEON_ROOM_CURRENT|DUNGEON_ROOM_NEXT)\s*/g;
+
+function stripHintIconTokens(text: string): string {
+  return text.replace(HINT_ICON_RE, '$1');
+}
+
+function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&mdash;/gi, '—')
+    .replace(/&ndash;/gi, '–')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&#(\d+);/g, (_match, code: string) => {
+      const value = Number(code);
+      return isValidCodePoint(value) ? String.fromCodePoint(value) : _match;
+    })
+    .replace(/&#x([0-9a-f]+);/gi, (_match, code: string) => {
+      const value = Number.parseInt(code, 16);
+      return isValidCodePoint(value) ? String.fromCodePoint(value) : _match;
+    })
+    // Decode ampersands last so double-encoded tags/entities remain
+    // inert text for this pass instead of becoming live markup.
+    .replace(/&amp;/gi, '&');
+}
+
+function isValidCodePoint(value: number): boolean {
+  return Number.isInteger(value) && value >= 0 && value <= 0x10ffff;
+}
+
+/**
  * Split a plain text segment into ordered text + mana-token pieces.
  * Token shape mirrors {@link ManaText} in {@code ManaCost.tsx}:
  * {@code {2}}, {@code {G}}, {@code {W/U}}, {@code {2/W}}, {@code {T}},
@@ -148,6 +192,7 @@ export type MarkupToken =
  * </ul>
  */
 export function* tokenizeUpstreamMarkup(text: string): Generator<MarkupToken> {
+  text = normalizeUpstreamText(text);
   const tokenRe = /<font\b([^>]*)>([\s\S]*?)<\/font>|<br\s*\/?>|<[^>]+>/gi;
   let lastIdx = 0;
   let match: RegExpExecArray | null;

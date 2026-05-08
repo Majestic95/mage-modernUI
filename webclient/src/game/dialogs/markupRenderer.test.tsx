@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { render } from '@testing-library/react';
-import { renderUpstreamMarkup } from './markupRenderer';
+import { renderUpstreamMarkup, tokenizeUpstreamMarkup } from './markupRenderer';
 
 function renderToContainer(node: React.ReactNode) {
   return render(<div data-testid="root">{node}</div>).getByTestId('root');
@@ -62,5 +62,59 @@ describe('renderUpstreamMarkup — mana symbols', () => {
       '{G}',
       '{G}',
     ]);
+  });
+});
+
+describe('renderUpstreamMarkup — upstream text cleanup', () => {
+  it('strips Swing hint icon placeholders from card rules text', () => {
+    const root = renderToContainer(
+      renderUpstreamMarkup(
+        "ICON_BADcan't block. ICON_RESTRICTCan't block [Bloodsoaked Champion].",
+      ),
+    );
+    expect(root.textContent).toBe(
+      "can't block. Can't block [Bloodsoaked Champion].",
+    );
+    expect(root.textContent).not.toContain('ICON_');
+  });
+
+  it('decodes common HTML entities before rendering text', () => {
+    const root = renderToContainer(
+      renderUpstreamMarkup(
+        'Raid &mdash; Return Bloodsoaked Champion &amp; attack.',
+      ),
+    );
+    expect(root.textContent).toBe(
+      'Raid — Return Bloodsoaked Champion & attack.',
+    );
+  });
+
+  it('normalizes direct tokenizer consumers such as GameLog', () => {
+    const tokens = Array.from(
+      tokenizeUpstreamMarkup('ICON_RESTRICTCan&apos;t block &mdash; tapped.'),
+    );
+    expect(tokens).toEqual([
+      { kind: 'text', text: "Can't block — tapped." },
+    ]);
+  });
+
+  it('leaves invalid numeric entities unchanged instead of throwing', () => {
+    const root = renderToContainer(
+      renderUpstreamMarkup('Bad entity: &#9999999999; and &#x110000;'),
+    );
+    expect(root.textContent).toBe('Bad entity: &#9999999999; and &#x110000;');
+  });
+
+  it('decodes ampersands last so double-encoded tags stay inert', () => {
+    const root = renderToContainer(
+      renderUpstreamMarkup('&amp;lt;font color=red&amp;gt;safe&amp;lt;/font&amp;gt;'),
+    );
+    expect(root.textContent).toBe('&lt;font color=red&gt;safe&lt;/font&gt;');
+    expect(root.querySelector('span')).toBeNull();
+  });
+
+  it('does not strip icon-like substrings inside longer identifiers', () => {
+    const root = renderToContainer(renderUpstreamMarkup('MY_ICON_GOOD remains'));
+    expect(root.textContent).toBe('MY_ICON_GOOD remains');
   });
 });

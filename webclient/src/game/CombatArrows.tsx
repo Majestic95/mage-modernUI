@@ -113,9 +113,9 @@ export function CombatArrows({
 /**
  * Measures combat-arrow source / target geometry from the DOM and
  * applies the endpoint-fan pass. Re-runs on combat changes
- * (fingerprinted), window resize, scroll, and document mutations
- * observed via ResizeObserver. Returns viewport-space coordinates
- * to match the {@code position: fixed} TargetingArrow SVG.
+ * (fingerprinted), window resize, any nested scroll, and document
+ * mutations observed via ResizeObserver. Returns viewport-space
+ * coordinates to match the {@code position: fixed} TargetingArrow SVG.
  */
 function useCombatArrowGeometry(
   combat: readonly WebCombatGroupView[],
@@ -174,25 +174,44 @@ function useCombatArrowGeometry(
       if (!cancelled) setArrows(next);
     };
 
+    let frame: number | null = null;
+    const scheduleMeasure = () => {
+      if (cancelled || frame !== null) return;
+      frame = requestAnimationFrame(() => {
+        frame = null;
+        measure();
+      });
+    };
+    const onChange = () => scheduleMeasure();
+
     measure();
-    const onChange = () => measure();
     window.addEventListener('resize', onChange);
-    // Passive scroll listener at the document level (no capture).
-    // Avoids cascade fires from nested scrollers like the game-log
-    // auto-scroll. Browsers match remove-by-listener-fn + capture
-    // flag (passive isn't part of the match key), so removing
-    // without options is correct.
-    window.addEventListener('scroll', onChange, { passive: true });
+    // Scroll does not bubble, so capture at the document level to
+    // catch tabletop's nested zone scrollers. Without this, an
+    // attacker can move inside an overflowed creature row while the
+    // arrow stays pinned to its old viewport coordinate.
+    document.addEventListener('scroll', scheduleMeasure, {
+      capture: true,
+      passive: true,
+    });
     const observer =
       typeof ResizeObserver !== 'undefined'
-        ? new ResizeObserver(onChange)
+        ? new ResizeObserver(scheduleMeasure)
         : null;
-    if (observer) observer.observe(document.body);
+    if (observer) {
+      observer.observe(document.body);
+      for (const node of combatEndpointNodes(combat)) {
+        observer.observe(node);
+      }
+    }
 
     return () => {
       cancelled = true;
+      if (frame !== null) {
+        cancelAnimationFrame(frame);
+      }
       window.removeEventListener('resize', onChange);
-      window.removeEventListener('scroll', onChange);
+      document.removeEventListener('scroll', scheduleMeasure, true);
       if (observer) observer.disconnect();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -337,26 +356,64 @@ function useHoveredCombatId(): string | null {
 }
 
 function rectForPermanent(perm: WebPermanentView): DOMRect | null {
+  const node = nodeForPermanent(perm);
+  if (!node) return null;
+  return node.getBoundingClientRect();
+}
+
+function nodeForPermanent(perm: WebPermanentView): HTMLElement | null {
   const id = perm.card.id;
   if (!id) return null;
   const selector = `[data-permanent-id="${cssEscape(id)}"]`;
   const node = document.querySelector(selector);
   if (!node) return null;
-  return (node as HTMLElement).getBoundingClientRect();
+  return node as HTMLElement;
 }
 
 function rectForPlayer(playerId: string): DOMRect | null {
+  const node = nodeForPlayer(playerId);
+  if (!node) return null;
+  return node.getBoundingClientRect();
+}
+
+function nodeForPlayer(playerId: string): HTMLElement | null {
   if (!playerId) return null;
   // Picture-catalog §3.2 — arrow targets the PORTRAIT, not the
   // outer pod. Falls back to the pod-level data-player-id when
   // the portrait isn't mounted (e.g. legacy PlayerArea variant).
   const portraitSelector = `[data-portrait-target-player-id="${cssEscape(playerId)}"]`;
   const portrait = document.querySelector(portraitSelector);
-  if (portrait) return (portrait as HTMLElement).getBoundingClientRect();
+  if (portrait) return portrait as HTMLElement;
   const podSelector = `[data-player-id="${cssEscape(playerId)}"]`;
   const pod = document.querySelector(podSelector);
   if (!pod) return null;
-  return (pod as HTMLElement).getBoundingClientRect();
+  return pod as HTMLElement;
+}
+
+function combatEndpointNodes(
+  combat: readonly WebCombatGroupView[],
+): HTMLElement[] {
+  const nodes: HTMLElement[] = [];
+  const seen = new Set<HTMLElement>();
+  const push = (node: HTMLElement | null) => {
+    if (!node || seen.has(node)) return;
+    seen.add(node);
+    nodes.push(node);
+  };
+  for (const group of combat) {
+    for (const attacker of Object.values(group.attackers)) {
+      push(nodeForPermanent(attacker));
+    }
+    const blockers = Object.values(group.blockers);
+    if (blockers.length > 0) {
+      for (const blocker of blockers) {
+        push(nodeForPermanent(blocker));
+      }
+    } else {
+      push(nodeForPlayer(group.defenderId));
+    }
+  }
+  return nodes;
 }
 
 function centerOf(rect: DOMRect): { x: number; y: number } {
