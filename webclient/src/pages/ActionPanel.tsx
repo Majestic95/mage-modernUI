@@ -2,7 +2,11 @@ import { useEffect, useState } from 'react';
 import { useAuthStore } from '../auth/store';
 import { useGameStore } from '../game/store';
 import type { GameStream } from '../game/stream';
-import { nextPhaseAction, primaryActionFor } from './actionPanelHelpers';
+import {
+  hasLocalPriority,
+  nextPhaseAction,
+  primaryActionFor,
+} from './actionPanelHelpers';
 
 interface Props {
   stream: GameStream | null;
@@ -133,10 +137,18 @@ export function ActionPanel({ stream }: Props) {
         const step = gv2?.step ?? '';
         const stackEmpty2 = !gv2 || Object.keys(gv2.stack).length === 0;
         const username = useAuthStore.getState().session?.username;
-        const myPriority2 = !!gv2 && gv2.priorityPlayerName === username;
+        const myPriority2 = !!gv2 && hasLocalPriority(gv2, username);
         const action = primaryActionFor(step, stackEmpty2, myPriority2);
-        if (action) stream.sendPlayerAction(action);
+        if (action && myPriority2) stream.sendPlayerAction(action);
       } else {
+        const gv2 = useGameStore.getState().gameView;
+        const username = useAuthStore.getState().session?.username;
+        const myPriority2 = !!gv2 && hasLocalPriority(gv2, username);
+        const priorityGated =
+          match.action.startsWith('PASS_PRIORITY_UNTIL_');
+        if (priorityGated && !myPriority2) {
+          return;
+        }
         stream.sendPlayerAction(match.action);
       }
     };
@@ -153,7 +165,7 @@ export function ActionPanel({ stream }: Props) {
 
   if (!gv || !session) return null;
 
-  const myPriority = gv.priorityPlayerName === session.username;
+  const myPriority = hasLocalPriority(gv, session.username);
   const send = (action: string) => stream?.sendPlayerAction(action);
   const stackEmpty = Object.keys(gv.stack).length === 0;
   const inCombatOrBeginning = isInCombatOrBeginning(gv.step);
@@ -276,6 +288,20 @@ export function ActionPanel({ stream }: Props) {
       >
         Undo
       </button>
+      <PassButton
+        label="Hold priority"
+        action="HOLD_PRIORITY"
+        send={send}
+        active={true}
+        title="Keep priority after casting a spell or activating an ability"
+      />
+      <PassButton
+        label="Release priority"
+        action="UNHOLD_PRIORITY"
+        send={send}
+        active={true}
+        title="Return to normal auto-pass behavior after casting or activating"
+      />
 
       <div className="flex-1" />
 

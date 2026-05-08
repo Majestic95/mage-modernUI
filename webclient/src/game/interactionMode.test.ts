@@ -7,6 +7,31 @@ function clientData(data: Parameters<typeof webGameClientMessageSchema.parse>[0]
   return webGameClientMessageSchema.parse(data);
 }
 
+const CARD = {
+  id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+  name: 'Lightning Bolt',
+  displayName: 'Lightning Bolt',
+  expansionSetCode: 'LEA',
+  cardNumber: '161',
+  manaCost: '{R}',
+  manaValue: 1,
+  typeLine: 'Instant',
+  supertypes: [],
+  types: ['INSTANT'],
+  subtypes: [],
+  colors: ['R'],
+  rarity: 'COMMON',
+  power: '',
+  toughness: '',
+  startingLoyalty: '',
+  rules: ['Lightning Bolt deals 3 damage to any target.'],
+  faceDown: false,
+  counters: {},
+  transformable: false,
+  transformed: false,
+  secondCardFace: null,
+};
+
 describe('deriveInteractionMode', () => {
   it('returns free when no dialog is pending', () => {
     expect(deriveInteractionMode(null)).toEqual({ kind: 'free' });
@@ -21,12 +46,11 @@ describe('deriveInteractionMode', () => {
         message: 'Pick triggered ability (goes to the stack first)',
         targets: [],
         cardsView1: {
-          'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa': {
-            id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-          } as never,
+          'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa': CARD,
           'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb': {
+            ...CARD,
             id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
-          } as never,
+          },
         },
         min: 0,
         max: 0,
@@ -60,8 +84,9 @@ describe('deriveInteractionMode', () => {
         targets: ['aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'],
         cardsView1: {
           'cccccccc-cccc-cccc-cccc-cccccccccccc': {
+            ...CARD,
             id: 'cccccccc-cccc-cccc-cccc-cccccccccccc',
-          } as never,
+          },
         },
         min: 0,
         max: 0,
@@ -220,6 +245,33 @@ describe('deriveInteractionMode', () => {
       }),
     };
     expect(deriveInteractionMode(dialog)).toEqual({ kind: 'free' });
+  });
+
+  it('maps non-combat gameSelect with cardsView1 to modal mode', () => {
+    const dialog: PendingDialog = {
+      method: 'gameSelect',
+      messageId: 16,
+      data: clientData({
+        gameView: null,
+        message: 'Choose a card from your library',
+        targets: [],
+        cardsView1: {
+          'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa': {
+            ...CARD,
+            id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+          },
+        },
+        min: 1,
+        max: 1,
+        flag: true,
+        choice: null,
+      }),
+    };
+    expect(deriveInteractionMode(dialog)).toEqual({
+      kind: 'modal',
+      messageId: 16,
+      method: 'gameSelect',
+    });
   });
 
   it('maps gamePlayMana to manaPay mode (isXMana=false)', () => {

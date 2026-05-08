@@ -200,6 +200,16 @@ describe('useDialogTargets', () => {
     expect(result.current.active).toBe(false);
   });
 
+  it('returns inactive for gameSelect library searches so SelectDialog handles them', () => {
+    const d = dialog('gameSelect', { [LIBRARY_CARD_ID]: LIBRARY_CARD });
+    useGameStore.setState({
+      gameView: gvWithHand(),
+      pendingDialog: { method: d.method, messageId: d.messageId, data: d.data } as never,
+    });
+    const { result } = renderHook(() => useDialogTargets(fakeStream()));
+    expect(result.current.active).toBe(false);
+  });
+
   it('returns inactive for graveyard / exile picks (slice 70-Y.5 narrowing)', () => {
     // Pre-slice 70-Y.5 the visible-zone set included graveyard +
     // exile, so a "return card from graveyard" prompt would activate

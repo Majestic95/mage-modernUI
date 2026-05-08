@@ -16,7 +16,8 @@
  * text (when no image but commander exists) → "Commander" placeholder
  * (no commander in commandList).
  *
- * <p>Click-to-cast affordance and empty-state label deferred to B-12-C.
+ * <p>Click-to-cast wiring is deferred to B-12-C. Until then, this slot
+ * renders as display-only so it does not promise an unavailable action.
  */
 import type { WebPlayerView } from '../api/schemas';
 import { scryfallCommanderImageUrl } from './scryfall';
@@ -28,8 +29,8 @@ export function TabletopCommanderSlot({ player }: { player: WebPlayerView }) {
   // it surfaces the commander even after it leaves the command zone
   // (cast, exiled, etc.) per slice 70-X.14's snapshot fallback.
   // For the slot's empty-vs-on-battlefield distinction we ALSO need
-  // the live commandList to know if the commander is *currently* in
-  // the command zone (and therefore cast'able from the slot).
+  // the live commandList to know if the commander is currently in the
+  // command zone.
   const commanders = usePlayerCommanders(player);
   const commander = commanders[0] ?? null;
   const liveCommanders = filterCommanders(player.commandList);
@@ -59,7 +60,7 @@ export function TabletopCommanderSlot({ player }: { player: WebPlayerView }) {
   // has it; live commandList doesn't) → on battlefield (or graveyard
   // / exile / library — anywhere except command zone). Per element #5
   // spec, render a faint "Commander" label so the slot keeps its
-  // visual presence but signals nothing-to-cast-from-here.
+  // visual presence without implying a command-zone cast is available.
   if (!inCommandZone) {
     return (
       <div
@@ -90,18 +91,15 @@ export function TabletopCommanderSlot({ player }: { player: WebPlayerView }) {
   }
 
   // Full art treatment — small rounded card thumbnail with the
-  // commander's art_crop. Card-aspect-ratio container (~5:7).
-  // Slice B-12-E — hover affordance signals the slot will be
-  // clickable to cast once the engine-priority-dispatch wiring
-  // lands (deferred slice). cursor-pointer + hover ring telegraph
-  // "interactive" without the onClick yet.
+  // commander's art_crop. Display-only until B-12-C wires real
+  // command-zone casting through the engine.
   return (
     <div
       data-testid="tabletop-commander-slot"
       data-player-id={player.playerId}
       data-state="art"
-      title={`${commander.name} — click to cast (engine wiring TODO)`}
-      className="rounded-md border-2 border-zinc-600 bg-zinc-900 shadow-lg overflow-hidden cursor-pointer hover:ring-2 hover:ring-fuchsia-400 transition-shadow"
+      title={commander.name}
+      className="rounded-md border-2 border-zinc-600 bg-zinc-900 shadow-lg overflow-hidden"
       style={{ width: '90px', height: '64px' }}
     >
       <img

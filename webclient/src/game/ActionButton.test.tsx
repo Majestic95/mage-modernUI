@@ -21,7 +21,11 @@ const storeState = vi.hoisted(() => ({
     priorityPlayerName: string;
     stack: Record<string, unknown>;
     myPlayerId: string;
-    players: Array<{ playerId: string; skipState: string }>;
+    players: Array<{
+      playerId: string;
+      skipState: string;
+      hasPriority?: boolean;
+    }>;
   },
 }));
 vi.mock('./store', async () => {
@@ -79,8 +83,8 @@ function setGame(overrides: Partial<typeof storeState.gameView> = {}) {
     stack: {},
     myPlayerId: 'p-alice',
     players: [
-      { playerId: 'p-alice', skipState: '' },
-      { playerId: 'p-bob', skipState: '' },
+      { playerId: 'p-alice', skipState: '', hasPriority: true },
+      { playerId: 'p-bob', skipState: '', hasPriority: false },
     ],
     ...overrides,
   } as typeof storeState.gameView;
@@ -222,6 +226,41 @@ describe('ActionButton — primary dispatch', () => {
     await userEvent.click(screen.getByTestId('action-button-primary'));
     expect(stream.sendPlayerAction).not.toHaveBeenCalled();
   });
+
+  it('disables primary action when local player lacks priority', async () => {
+    setGame({
+      priorityPlayerName: 'bob',
+      players: [
+        { playerId: 'p-alice', skipState: '', hasPriority: false },
+        { playerId: 'p-bob', skipState: '', hasPriority: true },
+      ],
+    });
+    authState.session = { username: 'alice' };
+    const stream = makeStream();
+    render(<ActionButton stream={stream} />);
+    const btn = screen.getByTestId('action-button-primary');
+    expect(btn).toBeDisabled();
+    expect(btn).toHaveAttribute('title', 'Disabled — waiting for opponent');
+    await userEvent.click(btn);
+    expect(stream.sendPlayerAction).not.toHaveBeenCalled();
+  });
+
+  it('uses local player hasPriority when display name differs from auth username', async () => {
+    setGame({
+      priorityPlayerName: 'Alice Display',
+      players: [
+        { playerId: 'p-alice', skipState: '', hasPriority: true },
+        { playerId: 'p-bob', skipState: '', hasPriority: false },
+      ],
+    });
+    authState.session = { username: 'alice' };
+    const stream = makeStream();
+    render(<ActionButton stream={stream} />);
+    await userEvent.click(screen.getByTestId('action-button-primary'));
+    expect(stream.sendPlayerAction).toHaveBeenCalledWith(
+      'PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE',
+    );
+  });
 });
 
 describe('ActionButton — ellipsis menu', () => {
@@ -250,10 +289,21 @@ describe('ActionButton — ellipsis menu', () => {
       screen.getByTestId('action-menu-PASS_PRIORITY_UNTIL_NEXT_TURN'),
     ).toHaveTextContent('Pass to Next Turn');
     expect(
+      screen.getByTestId('action-menu-PASS_PRIORITY_UNTIL_TURN_END_STEP'),
+    ).toHaveTextContent('Pass to End Step');
+    expect(
+      screen.getByTestId('action-menu-PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE'),
+    ).toHaveTextContent('Pass to Next Main');
+    expect(
       screen.getByTestId(
         'action-menu-PASS_PRIORITY_UNTIL_MY_NEXT_TURN',
       ),
     ).toHaveTextContent('Pass to Your Turn');
+    expect(
+      screen.getByTestId(
+        'action-menu-PASS_PRIORITY_UNTIL_END_STEP_BEFORE_MY_NEXT_TURN',
+      ),
+    ).toHaveTextContent('Pass to Prior End Step');
     expect(
       screen.getByTestId(
         'action-menu-PASS_PRIORITY_UNTIL_STACK_RESOLVED',
@@ -266,6 +316,12 @@ describe('ActionButton — ellipsis menu', () => {
     ).toHaveTextContent('Stop Skipping');
     expect(screen.getByTestId('action-menu-UNDO')).toHaveTextContent(
       'Undo',
+    );
+    expect(screen.getByTestId('action-menu-HOLD_PRIORITY')).toHaveTextContent(
+      'Hold Priority',
+    );
+    expect(screen.getByTestId('action-menu-UNHOLD_PRIORITY')).toHaveTextContent(
+      'Release Priority',
     );
     // Slice 70-O — Concede relocated to SettingsModal (header gear
     // icon). Menu has no destructive items.
@@ -310,6 +366,21 @@ describe('ActionButton — hotkeys', () => {
     expect(stream.sendPlayerAction).toHaveBeenCalledWith(
       'PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE',
     );
+  });
+
+  it('F2 does not dispatch when local player lacks priority', () => {
+    setGame({
+      priorityPlayerName: 'bob',
+      players: [
+        { playerId: 'p-alice', skipState: '', hasPriority: false },
+        { playerId: 'p-bob', skipState: '', hasPriority: true },
+      ],
+    });
+    authState.session = { username: 'alice' };
+    const stream = makeStream();
+    render(<ActionButton stream={stream} />);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F2' }));
+    expect(stream.sendPlayerAction).not.toHaveBeenCalled();
   });
 
   // Slice 70-Z bug fix — when stack is non-empty AND it's my priority,
@@ -404,6 +475,17 @@ describe('ActionButton — hotkeys', () => {
     render(<ActionButton stream={stream} />);
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F6' }));
     expect(stream.sendPlayerAction).not.toHaveBeenCalled();
+  });
+
+  it('F7 dispatches Pass to Next Main', () => {
+    setGame();
+    authState.session = { username: 'alice' };
+    const stream = makeStream();
+    render(<ActionButton stream={stream} />);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F7' }));
+    expect(stream.sendPlayerAction).toHaveBeenCalledWith(
+      'PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE',
+    );
   });
 
   it('F8 dispatches "Resolve Stack"', () => {
@@ -585,6 +667,17 @@ describe('ActionButton — schema 1.30 skip-state visuals', () => {
     expect(undo.getAttribute('aria-checked')).toBeNull();
   });
 
+  it('hold priority menu item dispatches HOLD_PRIORITY', async () => {
+    const user = userEvent.setup();
+    setGame();
+    authState.session = { username: 'alice' };
+    const stream = makeStream();
+    render(<ActionButton stream={stream} />);
+    await user.click(screen.getByTestId('action-button-ellipsis'));
+    await user.click(screen.getByTestId('action-menu-HOLD_PRIORITY'));
+    expect(stream.sendPlayerAction).toHaveBeenCalledWith('HOLD_PRIORITY');
+  });
+
   it('clicking an ARMED menu item dispatches CANCEL_ALL_ACTIONS, not the same arm action', async () => {
     // Audit fix 2026-05-03 — re-dispatching the SAME PASS_PRIORITY_*
     // call would call resetPlayerPassedActions then re-arm. The
@@ -608,6 +701,47 @@ describe('ActionButton — schema 1.30 skip-state visuals', () => {
     expect(stream.sendPlayerAction).not.toHaveBeenCalledWith(
       'PASS_PRIORITY_UNTIL_NEXT_TURN',
     );
+  });
+
+  it('marks primary-driven skip states as armed and toggles them off from the menu', async () => {
+    const user = userEvent.setup();
+    setGame({
+      players: [
+        { playerId: 'p-alice', skipState: 'NEXT_MAIN', hasPriority: true },
+      ],
+      myPlayerId: 'p-alice',
+    });
+    authState.session = { username: 'alice' };
+    const stream = makeStream();
+    render(<ActionButton stream={stream} />);
+    await user.click(screen.getByTestId('action-button-ellipsis'));
+    const item = screen.getByTestId(
+      'action-menu-PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE',
+    );
+    expect(item.getAttribute('data-armed')).toBe('true');
+    await user.click(item);
+    expect(stream.sendPlayerAction).toHaveBeenCalledWith(
+      'PASS_PRIORITY_CANCEL_ALL_ACTIONS',
+    );
+  });
+
+  it('Esc cancels an armed skip even when the menu is open', async () => {
+    const user = userEvent.setup();
+    setGame({
+      players: [
+        { playerId: 'p-alice', skipState: 'NEXT_TURN', hasPriority: true },
+      ],
+      myPlayerId: 'p-alice',
+    });
+    authState.session = { username: 'alice' };
+    const stream = makeStream();
+    render(<ActionButton stream={stream} />);
+    await user.click(screen.getByTestId('action-button-ellipsis'));
+    await user.keyboard('{Escape}');
+    expect(stream.sendPlayerAction).toHaveBeenCalledWith(
+      'PASS_PRIORITY_CANCEL_ALL_ACTIONS',
+    );
+    expect(screen.queryByTestId('action-button-menu')).toBeNull();
   });
 
   it('does not crash when gv has no players (edge case during early frame)', () => {

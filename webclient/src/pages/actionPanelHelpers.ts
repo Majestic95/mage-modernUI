@@ -121,3 +121,25 @@ export function primaryActionFor(
   }
   return nextPhaseAction(step);
 }
+
+interface LocalPriorityPlayer {
+  playerId: string;
+  hasPriority?: boolean;
+}
+
+interface LocalPriorityGameView {
+  myPlayerId: string;
+  priorityPlayerName: string;
+  players: LocalPriorityPlayer[];
+}
+
+export function hasLocalPriority(
+  gameView: LocalPriorityGameView,
+  username?: string,
+): boolean {
+  const me = gameView.players.find((p) => p.playerId === gameView.myPlayerId);
+  if (typeof me?.hasPriority === 'boolean') {
+    return me.hasPriority;
+  }
+  return !!username && gameView.priorityPlayerName === username;
+}

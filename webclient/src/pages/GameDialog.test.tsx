@@ -225,6 +225,57 @@ describe('GameDialog', () => {
     expect(container.firstChild).toBeNull();
   });
 
+  it('gameSelect with cardsView1 renders SelectDialog instead of returning null', () => {
+    const stream = fakeStream();
+    act(() => {
+      useGameStore.setState({
+        pendingDialog: {
+          method: 'gameSelect',
+          messageId: 100,
+          data: emptyDialog({
+            message: 'Choose a card from your library',
+            min: 1,
+            max: 1,
+            flag: true,
+            cardsView1: {
+              'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa': {
+                id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+                name: 'Lightning Bolt',
+                displayName: 'Lightning Bolt',
+                expansionSetCode: 'LEA',
+                cardNumber: '161',
+                manaCost: '{R}',
+                manaValue: 1,
+                typeLine: 'Instant',
+                supertypes: [],
+                types: ['INSTANT'],
+                subtypes: [],
+                colors: ['R'],
+                rarity: 'COMMON',
+                power: '',
+                toughness: '',
+                startingLoyalty: '',
+                rules: ['Lightning Bolt deals 3 damage to any target.'],
+                faceDown: false,
+                counters: {},
+                transformable: false,
+                transformed: false,
+                secondCardFace: null,
+              },
+            },
+          }),
+        },
+      });
+    });
+    render(<GameDialog stream={stream} />);
+    expect(screen.getByTestId('game-dialog')).toHaveAttribute(
+      'data-method',
+      'gameSelect',
+    );
+    expect(screen.getByText('Choose a card from your library')).toBeInTheDocument();
+    expect(screen.queryByTestId('combat-banner')).not.toBeInTheDocument();
+  });
+
   /* ---------- slice 17: button-text overrides via options ---------- */
 
   it('gameAsk: mulligan flow short-circuits — GameDialog renders nothing (MulliganModal takes over)', () => {

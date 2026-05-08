@@ -211,6 +211,13 @@ export function deriveInteractionMode(
           possibleIds: new Set<string>(),
         };
       }
+      if (Object.keys(data.cardsView1 ?? {}).length > 0) {
+        return {
+          kind: 'modal',
+          messageId: dialog.messageId,
+          method: dialog.method,
+        };
+      }
       // Free-priority "do something". Modal renders nothing for this
       // method (slice 14); the board is the input surface.
       return { kind: 'free' };

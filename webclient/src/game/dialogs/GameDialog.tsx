@@ -90,10 +90,11 @@ export function GameDialog({ stream }: Props) {
     );
   }
 
-  // gameSelect is upstream's "free priority / combat" prompt.
-  // Three sub-modes:
+  // gameSelect is upstream's "free priority / combat / choose from a
+  // card collection" prompt. Four sub-modes:
   //   * declareAttackers — banner + OK + (optional) All-attack button
   //   * declareBlockers — banner + OK button
+  //   * cardsView1 non-empty — SelectDialog card chooser
   //   * free priority — render nothing; the board is the input surface
   //     (slice 14 / 15 / 16 handle the clicks).
   if (dialog.method === 'gameSelect') {
@@ -111,6 +112,26 @@ export function GameDialog({ stream }: Props) {
           stream={stream}
           isAttackers={mode.kind === 'declareAttackers'}
         />
+      );
+    }
+    if (Object.keys(dialog.data.cardsView1 ?? {}).length > 0) {
+      return (
+        <div
+          ref={bottomRight.ref}
+          role="dialog"
+          aria-modal="false"
+          data-testid="game-dialog"
+          data-method={dialog.method}
+          className="z-40 w-[min(90vw,384px)] bg-zinc-900 border border-zinc-700 rounded-lg p-5 space-y-3 shadow-2xl"
+          style={bottomRight.style}
+          {...bottomRight.containerProps}
+        >
+          <DialogContent
+            dialog={dialog}
+            stream={stream}
+            clearDialog={clearDialog}
+          />
+        </div>
       );
     }
     return null;

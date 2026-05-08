@@ -19,8 +19,8 @@
  * </ul>
  *
  * <p><b>Hotkeys (preserved invisible UX from slice 29):</b> F2 / F4 /
- * F6 / F8 / Esc / Ctrl+Z still fire the same actions. Power users
- * never see the menu; new users discover them via the ellipsis.
+ * F7 / F8 / F9 / Esc / Ctrl+Z fire the common actions. Less common
+ * skip modes stay discoverable through the ellipsis menu.
  *
  * <p><b>Concede placement:</b> picture-catalog §5.C / picture-catalog
  * §1.3 puts Concede in the settings modal (header gear icon). Slice
@@ -43,7 +43,11 @@ import type { SkipState } from '../api/schemas';
 import { useAuthStore } from '../auth/store';
 import { useGameStore } from './store';
 import type { GameStream } from './stream';
-import { nextPhaseAction, primaryActionFor } from '../pages/actionPanelHelpers';
+import {
+  hasLocalPriority,
+  nextPhaseAction,
+  primaryActionFor,
+} from '../pages/actionPanelHelpers';
 
 /**
  * Slice 70-M — multi-pass shortcut menu items. Each maps to an
@@ -71,6 +75,17 @@ const MENU_ITEMS: MenuItem[] = [
     title: 'Pass priority through every remaining phase of this turn',
   },
   {
+    label: 'Pass to End Step',
+    action: 'PASS_PRIORITY_UNTIL_TURN_END_STEP',
+    title: 'Pass priority until the current turn reaches the end step',
+  },
+  {
+    label: 'Pass to Next Main',
+    action: 'PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE',
+    hotkey: 'F7',
+    title: 'Pass priority until the next main phase begins',
+  },
+  {
     label: 'Pass to Your Turn',
     // Bug fix — was PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE which only
     // advances to the next main phase (could be the SAME turn's
@@ -93,6 +108,11 @@ const MENU_ITEMS: MenuItem[] = [
     title: 'Pass priority until your next turn begins',
   },
   {
+    label: 'Pass to Prior End Step',
+    action: 'PASS_PRIORITY_UNTIL_END_STEP_BEFORE_MY_NEXT_TURN',
+    title: 'Pass priority until the end step before your next turn',
+  },
+  {
     label: 'Resolve Stack',
     action: 'PASS_PRIORITY_UNTIL_STACK_RESOLVED',
     hotkey: 'F8',
@@ -110,6 +130,16 @@ const MENU_ITEMS: MenuItem[] = [
     hotkey: 'Ctrl+Z',
     ctrl: true,
     title: 'Take back your last action this priority window',
+  },
+  {
+    label: 'Hold Priority',
+    action: 'HOLD_PRIORITY',
+    title: 'Keep priority after casting a spell or activating an ability',
+  },
+  {
+    label: 'Release Priority',
+    action: 'UNHOLD_PRIORITY',
+    title: 'Return to normal auto-pass behavior after casting or activating',
   },
   // Slice 70-O — Concede relocated to the SettingsModal (header
   // gear icon). Picture-catalog §5.C menu items are exclusively
@@ -137,7 +167,11 @@ const MENU_ITEMS: MenuItem[] = [
  */
 const ACTION_TO_SKIP_STATE: Partial<Record<string, SkipState>> = {
   PASS_PRIORITY_UNTIL_NEXT_TURN: 'NEXT_TURN',
+  PASS_PRIORITY_UNTIL_TURN_END_STEP: 'END_OF_TURN',
+  PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE: 'NEXT_MAIN',
   PASS_PRIORITY_UNTIL_MY_NEXT_TURN: 'ALL_TURNS',
+  PASS_PRIORITY_UNTIL_END_STEP_BEFORE_MY_NEXT_TURN:
+    'END_STEP_BEFORE_MY_TURN',
   PASS_PRIORITY_UNTIL_STACK_RESOLVED: 'STACK_RESOLVED',
 };
 
@@ -242,12 +276,12 @@ export function ActionButton({ stream }: Props) {
         const step = gv2?.step ?? '';
         const stackEmpty2 = !gv2 || Object.keys(gv2.stack).length === 0;
         const username = useAuthStore.getState().session?.username;
-        const myPriority2 = !!gv2 && gv2.priorityPlayerName === username;
+        const myPriority2 = !!gv2 && hasLocalPriority(gv2, username);
         // Slice 70-Z bug fix — F2 must follow the same dispatch rules
         // as the primary button click so the hotkey doesn't fire the
         // wrong action when stack is non-empty (see primaryActionFor).
         const action = primaryActionFor(step, stackEmpty2, myPriority2);
-        if (action) {
+        if (action && myPriority2) {
           ev.preventDefault();
           stream.sendPlayerAction(action);
         }
@@ -272,6 +306,15 @@ export function ActionButton({ stream }: Props) {
         return keyMatches && isCtrl === ctrlOrCmd;
       });
       if (!match) return;
+      const gv2 = useGameStore.getState().gameView;
+      const username = useAuthStore.getState().session?.username;
+      const myPriority2 = !!gv2 && hasLocalPriority(gv2, username);
+      const priorityGated =
+        match.action.startsWith('PASS_PRIORITY_UNTIL_');
+      if (priorityGated && !myPriority2) {
+        ev.preventDefault();
+        return;
+      }
       ev.preventDefault();
       stream.sendPlayerAction(match.action);
     };
@@ -281,14 +324,20 @@ export function ActionButton({ stream }: Props) {
     };
   }, [stream]);
 
-  // Close menu on Esc OR click outside. The Esc-handler is registered
-  // here AFTER the global hotkey handler so when the menu is open,
-  // Esc closes the menu (and stopImmediatePropagation prevents the
-  // global handler from also firing PASS_PRIORITY_CANCEL_ALL_ACTIONS).
+  // Close menu on Esc OR click outside. When a skip is armed, Esc keeps
+  // its global "stop skipping" meaning even while the menu is open.
   useEffect(() => {
     if (!menuOpen) return;
     const onKey = (ev: KeyboardEvent) => {
       if (ev.key === 'Escape') {
+        const gv2 = useGameStore.getState().gameView;
+        const skipState =
+          gv2?.players.find((p) => p.playerId === gv2.myPlayerId)
+            ?.skipState ?? '';
+        if (skipState !== '') {
+          setMenuOpen(false);
+          return;
+        }
         ev.stopImmediatePropagation();
         ev.preventDefault();
         setMenuOpen(false);
@@ -302,7 +351,7 @@ export function ActionButton({ stream }: Props) {
 
   if (!gv || !session) return null;
 
-  const myPriority = gv.priorityPlayerName === session.username;
+  const myPriority = hasLocalPriority(gv, session.username);
   const stackEmpty = Object.keys(gv.stack).length === 0;
   // Schema 1.30 — local player's armed skip mode. Empty string when
   // no skip is active; one of the SkipState enum values otherwise.
@@ -328,10 +377,10 @@ export function ActionButton({ stream }: Props) {
   const primaryAction = primaryActionFor(gv.step, stackEmpty, myPriority);
   const label = deriveActionLabel(gv.step, myPriority, stackEmpty, !!nextPhase);
 
-  // Disabled when there's no next-phase action available (pre-game,
-  // between games of a sideboard match, etc.). The button visibly
-  // dims; cursor: not-allowed; no hover.
-  const disabled = !nextPhase || !stream;
+  // Disabled when no phase action is available or the local player
+  // lacks priority. Matches the legacy footer and avoids clicks that
+  // look accepted but do nothing useful server-side.
+  const disabled = !nextPhase || !myPriority || !stream;
 
   const dispatchPrimary = () => {
     if (!primaryAction || !stream) return;
@@ -393,7 +442,7 @@ export function ActionButton({ stream }: Props) {
             <span>{skipBannerLabel}</span>
           </span>
           <span className="text-[10px] opacity-75 font-mono uppercase">
-            click / Esc to cancel
+            click or Esc to cancel
           </span>
         </button>
       )}
@@ -417,7 +466,9 @@ export function ActionButton({ stream }: Props) {
           disabled={disabled}
           title={
             disabled
-              ? 'No action available'
+              ? !nextPhase
+                ? 'No action available'
+                : 'Disabled — waiting for opponent'
               : `${label} (F2)`
           }
           // Slice 70-M — picture-catalog §5.C button style:

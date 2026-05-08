@@ -49,7 +49,11 @@ const ANON_SESSION = {
 
 function gameViewWithPriorityOn(
   priorityName: string,
-  opts: { step?: string; stack?: Record<string, typeof STACK_CARD> } = {},
+  opts: {
+    step?: string;
+    stack?: Record<string, typeof STACK_CARD>;
+    meHasPriority?: boolean;
+  } = {},
 ) {
   const me = webPlayerViewSchema.parse({
     playerId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
@@ -58,7 +62,7 @@ function gameViewWithPriorityOn(
     graveyard: {}, exile: {}, sideboard: {}, battlefield: {},
     manaPool: { red: 0, green: 0, blue: 0, white: 0, black: 0, colorless: 0 },
     controlled: true, isHuman: true, isActive: true,
-    hasPriority: priorityName === 'alice',
+    hasPriority: opts.meHasPriority ?? priorityName === 'alice',
     hasLeft: false, monarch: false, initiative: false, designationNames: [],
   });
   return webGameViewSchema.parse({
@@ -114,6 +118,24 @@ describe('ActionPanel', () => {
     });
     render(<ActionPanel stream={fakeStream()} />);
     expect(screen.getByText(/your priority/i)).toBeInTheDocument();
+  });
+
+  it('uses local hasPriority instead of display-name equality', async () => {
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    act(() => {
+      useGameStore.setState({
+        gameView: gameViewWithPriorityOn('Alice Display', {
+          meHasPriority: true,
+        }),
+      });
+    });
+    render(<ActionPanel stream={stream} />);
+    expect(screen.getByText(/your priority/i)).toBeInTheDocument();
+    await user.click(screen.getByTestId('next-phase-button'));
+    expect(stream.sendPlayerAction).toHaveBeenCalledWith(
+      'PASS_PRIORITY_UNTIL_NEXT_MAIN_PHASE',
+    );
   });
 
   it('shows waiting indicator when opponent has priority', () => {
@@ -174,7 +196,7 @@ describe('ActionPanel', () => {
     }
   });
 
-  it('Stop-skipping and Undo remain enabled when opponent has priority', () => {
+  it('Stop-skipping, Undo, and hold-priority controls remain enabled when opponent has priority', () => {
     // Slice 70-X.6 contract — the two emergency-exit buttons MUST stay
     // available regardless of priority so the user can interrupt a
     // runaway pass / undo a misclick when waiting on opponent.
@@ -188,8 +210,16 @@ describe('ActionPanel', () => {
       name: /stop skipping/i,
     }) as HTMLButtonElement;
     const undo = screen.getByTestId('undo-button') as HTMLButtonElement;
+    const hold = screen.getByRole('button', {
+      name: /hold priority/i,
+    }) as HTMLButtonElement;
+    const release = screen.getByRole('button', {
+      name: /release priority/i,
+    }) as HTMLButtonElement;
     expect(stop.disabled).toBe(false);
     expect(undo.disabled).toBe(false);
+    expect(hold.disabled).toBe(false);
+    expect(release.disabled).toBe(false);
   });
 
   it('clicking a disabled priority-gated button does not dispatch', async () => {
@@ -442,6 +472,17 @@ describe('ActionPanel', () => {
     expect(stream.sendPlayerAction).toHaveBeenCalledWith('UNDO');
   });
 
+  it('Hold priority button sends HOLD_PRIORITY', async () => {
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    act(() => {
+      useGameStore.setState({ gameView: gameViewWithPriorityOn('alice') });
+    });
+    render(<ActionPanel stream={stream} />);
+    await user.click(screen.getByRole('button', { name: /hold priority/i }));
+    expect(stream.sendPlayerAction).toHaveBeenCalledWith('HOLD_PRIORITY');
+  });
+
   it('Ctrl+Z fires UNDO', async () => {
     const stream = fakeStream();
     const user = userEvent.setup();
@@ -522,6 +563,36 @@ describe('ActionPanel', () => {
     });
     render(<ActionPanel stream={stream} />);
     await user.keyboard('{F2}');
+    expect(stream.sendPlayerAction).not.toHaveBeenCalled();
+  });
+
+  it('F2 dispatches no action when local player lacks priority', async () => {
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    act(() => {
+      useGameStore.setState({
+        gameView: gameViewWithPriorityOn('bob', { meHasPriority: false }),
+      });
+    });
+    render(<ActionPanel stream={stream} />);
+    await user.keyboard('{F2}');
+    expect(stream.sendPlayerAction).not.toHaveBeenCalled();
+  });
+
+  it('priority-gated skip hotkeys do not dispatch without local priority', async () => {
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    act(() => {
+      useGameStore.setState({
+        gameView: gameViewWithPriorityOn('bob', {
+          meHasPriority: false,
+          step: 'BEGIN_COMBAT',
+          stack: { [STACK_CARD.id]: STACK_CARD },
+        }),
+      });
+    });
+    render(<ActionPanel stream={stream} />);
+    await user.keyboard('{F4}{F6}{F8}');
     expect(stream.sendPlayerAction).not.toHaveBeenCalled();
   });
 
