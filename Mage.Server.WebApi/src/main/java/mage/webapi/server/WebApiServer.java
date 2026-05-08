@@ -6,6 +6,7 @@ import io.javalin.http.BadRequestResponse;
 import io.javalin.http.Context;
 import mage.cards.decks.DeckValidatorFactory;
 import mage.cards.repository.CardRepository;
+import mage.deck.Pauper;
 import mage.players.PlayerType;
 import mage.webapi.SchemaVersion;
 import mage.webapi.WebApiException;
@@ -160,14 +161,17 @@ public final class WebApiServer {
     public WebApiServer(EmbeddedServer embedded) {
         this.embedded = Objects.requireNonNull(embedded, "embedded server is required");
         this.sessionStore = new WebSessionStore();
-        this.authService = new AuthService(embedded, sessionStore);
+        // Audit fix (H3) — construct LobbyService first so its
+        // DisplayCardRegistry can be injected into AuthService at
+        // construction time (final field, no setter).
+        this.lobbyService = new LobbyService(embedded);
+        this.authService = new AuthService(
+                embedded, sessionStore, lobbyService.displayCards());
         // F24.2 (2026-05-05) — recovery-code lifecycle extracted from
         // AuthService into a sibling RecoveryService. Constructed
         // after AuthService since it holds an AuthService reference
         // for revokePriorTokensForSameUsername on successful recover.
         this.recoveryService = new mage.webapi.auth.RecoveryService(authService);
-        this.lobbyService = new LobbyService(embedded);
-        this.authService.setDisplayCardRegistry(lobbyService.displayCards());
         this.deckValidationService = new DeckValidationService();
         // Slice L7 — wire the per-table broadcaster. Constructed after
         // LobbyService so the handler can read the same SeatReadyTracker
@@ -231,6 +235,7 @@ public final class WebApiServer {
      */
     public WebApiServer withLegalityCacheDir(Path cacheDir, Duration refreshInterval) {
         if (cacheDir == null) {
+            resetPauperValidatorOverride();
             LOG.info("Pauper-validator override skipped (no cache dir provided)");
             return this;
         }
@@ -254,10 +259,25 @@ public final class WebApiServer {
                     + "({} entries, refresh interval {})",
                     legalityService.knownCardCount(), refreshInterval);
         } catch (PauperLegalityService.LegalityDataUnavailableException ex) {
+            resetPauperValidatorOverride();
             LOG.warn("Could not load Scryfall legality data; Pauper falls back "
                     + "to upstream rarity-walk + 38-card banlist", ex);
         }
         return this;
+    }
+
+    /**
+     * Restore upstream Pauper validation after an override skip/failure.
+     * This matters in same-JVM rebuilds (tests, embedded restarts): the
+     * factory and {@link WebApiPauperValidator}'s holder are process-wide.
+     */
+    private void resetPauperValidatorOverride() {
+        if (this.legalityService != null) {
+            this.legalityService.close();
+            this.legalityService = null;
+        }
+        WebApiPauperValidator.clearService();
+        DeckValidatorFactory.instance.addDeckType("Constructed - Pauper", Pauper.class);
     }
 
     public AuthService auth() {

@@ -113,8 +113,17 @@ public final class AuthService implements AutoCloseable {
 
     private final EmbeddedServer embedded;
     private final WebSessionStore store;
-    private mage.webapi.lobby.DisplayCardRegistry displayCards =
-            new mage.webapi.lobby.DisplayCardRegistry();
+    /**
+     * Audit fix (H3) — final, constructor-injected. Was previously a
+     * non-final field with a setter ({@code setDisplayCardRegistry});
+     * the setter advertised a thread-unsafe pattern even though the
+     * call was init-only. Sharing the live registry from
+     * {@link mage.webapi.lobby.LobbyService} is now required at
+     * construction time; tests that don't care about the registry
+     * pass {@code null} via the 2-arg ctor and get a fresh empty
+     * instance.
+     */
+    private final mage.webapi.lobby.DisplayCardRegistry displayCards;
     private final ScheduledExecutorService sweeper;
     /**
      * Slice F21.3 (audit Sec B2) — per-username login-attempt
@@ -171,6 +180,11 @@ public final class AuthService implements AutoCloseable {
     private final int disconnectTimeoutSeconds;
 
     public AuthService(EmbeddedServer embedded, WebSessionStore store) {
+        this(embedded, store, null);
+    }
+
+    public AuthService(EmbeddedServer embedded, WebSessionStore store,
+                       mage.webapi.lobby.DisplayCardRegistry displayCards) {
         // F21.6 (audit Corr E1) — startup self-test for the
         // reflective password-verify path. Fails fast at WebApi
         // construction if upstream's AuthorizedUser shape has
@@ -182,6 +196,9 @@ public final class AuthService implements AutoCloseable {
         verifyReflectionShapeOrFail();
         this.embedded = embedded;
         this.store = store;
+        this.displayCards = displayCards == null
+                ? new mage.webapi.lobby.DisplayCardRegistry()
+                : displayCards;
         this.sweeper = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "webapi-session-sweeper");
             t.setDaemon(true);
@@ -218,13 +235,6 @@ public final class AuthService implements AutoCloseable {
      */
     public int disconnectTimeoutSeconds() {
         return disconnectTimeoutSeconds;
-    }
-
-    public void setDisplayCardRegistry(
-            mage.webapi.lobby.DisplayCardRegistry displayCards) {
-        if (displayCards != null) {
-            this.displayCards = displayCards;
-        }
     }
 
     /**
