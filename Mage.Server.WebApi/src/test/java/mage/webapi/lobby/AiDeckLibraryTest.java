@@ -6,17 +6,24 @@ import mage.cards.decks.DeckCardLists;
 import mage.cards.decks.DeckValidator;
 import mage.cards.decks.DeckValidatorError;
 import mage.game.GameException;
+import mage.game.FakeMatch;
+import mage.game.Table;
+import mage.players.PlayerType;
 import mage.webapi.embed.EmbeddedServer;
 import mage.webapi.lobby.deck.BasicLandsFallback;
 import mage.webapi.lobby.deck.CommanderDecksEasy;
 import mage.webapi.lobby.deck.CommanderDecksHard;
 import mage.webapi.lobby.deck.CommanderDecksMedium;
+import mage.webapi.lobby.deck.PauperDecksMedium;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -48,6 +55,7 @@ class AiDeckLibraryTest {
     private final CommanderDecksHard hard = new CommanderDecksHard();
     private final CommanderDecksMedium medium = new CommanderDecksMedium();
     private final CommanderDecksEasy easy = new CommanderDecksEasy();
+    private final PauperDecksMedium pauper = new PauperDecksMedium();
 
     @BeforeAll
     void boot() {
@@ -288,6 +296,139 @@ class AiDeckLibraryTest {
         assertAnthemCount("green-easy", easy.buildGreen(), globalAnthems, 0);
     }
 
+    // ---- Pauper Medium pool --------------------------------------------
+
+    @Test
+    void pauper_whiteSoldiers_passesPauperValidator() {
+        assertPauperLegal("white soldiers", pauper.build(0));
+    }
+
+    @Test
+    void pauper_blueFaeries_passesPauperValidator() {
+        assertPauperLegal("blue faeries", pauper.build(1));
+    }
+
+    @Test
+    void pauper_blackVampires_passesPauperValidator() {
+        assertPauperLegal("black vampires", pauper.build(2));
+    }
+
+    @Test
+    void pauper_redGoblins_passesPauperValidator() {
+        assertPauperLegal("red goblins", pauper.build(3));
+    }
+
+    @Test
+    void pauper_greenStompy_passesPauperValidator() {
+        assertPauperLegal("green stompy", pauper.build(4));
+    }
+
+    @Test
+    void pauper_redWhiteAggro_passesPauperValidator() {
+        assertPauperLegal("red-white aggro", pauper.build(5));
+    }
+
+    @Test
+    void pauper_whiteBlueSkies_passesPauperValidator() {
+        assertPauperLegal("white-blue skies", pauper.build(6));
+    }
+
+    @Test
+    void pauper_blackGreenBeats_passesPauperValidator() {
+        assertPauperLegal("black-green beats", pauper.build(7));
+    }
+
+    @Test
+    void pauper_blueBlackRogues_passesPauperValidator() {
+        assertPauperLegal("blue-black rogues", pauper.build(8));
+    }
+
+    @Test
+    void pauper_redGreenBears_passesPauperValidator() {
+        assertPauperLegal("red-green bears", pauper.build(9));
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9})
+    void pauperDecks_areSixtyCards_zeroSideboard(int rotationIdx) {
+        DeckCardLists deck = pauper.build(rotationIdx);
+        int main = deck.getCards().stream().mapToInt(c -> c.getAmount()).sum();
+        int side = deck.getSideboard().stream().mapToInt(c -> c.getAmount()).sum();
+        assertEquals(60, main, "Pauper deck " + rotationIdx + " mainboard must total 60 cards.");
+        assertEquals(0, side, "Pauper deck " + rotationIdx + " has no sideboard.");
+    }
+
+    @Test
+    void pauperDecks_haveNoSilentSubstitutions() {
+        assertNoSilentSubstitutions("white soldiers pauper deck", pauper.build(0), "Plains", 24);
+        assertNoSilentSubstitutions("blue faeries pauper deck", pauper.build(1), "Island", 24);
+        assertNoSilentSubstitutions("black vampires pauper deck", pauper.build(2), "Swamp", 24);
+        assertNoSilentSubstitutions("red goblins pauper deck", pauper.build(3), "Mountain", 24);
+        assertNoSilentSubstitutions("green stompy pauper deck", pauper.build(4), "Forest", 24);
+        assertNoSilentSubstitutions("red-white aggro pauper deck", pauper.build(5), "Plains", 10);
+        assertNoSilentSubstitutions("red-white aggro pauper deck", pauper.build(5), "Mountain", 10);
+        assertNoSilentSubstitutions("white-blue skies pauper deck", pauper.build(6), "Plains", 10);
+        assertNoSilentSubstitutions("white-blue skies pauper deck", pauper.build(6), "Island", 10);
+        assertNoSilentSubstitutions("black-green beats pauper deck", pauper.build(7), "Swamp", 10);
+        assertNoSilentSubstitutions("black-green beats pauper deck", pauper.build(7), "Forest", 10);
+        assertNoSilentSubstitutions("blue-black rogues pauper deck", pauper.build(8), "Island", 10);
+        assertNoSilentSubstitutions("blue-black rogues pauper deck", pauper.build(8), "Swamp", 10);
+        assertNoSilentSubstitutions("red-green bears pauper deck", pauper.build(9), "Mountain", 10);
+        assertNoSilentSubstitutions("red-green bears pauper deck", pauper.build(9), "Forest", 10);
+    }
+
+    @Test
+    void pauperDecks_avoidAiUnfriendlyCards() {
+        Set<String> disallowed = Set.of(
+                "Counterspell", "Mana Leak", "Daze", "Spell Pierce",
+                "Brainstorm", "Ponder", "Preordain", "Treasure Cruise",
+                "Mystical Tutor", "Vampiric Tutor", "Demonic Tutor",
+                "Diabolic Tutor", "Merchant Scroll", "Expedition Map",
+                "Squadron Hawk", "Civic Wayfinder",
+                "Teachings of the Archaics", "Rolling Thunder",
+                "Fireball", "Kaervek's Torch", "Temporal Fissure",
+                "Captured Sunlight", "Mulldrifter", "Basking Rootwalla",
+                "Goblin Bushwhacker", "Goblin Heelcutter", "Cinder Wall"
+        );
+        for (int i = 0; i < 10; i++) {
+            DeckCardLists deck = pauper.build(i);
+            for (DeckCardInfo entry : deck.getCards()) {
+                assertTrue(!disallowed.contains(entry.getCardName()),
+                        "Pauper deck '" + deck.getName() + "' contains "
+                                + "AI-unfriendly card '" + entry.getCardName() + "'");
+            }
+        }
+    }
+
+    @Test
+    void dispatcherRoutesPauperBeforeCommanderAndFallsBackForStandard() {
+        AiDeckLibrary library = new AiDeckLibrary();
+
+        DeckCardLists pauperDeck = library.buildFallbackDeckForTable(
+                tableWithValidator("Constructed - Pauper"), AiDifficulty.MEDIUM);
+        assertDeckShape("Pauper dispatcher deck", pauperDeck, 60, 0);
+
+        DeckCardLists pauperCommanderDeck = library.buildFallbackDeckForTable(
+                tableWithValidator("Constructed - Pauper Commander"), AiDifficulty.MEDIUM);
+        assertDeckShape("Pauper Commander dispatcher deck", pauperCommanderDeck, 60, 0);
+        assertEquals("AI Pauper Deck (Blue Faeries, Medium)",
+                pauperCommanderDeck.getName(),
+                "Pauper and Commander rotations must stay separate.");
+
+        DeckCardLists commanderDeck = library.buildFallbackDeckForTable(
+                tableWithValidator("Constructed - Commander"), AiDifficulty.MEDIUM);
+        assertDeckShape("Commander dispatcher deck", commanderDeck, 99, 1);
+        assertEquals("AI Commander Deck (White, Medium)",
+                commanderDeck.getName(),
+                "Commander rotation should start independently of Pauper fills.");
+
+        DeckCardLists standardDeck = library.buildFallbackDeckForTable(
+                tableWithValidator("Constructed - Standard"), AiDifficulty.MEDIUM);
+        assertDeckShape("Standard dispatcher fallback deck", standardDeck, 60, 0);
+        assertNoSilentSubstitutions("Standard dispatcher fallback deck",
+                standardDeck, "Forest", 24);
+    }
+
     // ---- Non-Commander fallback (60-card bears pile) -------------------
 
     /**
@@ -354,6 +495,48 @@ class AiDeckLibraryTest {
         assertTrue(valid);
     }
 
+    private void assertPauperLegal(String label, DeckCardLists deckCards) {
+        assertNotNull(deckCards, "Builder returned null for " + label);
+        assertDeckShape(label + " deck", deckCards, 60, 0);
+
+        Deck loaded = loadOrFail(label, deckCards);
+        DeckValidator validator = newPauperValidator();
+        boolean valid = validator.validate(loaded);
+        if (!valid) {
+            List<DeckValidatorError> errors = validator.getErrorsListSorted(50);
+            StringBuilder sb = new StringBuilder("Pauper validator rejected ")
+                    .append(label).append(" deck (").append(errors.size())
+                    .append(" errors):");
+            for (DeckValidatorError e : errors) {
+                sb.append("\n  - [").append(e.getErrorType()).append("] ")
+                        .append("group='").append(e.getGroup()).append("' ")
+                        .append("card='").append(e.getCardName()).append("': ")
+                        .append(e.getMessage());
+            }
+            throw new AssertionError(sb.toString());
+        }
+        assertTrue(valid);
+    }
+
+    private static Deck loadOrFail(String label, DeckCardLists deckCards) {
+        try {
+            return Deck.load(deckCards, false, false);
+        } catch (GameException ex) {
+            throw new AssertionError("Deck.load failed for " + label + ": "
+                    + ex.getMessage(), ex);
+        }
+    }
+
+    private static void assertDeckShape(String label, DeckCardLists deck,
+                                        int expectedMain, int expectedSide) {
+        int main = deck.getCards().stream().mapToInt(c -> c.getAmount()).sum();
+        int side = deck.getSideboard().stream().mapToInt(c -> c.getAmount()).sum();
+        assertEquals(expectedMain, main,
+                label + " mainboard must total " + expectedMain + " cards.");
+        assertEquals(expectedSide, side,
+                label + " sideboard must total " + expectedSide + " cards.");
+    }
+
     /**
      * Detect silent fallback substitutions. {@code addEntryOrFallback}
      * replaces a missing non-basic with the deck's basic land BEFORE
@@ -395,5 +578,39 @@ class AiDeckLibraryTest {
                             + "is mage-deck-constructed on the test runtime classpath?",
                     ex);
         }
+    }
+
+    private static DeckValidator newPauperValidator() {
+        try {
+            Class<?> cls = Class.forName("mage.deck.Pauper");
+            return (DeckValidator) cls.getDeclaredConstructor().newInstance();
+        } catch (ReflectiveOperationException ex) {
+            throw new AssertionError(
+                    "Could not instantiate mage.deck.Pauper via reflection — "
+                            + "is mage-deck-constructed on the test runtime classpath?",
+                    ex);
+        }
+    }
+
+    private static Table tableWithValidator(String validatorName) {
+        DeckValidator validator = new DeckValidator(validatorName, validatorName) {
+            @Override
+            public boolean validate(Deck deck) {
+                return true;
+            }
+
+            @Override
+            public int getDeckMinSize() {
+                return 0;
+            }
+
+            @Override
+            public int getSideboardMinSize() {
+                return 0;
+            }
+        };
+        return new Table(UUID.randomUUID(), "Two Player Duel", validatorName,
+                "controller", validator, List.of(PlayerType.HUMAN),
+                table -> {}, new FakeMatch(), Set.of(), false);
     }
 }
