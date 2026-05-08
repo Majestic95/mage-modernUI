@@ -2,7 +2,7 @@
 
 > Living document. Update as phases close, decisions firm up, or assumptions change. See [`decisions/`](decisions/) for ADRs locking in specific choices.
 
-**Last reviewed:** 2026-04-29
+**Last reviewed:** 2026-05-07
 
 ---
 
@@ -17,6 +17,16 @@ Deliver a modern, web-native client for [Xmage](https://github.com/magefree/mage
 ## Strategy in one paragraph
 
 Two artifacts own the work: **`Mage.Server.WebApi/`** (a new Maven module that embeds `MageServerImpl` in-process and exposes REST + WebSocket endpoints) and **`webclient/`** (a new React + TS + Vite frontend). Everything else in the repo — engine, server core, 28k+ card classes, plugins — stays upstream-tracked and untouched. The `mage.view.*` types are isolated inside WebApi via hand-written DTO mappers; the wire format is *our* contract, versioned, and never auto-derived from upstream classes. See [ADR 0001](decisions/0001-path-c-strategy.md) for why this strategy over alternatives.
+
+---
+
+## Current snapshot (2026-05-07)
+
+- **Runtime:** WebApi + tunnel + watchdog are running via `mage-stack` with public health green at `https://api.modern-mage.com/api/health`.
+- **Code status:** Phase 5 functional MVP is complete and recently hardened (Pauper legality scheduling + validator fixes shipped in `main`).
+- **Roadmap focus:** close status/doc drift, then run a Phase 6 anchor slice.
+- **Selected next engineering anchor:** lobby/room stream ownership hardening in `webclient` (App-owned room stream across lobby↔game transitions).
+- **Selected next product-facing slice (after room-stream hardening):** spectator UI implementation to replace `SpectatorPlaceholder` and consume the already-live spectator WebSocket route.
 
 ---
 
@@ -183,7 +193,8 @@ Each phase has a single exit gate. Don't move on until the gate is met. Estimate
 **Post-shipping cleanup pass (2026-04-29 4-auditor review):**
 - [x] Cross-game state isolation in `WebSocketCallbackHandler` ([6ae0306d](https://github.com/Majestic95/mage-modernUI/commit/6ae0306d))
 - [x] Modal a11y (focus trap + role/aria-modal across 5 modals) ([728e5c3d](https://github.com/Majestic95/mage-modernUI/commit/728e5c3d))
-- [ ] Push to origin + verify CI workflow runs green (it's never run)
+- [x] Push to origin (`main`) completed (2026-05-07)
+- [ ] Verify CI workflow runs green on pushed commits
 - [ ] Admin password fail-closed at boot (refuse default/empty)
 - [ ] WS body log demote INFO → DEBUG (slice 22 diagnostic over-verbose)
 - [ ] `cardId.default('')` → required (server always emits since 1.19)

@@ -3,17 +3,18 @@ import { request } from '../api/client';
 import { webRoomRefSchema } from '../api/schemas';
 import { useAuthStore } from '../auth/store';
 import { useGameStore } from '../game/store';
-import { GameStream } from '../game/stream';
+import { getRoomStream } from '../lobby/roomStreamSingleton';
 
 /**
  * Lobby chat panel — subscribes to the main-room chat WebSocket
  * (slice 8 server route {@code /api/rooms/{roomId}/stream}) on mount
  * and renders incoming {@code chatMessage} frames + an input box.
  *
- * <p>The component owns one {@link GameStream} (in {@code 'room'}
- * mode) for its lifetime. Chat history is held in
+ * <p>App.tsx owns the single main-room WebSocket lifecycle through
+ * {@code roomStreamSingleton.ts}. Chat history is held in
  * {@link useGameStore#chatMessages} keyed by chatId; this component
- * filters to the main-room chatId resolved at mount time.
+ * filters to the main-room chatId resolved at mount time and sends
+ * outbound messages through the singleton stream.
  *
  * <p>Slice 8 scope: text-only chat, no presence indicator, no chat
  * history before connect (only frames received during the session
@@ -25,9 +26,7 @@ export function LobbyChat() {
   const chatBuckets = useGameStore((s) => s.chatMessages);
   const clearChatBucket = useGameStore((s) => s.clearChatBucket);
   const [chatId, setChatId] = useState<string | null>(null);
-  const [roomId, setRoomId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const streamRef = useRef<GameStream | null>(null);
 
   // Discover the main-room ids once per session. The cost of a
   // duplicate fetch on remounts is one HTTP round-trip; cheap enough
@@ -41,7 +40,6 @@ export function LobbyChat() {
           token: session.token,
         });
         if (cancelled) return;
-        setRoomId(room.roomId);
         setChatId(room.chatId);
       } catch (err) {
         if (!cancelled) {
@@ -55,29 +53,17 @@ export function LobbyChat() {
     };
   }, [session]);
 
-  // Open the room WebSocket when both session and roomId are known.
-  //
   // P0 audit fix — drop the chatMessages bucket for this chatId on
   // unmount so messages from a prior session don't persist into the
   // next login. Without this, login → logout → re-login leaks the
   // earlier user's chat into the new view (privacy issue; also pure
   // memory growth across long sessions).
   useEffect(() => {
-    if (!session || !roomId) return;
-    const stream = new GameStream({
-      gameId: roomId,
-      token: session.token,
-      endpoint: 'room',
-    });
-    streamRef.current = stream;
-    stream.open();
     const capturedChatId = chatId;
     return () => {
-      stream.close();
-      streamRef.current = null;
       if (capturedChatId) clearChatBucket(capturedChatId);
     };
-  }, [session, roomId, chatId, clearChatBucket]);
+  }, [chatId, clearChatBucket]);
 
   const messages = useMemo(
     () => (chatId ? chatBuckets[chatId] ?? [] : []),
@@ -105,7 +91,7 @@ export function LobbyChat() {
       <ChatInput
         chatId={chatId}
         disabled={!chatId}
-        send={(message) => streamRef.current?.sendChat(chatId!, message)}
+        send={(message) => getRoomStream()?.sendChat(chatId!, message)}
       />
     </section>
   );

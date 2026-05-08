@@ -2,7 +2,7 @@
 
 JSON/WebSocket facade in front of the embedded Mage server. Owned module, part of the [Path C strategy](../docs/decisions/0001-path-c-strategy.md).
 
-**Status:** Phase 1 spike — embedding feasibility being validated. Not yet a production module.
+**Status:** Active production module (Path C). The service runs in `mage-stack` and is deployed behind `https://api.modern-mage.com`.
 
 ## Build
 
@@ -16,24 +16,33 @@ mvn -f Mage.Server.WebApi/pom.xml package
 
 The first build requires upstream artifacts in your local Maven cache. If they aren't there, run `mvn install -DskipTests` from `F:/xmage` first to populate `~/.m2/repository`.
 
-## Phase 1 deliverables (spike)
+## Current Scope
 
-- [ ] Confirm `MageServerImpl` can be instantiated in-process and a read method (`getServerState`) returns non-null
-- [ ] Document the bootstrap sequence required (config → repos → cards → factories → ManagerFactory → MageServerImpl)
-- [ ] Identify any blockers (static singletons, plugin loading complexity, etc.)
-- [ ] Pick a callback-bridge strategy: subclass `Session`, or implement `InvokerCallbackHandler` directly
+- REST surface for auth/session, server state, card search, lobby/table CRUD, and deck validation.
+- WebSocket surface for game stream, room stream, table stream, and spectator stream.
+- DTO firewall between upstream `mage.view.*` and the webclient-facing JSON schema.
+- Scryfall-backed Pauper legality overlay with cache + scheduled refresh.
 
-See [`docs/decisions/0003-embedding-feasibility.md`](../docs/decisions/0003-embedding-feasibility.md) for findings.
+For operating/deploy workflow, see [`mage-stack/README.md`](../mage-stack/README.md).
+For roadmap status and active milestone, see [`docs/PATH_C_PLAN.md`](../docs/PATH_C_PLAN.md).
 
 ## Layout
 
 ```
 src/
 ├── main/java/mage/webapi/
-│   ├── WebApiMain.java              # Phase 2+ entry point (placeholder)
+│   ├── WebApiMain.java              # service entrypoint
+│   ├── server/                      # HTTP + WS route wiring
+│   ├── ws/                          # game/room/table/spectator streams
+│   ├── lobby/                       # table/seat/lobby orchestration
+│   ├── format/                      # deck-format validators (e.g. Pauper)
+│   ├── auth/                        # session + auth services
+│   ├── mapper/                      # upstream -> web DTO mappers
 │   └── embed/
-│       └── EmbeddedServer.java      # Boots MageServerImpl in-process
+│       └── EmbeddedServer.java      # boots MageServerImpl in-process
 └── test/java/mage/webapi/
-    └── embed/
-        └── EmbeddedServerTest.java  # Spike: incremental boot test
+    ├── server/                      # integration tests
+    ├── ws/                          # stream tests
+    ├── mapper/                      # snapshot + mapper tests
+    └── format/                      # format-validator tests
 ```

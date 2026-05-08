@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { request } from './api/client';
+import { webRoomRefSchema } from './api/schemas';
 import { useAuthStore } from './auth/store';
 import { useGameStore } from './game/store';
 import { DemoGame } from './pages/DemoGame';
@@ -12,6 +14,7 @@ import { Login } from './pages/Login';
 import { SideboardModal } from './pages/SideboardModal';
 import { SpectatorPlaceholder } from './pages/SpectatorPlaceholder';
 import { matchSpectatePath } from './pages/spectatorPath';
+import { closeRoomStream, openRoomStream } from './lobby/roomStreamSingleton';
 
 type Tab = 'lobby' | 'decks' | 'cards';
 
@@ -124,6 +127,7 @@ export function App() {
   // lobby will require the user to re-enter the password (acceptable
   // — passwords in localStorage would be a worse trade).
   const [joinPassword, setJoinPassword] = useState<string | undefined>(undefined);
+  const [roomId, setRoomId] = useState<string | null>(null);
 
   // Wrap setter so every transition writes localStorage.
   const setActiveGameId = (id: string | null) => {
@@ -155,6 +159,43 @@ export function App() {
   useEffect(() => {
     void verify();
   }, [verify]);
+
+  // Single owner for the main-room stream. Resolve the room id once
+  // per session, then open/close the singleton around auth lifecycle.
+  useEffect(() => {
+    if (!session) {
+      setRoomId(null);
+      closeRoomStream();
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const room = await request('/api/server/main-room', webRoomRefSchema, {
+          token: session.token,
+        });
+        if (!cancelled) {
+          setRoomId(room.roomId);
+        }
+      } catch {
+        if (!cancelled) {
+          setRoomId(null);
+          closeRoomStream();
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [session]);
+
+  useEffect(() => {
+    if (!session || !roomId) return;
+    openRoomStream({ token: session.token, roomId });
+    return () => {
+      closeRoomStream();
+    };
+  }, [session, roomId]);
 
   // Auto-navigate when the lobby's room WS reports that a game
   // started for this user. We subscribe to the Zustand store as an
@@ -216,14 +257,8 @@ export function App() {
     }
   }, [session]);
 
-  // Slice L8 review (UX HIGH #7 + architecture HIGH #3) — would
-  // hoist the room WebSocket to App-level so lobby↔game transitions
-  // don't drop room frames. Pulled back from this batch because the
-  // existing LobbyChat tests assert ownership of the connection;
-  // moving it would require rewriting App.test + LobbyChat.test
-  // contract assertions. Tracked as a focused tech-debt slice; the
-  // singleton file at src/lobby/roomStreamSingleton.ts is the
-  // scaffold for the eventual migration.
+  // Room stream ownership lives at App-level so lobby↔game transitions
+  // keep one continuous main-room connection for chat/startGame frames.
 
   // Slice L8 — when the lobby's start-match transition completes the
   // game store sets pendingStartGame, the existing subscriber above

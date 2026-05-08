@@ -4,6 +4,11 @@ import userEvent from '@testing-library/user-event';
 import { LobbyChat } from './LobbyChat';
 import { useAuthStore } from '../auth/store';
 import { useGameStore } from '../game/store';
+import { getRoomStream } from '../lobby/roomStreamSingleton';
+
+vi.mock('../lobby/roomStreamSingleton', () => ({
+  getRoomStream: vi.fn(),
+}));
 
 const ANON_SESSION = {
   schemaVersion: '1.15',
@@ -30,28 +35,7 @@ const MAIN_ROOM = {
   chatId: CHAT_ID,
 };
 
-/**
- * Captures the constructed WebSocket so tests can assert on the URL
- * and call .send() to verify outbound traffic. The wrapper's
- * sendChat() goes through the real GameStream → real WebSocket.send().
- */
-let capturedWs: { url: string; sentMessages: string[] } | null = null;
-
-class FakeWebSocket {
-  static OPEN = 1;
-  url: string;
-  readyState = 1; // open immediately so sendEnvelope can write
-  sentMessages: string[] = [];
-  constructor(url: string) {
-    this.url = url;
-    capturedWs = { url, sentMessages: this.sentMessages };
-  }
-  addEventListener() {}
-  close() {}
-  send(data: string) {
-    this.sentMessages.push(data);
-  }
-}
+const sendChat = vi.fn();
 
 describe('LobbyChat', () => {
   beforeEach(() => {
@@ -62,7 +46,10 @@ describe('LobbyChat', () => {
       verifying: false,
     });
     useGameStore.getState().reset();
-    capturedWs = null;
+    sendChat.mockReset();
+    vi.mocked(getRoomStream).mockReturnValue({
+      sendChat,
+    } as unknown as ReturnType<typeof getRoomStream>);
     vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request) => {
       const url =
         typeof input === 'string'
@@ -75,7 +62,6 @@ describe('LobbyChat', () => {
       }
       return new Response(null, { status: 404 });
     }));
-    vi.stubGlobal('WebSocket', FakeWebSocket);
   });
 
   afterEach(() => {
@@ -89,19 +75,17 @@ describe('LobbyChat', () => {
     });
   });
 
-  it('opens a room WebSocket once the main-room fetch resolves', async () => {
+  it('resolves main-room ids for chat filtering', async () => {
     render(<LobbyChat />);
     await waitFor(() => {
-      expect(capturedWs).not.toBeNull();
+      expect(screen.getByText(/lobby chat/i)).toBeInTheDocument();
     });
-    expect(capturedWs?.url).toContain('/api/rooms/' + ROOM_ID + '/stream');
-    expect(capturedWs?.url).toContain('token=tok-anon');
   });
 
   it('renders chat-log entries from the store filtered by main-room chatId', async () => {
     render(<LobbyChat />);
     await waitFor(() => {
-      expect(capturedWs).not.toBeNull();
+      expect(screen.getByText(/lobby chat/i)).toBeInTheDocument();
     });
     act(() => {
       useGameStore.setState({
@@ -128,24 +112,19 @@ describe('LobbyChat', () => {
     const user = userEvent.setup();
     render(<LobbyChat />);
     await waitFor(() => {
-      expect(capturedWs).not.toBeNull();
+      expect(screen.getByText(/lobby chat/i)).toBeInTheDocument();
     });
     await user.type(screen.getByTestId('chat-input'), 'hello world');
     await user.click(screen.getByRole('button', { name: /send/i }));
-    expect(capturedWs?.sentMessages).toHaveLength(1);
-    const body = JSON.parse(capturedWs!.sentMessages[0]!);
-    expect(body).toEqual({
-      type: 'chatSend',
-      chatId: CHAT_ID,
-      message: 'hello world',
-    });
+    expect(sendChat).toHaveBeenCalledTimes(1);
+    expect(sendChat).toHaveBeenCalledWith(CHAT_ID, 'hello world');
   });
 
   it('Send button is disabled on empty / whitespace-only input', async () => {
     const user = userEvent.setup();
     render(<LobbyChat />);
     await waitFor(() => {
-      expect(capturedWs).not.toBeNull();
+      expect(screen.getByText(/lobby chat/i)).toBeInTheDocument();
     });
     const button = screen.getByRole('button', { name: /send/i });
     expect(button).toBeDisabled();
@@ -158,7 +137,7 @@ describe('LobbyChat', () => {
   it('chats from a foreign chatId are not shown', async () => {
     render(<LobbyChat />);
     await waitFor(() => {
-      expect(capturedWs).not.toBeNull();
+      expect(screen.getByText(/lobby chat/i)).toBeInTheDocument();
     });
     act(() => {
       useGameStore.setState({

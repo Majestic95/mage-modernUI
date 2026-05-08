@@ -1,8 +1,8 @@
 # webclient
 
-Modern React + TypeScript front-end for the Mage WebApi. Phase 4 work.
-The first slice (this scaffold) only confirms the toolchain is wired;
-real screens (login, lobby, card library) land in subsequent slices.
+Modern React + TypeScript front-end for the Mage WebApi.
+
+**Status:** Post-Phase-5 MVP. Login, lobby/table flow, deck flow, and in-game play are live; current work is reliability + parity follow-through.
 
 ## Stack
 
@@ -44,9 +44,9 @@ pnpm check          # typecheck + lint + test
 
 Default backend: `http://localhost:18080`. The WebApi is the Java module
 at [`Mage.Server.WebApi/`](../Mage.Server.WebApi/) — boot it via
-`pnpm` ... actually no, it's a Java jar; see
-[`docs/dev-setup.md`](../docs/dev-setup.md). Real wiring (login + WS)
-lands in the next slice.
+Java service workflow, not `pnpm`; see
+[`docs/dev-setup.md`](../docs/dev-setup.md) and
+[`mage-stack/README.md`](../mage-stack/README.md).
 
 ## Layout
 
@@ -54,8 +54,13 @@ lands in the next slice.
 webclient/
 ├── src/
 │   ├── main.tsx          # React entry point
-│   ├── App.tsx           # placeholder root component (scaffold only)
-│   ├── App.test.tsx      # scaffold smoke test
+│   ├── App.tsx           # auth/lobby/game shell routing
+│   ├── pages/            # login/lobby/game/spectator surfaces
+│   ├── lobby/            # table + seat + deck lobby flows
+│   ├── game/             # battlefield/hand/stack/action surfaces
+│   ├── api/              # schema + request wiring
+│   ├── auth/             # session/auth state
+│   └── decks/            # deck store + editor/search
 │   ├── index.css         # Tailwind import + project-wide vars
 │   └── setupTests.ts     # Vitest + Testing Library bootstrap
 ├── public/

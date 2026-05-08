@@ -36,7 +36,6 @@ import { webTableToLobby } from './webTableToLobby';
 import type { WebDeckCardInfo, WebDeckValidationError } from '../api/schemas';
 import { useDecksStore } from '../decks/store';
 import { ValidationErrorList } from '../decks/ValidationErrorList';
-import { GameStream } from '../game/stream';
 import { PasswordPromptModal } from '../pages/PasswordPromptModal';
 
 interface EditableInitial {
@@ -202,34 +201,6 @@ function LiveLobby({
       cancelled = true;
     };
   }, [session]);
-
-  // Slice L8 — keep a room-WebSocket open while in the new lobby so
-  // the upstream `startGame` callback (User.ccGameStarted) flows into
-  // the game store as `pendingStartGame`. App.tsx already subscribes
-  // to that store and auto-routes into the game window when it's
-  // populated. The legacy LobbyChat owns this connection on the
-  // table-list screen, but unmounts as soon as activeLobbyId is set
-  // and NewLobbyScreen takes over — without this hook the new lobby
-  // would silently miss the start-game transition.
-  //
-  // L8 review (UX HIGH #7) — this also closes on lobby unmount, so
-  // the lobby→game transition can briefly drop room frames. Tracked
-  // as a focused refactor (room-WS hoist to App.tsx) — pulled back
-  // from this batch because moving it breaks App.test + LobbyChat.test
-  // contract assertions. The scaffold lives in roomStreamSingleton.ts
-  // for the eventual migration.
-  useEffect(() => {
-    if (!session || !roomId) return;
-    const stream = new GameStream({
-      gameId: roomId,
-      token: session.token,
-      endpoint: 'room',
-    });
-    stream.open();
-    return () => {
-      stream.close();
-    };
-  }, [session, roomId]);
 
   if (loading && !table) {
     return <LobbyStatus message="Loading table…" />;

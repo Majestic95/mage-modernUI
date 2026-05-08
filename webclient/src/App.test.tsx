@@ -4,6 +4,13 @@ import userEvent from '@testing-library/user-event';
 import { App } from './App';
 import { useAuthStore } from './auth/store';
 import { useGameStore } from './game/store';
+import { closeRoomStream, openRoomStream } from './lobby/roomStreamSingleton';
+
+vi.mock('./lobby/roomStreamSingleton', () => ({
+  openRoomStream: vi.fn(),
+  closeRoomStream: vi.fn(),
+  getRoomStream: vi.fn(() => null),
+}));
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -62,10 +69,10 @@ describe('App shell', () => {
     });
     useGameStore.getState().reset();
     localStorage.clear();
-    // App's lobby tab opens a room WebSocket via LobbyChat. Stub it
-    // here so the network never tries to fire — the shell tests
-    // don't drive WS lifecycle, but the tests below that do drive
-    // pendingStartGame still need the WS not to throw on construct.
+    vi.mocked(openRoomStream).mockReset();
+    vi.mocked(closeRoomStream).mockReset();
+    // App-level room stream still constructs a GameStream/WebSocket;
+    // keep a lightweight stub so shell tests don't touch the network.
     vi.stubGlobal('WebSocket', class {
       static OPEN = 1;
       url: string;
@@ -100,6 +107,12 @@ describe('App shell', () => {
     expect(screen.getByRole('button', { name: /lobby/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^cards$/i })).toBeInTheDocument();
     expect(screen.getByText(/guest-deadbeef/)).toBeInTheDocument();
+    return waitFor(() => {
+      expect(openRoomStream).toHaveBeenCalledWith({
+        token: ANON_SESSION.token,
+        roomId: MAIN_ROOM.roomId,
+      });
+    });
   });
 
   it('switches to the Cards tab when clicked', async () => {
@@ -170,5 +183,8 @@ describe('App shell', () => {
     await user.click(screen.getByRole('button', { name: /sign out/i }));
 
     expect(useAuthStore.getState().session).toBeNull();
+    await waitFor(() => {
+      expect(closeRoomStream).toHaveBeenCalled();
+    });
   });
 });
