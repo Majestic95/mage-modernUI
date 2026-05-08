@@ -207,6 +207,13 @@ function Initialize-Tunnel($Config, $Cloudflared) {
 function Build-WebApi($Config, $RepoRoot) {
     Write-Section "Phase 3 - WebApi build"
 
+    # Inject the bundle's pinned JDK into the session BEFORE any mvn
+    # call. Same fix as mage-redeploy.ps1 — admin shells without
+    # JAVA_HOME pre-set otherwise fail with "No compiler is provided
+    # in this environment."
+    $jdkHome = Use-ResolvedJavaHome -ConfigJavaHome $Config.webapi.javaHome
+    Write-Step "JDK: $jdkHome"
+
     # Mage.Server.WebApi is a STANDALONE pom — not registered in the
     # parent reactor (per upstream-rebase-compat decision in its pom).
     # Use -f to invoke it directly, NOT -pl ... -am.

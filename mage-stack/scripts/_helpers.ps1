@@ -61,6 +61,82 @@ function Format-Uptime($StartTime) {
     return "{0:N0}s" -f $ts.TotalSeconds
 }
 
+function Resolve-JavaHome {
+    <#
+    .SYNOPSIS
+        Find a JDK 17+ JAVA_HOME with javac.exe present.
+
+    .DESCRIPTION
+        Resolution order:
+          1. Existing $env:JAVA_HOME if it points to a real JDK (has javac).
+          2. The optional $ConfigJavaHome (typically $Config.webapi.javaHome
+             from config.json) when the caller passes it.
+          3. Newest jdk-17* under C:\Program Files\Eclipse Adoptium\.
+          4. javac on PATH (parent of parent).
+          5. Throw with a clear message.
+
+        Callers that have the bundle config in scope (mage-redeploy,
+        install-service, mage-ship) should pass $Config.webapi.javaHome
+        so the bundle-pinned JDK wins over an Adoptium auto-detect.
+        Callers that don't have config in scope can omit the parameter.
+    #>
+    param(
+        [string]$ConfigJavaHome
+    )
+
+    if ($env:JAVA_HOME -and (Test-Path (Join-Path $env:JAVA_HOME 'bin\javac.exe'))) {
+        return $env:JAVA_HOME
+    }
+
+    if ($ConfigJavaHome -and (Test-Path (Join-Path $ConfigJavaHome 'bin\javac.exe'))) {
+        return $ConfigJavaHome
+    }
+
+    $adoptiumRoot = 'C:\Program Files\Eclipse Adoptium'
+    if (Test-Path $adoptiumRoot) {
+        $candidate = Get-ChildItem -Path $adoptiumRoot -Directory -Filter 'jdk-17*' |
+            Sort-Object Name -Descending |
+            Select-Object -First 1
+        if ($candidate -and (Test-Path (Join-Path $candidate.FullName 'bin\javac.exe'))) {
+            return $candidate.FullName
+        }
+    }
+
+    $javac = Get-Command javac -ErrorAction SilentlyContinue
+    if ($javac) {
+        return Split-Path -Parent (Split-Path -Parent $javac.Source)
+    }
+
+    throw "Could not locate a JDK 17+ JAVA_HOME with javac.exe. Set JAVA_HOME, fix config.webapi.javaHome, or install Eclipse Adoptium JDK 17."
+}
+
+function Use-ResolvedJavaHome {
+    <#
+    .SYNOPSIS
+        Resolve a JDK and inject it into $env:JAVA_HOME + $env:PATH for
+        the current PowerShell session. Returns the resolved path.
+
+    .DESCRIPTION
+        Convenience wrapper for the common "I'm about to call mvn"
+        pattern in ops scripts. Mutates session env so subsequent
+        mvn / java calls in the same script see the right JDK without
+        the caller having to manage env state.
+
+        Idempotent — repeated calls with the same config are no-ops
+        beyond the same result.
+    #>
+    param(
+        [string]$ConfigJavaHome
+    )
+    $resolved = Resolve-JavaHome -ConfigJavaHome $ConfigJavaHome
+    $env:JAVA_HOME = $resolved
+    $binDir = Join-Path $resolved 'bin'
+    if (-not ($env:PATH -split ';' | Where-Object { $_ -eq $binDir })) {
+        $env:PATH = "$binDir;$env:PATH"
+    }
+    return $resolved
+}
+
 function Install-NssmService {
     [CmdletBinding()]
     param(

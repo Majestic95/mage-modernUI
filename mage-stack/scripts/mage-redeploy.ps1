@@ -23,7 +23,13 @@ $RepoRoot = Split-Path -Parent $BundleRoot
 $Config = Read-BundleConfig $BundleRoot
 $Nssm = Join-Path $BundleRoot 'bin\nssm.exe'
 
+# Inject the bundle's pinned JDK into the session BEFORE any mvn call.
+# Admin shells without JAVA_HOME pre-set otherwise fall through to a
+# JRE and fail with "No compiler is provided in this environment."
+$jdkHome = Use-ResolvedJavaHome -ConfigJavaHome $Config.webapi.javaHome
+
 Write-Section "Mage Stack - redeploy"
+Write-Step "JDK: $jdkHome"
 
 # Sentinel suppresses watchdog restarts during build window.
 $sentinel = Join-Path $BundleRoot '.intentional-down'
