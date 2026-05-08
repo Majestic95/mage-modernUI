@@ -94,13 +94,11 @@ export function scryfallCommanderImageUrl(
   commander: WebCommandObjectView,
   version: ScryfallVersion = 'art_crop',
 ): string | null {
-  if (!commander.expansionSetCode) return null;
+  // Slice 70-X.2 fallback: cardNumber preferred, imageNumber legacy.
   const collectorNumber =
     commander.cardNumber || (commander.imageNumber ? String(commander.imageNumber) : '');
-  if (!collectorNumber) return null;
-  const set = commander.expansionSetCode.toLowerCase();
-  const num = encodeURIComponent(collectorNumber);
-  return `https://api.scryfall.com/cards/${set}/${num}?format=image&version=${version}`;
+  return scryfallPrintingImageUrl(
+    commander.expansionSetCode, collectorNumber, version);
 }
 
 export function scryfallPrintingImageUrl(

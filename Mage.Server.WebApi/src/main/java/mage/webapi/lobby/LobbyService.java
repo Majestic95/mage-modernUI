@@ -689,10 +689,12 @@ public final class LobbyService {
                 + "only consumed on first-take path)",
                 tableId, username, roomId);
         broadcast(tableId);
-        // {@code name} / {@code skill} / {@code password} are used
-        // only on the first-take path (joinTable above); harmless
-        // unused parameters on the swap path. Java doesn't warn.
-        assert name != null || skill >= 0 || password == null;
+        // Audit fix (L5) — name / skill / password are intentionally
+        // unused on the post-take swap path; they're only consumed by
+        // the first-take joinTable above. Java doesn't warn on unused
+        // parameters and the prior `assert` line was a no-op (asserts
+        // are disabled in production JVMs); this comment is the
+        // documentation that line was trying to be.
     }
 
     /**

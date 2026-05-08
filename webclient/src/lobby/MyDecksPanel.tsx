@@ -128,25 +128,9 @@ function DeckRow({
           : 'transparent',
       }}
     >
-      <div
-        className="h-8 w-8 flex-shrink-0 overflow-hidden rounded-md"
-        style={{ background: 'var(--color-bg-elevated)' }}
-      >
-        {deck.commanderArtUrl ?? deck.displayCardArtUrl ? (
-          <img
-            src={(deck.commanderArtUrl ?? deck.displayCardArtUrl)!}
-            alt=""
-            loading="lazy"
-            referrerPolicy="no-referrer"
-            style={{
-              width: '100%',
-              height: '100%',
-              objectFit: 'cover',
-              display: 'block',
-            }}
-          />
-        ) : null}
-      </div>
+      <DeckRowAvatar
+        artUrl={deck.commanderArtUrl ?? deck.displayCardArtUrl}
+      />
       <div className="flex min-w-0 flex-1 flex-col leading-tight">
         <p className="truncate text-xs font-medium text-text-primary">
           {deck.name}
@@ -161,3 +145,33 @@ function DeckRow({
 }
 
 void (null as LobbyColor | null);
+
+/**
+ * Audit fix (L2) — single computed source for the avatar URL so the
+ * truthiness check and the {@code <img src>} don't both evaluate
+ * {@code commanderArtUrl ?? displayCardArtUrl} (and don't need a
+ * non-null assertion).
+ */
+function DeckRowAvatar({ artUrl }: { artUrl: string | null }) {
+  return (
+    <div
+      className="h-8 w-8 flex-shrink-0 overflow-hidden rounded-md"
+      style={{ background: 'var(--color-bg-elevated)' }}
+    >
+      {artUrl ? (
+        <img
+          src={artUrl}
+          alt=""
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          style={{
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            display: 'block',
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}

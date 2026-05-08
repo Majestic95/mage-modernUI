@@ -48,6 +48,16 @@ import java.util.List;
  * @param displayCardSetCode    set code for the chosen display-card printing.
  * @param displayCardNumber     collector number for the chosen display-card
  *     printing.
+ *
+ * <p><b>Audit note (L4):</b> the redaction path in
+ * {@link mage.webapi.mapper.TableMapper#redact(WebSeat)} is positional
+ * — every field in this record is repeated there with a literal
+ * "kept" or "" placeholder. ANY new field added to this record MUST
+ * either appear in {@code redact()} with an explicit decision (kept
+ * vs. scrubbed) or be argued for in a comment. The
+ * {@code TableMapperTest.redact_zerosAllDeckBuilderFields_*} test
+ * locks the current snapshot field-by-field so a positional
+ * regression breaks loudly.
  */
 public record WebSeat(
         String playerName,
