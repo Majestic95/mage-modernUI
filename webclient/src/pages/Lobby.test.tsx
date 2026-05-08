@@ -3,7 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Lobby } from './Lobby';
 import { useAuthStore } from '../auth/store';
-import type { WebTable } from '../api/schemas';
+import { webServerStateSchema, webTableSchema, type WebTable } from '../api/schemas';
 
 const ANON_SESSION = {
   schemaVersion: '1.15',
@@ -25,7 +25,7 @@ function jsonResponse(status: number, body: unknown): Response {
 }
 
 function tableWith(overrides: Partial<WebTable>): WebTable {
-  return {
+  return webTableSchema.parse({
     tableId: TABLE_ID,
     tableName: "guest-deadbeef's table",
     gameType: 'Two Player Duel',
@@ -44,7 +44,7 @@ function tableWith(overrides: Partial<WebTable>): WebTable {
       { playerName: 'COMPUTER_MONTE_CARLO', playerType: 'COMPUTER_MONTE_CARLO', occupied: true },
     ],
     ...overrides,
-  };
+  });
 }
 
 const MAIN_ROOM = {
@@ -53,7 +53,7 @@ const MAIN_ROOM = {
   chatId: '11111111-1111-1111-1111-111111111111',
 };
 
-const SERVER_STATE = {
+const SERVER_STATE = webServerStateSchema.parse({
   schemaVersion: '1.15',
   gameTypes: [],
   tournamentTypes: [],
@@ -61,7 +61,7 @@ const SERVER_STATE = {
   deckTypes: [],
   draftCubes: [],
   testMode: false,
-};
+});
 
 function stubFetch(routes: Record<string, () => Response>) {
   const fetchMock = vi.fn((input: string | URL | Request) => {

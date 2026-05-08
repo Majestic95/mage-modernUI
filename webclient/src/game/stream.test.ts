@@ -68,6 +68,7 @@ class FakeWebSocket {
 }
 
 const FAKE_GAME_ID = '550e8400-e29b-41d4-a716-446655440000';
+type SendSpy = ReturnType<typeof vi.fn>;
 
 describe('GameStream', () => {
   beforeEach(() => {
@@ -221,7 +222,7 @@ describe('GameStream', () => {
     stream.open();
     const fake = FakeWebSocket.instances[0]!;
     fake._open();
-    const sendSpy = vi.spyOn(fake, 'send' as never);
+    const sendSpy = vi.spyOn(fake, 'send') as SendSpy;
     stream.sendPlayerAction('PASS_PRIORITY_UNTIL_NEXT_TURN');
     expect(sendSpy).toHaveBeenCalledTimes(1);
     const body = JSON.parse(sendSpy.mock.calls[0]![0] as string);
@@ -241,7 +242,7 @@ describe('GameStream', () => {
     stream.open();
     const fake = FakeWebSocket.instances[0]!;
     fake._open();
-    const sendSpy = vi.spyOn(fake, 'send' as never);
+    const sendSpy = vi.spyOn(fake, 'send') as SendSpy;
     stream.sendPlayerResponse(42, 'boolean', true);
     const body = JSON.parse(sendSpy.mock.calls[0]![0] as string);
     expect(body).toEqual({
@@ -261,7 +262,7 @@ describe('GameStream', () => {
     stream.open();
     const fake = FakeWebSocket.instances[0]!;
     fake._open();
-    const sendSpy = vi.spyOn(fake, 'send' as never);
+    const sendSpy = vi.spyOn(fake, 'send') as SendSpy;
     stream.sendChat('00000000-0000-0000-0000-000000000000', 'gg');
     const body = JSON.parse(sendSpy.mock.calls[0]![0] as string);
     expect(body).toEqual({
@@ -280,7 +281,7 @@ describe('GameStream', () => {
     stream.open();
     // Note: never call _open() — readyState stays 0 (CONNECTING).
     const fake = FakeWebSocket.instances[0]!;
-    const sendSpy = vi.spyOn(fake, 'send' as never);
+    const sendSpy = vi.spyOn(fake, 'send') as SendSpy;
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     stream.sendPlayerAction('CONCEDE');
     expect(sendSpy).not.toHaveBeenCalled();
@@ -403,7 +404,7 @@ describe('GameStream', () => {
     const sock = FakeWebSocket.instances[0]!;
     sock._open();
     // Reset to known state.
-    useGameStore.getState().setConnection('open', null);
+    useGameStore.getState().setConnection('open');
     // Send a frame with major-version 99 — well above EXPECTED.
     sock._message(
       JSON.stringify({

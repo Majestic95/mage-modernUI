@@ -49,7 +49,7 @@ describe('RevealToast — reveal-detection reducer', () => {
     });
     const reveals = useGameStore.getState().recentReveals;
     expect(reveals).toHaveLength(1);
-    expect(reveals[0].message).toContain('reveals Lightning Bolt');
+    expect(reveals.at(0)?.message).toContain('reveals Lightning Bolt');
   });
 
   it('does NOT push a reveal entry for unrelated gameInform messages', () => {

@@ -111,6 +111,7 @@ function readPersistedLobbyUser(): string | null {
  */
 export function App() {
   const session = useAuthStore((s) => s.session);
+  const token = session?.token ?? null;
   const logout = useAuthStore((s) => s.logout);
   const verify = useAuthStore((s) => s.verify);
   const [tab, setTab] = useState<Tab>('lobby');
@@ -163,7 +164,7 @@ export function App() {
   // Single owner for the main-room stream. Resolve the room id once
   // per session, then open/close the singleton around auth lifecycle.
   useEffect(() => {
-    if (!session) {
+    if (!token) {
       setRoomId(null);
       closeRoomStream();
       return;
@@ -172,7 +173,7 @@ export function App() {
     void (async () => {
       try {
         const room = await request('/api/server/main-room', webRoomRefSchema, {
-          token: session.token,
+          token,
         });
         if (!cancelled) {
           setRoomId(room.roomId);
@@ -187,15 +188,15 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [session]);
+  }, [token]);
 
   useEffect(() => {
-    if (!session || !roomId) return;
-    openRoomStream({ token: session.token, roomId });
+    if (!token || !roomId) return;
+    openRoomStream({ token, roomId });
     return () => {
       closeRoomStream();
     };
-  }, [session, roomId]);
+  }, [token, roomId]);
 
   // Auto-navigate when the lobby's room WS reports that a game
   // started for this user. We subscribe to the Zustand store as an

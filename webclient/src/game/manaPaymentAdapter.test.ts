@@ -5,6 +5,7 @@ import {
 } from './manaPaymentAdapter';
 import type { GameStream } from './stream';
 import type { PendingDialog } from './store';
+import { webGameClientMessageSchema } from '../api/schemas';
 
 const fakeStream = () => ({
   sendObjectClick: vi.fn(),
@@ -18,7 +19,7 @@ const fakeStream = () => ({
 const playManaDialog: PendingDialog = {
   method: 'gamePlayMana',
   messageId: 42,
-  data: {
+  data: webGameClientMessageSchema.parse({
     gameView: null,
     message: 'Pay {1}{R}',
     targets: [],
@@ -34,7 +35,7 @@ const playManaDialog: PendingDialog = {
       possibleBlockers: [],
       specialButton: '',
     },
-  },
+  }),
 };
 
 describe('manaPaymentAdapter', () => {

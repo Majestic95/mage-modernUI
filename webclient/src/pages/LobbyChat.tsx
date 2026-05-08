@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { request } from '../api/client';
-import { webRoomRefSchema } from '../api/schemas';
+import { webRoomRefSchema, type WebChatMessage } from '../api/schemas';
 import { useAuthStore } from '../auth/store';
 import { useGameStore } from '../game/store';
 import { getRoomStream } from '../lobby/roomStreamSingleton';
@@ -99,7 +99,7 @@ export function LobbyChat() {
 
 /* ---------- subcomponents ---------- */
 
-function ChatLog({ messages }: { messages: ReturnType<typeof useGameStore>['chatMessages'][string] }) {
+function ChatLog({ messages }: { messages: WebChatMessage[] }) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {

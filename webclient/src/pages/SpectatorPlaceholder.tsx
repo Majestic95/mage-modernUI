@@ -4,13 +4,13 @@
  * The server-side spectator route shipped in slice 71
  * (`/api/games/{gameId}/spectate` WebSocket endpoint, with same-gameId
  * XOR + read-only inbound + per-route broadcast filter). Client-side
- * spectator UI is deferred to a future v2.x slice — see
+ * spectator UI is deferred to a future slice — see
  * `docs/decisions/0011-design-system-adoption.md` D1 for the full
  * deferral rationale.
  *
  * <p>Without this placeholder, a user pasting a spectate URL hits a
  * white screen / SPA route miss / generic 404 — indistinguishable
- * from a bug. The placeholder renders an explicit "shipping in v2.x"
+ * from a bug. The placeholder renders an explicit deferred-feature
  * message with the gameId echoed back, so the user knows they hit
  * the right endpoint and the feature is genuinely deferred, not
  * broken.
@@ -34,7 +34,7 @@ export function SpectatorPlaceholder({ gameId }: { gameId: string }) {
           Spectator mode
         </h1>
         <p className="text-text-secondary leading-relaxed">
-          The spectator UI is shipping in v2.x. The server-side route is
+          The spectator UI is intentionally deferred. The server-side route is
           live; the client-side viewer experience is part of a future
           slice tracked in{' '}
           <code

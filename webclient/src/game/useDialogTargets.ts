@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useGameStore } from './store';
 import type { GameStream } from './stream';
-import type { WebGameView } from '../api/schemas';
+import type { WebGameClientMessage, WebGameView } from '../api/schemas';
 
 /**
  * Slice 70-Y.1 (Wave 2 of slice 70-X.14) — central derivation for
@@ -106,12 +106,24 @@ export function useDialogTargets(stream: GameStream | null): DialogTargetState {
     if (!pendingDialog || !stream) return INACTIVE;
     // gameChooseAbility uses a different DTO (no cardsView1); modal-only.
     if (pendingDialog.method === 'gameChooseAbility') return INACTIVE;
-    return computeDialogTargets(pendingDialog, gameView, stream);
+    return computeDialogTargets(
+      pendingDialog as {
+        method: Exclude<typeof pendingDialog.method, 'gameChooseAbility'>;
+        messageId: number;
+        data: WebGameClientMessage;
+      },
+      gameView,
+      stream,
+    );
   }, [pendingDialog, gameView, stream]);
 }
 
 function computeDialogTargets(
-  pendingDialog: NonNullable<ReturnType<typeof useGameStore.getState>['pendingDialog']>,
+  pendingDialog: {
+    method: Exclude<NonNullable<ReturnType<typeof useGameStore.getState>['pendingDialog']>['method'], 'gameChooseAbility'>;
+    messageId: number;
+    data: WebGameClientMessage;
+  },
   gameView: WebGameView | null,
   stream: GameStream,
 ): DialogTargetState {

@@ -56,6 +56,7 @@ function permWithTypes(types: string[]): WebPermanentView {
     attachments: [],
     attachedTo: '',
     attachedToPermanent: false,
+    goadingPlayerIds: [],
   };
 }
 
@@ -214,10 +215,10 @@ describe('groupWithAttachments', () => {
     const b = permWithIdAndTypes('b', ['CREATURE']);
     const groups = groupWithAttachments([a, b]);
     expect(groups).toHaveLength(2);
-    expect(groups[0].host.card.id).toBe('a');
-    expect(groups[0].attachments).toEqual([]);
-    expect(groups[1].host.card.id).toBe('b');
-    expect(groups[1].attachments).toEqual([]);
+    expect(groups.at(0)?.host.card.id).toBe('a');
+    expect(groups.at(0)?.attachments).toEqual([]);
+    expect(groups.at(1)?.host.card.id).toBe('b');
+    expect(groups.at(1)?.attachments).toEqual([]);
   });
 
   it('groups attachments under their host within the row', () => {
@@ -225,8 +226,8 @@ describe('groupWithAttachments', () => {
     const aura = permWithIdAndTypes('aura', ['ENCHANTMENT'], 'host');
     const groups = groupWithAttachments([host, aura]);
     expect(groups).toHaveLength(1);
-    expect(groups[0].host.card.id).toBe('host');
-    expect(groups[0].attachments.map((a) => a.card.id)).toEqual(['aura']);
+    expect(groups.at(0)?.host.card.id).toBe('host');
+    expect(groups.at(0)?.attachments.map((a) => a.card.id)).toEqual(['aura']);
   });
 
   it('preserves attachment order across multiple attachments on one host', () => {
@@ -236,7 +237,7 @@ describe('groupWithAttachments', () => {
     const a3 = permWithIdAndTypes('a3', ['ENCHANTMENT'], 'host');
     const groups = groupWithAttachments([host, a1, a2, a3]);
     expect(groups).toHaveLength(1);
-    expect(groups[0].attachments.map((a) => a.card.id)).toEqual([
+    expect(groups.at(0)?.attachments.map((a) => a.card.id)).toEqual([
       'a1',
       'a2',
       'a3',
@@ -249,8 +250,8 @@ describe('groupWithAttachments', () => {
     const aura = permWithIdAndTypes('aura', ['ENCHANTMENT'], 'absent-host');
     const groups = groupWithAttachments([aura]);
     expect(groups).toHaveLength(1);
-    expect(groups[0].host.card.id).toBe('aura');
-    expect(groups[0].attachments).toEqual([]);
+    expect(groups.at(0)?.host.card.id).toBe('aura');
+    expect(groups.at(0)?.attachments).toEqual([]);
   });
 
   it('handles multiple hosts with their own attachments interleaved', () => {
@@ -260,10 +261,10 @@ describe('groupWithAttachments', () => {
     const a2 = permWithIdAndTypes('a2', ['ENCHANTMENT'], 'h2');
     const groups = groupWithAttachments([h1, a1, h2, a2]);
     expect(groups).toHaveLength(2);
-    expect(groups[0].host.card.id).toBe('h1');
-    expect(groups[0].attachments.map((a) => a.card.id)).toEqual(['a1']);
-    expect(groups[1].host.card.id).toBe('h2');
-    expect(groups[1].attachments.map((a) => a.card.id)).toEqual(['a2']);
+    expect(groups.at(0)?.host.card.id).toBe('h1');
+    expect(groups.at(0)?.attachments.map((a) => a.card.id)).toEqual(['a1']);
+    expect(groups.at(1)?.host.card.id).toBe('h2');
+    expect(groups.at(1)?.attachments.map((a) => a.card.id)).toEqual(['a2']);
   });
 });
 
@@ -295,8 +296,8 @@ describe('groupWithAttachmentsAndStacks — identical-permanent stacking', () =>
     const f5 = permWithName('f5', 'Forest');
     const groups = groupWithAttachmentsAndStacks([f1, f2, f3, f4, f5]);
     expect(groups).toHaveLength(1);
-    expect(groups[0].host.card.id).toBe('f1');
-    expect(groups[0].stackedDuplicates.map((p) => p.card.id)).toEqual([
+    expect(groups.at(0)?.host.card.id).toBe('f1');
+    expect(groups.at(0)?.stackedDuplicates.map((p) => p.card.id)).toEqual([
       'f2',
       'f3',
       'f4',
@@ -360,8 +361,8 @@ describe('groupWithAttachmentsAndStacks — identical-permanent stacking', () =>
     const t3 = permWithName('t3', 'Goblin', ['CREATURE']);
     const groups = groupWithAttachmentsAndStacks([t1, t2, t3]);
     expect(groups).toHaveLength(1);
-    expect(groups[0].host.card.id).toBe('t1');
-    expect(groups[0].stackedDuplicates.length).toBe(2);
+    expect(groups.at(0)?.host.card.id).toBe('t1');
+    expect(groups.at(0)?.stackedDuplicates.length).toBe(2);
   });
 
   it('does not stack tokens of different sources (different cardNumber)', () => {
@@ -396,12 +397,12 @@ describe('groupWithAttachmentsAndStacks — identical-permanent stacking', () =>
     const groups = groupWithAttachmentsAndStacks([f1, f2, f3, aura, i1, i2]);
     // Groups in insertion order: f1 (with f3 stacked), f2 (with aura), i1 (with i2)
     expect(groups).toHaveLength(3);
-    expect(groups[0].host.card.id).toBe('f1');
-    expect(groups[0].stackedDuplicates.map((p) => p.card.id)).toEqual(['f3']);
-    expect(groups[1].host.card.id).toBe('f2');
-    expect(groups[1].attachments.map((a) => a.card.id)).toEqual(['aura1']);
-    expect(groups[1].stackedDuplicates).toEqual([]);
-    expect(groups[2].host.card.id).toBe('i1');
-    expect(groups[2].stackedDuplicates.map((p) => p.card.id)).toEqual(['i2']);
+    expect(groups.at(0)?.host.card.id).toBe('f1');
+    expect(groups.at(0)?.stackedDuplicates.map((p) => p.card.id)).toEqual(['f3']);
+    expect(groups.at(1)?.host.card.id).toBe('f2');
+    expect(groups.at(1)?.attachments.map((a) => a.card.id)).toEqual(['aura1']);
+    expect(groups.at(1)?.stackedDuplicates).toEqual([]);
+    expect(groups.at(2)?.host.card.id).toBe('i1');
+    expect(groups.at(2)?.stackedDuplicates.map((p) => p.card.id)).toEqual(['i2']);
   });
 });

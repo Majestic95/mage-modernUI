@@ -242,8 +242,8 @@ export function HoverCardDetail({
           >
             <CardDetail
               card={displayCard}
-              onFlip={transformable ? () => setFlipped((f) => !f) : undefined}
               isFlipped={flipped}
+              {...(transformable ? { onFlip: () => setFlipped((f) => !f) } : {})}
             />
           </div>,
           document.body,

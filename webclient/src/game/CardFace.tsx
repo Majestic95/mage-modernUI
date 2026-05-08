@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type CSSProperties, type JSX } from 'react';
-import { motion } from 'framer-motion';
+import { useEffect, useRef, useState, type JSX } from 'react';
+import { motion, type MotionStyle } from 'framer-motion';
 import type { WebCardView, WebPermanentView } from '../api/schemas';
 import { ManaCost } from './ManaCost';
 import { scryfallImageUrl, type ScryfallVersion } from './scryfall';
@@ -352,7 +352,7 @@ export function CardFace(props: CardFaceProps): JSX.Element {
   // mode for 'battlefield' — width auto-computes from height via
   // aspect-ratio). Height defaults to width × 7/5 (5:7 portrait
   // aspect ratio) unless the spec explicitly sets it.
-  const sizeStyle: CSSProperties = {
+  const sizeStyle: MotionStyle = {
     width: spec.width,
     height:
       spec.height ??
@@ -361,6 +361,10 @@ export function CardFace(props: CardFaceProps): JSX.Element {
         : `calc(${spec.width} * 7 / 5)`),
     aspectRatio: spec.aspectRatio,
   };
+  const haloMotionStyle = {
+    ...sizeStyle,
+    isolation: 'isolate',
+  } as MotionStyle;
 
   // Slice 70-Z polish (user direction 2026-04-30) — wherever a
   // commander card is rendered, paint a color-identity halo bloom
@@ -391,7 +395,7 @@ export function CardFace(props: CardFaceProps): JSX.Element {
         (tapClass ? ' ' + tapClass : '') +
         (dialogPulseClass ? ' ' + dialogPulseClass : '')
       }
-      style={sizeStyle}
+      style={sizeStyle as React.CSSProperties}
     >
       {url && !imageFailed ? (
         <img
@@ -587,7 +591,7 @@ export function CardFace(props: CardFaceProps): JSX.Element {
         style={sizeStyle}
         initial={{ rotate: rotateInitial }}
         animate={{ rotate: rotateAnimate }}
-        transition={rotateTransition}
+        {...(rotateTransition ? { transition: rotateTransition } : {})}
       >
         {cardFace}
       </motion.div>
@@ -600,10 +604,10 @@ export function CardFace(props: CardFaceProps): JSX.Element {
   return (
     <motion.div
       className="relative inline-block"
-      style={{ ...sizeStyle, isolation: 'isolate' }}
+      style={haloMotionStyle}
       initial={{ rotate: rotateInitial }}
       animate={{ rotate: rotateAnimate }}
-      transition={rotateTransition}
+      {...(rotateTransition ? { transition: rotateTransition } : {})}
     >
       <div
         data-testid="commander-halo"

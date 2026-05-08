@@ -303,7 +303,7 @@ export function PlayerArea({
         eligibleTargetIds={eligibleTargetIds}
         canAct={canAct}
         onObjectClick={onObjectClick}
-        chipsLayout={chipsLayout}
+        {...(chipsLayout ? { chipsLayout } : {})}
       />
     );
 

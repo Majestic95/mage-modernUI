@@ -162,7 +162,7 @@ describe('GameDialog', () => {
     return {
       method: 'gameSelect' as const,
       messageId: 99,
-      data: {
+      data: webGameClientMessageSchema.parse({
         gameView: null,
         message,
         targets: [],
@@ -178,7 +178,7 @@ describe('GameDialog', () => {
           possibleBlockers: opts?.possibleBlockers ?? [],
           specialButton: opts?.specialButton ?? '',
         },
-      },
+      }),
     };
   }
 

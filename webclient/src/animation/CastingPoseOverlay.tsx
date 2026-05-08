@@ -100,11 +100,9 @@ export function CastingPoseOverlay({
           ? 'pointer-events-none fixed -translate-x-1/2 -translate-y-1/2'
           : 'pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2'
       }
-      style={
-        targetCenter
-          ? { left: targetCenter.x, top: targetCenter.y }
-          : undefined
-      }
+      {...(targetCenter
+        ? { style: { left: targetCenter.x, top: targetCenter.y } }
+        : {})}
       aria-hidden="true"
     >
       <CardFace card={card} size="focal" />

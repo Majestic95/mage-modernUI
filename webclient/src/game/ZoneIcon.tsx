@@ -110,16 +110,20 @@ export function ZoneIcon({
     );
   }
 
+  const publicZoneProps = {
+    zone,
+    cards: cards ?? {},
+    playerName,
+    label: displayLabel,
+    variant,
+    ...(eligibleTargetIds ? { eligibleTargetIds } : {}),
+    ...(canAct !== undefined ? { canAct } : {}),
+    ...(onObjectClick ? { onObjectClick } : {}),
+  };
+
   return (
     <PublicZoneIcon
-      zone={zone}
-      cards={cards ?? {}}
-      playerName={playerName}
-      label={displayLabel}
-      variant={variant}
-      eligibleTargetIds={eligibleTargetIds}
-      canAct={canAct}
-      onObjectClick={onObjectClick}
+      {...publicZoneProps}
     />
   );
 }
@@ -240,8 +244,8 @@ function PublicZoneIcon({
         <ZoneBrowser
           title={`${playerName}'s ${zone}`}
           cards={cards}
-          eligibleIds={eligibleTargetIds}
-          canAct={canAct}
+          {...(eligibleTargetIds ? { eligibleIds: eligibleTargetIds } : {})}
+          {...(canAct !== undefined ? { canAct } : {})}
           onObjectClick={(id) => {
             if (onObjectClick) onObjectClick(id);
             setOpen(false);

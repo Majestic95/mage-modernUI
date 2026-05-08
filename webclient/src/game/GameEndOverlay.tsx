@@ -116,7 +116,7 @@ export function GameEndOverlay({
   if (gameOverPending) {
     return (
       <GameOverPendingBanner
-        message={lastWrapped?.message}
+        {...(lastWrapped?.message ? { message: lastWrapped.message } : {})}
       />
     );
   }

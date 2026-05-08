@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { deriveInteractionMode } from './interactionMode';
 import type { PendingDialog } from './store';
+import { webGameClientMessageSchema } from '../api/schemas';
+
+function clientData(data: Parameters<typeof webGameClientMessageSchema.parse>[0]) {
+  return webGameClientMessageSchema.parse(data);
+}
 
 describe('deriveInteractionMode', () => {
   it('returns free when no dialog is pending', () => {
@@ -11,7 +16,7 @@ describe('deriveInteractionMode', () => {
     const dialog: PendingDialog = {
       method: 'gameTarget',
       messageId: 99,
-      data: {
+      data: clientData({
         gameView: null,
         message: 'Pick triggered ability (goes to the stack first)',
         targets: [],
@@ -35,7 +40,7 @@ describe('deriveInteractionMode', () => {
           specialButton: '',
           isTriggerOrder: true,
         },
-      },
+      }),
     };
     const mode = deriveInteractionMode(dialog);
     expect(mode.kind).toBe('orderTriggers');
@@ -49,7 +54,7 @@ describe('deriveInteractionMode', () => {
     const dialog: PendingDialog = {
       method: 'gameTarget',
       messageId: 7,
-      data: {
+      data: clientData({
         gameView: null,
         message: 'Pick a target',
         targets: ['aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'],
@@ -62,7 +67,7 @@ describe('deriveInteractionMode', () => {
         max: 0,
         flag: true,
         choice: null,
-      },
+      }),
     };
     const mode = deriveInteractionMode(dialog);
     expect(mode.kind).toBe('target');
@@ -77,7 +82,7 @@ describe('deriveInteractionMode', () => {
     const dialog: PendingDialog = {
       method: 'gameTarget',
       messageId: 8,
-      data: {
+      data: clientData({
         gameView: null,
         message: 'Pick a target (optional)',
         targets: [],
@@ -86,7 +91,7 @@ describe('deriveInteractionMode', () => {
         max: 0,
         flag: false,
         choice: null,
-      },
+      }),
     };
     const mode = deriveInteractionMode(dialog);
     expect(mode.kind).toBe('target');
@@ -98,7 +103,7 @@ describe('deriveInteractionMode', () => {
     const dialog: PendingDialog = {
       method: 'gameSelect',
       messageId: 11,
-      data: {
+      data: clientData({
         gameView: null,
         message: 'Select attackers',
         targets: [],
@@ -107,20 +112,20 @@ describe('deriveInteractionMode', () => {
         max: 0,
         flag: false,
         choice: null,
-      },
+      }),
     };
     const mode = deriveInteractionMode(dialog);
     expect(mode.kind).toBe('declareAttackers');
     if (mode.kind !== 'declareAttackers') return;
     expect(mode.messageId).toBe(11);
-    expect(mode.possibleIds.size).toBe(0);
+    expect(mode.possibleIds?.size).toBe(0);
   });
 
   it('maps gameSelect "Select blockers" to declareBlockers (heuristic fallback)', () => {
     const dialog: PendingDialog = {
       method: 'gameSelect',
       messageId: 12,
-      data: {
+      data: clientData({
         gameView: null,
         message: 'Select blockers',
         targets: [],
@@ -129,20 +134,20 @@ describe('deriveInteractionMode', () => {
         max: 0,
         flag: false,
         choice: null,
-      },
+      }),
     };
     const mode = deriveInteractionMode(dialog);
     expect(mode.kind).toBe('declareBlockers');
     if (mode.kind !== 'declareBlockers') return;
     expect(mode.messageId).toBe(12);
-    expect(mode.possibleIds.size).toBe(0);
+    expect(mode.possibleIds?.size).toBe(0);
   });
 
   it('prefers structured POSSIBLE_ATTACKERS over message text for declareAttackers', () => {
     const dialog: PendingDialog = {
       method: 'gameSelect',
       messageId: 14,
-      data: {
+      data: clientData({
         gameView: null,
         // Deliberately NOT the heuristic phrase — proves we read options.
         message: 'unrelated',
@@ -162,20 +167,20 @@ describe('deriveInteractionMode', () => {
           possibleBlockers: [],
           specialButton: '',
         },
-      },
+      }),
     };
     const mode = deriveInteractionMode(dialog);
     expect(mode.kind).toBe('declareAttackers');
     if (mode.kind !== 'declareAttackers') return;
-    expect(mode.possibleIds.size).toBe(2);
-    expect(mode.possibleIds.has('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')).toBe(true);
+    expect(mode.possibleIds?.size).toBe(2);
+    expect(mode.possibleIds?.has('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')).toBe(true);
   });
 
   it('prefers structured POSSIBLE_BLOCKERS over message text for declareBlockers', () => {
     const dialog: PendingDialog = {
       method: 'gameSelect',
       messageId: 15,
-      data: {
+      data: clientData({
         gameView: null,
         message: 'unrelated',
         targets: [],
@@ -191,19 +196,19 @@ describe('deriveInteractionMode', () => {
           possibleBlockers: ['cccccccc-cccc-cccc-cccc-cccccccccccc'],
           specialButton: '',
         },
-      },
+      }),
     };
     const mode = deriveInteractionMode(dialog);
     expect(mode.kind).toBe('declareBlockers');
     if (mode.kind !== 'declareBlockers') return;
-    expect(mode.possibleIds.has('cccccccc-cccc-cccc-cccc-cccccccccccc')).toBe(true);
+    expect(mode.possibleIds?.has('cccccccc-cccc-cccc-cccc-cccccccccccc')).toBe(true);
   });
 
   it('maps gameSelect with any other message to free mode', () => {
     const dialog: PendingDialog = {
       method: 'gameSelect',
       messageId: 13,
-      data: {
+      data: clientData({
         gameView: null,
         message: 'Pass priority',
         targets: [],
@@ -212,7 +217,7 @@ describe('deriveInteractionMode', () => {
         max: 0,
         flag: false,
         choice: null,
-      },
+      }),
     };
     expect(deriveInteractionMode(dialog)).toEqual({ kind: 'free' });
   });
@@ -221,7 +226,7 @@ describe('deriveInteractionMode', () => {
     const dialog: PendingDialog = {
       method: 'gamePlayMana',
       messageId: 21,
-      data: {
+      data: clientData({
         gameView: null,
         message: 'Pay {1}{R}',
         targets: [],
@@ -230,7 +235,7 @@ describe('deriveInteractionMode', () => {
         max: 0,
         flag: false,
         choice: null,
-      },
+      }),
     };
     const mode = deriveInteractionMode(dialog);
     expect(mode).toEqual({
@@ -245,7 +250,7 @@ describe('deriveInteractionMode', () => {
     const dialog: PendingDialog = {
       method: 'gamePlayXMana',
       messageId: 22,
-      data: {
+      data: clientData({
         gameView: null,
         message: 'Pay X mana',
         targets: [],
@@ -254,7 +259,7 @@ describe('deriveInteractionMode', () => {
         max: 0,
         flag: false,
         choice: null,
-      },
+      }),
     };
     const mode = deriveInteractionMode(dialog);
     expect(mode.kind).toBe('manaPay');
@@ -272,7 +277,7 @@ describe('deriveInteractionMode', () => {
     const dialog: PendingDialog = {
       method,
       messageId: 33,
-      data: {
+      data: clientData({
         gameView: null,
         message: 'm',
         targets: [],
@@ -281,7 +286,7 @@ describe('deriveInteractionMode', () => {
         max: 0,
         flag: false,
         choice: null,
-      },
+      }),
     };
     expect(deriveInteractionMode(dialog)).toEqual({
       kind: 'modal',

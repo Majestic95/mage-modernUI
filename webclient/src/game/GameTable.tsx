@@ -366,7 +366,7 @@ export function GameTable({ gameId, gameView, stream }: Props) {
           mode={mode}
           canAct={canAct}
           onObjectClick={onObjectClick}
-          onSpendMana={onSpendMana}
+          onSpendMana={onSpendMana ?? null}
           drag={drag}
         />
       </main>

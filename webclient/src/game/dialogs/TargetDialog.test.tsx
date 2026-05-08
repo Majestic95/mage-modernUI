@@ -15,12 +15,13 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { TargetDialog } from './TargetDialog';
 import { GameStream } from '../stream';
+import { webGameClientMessageSchema } from '../../api/schemas';
 
 function makeDialog(overrides: { flag: boolean; cardsView1?: Record<string, unknown>; targets?: string[] }) {
   return {
     method: 'gameTarget' as const,
     messageId: 99,
-    data: {
+    data: webGameClientMessageSchema.parse({
       gameView: null,
       message: overrides.flag
         ? 'Choose target creature you control'
@@ -31,7 +32,7 @@ function makeDialog(overrides: { flag: boolean; cardsView1?: Record<string, unkn
       max: 1,
       flag: overrides.flag,
       choice: null,
-    },
+    }),
   } as never;
 }
 
@@ -91,10 +92,10 @@ describe('TargetDialog — forfeit escape hatch (2026-05-02)', () => {
 
     // Construct a real GameStream so the spy intercepts the prototype
     // method. The stream isn't connected; we only need the spy.
-    const stream = new GameStream(
-      'ws://test',
-      '00000000-0000-0000-0000-000000000000',
-    );
+    const stream = new GameStream({
+      gameId: '00000000-0000-0000-0000-000000000000',
+      token: 'test-token',
+    });
 
     render(
       <TargetDialog

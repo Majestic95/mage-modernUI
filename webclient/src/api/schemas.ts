@@ -548,7 +548,7 @@ export type WebCardView = {
    * {@code source} is always {@code null} on the wire. {@code null}
    * for ordinary (non-ability) card views.
    */
-  source: WebCardView | null;
+  source?: WebCardView | null;
   /**
    * Schema 1.32 (2026-05-08, token Scryfall URL fix). True when the
    * upstream CardView reports isToken. Lets scryfallImageUrl route
@@ -556,7 +556,7 @@ export type WebCardView = {
    * `t`-prefixed set codes — the cardNumber-based path returns the
    * wrong card or 404 for tokens.
    */
-  isToken: boolean;
+  isToken?: boolean;
 };
 export const webCardViewSchema: z.ZodType<WebCardView> = z.lazy(() =>
   z.object({
@@ -620,7 +620,22 @@ export const webCardViewSchema: z.ZodType<WebCardView> = z.lazy(() =>
   }),
 );
 
-export const webPermanentViewSchema = z.object({
+export interface WebPermanentView {
+  card: WebCardView;
+  controllerName: string;
+  tapped: boolean;
+  flipped: boolean;
+  transformed: boolean;
+  phasedIn: boolean;
+  summoningSickness: boolean;
+  damage: number;
+  attachments: string[];
+  attachedTo: string;
+  attachedToPermanent: boolean;
+  goadingPlayerIds?: string[];
+}
+
+export const webPermanentViewSchema: z.ZodType<WebPermanentView> = z.object({
   card: webCardViewSchema,
   controllerName: z.string(),
   tapped: z.boolean(),
@@ -638,7 +653,6 @@ export const webPermanentViewSchema = z.object({
   // cleanly. Populated from Permanent.getGoadingPlayers() in slice 69b.
   goadingPlayerIds: z.array(z.string()).default([]),
 });
-export type WebPermanentView = z.infer<typeof webPermanentViewSchema>;
 
 export const webCombatGroupViewSchema = z.object({
   defenderId: z.string(),
@@ -815,7 +829,14 @@ export const webClientMessageOptionsSchema = z.object({
   specialButton: z.string().default(''),
   isTriggerOrder: z.boolean().default(false),
 });
-export type WebClientMessageOptions = z.infer<typeof webClientMessageOptionsSchema>;
+export interface WebClientMessageOptions {
+  leftBtnText: string;
+  rightBtnText: string;
+  possibleAttackers: string[];
+  possibleBlockers: string[];
+  specialButton: string;
+  isTriggerOrder?: boolean;
+}
 
 export const EMPTY_CLIENT_MESSAGE_OPTIONS: WebClientMessageOptions = {
   leftBtnText: '',
@@ -864,15 +885,35 @@ export const webGameClientMessageSchema = z.object({
   max: z.number(),
   flag: z.boolean(),
   choice: webChoiceSchema.nullable(),
-  options: webClientMessageOptionsSchema.default(EMPTY_CLIENT_MESSAGE_OPTIONS),
+  options: webClientMessageOptionsSchema.default({
+    leftBtnText: '',
+    rightBtnText: '',
+    possibleAttackers: [],
+    possibleBlockers: [],
+    specialButton: '',
+    isTriggerOrder: false,
+  }),
   // Slice 70-X.14 Wave 3 (schema 1.25). Both default-empty so older
   // 1.24 servers still parse cleanly during a rolling upgrade.
   cardsView2: z
     .record(z.string(), webCardViewSchema)
+    .optional()
     .default({}),
-  multiAmount: webMultiAmountInfoSchema.nullable().default(null),
+  multiAmount: webMultiAmountInfoSchema.nullable().optional().default(null),
 });
-export type WebGameClientMessage = z.infer<typeof webGameClientMessageSchema>;
+export interface WebGameClientMessage {
+  gameView: WebGameView | null;
+  message: string;
+  targets: string[];
+  cardsView1: Record<string, WebCardView>;
+  min: number;
+  max: number;
+  flag: boolean;
+  choice: WebChoice | null;
+  options: WebClientMessageOptions;
+  cardsView2: Record<string, WebCardView>;
+  multiAmount: WebMultiAmountInfo | null;
+}
 
 export const webAbilityPickerViewSchema = z.object({
   gameView: webGameViewSchema.nullable(),

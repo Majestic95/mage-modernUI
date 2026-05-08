@@ -199,10 +199,10 @@ export function DuplicateStackContainer({
     <motion.div
       key={host.card.id}
       layout
-      layoutId={hostLayoutId}
       data-layout-id={hostLayoutId}
       data-card-id={host.card.cardId || undefined}
       data-stack-count={stackCount}
+      {...(hostLayoutId ? { layoutId: hostLayoutId } : {})}
       className="relative"
       style={{
         width: containerWidth,

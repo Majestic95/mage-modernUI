@@ -196,9 +196,9 @@ export function Game({ gameId, onLeave }: Props) {
             ) : (
               <Waiting
                 connection={connection}
-                onReconnect={
-                  stream ? () => stream.manualReconnect() : undefined
-                }
+                {...(stream
+                  ? { onReconnect: () => stream.manualReconnect() }
+                  : {})}
               />
             )}
           </div>

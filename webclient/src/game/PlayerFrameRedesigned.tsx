@@ -63,7 +63,7 @@ export function PlayerFrameRedesigned({
   eligibleTargetIds?: Set<string>;
   canAct?: boolean;
   onObjectClick?: (id: string) => void;
-  chipsLayout?: 'horizontal' | 'vertical';
+  chipsLayout?: 'horizontal' | 'vertical' | 'vertical-stacked';
 }) {
   const eliminated = player.hasLeft;
   const disconnected =
@@ -385,10 +385,10 @@ export function PlayerFrameRedesigned({
       <PlayerFrameInfoCluster
         player={player}
         perspective={perspective}
-        layout={chipsLayout}
-        eligibleTargetIds={eligibleTargetIds}
-        canAct={canAct}
-        onObjectClick={onObjectClick}
+        layout={chipsLayout === 'vertical-stacked' ? 'vertical' : chipsLayout}
+        {...(eligibleTargetIds ? { eligibleTargetIds } : {})}
+        {...(canAct !== undefined ? { canAct } : {})}
+        {...(onObjectClick ? { onObjectClick } : {})}
       />
 
       {/* Eliminated slash overlay — picture-catalog §2.4. Today
@@ -475,6 +475,13 @@ function PlayerFrameInfoCluster({
   // render anything").
   const opponentPoolNonEmpty =
     perspective === 'opponent' && hasAnyMana(player.manaPool);
+  const publicZoneProps = {
+    playerName: player.name,
+    variant: perspective,
+    ...(eligibleTargetIds ? { eligibleTargetIds } : {}),
+    ...(canAct !== undefined ? { canAct } : {}),
+    ...(onObjectClick ? { onObjectClick } : {}),
+  };
 
   return (
     // Slice 70-P critic UI/UX-C2 fix — absolute-positioned just
@@ -549,20 +556,12 @@ function PlayerFrameInfoCluster({
           <ZoneIcon
             zone="graveyard"
             cards={player.graveyard}
-            playerName={player.name}
-            variant={perspective}
-            eligibleTargetIds={eligibleTargetIds}
-            canAct={canAct}
-            onObjectClick={onObjectClick}
+            {...publicZoneProps}
           />
           <ZoneIcon
             zone="exile"
             cards={player.exile}
-            playerName={player.name}
-            variant={perspective}
-            eligibleTargetIds={eligibleTargetIds}
-            canAct={canAct}
-            onObjectClick={onObjectClick}
+            {...publicZoneProps}
           />
         </div>
       ) : (
@@ -574,20 +573,12 @@ function PlayerFrameInfoCluster({
           <ZoneIcon
             zone="graveyard"
             cards={player.graveyard}
-            playerName={player.name}
-            variant={perspective}
-            eligibleTargetIds={eligibleTargetIds}
-            canAct={canAct}
-            onObjectClick={onObjectClick}
+            {...publicZoneProps}
           />
           <ZoneIcon
             zone="exile"
             cards={player.exile}
-            playerName={player.name}
-            variant={perspective}
-            eligibleTargetIds={eligibleTargetIds}
-            canAct={canAct}
-            onObjectClick={onObjectClick}
+            {...publicZoneProps}
           />
         </>
       )}

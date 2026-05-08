@@ -54,7 +54,7 @@ export type InteractionModeTarget = {
 export type InteractionModeDeclareAttackers = {
   kind: 'declareAttackers';
   messageId: number;
-  possibleIds: Set<string>;
+  possibleIds?: Set<string>;
 };
 
 /**
@@ -68,7 +68,7 @@ export type InteractionModeDeclareAttackers = {
 export type InteractionModeDeclareBlockers = {
   kind: 'declareBlockers';
   messageId: number;
-  possibleIds: Set<string>;
+  possibleIds?: Set<string>;
 };
 
 /**

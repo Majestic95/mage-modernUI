@@ -347,10 +347,10 @@ function BucketBox({
               <motion.div
                 key={p.card.id}
                 layout
-                layoutId={layoutId}
                 data-layout-id={layoutId}
                 data-card-id={p.card.cardId || undefined}
                 data-attachment-host={hasAttachments || undefined}
+                {...(layoutId ? { layoutId } : {})}
                 data-attachment-count={
                   hasAttachments ? group.attachments.length : undefined
                 }

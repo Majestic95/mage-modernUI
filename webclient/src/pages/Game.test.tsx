@@ -20,6 +20,7 @@ import { useGameStore } from '../game/store';
 import { GameStream } from '../game/stream';
 import {
   webCardViewSchema,
+  webGameClientMessageSchema,
   webGameViewSchema,
   webPermanentViewSchema,
   webPlayerViewSchema,
@@ -258,6 +259,7 @@ describe('Game page', () => {
       expansionSetCode: 'C16',
       imageFileName: 'atraxa-praetors-voice',
       imageNumber: 1,
+      cardNumber: '1',
       rules: ['Flying, vigilance, deathtouch, lifelink'],
     };
     const me = gv.players.find((p) => p.controlled)!;
@@ -458,12 +460,14 @@ describe('Game page', () => {
             message: 'alice plays Forest',
             turn: 1,
             phase: 'PRECOMBAT_MAIN',
+            cardsByName: {},
           },
           {
             id: 2,
             message: 'Lightning Bolt deals 3 damage to bob',
             turn: 2,
             phase: 'PRECOMBAT_MAIN',
+            cardsByName: {},
           },
         ],
       });
@@ -516,7 +520,7 @@ describe('Game page', () => {
     return {
       method: 'gameTarget' as const,
       messageId: 42,
-      data: {
+      data: webGameClientMessageSchema.parse({
         gameView: null,
         message: 'Pick a target',
         targets,
@@ -525,7 +529,7 @@ describe('Game page', () => {
         max: 0,
         flag: true,
         choice: null,
-      },
+      }),
     };
   }
 
@@ -628,7 +632,7 @@ describe('Game page', () => {
     return {
       method: 'gameSelect' as const,
       messageId: 77,
-      data: {
+      data: webGameClientMessageSchema.parse({
         gameView: null,
         message: 'Select attackers',
         targets: [],
@@ -644,7 +648,7 @@ describe('Game page', () => {
           possibleBlockers: [],
           specialButton: '',
         },
-      },
+      }),
     };
   }
 
@@ -1574,7 +1578,7 @@ describe('Game page', () => {
         connection: 'open',
         gameView: buildGameView(),
         gameOverPending: true,
-        lastWrapped: {
+        lastWrapped: webGameClientMessageSchema.parse({
           gameView: null,
           message: 'alice has won the game',
           targets: [],
@@ -1590,7 +1594,7 @@ describe('Game page', () => {
             possibleBlockers: [],
             specialButton: '',
           },
-        },
+        }),
       });
     });
     const banner = screen.getByTestId('game-over-banner');
@@ -1715,8 +1719,8 @@ describe('Game page', () => {
           players: [],
         },
         gameLog: [
-          { id: 1, message: 'alice plays Forest', turn: 1, phase: 'PRECOMBAT_MAIN' },
-          { id: 2, message: 'alice taps Forest for green', turn: 1, phase: 'PRECOMBAT_MAIN' },
+          { id: 1, message: 'alice plays Forest', turn: 1, phase: 'PRECOMBAT_MAIN', cardsByName: {} },
+          { id: 2, message: 'alice taps Forest for green', turn: 1, phase: 'PRECOMBAT_MAIN', cardsByName: {} },
         ],
       });
     });
@@ -1774,8 +1778,8 @@ describe('Game page', () => {
       .mockImplementation(() => {});
 
     const entries = [
-      { id: 1, message: 'alice plays Forest', turn: 1, phase: 'PRECOMBAT_MAIN' },
-      { id: 2, message: 'alice ends turn', turn: 1, phase: 'CLEANUP' },
+      { id: 1, message: 'alice plays Forest', turn: 1, phase: 'PRECOMBAT_MAIN', cardsByName: {} },
+      { id: 2, message: 'alice ends turn', turn: 1, phase: 'CLEANUP', cardsByName: {} },
     ];
 
     render(<Game gameId={FAKE_GAME_ID} onLeave={() => {}} />);
@@ -1855,7 +1859,7 @@ describe('Game page', () => {
 
     // Apply 3 damage → life 18 → 15.
     const after = buildGameView();
-    after.players[0].life = 15;
+    after.players[0]!.life = 15;
     act(() => {
       useGameStore.setState({ gameView: after });
     });
@@ -1880,7 +1884,7 @@ describe('Game page', () => {
     });
 
     const after = buildGameView();
-    after.players[0].life = 22; // +4 from 18
+    after.players[0]!.life = 22; // +4 from 18
     act(() => {
       useGameStore.setState({ gameView: after });
     });

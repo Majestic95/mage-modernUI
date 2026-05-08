@@ -8,6 +8,7 @@ import {
 } from './MulliganModal';
 import { useGameStore } from './store';
 import {
+  webGameClientMessageSchema,
   webGameViewSchema,
   webPlayerViewSchema,
   type WebGameView,
@@ -48,7 +49,14 @@ function makeGameView(): WebGameView {
 const mulliganDialog = {
   method: 'gameAsk' as const,
   messageId: 17,
-  data: {
+  data: webGameClientMessageSchema.parse({
+    gameView: null,
+    targets: [],
+    cardsView1: {},
+    min: 0,
+    max: 0,
+    flag: false,
+    choice: null,
     options: {
       leftBtnText: 'Mulligan',
       rightBtnText: 'Keep',
@@ -57,7 +65,7 @@ const mulliganDialog = {
       specialButton: '',
     },
     message: 'Mulligan?',
-  },
+  }),
 };
 
 const fakeStream = () => ({
@@ -180,7 +188,17 @@ describe('MulliganModal', () => {
         pendingDialog: {
           method: 'gameAsk',
           messageId: 5,
-          data: { options: { leftBtnText: 'Done', rightBtnText: '' } },
+          data: webGameClientMessageSchema.parse({
+            gameView: null,
+            message: '',
+            targets: [],
+            cardsView1: {},
+            min: 0,
+            max: 0,
+            flag: false,
+            choice: null,
+            options: { leftBtnText: 'Done', rightBtnText: '' },
+          }),
         },
       });
     });

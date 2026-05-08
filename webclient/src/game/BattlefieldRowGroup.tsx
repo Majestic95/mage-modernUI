@@ -241,10 +241,10 @@ function AttachmentGroupSlot({
     <motion.div
       key={host.card.id}
       layout
-      layoutId={layoutId}
       data-layout-id={layoutId}
       data-card-id={host.card.cardId || undefined}
       data-attachment-host={hasAttachments || undefined}
+      {...(layoutId ? { layoutId } : {})}
       data-attachment-count={hasAttachments ? attachments.length : undefined}
       data-stack-count={hasDuplicates ? stackCount : undefined}
       initial={{ opacity: 0, y: 24, scale: 0.85 }}

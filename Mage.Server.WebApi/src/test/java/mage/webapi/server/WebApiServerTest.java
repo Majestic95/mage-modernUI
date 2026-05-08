@@ -105,6 +105,7 @@ class WebApiServerTest {
         JsonNode body = JSON.readTree(resp.body());
         assertEquals(SchemaVersion.CURRENT, body.get("schemaVersion").asText());
         assertEquals("ready", body.get("status").asText());
+        assertTrue(body.has("pauperLegality"));
     }
 
     // ---------- auth endpoints ----------

@@ -90,7 +90,7 @@ export function ManaPool({
                 count={n}
                 size={size}
                 glow={glow}
-                onClick={onSpend ? () => onSpend(color) : undefined}
+                {...(onSpend ? { onClick: () => onSpend(color) } : {})}
               />
             </motion.span>
           ))}

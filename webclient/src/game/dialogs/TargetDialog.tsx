@@ -48,7 +48,10 @@ export function TargetDialog({ dialog, stream, clearDialog }: ContentProps) {
     : undefined;
   return (
     <>
-      <Header title="Choose target" onClose={skipTarget} />
+      <Header
+        title="Choose target"
+        {...(skipTarget ? { onClose: skipTarget } : {})}
+      />
       <Message text={dialog.data.message} />
       {/* Slice 70-X.14 — render cardsView1 as CardFace tiles via the
           shared CardChooserList primitive. min/max from the wire let
@@ -69,7 +72,7 @@ export function TargetDialog({ dialog, stream, clearDialog }: ContentProps) {
             }
             clearDialog();
           }}
-          onSkip={skipTarget}
+          {...(skipTarget ? { onSkip: skipTarget } : {})}
         />
       )}
       {!hasCards && resolvedTargets.length > 0 && (

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import type { WebCardView } from '../api/schemas';
+import type { WebCardView } from '../../api/schemas';
 import { CardFace } from '../CardFace';
 import { PrimaryButton, SecondaryButton } from './dialogPrimitives';
 

@@ -2,8 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { PilePickerDialog } from './PilePickerDialog';
-import { webCardViewSchema } from '../../api/schemas';
+import { webCardViewSchema, webGameClientMessageSchema } from '../../api/schemas';
 import type { GameStream } from '../stream';
+import type { PendingDialogClientMessage } from '../store';
 
 const fakeStream = (): GameStream =>
   ({
@@ -34,11 +35,11 @@ function dialog(
   pile1: Record<string, unknown>,
   pile2: Record<string, unknown>,
   message = 'Choose a pile.',
-) {
+): PendingDialogClientMessage {
   return {
     method: 'gameChoosePile' as const,
     messageId: 17,
-    data: {
+    data: webGameClientMessageSchema.parse({
       gameView: null,
       message,
       targets: [],
@@ -52,7 +53,7 @@ function dialog(
         possibleAttackers: [], possibleBlockers: [],
         specialButton: '',
       },
-    },
+    }),
   };
 }
 

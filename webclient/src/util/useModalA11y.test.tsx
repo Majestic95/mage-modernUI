@@ -11,7 +11,7 @@ import { useModalA11y } from './useModalA11y';
  */
 function ModalFixture({ onClose }: { onClose?: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
-  useModalA11y(ref, { onClose });
+  useModalA11y(ref, onClose ? { onClose } : {});
   return (
     <div
       ref={ref}

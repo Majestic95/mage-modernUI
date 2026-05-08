@@ -141,10 +141,10 @@ export function PlayerFrame({
         position={position}
         onPlayerClick={onPlayerClick}
         targetable={targetable}
-        eligibleTargetIds={eligibleTargetIds}
-        canAct={canAct}
-        onObjectClick={onObjectClick}
-        chipsLayout={chipsLayout}
+        {...(eligibleTargetIds ? { eligibleTargetIds } : {})}
+        {...(canAct !== undefined ? { canAct } : {})}
+        {...(onObjectClick ? { onObjectClick } : {})}
+        {...(chipsLayout ? { chipsLayout } : {})}
       />
     );
   }
@@ -166,6 +166,13 @@ export function PlayerFrame({
   // their Hand chip — strategic signal "do they have a counter?"
   const variant = useLayoutVariant();
   const hideHandChip = variant === 'tabletop' && perspective === 'self';
+  const publicZoneProps = {
+    playerName: player.name,
+    variant: perspective,
+    ...(eligibleTargetIds ? { eligibleTargetIds } : {}),
+    ...(canAct !== undefined ? { canAct } : {}),
+    ...(onObjectClick ? { onObjectClick } : {}),
+  };
 
   // Critic N11 — aria-label synthesis moves here from PlayerArea.
   // Critic UX-I3 — colorIdentity is included in the SR label so
@@ -285,22 +292,14 @@ export function PlayerFrame({
           <ZoneIcon
             label="Grave"
             zone="graveyard"
-            playerName={player.name}
             cards={player.graveyard}
-            variant={perspective}
-            eligibleTargetIds={eligibleTargetIds}
-            canAct={canAct}
-            onObjectClick={onObjectClick}
+            {...publicZoneProps}
           />
           <ZoneIcon
             label="Exile"
             zone="exile"
-            playerName={player.name}
             cards={player.exile}
-            variant={perspective}
-            eligibleTargetIds={eligibleTargetIds}
-            canAct={canAct}
-            onObjectClick={onObjectClick}
+            {...publicZoneProps}
           />
           <ManaPool player={player} />
         </div>

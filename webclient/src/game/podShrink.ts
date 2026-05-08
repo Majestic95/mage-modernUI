@@ -1,3 +1,5 @@
+import type { CSSProperties } from 'react';
+
 /**
  * Layout containment Tier 2 (2026-05-02) — uniform card-shrink for an
  * opponent pod whose battlefield has too many permanents to fit at the

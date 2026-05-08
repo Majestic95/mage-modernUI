@@ -202,19 +202,26 @@ function shouldKeepGameLogEntry(message: string): boolean {
 function buildCardsByName(gv: WebGameView | null): Record<string, WebCardView> {
   const out: Record<string, WebCardView> = {};
   if (!gv) return out;
-  const ingest = (cards: Record<string, WebCardView> | undefined) => {
+  const ingestCards = (cards: Record<string, WebCardView> | undefined) => {
     if (!cards) return;
     for (const c of Object.values(cards)) {
       if (c.name) out[c.name.toLowerCase()] = c;
     }
   };
-  ingest(gv.myHand);
-  ingest(gv.stack);
+  const ingestPermanents = (cards: WebGameView['players'][number]['battlefield'] | undefined) => {
+    if (!cards) return;
+    for (const p of Object.values(cards)) {
+      const c = p.card;
+      if (c.name) out[c.name.toLowerCase()] = c;
+    }
+  };
+  ingestCards(gv.myHand);
+  ingestCards(gv.stack);
   for (const p of gv.players ?? []) {
-    ingest(p.battlefield);
-    ingest(p.graveyard);
-    ingest(p.exile);
-    ingest(p.sideboard);
+    ingestPermanents(p.battlefield);
+    ingestCards(p.graveyard);
+    ingestCards(p.exile);
+    ingestCards(p.sideboard);
     // 2026-05-03 audit fix — commanders sitting in the command zone
     // are the most-cared-about cards in EDH but have no WebCardView
     // on the wire (only a smaller WebCommandObjectView). Synthesize

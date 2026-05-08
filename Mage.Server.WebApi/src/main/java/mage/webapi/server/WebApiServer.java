@@ -252,9 +252,11 @@ public final class WebApiServer {
         }
         try {
             this.legalityService = new PauperLegalityService(cacheDir, refreshInterval);
-            WebApiPauperValidator.setService(legalityService);
-            DeckValidatorFactory.instance.addDeckType(
-                    "Constructed - Pauper", WebApiPauperValidator.class);
+            synchronized (DeckValidatorFactory.instance) {
+                WebApiPauperValidator.setService(legalityService);
+                DeckValidatorFactory.instance.addDeckType(
+                        "Constructed - Pauper", WebApiPauperValidator.class);
+            }
             LOG.info("Pauper validator overridden with Scryfall-backed service "
                     + "({} entries, refresh interval {})",
                     legalityService.knownCardCount(), refreshInterval);
@@ -276,12 +278,27 @@ public final class WebApiServer {
             this.legalityService.close();
             this.legalityService = null;
         }
-        WebApiPauperValidator.clearService();
-        DeckValidatorFactory.instance.addDeckType("Constructed - Pauper", Pauper.class);
+        synchronized (DeckValidatorFactory.instance) {
+            WebApiPauperValidator.clearService();
+            DeckValidatorFactory.instance.addDeckType("Constructed - Pauper", Pauper.class);
+        }
     }
 
     public AuthService auth() {
         return authService;
+    }
+
+    private WebHealth health() {
+        WebHealth.PauperLegalityHealth pauper = null;
+        if (legalityService != null) {
+            pauper = new WebHealth.PauperLegalityHealth(
+                    true,
+                    legalityService.lastRefreshedAt().toString(),
+                    legalityService.knownCardCount(),
+                    legalityService.consecutiveRefreshFailures(),
+                    legalityService.lastRefreshError());
+        }
+        return new WebHealth(SchemaVersion.CURRENT, "ready", pauper);
     }
 
     public WebApiServer start(int port) {
@@ -399,7 +416,7 @@ public final class WebApiServer {
     private void registerRoutes(Javalin app) {
         // Public — informational
         app.get("/api/version", ctx -> ctx.json(VersionMapper.fromConstants()));
-        app.get("/api/health", ctx -> ctx.json(new WebHealth(SchemaVersion.CURRENT, "ready")));
+        app.get("/api/health", ctx -> ctx.json(health()));
 
         // Public — auth
         app.post("/api/session", ctx -> {

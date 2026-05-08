@@ -11,7 +11,9 @@ import { fireEvent, render, screen } from '@testing-library/react';
 // vi is imported above; included here for clarity in the new
 // elementFromPoint stub used by the reorder test.
 import {
+  webCardViewSchema,
   webPlayerViewSchema,
+  type WebCardView,
   type WebPlayerView,
 } from '../api/schemas';
 
@@ -132,12 +134,36 @@ describe('MyHand — REDESIGN branch (picture-catalog §4)', () => {
 });
 
 describe('MyHand — hand reorder via drag-and-drop (2026-05-02)', () => {
-  // Use two minimal cards. The schema requires several fields, but
-  // since these tests only exercise rendering / pointer events on
-  // hand-card buttons, a stripped object cast through `as any` keeps
-  // the fixture compact.
-  const A = { id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', cardId: 'aid', name: 'Card A', cardNumber: '1' } as never;
-  const B = { id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', cardId: 'bid', name: 'Card B', cardNumber: '2' } as never;
+  function card(id: string, cardId: string, name: string, cardNumber: string): WebCardView {
+    return webCardViewSchema.parse({
+      id,
+      cardId,
+      name,
+      displayName: name,
+      expansionSetCode: 'TST',
+      cardNumber,
+      manaCost: '',
+      manaValue: 0,
+      typeLine: 'Sorcery',
+      supertypes: [],
+      types: ['SORCERY'],
+      subtypes: [],
+      colors: [],
+      rarity: 'COMMON',
+      power: '',
+      toughness: '',
+      startingLoyalty: '',
+      rules: [],
+      faceDown: false,
+      counters: {},
+      transformable: false,
+      transformed: false,
+      secondCardFace: null,
+    });
+  }
+
+  const A = card('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'aid', 'Card A', '1');
+  const B = card('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'bid', 'Card B', '2');
 
   it('renders cards in the user-provided order; drop on a different hand card moves the dragged one to that slot', () => {
     const reorderCalls: Array<[string, string]> = [];
@@ -170,7 +196,7 @@ describe('MyHand — hand reorder via drag-and-drop (2026-05-02)', () => {
     const original = (document as unknown as { elementFromPoint: unknown })
       .elementFromPoint;
     (document as unknown as { elementFromPoint: typeof document.elementFromPoint }).elementFromPoint =
-      () => cards[1];
+      () => cards[1] ?? null;
     try {
       fireEvent.pointerUp(document, { pointerId: 1, bubbles: true });
     } finally {
@@ -190,8 +216,8 @@ describe('MyHand — hand reorder via drag-and-drop (2026-05-02)', () => {
     // expect [4, 1, 2, 3] — card 4 takes card 1's slot, the rest
     // scoot over." Earlier swap semantics produced [4, 2, 3, 1] which
     // didn't match the physical-hand reorder mental model.
-    const C = { id: 'cccccccc-cccc-cccc-cccc-cccccccccccc', cardId: 'cid', name: 'Card C', cardNumber: '3' } as never;
-    const D = { id: 'dddddddd-dddd-dddd-dddd-dddddddddddd', cardId: 'did', name: 'Card D', cardNumber: '4' } as never;
+    const C = card('cccccccc-cccc-cccc-cccc-cccccccccccc', 'cid', 'Card C', '3');
+    const D = card('dddddddd-dddd-dddd-dddd-dddddddddddd', 'did', 'Card D', '4');
 
     render(
       <MyHand
@@ -212,7 +238,7 @@ describe('MyHand — hand reorder via drag-and-drop (2026-05-02)', () => {
     const original = (document as unknown as { elementFromPoint: unknown })
       .elementFromPoint;
     (document as unknown as { elementFromPoint: typeof document.elementFromPoint }).elementFromPoint =
-      () => cards[0]; // drop on card A (slot 0)
+      () => cards[0] ?? null; // drop on card A (slot 0)
     try {
       fireEvent.pointerUp(document, { pointerId: 1, bubbles: true });
     } finally {
@@ -233,8 +259,8 @@ describe('MyHand — hand reorder via drag-and-drop (2026-05-02)', () => {
     // Mirror direction of the user's example: dragging right inserts
     // AFTER the target so the visible result is "1 ends up at the
     // right end, 2-3 scoot left."
-    const C = { id: 'cccccccc-cccc-cccc-cccc-cccccccccccc', cardId: 'cid', name: 'Card C', cardNumber: '3' } as never;
-    const D = { id: 'dddddddd-dddd-dddd-dddd-dddddddddddd', cardId: 'did', name: 'Card D', cardNumber: '4' } as never;
+    const C = card('cccccccc-cccc-cccc-cccc-cccccccccccc', 'cid', 'Card C', '3');
+    const D = card('dddddddd-dddd-dddd-dddd-dddddddddddd', 'did', 'Card D', '4');
 
     render(
       <MyHand
@@ -248,7 +274,7 @@ describe('MyHand — hand reorder via drag-and-drop (2026-05-02)', () => {
     const original = (document as unknown as { elementFromPoint: unknown })
       .elementFromPoint;
     (document as unknown as { elementFromPoint: typeof document.elementFromPoint }).elementFromPoint =
-      () => cards[3]; // drop on card D (slot 3)
+      () => cards[3] ?? null; // drop on card D (slot 3)
     try {
       fireEvent.pointerUp(document, { pointerId: 1, bubbles: true });
     } finally {

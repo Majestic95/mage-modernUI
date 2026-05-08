@@ -38,6 +38,7 @@ function makeCommander(
     expansionSetCode: 'C16',
     imageFileName: 'atraxa.jpg',
     imageNumber: 28,
+    cardNumber: '28',
     rules: [],
     ...overrides,
   };

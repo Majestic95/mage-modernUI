@@ -52,6 +52,7 @@ const SERVER_STATE: WebServerState = {
   ],
   draftCubes: [],
   testMode: false,
+  registrationEnabled: false,
 };
 
 const ROOM_ID = '00000000-0000-0000-0000-000000000000';

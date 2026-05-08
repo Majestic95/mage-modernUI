@@ -539,6 +539,7 @@ describe('PlayerFrame — REDESIGN flag on (slice 70-K)', () => {
               expansionSetCode: 'C16',
               imageFileName: 'atraxa.jpg',
               imageNumber: 28,
+              cardNumber: '28',
               rules: [],
             },
           ],

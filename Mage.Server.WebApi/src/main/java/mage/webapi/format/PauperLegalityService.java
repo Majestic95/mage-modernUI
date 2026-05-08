@@ -66,6 +66,8 @@ public final class PauperLegalityService implements AutoCloseable {
     private final ScryfallBulkDataClient client;
     private final AtomicReference<LegalitySnapshot> snapshot;
     private final ScheduledExecutorService refreshExecutor;
+    private final AtomicReference<RefreshStatus> refreshStatus =
+            new AtomicReference<>(new RefreshStatus(0, null));
 
     /**
      * Production constructor. Wires a real
@@ -206,11 +208,22 @@ public final class PauperLegalityService implements AutoCloseable {
             client.fetchOracleCardsTo(cacheFile);
             Map<String, PauperLegality> map = client.parseLegalitiesFromFile(cacheFile);
             snapshot.set(new LegalitySnapshot(Map.copyOf(map), Instant.now()));
+            refreshStatus.set(new RefreshStatus(0, null));
             LOG.info("Scheduled Scryfall refresh succeeded ({} entries)", map.size());
         } catch (Throwable ex) {
+            refreshStatus.updateAndGet(prev -> new RefreshStatus(
+                    prev.consecutiveFailures() + 1, ex.getMessage()));
             LOG.warn("Scheduled Scryfall refresh failed; keeping prior snapshot: {}",
                     ex.getMessage());
         }
+    }
+
+    public int consecutiveRefreshFailures() {
+        return refreshStatus.get().consecutiveFailures();
+    }
+
+    public String lastRefreshError() {
+        return refreshStatus.get().lastError();
     }
 
     /**
@@ -326,6 +339,9 @@ public final class PauperLegalityService implements AutoCloseable {
      */
     private record LegalitySnapshot(Map<String, PauperLegality> legalities,
                                      Instant refreshedAt) {
+    }
+
+    private record RefreshStatus(int consecutiveFailures, String lastError) {
     }
 
     /**

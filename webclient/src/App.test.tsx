@@ -115,6 +115,30 @@ describe('App shell', () => {
     });
   });
 
+  it('does not reopen the room stream when verify refreshes the same token', async () => {
+    useAuthStore.setState({ session: ANON_SESSION });
+    stubFetchByPath({
+      '/api/session/me': () => jsonResponse(200, {
+        ...ANON_SESSION,
+        expiresAt: '2026-04-27T01:00:00Z',
+      }),
+      '/api/server/main-room': () => jsonResponse(200, MAIN_ROOM),
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(openRoomStream).toHaveBeenCalledWith({
+        token: ANON_SESSION.token,
+        roomId: MAIN_ROOM.roomId,
+      });
+    });
+    await waitFor(() => {
+      expect(useAuthStore.getState().verifying).toBe(false);
+    });
+    expect(openRoomStream).toHaveBeenCalledTimes(1);
+  });
+
   it('switches to the Cards tab when clicked', async () => {
     const user = userEvent.setup();
     useAuthStore.setState({ session: ANON_SESSION });

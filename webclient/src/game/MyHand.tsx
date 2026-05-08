@@ -331,10 +331,9 @@ export function MyHand({
                     total={cards.length}
                     canAct={canAct}
                     isDragging={isDragging}
-                    draggedCardId={draggedCardId}
+                    isDropTarget={dropTargetId === card.id}
                     onObjectClick={onObjectClick}
                     onPointerDown={onPointerDown}
-                    onReorder={onReorder}
                     tooltip={cardTooltip(card)}
                     targetableForDialog={
                       dialogActive &&
@@ -524,6 +523,7 @@ function HandCardSlot({
   //
   // Empty cardId â†’ omit layoutId (defensive default; see slice 52b).
   const layoutId = card.cardId ? card.cardId : undefined;
+  const layoutProps = layoutId ? { layoutId, 'data-layout-id': layoutId } : {};
   return (
     <div
       data-drop-target={isDropTarget || undefined}
@@ -604,13 +604,12 @@ function HandCardSlot({
           }
         >
           <motion.div
-            layoutId={layoutId}
-            data-layout-id={layoutId}
+            {...layoutProps}
             transition={{ layout: slow(LAYOUT_GLIDE) }}
           >
             <HandCardFace
               card={card}
-              targetableForDialog={targetableForDialog}
+              {...(targetableForDialog ? { targetableForDialog } : {})}
             />
           </motion.div>
         </button>
@@ -641,7 +640,7 @@ function HandCardFace({
     <CardFace
       card={card}
       size="hand"
-      targetableForDialog={targetableForDialog}
+      {...(targetableForDialog ? { targetableForDialog } : {})}
     />
   );
 }

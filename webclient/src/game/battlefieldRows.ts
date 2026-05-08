@@ -279,6 +279,7 @@ export function groupWithAttachmentsAndStacks(
       out.push({ host: g.host, stackedDuplicates: [], attachments: [] });
     } else {
       const existing = out[existingIdx];
+      if (!existing) continue;
       out[existingIdx] = {
         host: existing.host,
         stackedDuplicates: [...existing.stackedDuplicates, g.host],

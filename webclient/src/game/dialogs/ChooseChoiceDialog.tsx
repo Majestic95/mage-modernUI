@@ -38,7 +38,7 @@ export function ChoiceDialog({ dialog, stream, clearDialog }: ContentProps) {
     : undefined;
   return (
     <>
-      <Header title="Choose one" onClose={skipChoice} />
+      <Header title="Choose one" {...(skipChoice ? { onClose: skipChoice } : {})} />
       <Message text={choice.message || dialog.data.message} />
       {choice.subMessage && (
         <p className="text-xs text-zinc-500" data-testid="choice-submessage">

@@ -60,8 +60,8 @@ export function MyDecksPanel({
             key={deck.id}
             deck={deck}
             selected={deck.id === selectedDeckId}
-            onSelect={onDeckSelect}
             disabled={disabled}
+            {...(onDeckSelect ? { onSelect: onDeckSelect } : {})}
           />
         ))}
       </ul>

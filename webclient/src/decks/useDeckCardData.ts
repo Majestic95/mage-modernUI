@@ -10,7 +10,7 @@
  * re-opening the same (or related-card) deck is instant.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { ApiError, request } from '../api/client';
+import { request } from '../api/client';
 import { webCardListingSchema, type WebCardInfo } from '../api/schemas';
 import { useAuthStore } from '../auth/store';
 import type { SavedDeck } from './store';

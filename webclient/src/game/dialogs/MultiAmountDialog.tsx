@@ -80,9 +80,10 @@ export function MultiAmountDialog({
   }
 
   const totalValid = total >= info.totalMin && total <= info.totalMax;
-  const perRowValid = values.every(
-    (v, i) => v >= info.rows[i].min && v <= info.rows[i].max,
-  );
+  const perRowValid = info.rows.every((row, i) => {
+    const value = values[i] ?? 0;
+    return value >= row.min && value <= row.max;
+  });
   const submittable = totalValid && perRowValid;
 
   const setRow = (i: number, v: number) => {

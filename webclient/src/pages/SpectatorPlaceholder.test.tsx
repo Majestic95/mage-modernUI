@@ -7,7 +7,7 @@ import { matchSpectatePath } from './spectatorPath';
  * Slice 70-A (ADR 0011 D1) — spectator placeholder route + UUID
  * matcher. The placeholder ships before the client-side spectator
  * UI lands so a user pasting a spectate URL sees an explicit
- * "shipping in v2.x" message rather than a generic 404.
+ * deferred-feature message rather than a generic 404.
  */
 describe('matchSpectatePath (slice 70-A)', () => {
   const SAMPLE_UUID = 'a1b2c3d4-1111-2222-3333-444455556666';
@@ -87,9 +87,9 @@ describe('SpectatorPlaceholder render (slice 70-A)', () => {
     expect(idDisplay.textContent).toBe(SAMPLE_UUID);
   });
 
-  it('renders the "shipping in v2.x" deferral message', () => {
+  it('renders the deferral message', () => {
     render(<SpectatorPlaceholder gameId={SAMPLE_UUID} />);
-    expect(screen.getByText(/shipping in v2\.x/i)).toBeInTheDocument();
+    expect(screen.getByText(/intentionally deferred/i)).toBeInTheDocument();
   });
 
   it('renders a "Return to lobby" link back to the root', () => {

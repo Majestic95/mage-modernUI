@@ -37,7 +37,7 @@ export const SLOWMO: number = readSlowmoFromUrl();
 
 export const isSlowmoActive: boolean = SLOWMO !== 1;
 
-interface SpringTransition {
+export interface SpringTransition {
   type: 'spring';
   stiffness?: number;
   damping?: number;
@@ -45,12 +45,12 @@ interface SpringTransition {
   [key: string]: unknown;
 }
 
-interface DurationTransition {
+export interface DurationTransition {
   duration: number;
   [key: string]: unknown;
 }
 
-type AnyTransition = SpringTransition | DurationTransition | Record<string, unknown>;
+export type AnyTransition = SpringTransition | Partial<DurationTransition> | Record<string, unknown>;
 
 /**
  * Wrap any Framer Motion transition object with the active slowmo
@@ -62,7 +62,9 @@ type AnyTransition = SpringTransition | DurationTransition | Record<string, unkn
  *   transition={slow({ type: 'spring', stiffness: 280, damping: 26, mass: 0.7 })}
  *   transition={slow({ duration: 0.7, ease: 'easeOut' })}
  */
-export function slow<T extends AnyTransition>(t: T): T {
+export function slow<T extends AnyTransition>(t: T): T;
+export function slow<T extends object>(t: T): T;
+export function slow<T extends object>(t: T): T {
   if (SLOWMO === 1) return t;
   // Recurse into a baked-in `layout` field BEFORE applying the
   // top-level transform, so presets like STACK_ENTER_EXIT that

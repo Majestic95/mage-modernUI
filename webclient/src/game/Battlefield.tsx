@@ -82,7 +82,7 @@ export function Battlefield({
   //   committed to.
   const eligibleCombatIds: Set<string> =
     mode.kind === 'declareAttackers' || mode.kind === 'declareBlockers'
-      ? mode.possibleIds
+      ? mode.possibleIds ?? new Set<string>()
       : new Set<string>();
   const combatRoles = useMemo<Map<string, 'attacker' | 'blocker'>>(() => {
     const roles = new Map<string, 'attacker' | 'blocker'>();

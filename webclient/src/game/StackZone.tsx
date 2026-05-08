@@ -148,13 +148,14 @@ export function StackZone({
             const tooltip = [visualCard.typeLine, ...(visualCard.rules ?? [])]
               .filter(Boolean)
               .join('\n');
-            const layoutId = card.cardId ? card.cardId : undefined;
+            const layoutProps: { layoutId?: string; 'data-layout-id'?: string } = card.cardId
+              ? { layoutId: card.cardId, 'data-layout-id': card.cardId }
+              : {};
             return (
               <motion.div
                 key={card.id}
                 layout
-                layoutId={layoutId}
-                data-layout-id={layoutId}
+                {...layoutProps}
                 initial={{ opacity: 0, y: -16, scale: 0.85 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 24, scale: 0.85 }}
@@ -417,11 +418,11 @@ function FanCard({
     >
       <motion.div
         layout
-        layoutId={layoutId}
         data-testid="stack-fan-card"
         data-fan-distance={distance}
         data-fan-scale={tileScale.toFixed(2)}
         data-layout-id={layoutId}
+        {...(layoutId ? { layoutId } : {})}
         initial={{ opacity: 0, scale: tileScale * 0.9 }}
         animate={{ opacity: 1, scale: tileScale }}
         exit={{ opacity: 0, scale: tileScale * 0.85 }}
@@ -543,12 +544,12 @@ function FocalCard({
   return (
     <motion.div
       layout
-      layoutId={layoutId}
       key={card.id}
       data-testid="stack-focal-card"
       data-stack-glow={haloBackground}
       data-halo-multicolor={haloIsMulticolor || undefined}
       data-layout-id={layoutId}
+      {...(layoutId ? { layoutId } : {})}
       // P2 audit fix — focal stack rendering (cross-zone glide,
       // halo rotation, focal-spotlight sweep) is game-state-conveying:
       // the focal card IS the next-resolving stack object, and the

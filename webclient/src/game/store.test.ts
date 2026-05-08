@@ -1241,8 +1241,8 @@ describe('useGameStore', () => {
     useGameStore.getState().applyFrame(frame('gameInit', gv, 1), gv);
     const snap = useGameStore.getState().commanderSnapshots[pid];
     expect(snap).toBeDefined();
-    expect(snap.length).toBe(1);
-    expect(snap[0].name).toBe('Atraxa, Praetors\' Voice');
+    expect(snap?.length).toBe(1);
+    expect(snap?.at(0)?.name).toBe('Atraxa, Praetors\' Voice');
   });
 
   it('gameUpdate retains commander when commandList becomes empty (cast)', () => {
@@ -1254,8 +1254,8 @@ describe('useGameStore', () => {
     useGameStore.getState().applyFrame(frame('gameUpdate', empty, 2), empty);
     const snap = useGameStore.getState().commanderSnapshots[pid];
     expect(snap).toBeDefined();
-    expect(snap.length).toBe(1);
-    expect(snap[0].name).toBe('Atraxa, Praetors\' Voice');
+    expect(snap?.length).toBe(1);
+    expect(snap?.at(0)?.name).toBe('Atraxa, Praetors\' Voice');
   });
 
   it('Partner: snapshot accumulates both commanders and retains them through casts', () => {
@@ -1278,8 +1278,8 @@ describe('useGameStore', () => {
     useGameStore.getState().applyFrame(frame('gameUpdate', empty, 3), empty);
     const snap = useGameStore.getState().commanderSnapshots[pid];
     expect(snap).toBeDefined();
-    expect(snap.length).toBe(2);
-    expect(snap.map((c) => c.name).sort()).toEqual([
+    expect(snap?.length).toBe(2);
+    expect(snap?.map((c) => c.name).sort()).toEqual([
       'Thrasios, Triton Hero',
       'Tymna the Weaver',
     ]);

@@ -48,7 +48,10 @@ export function AbilityPickerDialog({
     cancelLabel !== undefined ? () => submit(ABILITY_PICKER_CANCEL_ID) : undefined;
   return (
     <>
-      <Header title="Choose ability" onClose={closeViaCancel} />
+      <Header
+        title="Choose ability"
+        {...(closeViaCancel ? { onClose: closeViaCancel } : {})}
+      />
       <Message text={dialog.data.message} />
       {modeRows.length === 0 ? (
         <p className="text-zinc-500 italic text-sm">

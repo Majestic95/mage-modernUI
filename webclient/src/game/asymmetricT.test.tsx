@@ -25,7 +25,7 @@ function renderLayout(opts: { onSpendMana?: (color: string) => void; me?: Return
   const gv = buildDemoGameView();
   const me = opts.me ?? gv.players.find((p) => p.playerId === gv.myPlayerId)!;
   const opponents = gv.players.filter((p) => p.playerId !== me.playerId);
-  const mode: InteractionMode = { kind: 'idle' };
+  const mode: InteractionMode = { kind: 'free' };
   return render(
     <MotionConfig reducedMotion="always">
       <LayoutGroup>
@@ -169,7 +169,7 @@ describe('AsymmetricTLayout', () => {
               opponents={[otherOpponents[0]!, activeOpponent, otherOpponents[1]!]}
               stack={gv.stack}
               combat={gv.combat}
-              mode={{ kind: 'idle' } as InteractionMode}
+              mode={{ kind: 'free' }}
               canAct
               onObjectClick={() => {}}
               onSpendMana={null}

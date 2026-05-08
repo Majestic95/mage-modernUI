@@ -144,16 +144,16 @@ export function NewLobbyScreen({
         tableId="fixture"
         roomId={null}
         editInitial={DEFAULT_INITIAL}
-        onLeave={onLeave}
+        {...(onLeave ? { onLeave } : {})}
       />
     );
   }
   return (
     <LiveLobby
       tableId={tableId}
-      joinPassword={joinPassword}
-      onRequestPasswordReprompt={onRequestPasswordReprompt}
-      onLeave={onLeave}
+      {...(joinPassword !== undefined ? { joinPassword } : {})}
+      {...(onRequestPasswordReprompt ? { onRequestPasswordReprompt } : {})}
+      {...(onLeave ? { onLeave } : {})}
     />
   );
 }
@@ -210,7 +210,7 @@ function LiveLobby({
       <LobbyStatus
         message={error ?? 'Table not found.'}
         showLeaveButton={permanentFailure}
-        onLeave={onLeave}
+        {...(onLeave ? { onLeave } : {})}
       />
     );
   }
@@ -222,9 +222,9 @@ function LiveLobby({
       roomId={roomId}
       editInitial={initialFromTable(table)}
       useLiveDecksHook
-      joinPassword={joinPassword}
-      onRequestPasswordReprompt={onRequestPasswordReprompt}
-      onLeave={onLeave}
+      {...(joinPassword !== undefined ? { joinPassword } : {})}
+      {...(onRequestPasswordReprompt ? { onRequestPasswordReprompt } : {})}
+      {...(onLeave ? { onLeave } : {})}
     />
   );
 }

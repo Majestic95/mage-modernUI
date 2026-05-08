@@ -111,7 +111,7 @@ export function SelectDialog({ dialog, stream, clearDialog }: ContentProps) {
   if (cardCount === 0) {
     return (
       <>
-        <Header title="Select" onClose={onSkip} />
+        <Header title="Select" {...(onSkip ? { onClose: onSkip } : {})} />
         <Message text={dialog.data.message} />
         <p className="text-zinc-500 italic text-sm">
           Click an eligible target on the battlefield to choose.
@@ -122,7 +122,7 @@ export function SelectDialog({ dialog, stream, clearDialog }: ContentProps) {
 
   return (
     <>
-      <Header title="Choose" onClose={onSkip} />
+      <Header title="Choose" {...(onSkip ? { onClose: onSkip } : {})} />
       <Message text={dialog.data.message} />
       <CardChooserList
         cards={cards}
@@ -131,7 +131,7 @@ export function SelectDialog({ dialog, stream, clearDialog }: ContentProps) {
         max={dialog.data.max}
         ordered={ordered}
         onSubmit={submit}
-        onSkip={onSkip}
+        {...(onSkip ? { onSkip } : {})}
       />
     </>
   );

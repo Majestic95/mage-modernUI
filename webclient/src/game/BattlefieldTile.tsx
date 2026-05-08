@@ -129,7 +129,7 @@ export function BattlefieldTile({
             targetableForDialog={targetableForDialog}
             combatRole={combatRole}
             tapped={tapped}
-            rotateDelay={rotateDelay}
+          {...(rotateDelay !== undefined ? { rotateDelay } : {})}
           />
         </button>
       </HoverCardDetail>
@@ -183,7 +183,7 @@ function BattlefieldTileFace({
       targetableForDialog={targetableForDialog}
       combatRole={combatRole}
       tapped={tapped}
-      rotateDelay={rotateDelay}
+      {...(rotateDelay !== undefined ? { rotateDelay } : {})}
     />
   );
 }
