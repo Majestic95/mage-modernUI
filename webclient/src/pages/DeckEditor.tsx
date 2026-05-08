@@ -557,22 +557,28 @@ function CardRow({
         )}
       </div>
       <div className="flex items-center gap-1 flex-shrink-0">
-        <button
-          type="button"
-          data-testid="deck-editor-display-card"
-          aria-label="Use as display card"
-          aria-pressed={isDisplayCard}
-          onClick={onSetDisplayCard}
-          title="Use this card as your non-Commander portrait"
-          className={
-            'h-6 rounded px-2 text-[10px] font-semibold uppercase tracking-wide '
-            + (isDisplayCard
-              ? 'bg-fuchsia-600 text-white'
-              : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700')
-          }
-        >
-          Face
-        </button>
+        {/* Audit fix (M3) — Face is a non-Commander portrait pick.
+            Commander art always wins on the wire (see TableMapper +
+            PlayerPortrait), so the button has no observable effect on
+            commander rows; suppress it to avoid confusing UX. */}
+        {!isCommanderSlot && (
+          <button
+            type="button"
+            data-testid="deck-editor-display-card"
+            aria-label="Use as display card"
+            aria-pressed={isDisplayCard}
+            onClick={onSetDisplayCard}
+            title="Use this card as your non-Commander portrait"
+            className={
+              'h-6 rounded px-2 text-[10px] font-semibold uppercase tracking-wide '
+              + (isDisplayCard
+                ? 'bg-fuchsia-600 text-white'
+                : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700')
+            }
+          >
+            Face
+          </button>
+        )}
         <button
           type="button"
           data-testid="deck-editor-decrement"

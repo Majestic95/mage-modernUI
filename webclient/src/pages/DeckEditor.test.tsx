@@ -267,6 +267,55 @@ describe('DeckEditor', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it('Face button is suppressed on commander rows but present on regular cards', async () => {
+    // Audit fix (M3) — Face has no effect on a commander (commander
+    // art always wins on the wire). Suppressing it avoids users
+    // clicking it expecting something to change.
+    const deck = useDecksStore.getState().add(
+      'Commander Deck with Face Test',
+      [
+        { cardName: 'Mountain', setCode: 'M21', cardNumber: '281', amount: 1 },
+      ],
+      [
+        { cardName: 'Krenko, Mob Boss', setCode: 'M14', cardNumber: '147', amount: 1 },
+      ],
+    );
+
+    vi.stubGlobal(
+      'fetch',
+      makeRouter({
+        'name=Mountain': () => cardListing([cardInfo('Mountain', ['LAND'], 0)]),
+        'name=Krenko': () =>
+          cardListing([cardInfo('Krenko, Mob Boss', ['CREATURE'], 4)]),
+      }),
+    );
+
+    render(<DeckEditor deckId={deck.id} onClose={() => {}} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('deck-bucket-Commander')).toBeInTheDocument();
+    });
+
+    // Commander row exists with no Face button.
+    const commanderRows = await screen.findAllByTestId('deck-editor-card-row');
+    const commanderRow = commanderRows.find(
+      (r) => r.getAttribute('data-card') === 'Krenko, Mob Boss',
+    );
+    expect(commanderRow).toBeDefined();
+    expect(
+      within(commanderRow!).queryByTestId('deck-editor-display-card'),
+    ).toBeNull();
+
+    // Mainboard row still has the Face button.
+    const mainRow = commanderRows.find(
+      (r) => r.getAttribute('data-card') === 'Mountain',
+    );
+    expect(mainRow).toBeDefined();
+    expect(
+      within(mainRow!).getByTestId('deck-editor-display-card'),
+    ).toBeInTheDocument();
+  });
+
   it('sideboard slot 0 is labeled Commander when commanderHint applies', async () => {
     const deck = useDecksStore.getState().add(
       'Commander Deck',
