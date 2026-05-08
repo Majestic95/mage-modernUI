@@ -9,9 +9,9 @@
     once WebApi is back up; Watchdog respects the intentional-down
     sentinel during the restart window.
 
-    Run from elevated PowerShell.
+    Run from elevated PowerShell, or from any PowerShell after the
+    one-time `grant-service-acl.ps1` setup (Tier 2; see README).
 #>
-#Requires -RunAsAdministrator
 [CmdletBinding()]
 param()
 
@@ -22,6 +22,8 @@ $BundleRoot = Get-BundleRootFromScript $PSCommandPath
 $RepoRoot = Split-Path -Parent $BundleRoot
 $Config = Read-BundleConfig $BundleRoot
 $Nssm = Join-Path $BundleRoot 'bin\nssm.exe'
+
+Assert-AdminOrAclGrant -ServiceName $Config.services.webapi
 
 # Inject the bundle's pinned JDK into the session BEFORE any mvn call.
 # Admin shells without JAVA_HOME pre-set otherwise fall through to a

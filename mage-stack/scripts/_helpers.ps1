@@ -137,6 +137,81 @@ function Use-ResolvedJavaHome {
     return $resolved
 }
 
+function Test-AdminOrAclGrant {
+    <#
+    .SYNOPSIS
+        Return true if the current session has rights to start/stop the
+        named service: either via admin elevation OR via the Tier 2
+        service-ACL grant (see grant-service-acl.ps1).
+
+    .DESCRIPTION
+        Day-to-day ops scripts (mage-up / mage-down / mage-redeploy)
+        call this at entry and abort with a clear pointer to
+        grant-service-acl.ps1 if neither path is available. The
+        directive `#Requires -RunAsAdministrator` was the older
+        always-admin gate; this helper is the soft-check replacement.
+
+        Detection:
+        - Admin: standard IsInRole check.
+        - ACL grant: read the service's SDDL via `sc.exe sdshow` and
+          look for the running user's SID in the DACL. The grant
+          script puts the SID there exactly once with the
+          RP/WP/DT/LO bundle, which is sufficient for nssm
+          start/stop calls.
+
+        $ServiceName is the service to probe; pass the WebApi service
+        name from config so all callers test the same surface.
+    #>
+    param(
+        [Parameter(Mandatory)] [string]$ServiceName
+    )
+
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = New-Object Security.Principal.WindowsPrincipal($identity)
+    if ($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        return $true
+    }
+
+    $sdRaw = & sc.exe sdshow $ServiceName
+    $probeExit = $LASTEXITCODE
+    # Reset so callers don't inherit the probe's exit code on the
+    # missing-service / permission-denied path.
+    $global:LASTEXITCODE = 0
+    if ($probeExit -ne 0) {
+        return $false
+    }
+    $sd = ($sdRaw | Where-Object { $_ -match '^\s*[DS]:' }) -join ''
+    $sd = $sd -replace '\s', ''
+    return [bool]($sd -match [regex]::Escape($identity.User.Value))
+}
+
+function Assert-AdminOrAclGrant {
+    <#
+    .SYNOPSIS
+        Wrapper around Test-AdminOrAclGrant that aborts the calling
+        script with a helpful error if neither path is available.
+
+    .DESCRIPTION
+        Replaces the old `#Requires -RunAsAdministrator` directive in
+        scripts whose admin requirement is fully covered by the
+        service-control ACL grant. Pre-grant non-admin users see a
+        clear pointer to the setup script instead of failing
+        mid-execution at the first nssm stop call.
+    #>
+    param(
+        [Parameter(Mandatory)] [string]$ServiceName
+    )
+    if (Test-AdminOrAclGrant -ServiceName $ServiceName) { return }
+    Write-Err "This script needs either admin elevation OR the Tier 2 service-ACL grant."
+    Write-Host ""
+    Write-Host "One-time setup: open elevated PowerShell and run:"
+    Write-Host "  .\mage-stack\scripts\grant-service-acl.ps1"
+    Write-Host ""
+    Write-Host "After that, this script runs from any PowerShell window."
+    Write-Host "See mage-stack\README.md > 'Tier 2 setup' for details."
+    exit 1
+}
+
 function Install-NssmService {
     [CmdletBinding()]
     param(

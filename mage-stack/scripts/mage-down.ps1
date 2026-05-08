@@ -7,9 +7,9 @@
     MageWebApi, then stops services in reverse-dependency order:
     Watchdog -> Tunnel -> WebApi.
 
-    Run from elevated PowerShell.
+    Run from elevated PowerShell, or from any PowerShell after the
+    one-time `grant-service-acl.ps1` setup (Tier 2; see README).
 #>
-#Requires -RunAsAdministrator
 [CmdletBinding()]
 param(
     [string]$Reason = 'manual'
@@ -21,6 +21,8 @@ $ErrorActionPreference = 'Stop'
 $BundleRoot = Get-BundleRootFromScript $PSCommandPath
 $Config = Read-BundleConfig $BundleRoot
 $Nssm = Join-Path $BundleRoot 'bin\nssm.exe'
+
+Assert-AdminOrAclGrant -ServiceName $Config.services.webapi
 
 Write-Section "Mage Stack - stop"
 

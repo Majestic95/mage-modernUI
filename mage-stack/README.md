@@ -77,6 +77,67 @@ After install, your day-to-day surface is six commands. Run them from `F:\xmage\
 
 ---
 
+## Tier 2 setup -- skip admin elevation for day-to-day ops (optional)
+
+Out of the box, `mage-up.ps1` / `mage-down.ps1` / `mage-redeploy.ps1` need to be run from elevated PowerShell because they start and stop Windows Services, which is admin-only by default.
+
+**Tier 2 is a one-time admin step that grants your user account the right to start/stop these specific three services**, after which the day-to-day scripts run from any normal PowerShell window. Nothing else changes -- you can't do any other admin work, you just get fast-path service control on these three services.
+
+Skip this if you don't mind right-clicking PowerShell as administrator before each redeploy.
+
+### One-time setup (~30 seconds)
+
+Open **elevated** PowerShell (right-click PowerShell -> "Run as administrator"), then run:
+
+```powershell
+cd F:\xmage\mage-stack\scripts
+.\grant-service-acl.ps1
+```
+
+The script:
+- Reads each service's current security descriptor (DACL).
+- Adds an Allow ACE for your user SID with `RPWPDTLO` rights (start, stop, pause/continue, interrogate).
+- Verifies by reading back. Original SDDL is printed before the write so you can recover manually if anything goes wrong.
+- Idempotent -- safe to re-run; existing grants are skipped.
+
+Close the admin PowerShell when it's done.
+
+### Verify it worked
+
+Open a **non-admin** PowerShell window and run:
+
+```powershell
+cd F:\xmage
+.\mage-stack\scripts\mage-redeploy.ps1
+```
+
+It should complete without a UAC prompt. If it asks for elevation, the grant didn't take -- re-run `grant-service-acl.ps1` and check the output.
+
+### What still needs admin
+
+These scripts need full admin and won't be helped by Tier 2:
+
+| Script | Why |
+| --- | --- |
+| `install-service.ps1` | Creates Windows Services -- service registration is admin-only by design. |
+| `uninstall-service.ps1` | Destroys Windows Services -- same. |
+| `mage-cors-refresh.ps1` | Uses `nssm set` to modify service config; requires write access to service registry beyond what the ACL grants. |
+| `mage-ship.ps1` (with `-Restart`) | Wraps `mage-redeploy.ps1` for end-to-end deploys; the redeploy step is now ACL-friendly, but the script as a whole may invoke other admin paths. Check its own `#Requires` directive. |
+
+### Undo
+
+If you ever want to remove the grant (e.g., decommissioning the box), capture the original SDDL printed by `grant-service-acl.ps1` and apply it manually:
+
+```powershell
+sc.exe sdset MageWebApi   "<original SDDL>"
+sc.exe sdset MageTunnel   "<original SDDL>"
+sc.exe sdset MageWatchdog "<original SDDL>"
+```
+
+Or just re-install the services via `uninstall-service.ps1` + `install-service.ps1` -- registration starts from a fresh DACL.
+
+---
+
 ## What's running where
 
 ```
