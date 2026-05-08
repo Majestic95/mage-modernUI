@@ -18,9 +18,9 @@ import static mage.webapi.lobby.deck.AiDeckBuilderSupport.requireBasic;
  * a 60-Forest pile (no creatures, no combat). Now exercises the slice
  * -20 combat panel + slice-21 manual mana paths in live testing.
  *
- * <p>Returned regardless of {@code AiDifficulty} for non-Commander
- * tables until per-format pools land (Pauper / Standard, future
- * slices F / G).
+ * <p>Returned regardless of {@code AiDifficulty} for formats without
+ * their own pool. Pauper now has a dedicated pool; Standard remains a
+ * future slice.
  */
 public final class BasicLandsFallback {
 

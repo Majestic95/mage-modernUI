@@ -37,11 +37,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 public final class AiDeckLibrary {
 
     /**
-     * Predictable WUBRG rotation across Commander AI fills. Index 0 →
-     * white; +1 each fill cycles to blue, black, red, green, then
-     * wraps. {@link Math#floorMod(int, int)} guards the
-     * {@code Integer.MAX_VALUE} overflow case where plain {@code %}
-     * would yield a negative index.
+     * Predictable WUBRG rotation across Commander AI fills. Pauper uses
+     * the same deterministic pattern over its ten archetypes. {@link
+     * Math#floorMod(int, int)} guards the {@code Integer.MAX_VALUE}
+     * overflow case where plain {@code %} would yield a negative index.
      *
      * <p>Predictable rather than random so the same lobby-create call
      * produces the same color split every time, which makes session

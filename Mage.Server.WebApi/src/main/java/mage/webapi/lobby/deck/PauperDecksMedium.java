@@ -17,7 +17,7 @@ import static mage.webapi.lobby.deck.AiDeckBuilderSupport.requireBasic;
  * creature decks selected by predictable rotation. The lists are kept
  * combat-forward and low-decision: no counterspells, no X-cost spells,
  * no modal "choose one" cards, no tutors, no extra turns, and no
- * cascade / suspend / foretell / madness alternate-cost bait.
+ * cascade / suspend / foretell / madness / echo alternate-cost bait.
  *
  * <p>Two-color lists include at least four common dual lands and stay
  * creature-heavy so the current AI spends most decisions on attacking,
@@ -49,7 +49,7 @@ public final class PauperDecksMedium implements PauperDeckPool {
         List<DeckCardInfo> cards = new ArrayList<>();
         addEntry(cards, "Plains", plains, 24);
         addAll(cards, plains, 4,
-                "Doomed Traveler", "Thraben Inspector", "Loyal Cathar",
+                "Doomed Traveler", "Thraben Inspector", "Youthful Knight",
                 "Veteran Armorsmith", "Veteran Swordsmith", "Aven Squire",
                 "Soltari Trooper", "Kor Skyfisher", "Gideon's Lawkeeper");
         deck.setCards(cards);
@@ -92,7 +92,7 @@ public final class PauperDecksMedium implements PauperDeckPool {
         addEntry(cards, "Mountain", mountain, 24);
         addAll(cards, mountain, 4,
                 "Mogg Fanatic", "Goblin Cohort", "Frenzied Goblin",
-                "Goblin Piker", "Mogg War Marshal", "Goblin Shortcutter",
+                "Goblin Piker", "Goblin Roughrider", "Goblin Shortcutter",
                 "Goblin Sky Raider", "Beetleback Chief", "Valley Dasher");
         deck.setCards(cards);
         deck.setSideboard(new ArrayList<>());
@@ -124,7 +124,7 @@ public final class PauperDecksMedium implements PauperDeckPool {
         addAll(cards, plains, 4,
                 "Thraben Inspector", "Soltari Trooper", "Veteran Armorsmith",
                 "Mogg Fanatic", "Goblin Cohort", "Goblin Piker",
-                "Mogg War Marshal", "Goblin Shortcutter");
+                "Goblin Roughrider", "Goblin Shortcutter");
         addAll(cards, plains, 2, "Beetleback Chief");
         deck.setCards(cards);
         deck.setSideboard(new ArrayList<>());
@@ -194,7 +194,7 @@ public final class PauperDecksMedium implements PauperDeckPool {
         addAll(cards, mountain, 4, "Gruul Turf");
         addAll(cards, mountain, 2, "Rugged Highlands");
         addAll(cards, mountain, 4,
-                "Mogg Fanatic", "Goblin Cohort", "Mogg War Marshal",
+                "Mogg Fanatic", "Goblin Cohort", "Goblin Roughrider",
                 "Goblin Shortcutter", "Llanowar Elves", "Werebear",
                 "Garruk's Companion", "Centaur Courser");
         addAll(cards, mountain, 2, "Nessian Courser");

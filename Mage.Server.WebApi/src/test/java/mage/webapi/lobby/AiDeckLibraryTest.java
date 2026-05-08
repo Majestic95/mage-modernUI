@@ -1,10 +1,12 @@
 package mage.webapi.lobby;
 
+import mage.cards.Card;
 import mage.cards.decks.Deck;
 import mage.cards.decks.DeckCardInfo;
 import mage.cards.decks.DeckCardLists;
 import mage.cards.decks.DeckValidator;
 import mage.cards.decks.DeckValidatorError;
+import mage.filter.FilterMana;
 import mage.game.GameException;
 import mage.game.FakeMatch;
 import mage.game.Table;
@@ -388,7 +390,8 @@ class AiDeckLibraryTest {
                 "Teachings of the Archaics", "Rolling Thunder",
                 "Fireball", "Kaervek's Torch", "Temporal Fissure",
                 "Captured Sunlight", "Mulldrifter", "Basking Rootwalla",
-                "Goblin Bushwhacker", "Goblin Heelcutter", "Cinder Wall"
+                "Goblin Bushwhacker", "Goblin Heelcutter", "Cinder Wall",
+                "Mogg War Marshal", "Loyal Cathar"
         );
         for (int i = 0; i < 10; i++) {
             DeckCardLists deck = pauper.build(i);
@@ -397,6 +400,45 @@ class AiDeckLibraryTest {
                         "Pauper deck '" + deck.getName() + "' contains "
                                 + "AI-unfriendly card '" + entry.getCardName() + "'");
             }
+        }
+    }
+
+    @Test
+    void pauperDecks_avoidAiUnfriendlyMechanics() {
+        Set<Class<?>> disallowedAbilities = Set.of(
+                mage.abilities.keyword.CascadeAbility.class,
+                mage.abilities.keyword.DashAbility.class,
+                mage.abilities.keyword.EchoAbility.class,
+                mage.abilities.keyword.ForetellAbility.class,
+                mage.abilities.keyword.MadnessAbility.class,
+                mage.abilities.keyword.SuspendAbility.class
+        );
+        for (int i = 0; i < 10; i++) {
+            DeckCardLists deck = pauper.build(i);
+            Deck loaded = loadOrFail(deck.getName(), deck);
+            for (Card card : loaded.getCards()) {
+                for (Class<?> abilityClass : disallowedAbilities) {
+                    assertTrue(!card.getAbilities().containsClass(abilityClass),
+                            "Pauper deck '" + deck.getName() + "' contains "
+                                    + "AI-unfriendly mechanic "
+                                    + abilityClass.getSimpleName() + " on '"
+                                    + card.getName() + "'");
+                }
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, 1, 2, 3, 4})
+    void monoColorPauperDecks_matchTheirDeclaredColor(int rotationIdx) {
+        DeckCardLists deck = pauper.build(rotationIdx);
+        Deck loaded = loadOrFail(deck.getName(), deck);
+        for (Card card : loaded.getCards()) {
+            FilterMana identity = card.getColorIdentity();
+            assertTrue(matchesMonoPauperColor(rotationIdx, identity),
+                    "Mono-color Pauper deck '" + deck.getName()
+                            + "' contains off-color card '" + card.getName()
+                            + "' with identity " + identity);
         }
     }
 
@@ -589,6 +631,28 @@ class AiDeckLibraryTest {
                     "Could not instantiate mage.deck.Pauper via reflection — "
                             + "is mage-deck-constructed on the test runtime classpath?",
                     ex);
+        }
+    }
+
+    private static boolean matchesMonoPauperColor(int rotationIdx, FilterMana identity) {
+        switch (rotationIdx) {
+            case 0:
+                return !identity.isBlue() && !identity.isBlack()
+                        && !identity.isRed() && !identity.isGreen();
+            case 1:
+                return !identity.isWhite() && !identity.isBlack()
+                        && !identity.isRed() && !identity.isGreen();
+            case 2:
+                return !identity.isWhite() && !identity.isBlue()
+                        && !identity.isRed() && !identity.isGreen();
+            case 3:
+                return !identity.isWhite() && !identity.isBlue()
+                        && !identity.isBlack() && !identity.isGreen();
+            case 4:
+                return !identity.isWhite() && !identity.isBlue()
+                        && !identity.isBlack() && !identity.isRed();
+            default:
+                throw new IllegalStateException("Unreachable rotationIdx: " + rotationIdx);
         }
     }
 
