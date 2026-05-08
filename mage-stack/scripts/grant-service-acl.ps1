@@ -102,18 +102,27 @@ foreach ($svc in $Services) {
     }
 
     # Insert the new ACE at the end of the DACL portion (before the
-    # optional SACL `S:` portion if present). Default mage-stack
-    # services have no SACL, but be defensive.
-    if ($oldSd -match '^(D:[^S]*)(S:.*)?$') {
-        $daclPart = $matches[1]
-        $saclPart = $matches[2]
-        $newSd = "$daclPart$newAce$saclPart"
+    # optional SACL `S:` portion if present). Both shapes occur in
+    # practice: non-admin `sdshow` may hide the SACL while admin shows
+    # both. Split on `)S:` rather than regex with `[^S]` because the
+    # DACL rights mask routinely contains literal `S` characters
+    # (e.g. `SW` = SERVICE_ENUMERATE_DEPENDENTS, `SY` = NT AUTHORITY\SYSTEM).
+    $splitIdx = $oldSd.LastIndexOf(')S:')
+    if ($splitIdx -ge 0) {
+        # `)S:` boundary: include the `)` in the DACL portion.
+        $daclPart = $oldSd.Substring(0, $splitIdx + 1)
+        $saclPart = $oldSd.Substring($splitIdx + 1)
+    } elseif ($oldSd.StartsWith('D:') -and $oldSd.EndsWith(')')) {
+        # DACL only, no SACL.
+        $daclPart = $oldSd
+        $saclPart = ''
     } else {
         Write-Warn "Unexpected SDDL shape for '$svc': $oldSd"
         $errorCount++
         Write-Host ""
         continue
     }
+    $newSd = "$daclPart$newAce$saclPart"
 
     # Apply via sdset. sc.exe takes the SDDL as a single argument;
     # PowerShell quotes it correctly across the parens / semicolons.
