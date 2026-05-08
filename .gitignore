@@ -79,6 +79,7 @@ mage-bundle.zip
 # boot by PauperLegalityService (~30-40 MB JSON, refreshed daily).
 # Never committed; regenerated on demand at runtime.
 mage-stack/cache/
+Mage.Server.WebApi/mage-stack/cache/
 
 # vercel project link (per-deployer, not committed) — webclient
 # directory only; root vercel deploys aren't expected

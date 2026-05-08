@@ -139,15 +139,15 @@ public final class PauperLegalityService implements AutoCloseable {
                 return t;
             });
             long millis = refreshInterval.toMillis();
-            // initialDelay == period — the snapshot we just loaded IS
-            // a fresh refresh from the operator's standpoint; the next
-            // tick should fire one full interval later.
+            long initialDelayMillis = initialRefreshDelayMillis(
+                    loaded.refreshedAt, refreshInterval);
             // Milliseconds (not seconds) so sub-second test intervals
             // like Duration.ofMillis(50) don't truncate to 0 and crash
             // scheduleAtFixedRate's "period > 0" precondition.
             this.refreshExecutor.scheduleAtFixedRate(
-                    this::refreshOnce, millis, millis, TimeUnit.MILLISECONDS);
-            LOG.info("Scheduled Scryfall legality refresh every {}ms", millis);
+                    this::refreshOnce, initialDelayMillis, millis, TimeUnit.MILLISECONDS);
+            LOG.info("Scheduled Scryfall legality refresh every {}ms (first in {}ms)",
+                    millis, initialDelayMillis);
         } else {
             this.refreshExecutor = null;
         }
@@ -211,6 +211,15 @@ public final class PauperLegalityService implements AutoCloseable {
             LOG.warn("Scheduled Scryfall refresh failed; keeping prior snapshot: {}",
                     ex.getMessage());
         }
+    }
+
+    /**
+     * Package-private diagnostic for tests. Production only observes the
+     * public lifecycle; tests need to pin the age-based first-delay math.
+     */
+    static long firstRefreshDelayMillisForTest(Instant refreshedAt,
+                                               Duration refreshInterval) {
+        return initialRefreshDelayMillis(refreshedAt, refreshInterval);
     }
 
     /**
@@ -288,6 +297,20 @@ public final class PauperLegalityService implements AutoCloseable {
             throw new LegalityDataUnavailableException(message, networkFailure);
         }
         throw new LegalityDataUnavailableException(message);
+    }
+
+    private static long initialRefreshDelayMillis(Instant refreshedAt,
+                                                  Duration refreshInterval) {
+        long periodMillis = Math.max(1L, refreshInterval.toMillis());
+        if (refreshedAt == null) {
+            return periodMillis;
+        }
+        Duration age = Duration.between(refreshedAt, Instant.now());
+        if (age.isNegative()) {
+            return periodMillis;
+        }
+        long remaining = periodMillis - age.toMillis();
+        return Math.max(1L, remaining);
     }
 
     /** Tuple of (parsed map, wall-clock at load). */

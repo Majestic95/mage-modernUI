@@ -340,6 +340,29 @@ class PauperLegalityServiceTest {
     }
 
     @Test
+    void firstRefreshDelay_accountsForSnapshotAge() {
+        Duration interval = Duration.ofHours(24);
+
+        long nearExpiredDelay = PauperLegalityService.firstRefreshDelayMillisForTest(
+                Instant.now().minus(23, ChronoUnit.HOURS).minus(59, ChronoUnit.MINUTES),
+                interval);
+        assertTrue(nearExpiredDelay > 0 && nearExpiredDelay <= TimeUnit.MINUTES.toMillis(2),
+                "nearly-expired cache should refresh almost immediately, got "
+                        + nearExpiredDelay + "ms");
+
+        long freshDelay = PauperLegalityService.firstRefreshDelayMillisForTest(
+                Instant.now(), interval);
+        assertTrue(freshDelay > TimeUnit.HOURS.toMillis(23),
+                "fresh network/cache snapshot should wait close to the full interval, got "
+                        + freshDelay + "ms");
+
+        long staleDelay = PauperLegalityService.firstRefreshDelayMillisForTest(
+                Instant.now().minus(25, ChronoUnit.HOURS), interval);
+        assertEquals(1L, staleDelay,
+                "already-stale snapshot should schedule the first refresh immediately");
+    }
+
+    @Test
     void close_stopsScheduledExecutor(@TempDir Path tmp) throws Exception {
         stageFreshFixture(tmp);
         LegalityCacheStore store = new LegalityCacheStore(tmp);

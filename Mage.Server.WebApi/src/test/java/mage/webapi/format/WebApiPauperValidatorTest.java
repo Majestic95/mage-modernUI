@@ -10,6 +10,8 @@ import mage.cards.repository.CardScanner;
 import mage.cards.repository.RepositoryUtil;
 import mage.deck.Pauper;
 import mage.game.GameException;
+import mage.webapi.embed.EmbeddedServer;
+import mage.webapi.server.WebApiServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -21,6 +23,7 @@ import java.io.InputStream;
 import java.net.http.HttpClient;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -155,6 +158,25 @@ class WebApiPauperValidatorTest {
                         + "rarity rejection, got: " + errors);
     }
 
+    @Test
+    void withService_transformCardUsesScryfallFullName(@TempDir Path tmp) throws IOException {
+        // Xmage stores transform cards by front-face name in decks, but
+        // Scryfall keys the oracle_cards row as "Front // Back". The
+        // Scryfall overlay must therefore derive the full name from
+        // CardWithHalves rather than looking up only card.getName().
+        PauperLegalityService service = newServiceFromFixture(tmp);
+        WebApiPauperValidator validator = new WebApiPauperValidator(service);
+        Deck deck = loadOrFail(makeDeck(
+                entry("Delver of Secrets", "51", "ISD", 4),
+                entry("Island", "265", "M21", 56)
+        ));
+
+        boolean valid = validator.validate(deck);
+        assertTrue(valid,
+                "Delver fixture lookup must use full transform name and remain legal. errors: "
+                        + validator.getErrorsListInfo());
+    }
+
     // ---------------------------------------------------------------
     // UNKNOWN fallback — defer to super
     // ---------------------------------------------------------------
@@ -277,6 +299,33 @@ class WebApiPauperValidatorTest {
                         .contains("Banned in Pauper"),
                 "factory-built validator must use Scryfall ban message, got: "
                         + created.getErrorsListInfo());
+    }
+
+    @Test
+    void withLegalityCacheDirNull_restoresUpstreamFactoryAfterPriorOverride(
+            @TempDir Path tmp) throws IOException {
+        PauperLegalityService service = newServiceFromFixture(tmp);
+        WebApiPauperValidator.setService(service);
+        DeckValidatorFactory.instance.addDeckType(
+                "Constructed - Pauper", WebApiPauperValidator.class);
+        assertInstanceOf(WebApiPauperValidator.class, DeckValidatorFactory.instance
+                .createDeckValidator("Constructed - Pauper"));
+
+        WebApiServer server = new WebApiServer(
+                EmbeddedServer.boot("../Mage.Server/config/config.xml"));
+        try {
+            server.withLegalityCacheDir(null, Duration.ZERO);
+        } finally {
+            server.stop();
+        }
+
+        DeckValidator created = DeckValidatorFactory.instance
+                .createDeckValidator("Constructed - Pauper");
+        assertNotNull(created, "factory must still create an upstream validator");
+        assertFalse(created instanceof WebApiPauperValidator,
+                "null cache dir fallback must restore upstream Pauper class");
+        assertInstanceOf(Pauper.class, created,
+                "fallback factory registration should be upstream Pauper");
     }
 
     @Test

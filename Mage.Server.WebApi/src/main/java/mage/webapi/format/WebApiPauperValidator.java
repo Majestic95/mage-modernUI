@@ -2,10 +2,13 @@ package mage.webapi.format;
 
 import mage.cards.decks.Deck;
 import mage.cards.decks.DeckValidatorErrorType;
+import mage.cards.Card;
+import mage.cards.CardWithHalves;
 import mage.deck.Pauper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -84,9 +87,13 @@ public class WebApiPauperValidator extends Pauper {
         heldService = service;
     }
 
+    public static void clearService() {
+        heldService = null;
+    }
+
     /** Visible-for-test: clear the held service so test isolation is recoverable. */
     public static void clearServiceForTest() {
-        heldService = null;
+        clearService();
     }
 
     private final PauperLegalityService legalityService;
@@ -140,8 +147,8 @@ public class WebApiPauperValidator extends Pauper {
         // LinkedHashMap preserves first-seen order so test diagnostics
         // are stable; the validator itself doesn't care about order.
         Map<String, Integer> counts = new LinkedHashMap<>();
-        countCards(counts, deck.getCards());
-        countCards(counts, deck.getSideboard());
+        countScryfallNames(counts, deck.getCards());
+        countScryfallNames(counts, deck.getSideboard());
 
         for (String name : counts.keySet()) {
             switch (legalityService.legalityOf(name)) {
@@ -165,5 +172,26 @@ public class WebApiPauperValidator extends Pauper {
         }
 
         return valid;
+    }
+
+    private static void countScryfallNames(Map<String, Integer> counts,
+                                           Collection<Card> cards) {
+        for (Card card : cards) {
+            String name = scryfallLookupName(card);
+            counts.put(name, counts.getOrDefault(name, 0) + 1);
+        }
+    }
+
+    private static String scryfallLookupName(Card card) {
+        if (card instanceof CardWithHalves halves
+                && halves.getLeftHalfCard() != null
+                && halves.getRightHalfCard() != null) {
+            String left = halves.getLeftHalfCard().getName();
+            String right = halves.getRightHalfCard().getName();
+            if (left != null && !left.isBlank() && right != null && !right.isBlank()) {
+                return left + " // " + right;
+            }
+        }
+        return card.getName();
     }
 }
