@@ -16,8 +16,9 @@ import mage.webapi.WebApiException;
  *       in their original neighborhoods.</li>
  * </ul>
  *
- * <p>Wire surface — when the JSON wire field arrives in Slice D, parse
- * via {@link #fromString(String)} so missing/blank values default to
+ * <p>Wire surface — the optional {@code difficulty} field on
+ * {@code WebAddAiRequest} (schema 1.34, Slice D 2026-05-08) is parsed
+ * via {@link #fromString(String)}. Missing/blank values default to
  * {@link #MEDIUM} (the wire-default) and unknown strings fail loudly
  * with HTTP 400.
  */
@@ -27,11 +28,9 @@ public enum AiDifficulty {
     HARD;
 
     /**
-     * Default difficulty when a request omits the field. Currently
-     * {@link #MEDIUM} — the rebalanced Bracket 2-3 pool. Slice C flips
-     * the dispatcher's effective default here once the Medium pool is
-     * populated; until then, both Easy and Medium delegate to Hard
-     * (so the practical default is "Hard via Medium delegation").
+     * Default difficulty when a request omits the {@code difficulty}
+     * field. {@link #MEDIUM} — the rebalanced Bracket 2-3 pool live
+     * since Slice C (2026-05-07).
      */
     public static final AiDifficulty WIRE_DEFAULT = MEDIUM;
 

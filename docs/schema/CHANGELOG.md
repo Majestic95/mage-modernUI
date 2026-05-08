@@ -56,6 +56,38 @@ emitted newest-first; only the client interpretation was wrong. No
 
 ---
 
+## 1.34 — 2026-05-08 — `difficulty` field on `WebAddAiRequest` (Slice D)
+
+Adds the optional `difficulty` field to the `POST
+/api/rooms/{roomId}/tables/{tableId}/ai` request body so clients can
+pick between the existing AI deck-pool tiers (`easy` / `medium` /
+`hard`). Server-side dispatch already exists (Slices A-C3, 2026-05-07)
+— this slice exposes it on the wire.
+
+```diff
+ // WebAddAiRequest — additive optional field
+ {
+   "playerType": "COMPUTER_MAD",
++  "difficulty": "easy" | "medium" | "hard"   // optional
+ }
+```
+
+Parsing semantics (mirrors `AiDifficulty.fromString`):
+
+- Missing / `null` / blank → `MEDIUM` (the `WIRE_DEFAULT`, Bracket 2-3
+  pool).
+- Case + leading/trailing whitespace tolerant (`"  Easy "` → `EASY`).
+- Unknown values → `HTTP 400 BAD_REQUEST` with code `BAD_REQUEST`.
+
+Forward-compat: a 1.33 client posting without the field hits the same
+default it always did. A 1.34 client posting `difficulty` against a
+1.33 server still works because Jackson tolerates unknown JSON
+properties on the record (project-wide `ObjectMapper` config). Rolling
+deploy in either direction is safe; the only behavior change is that
+clients can now pick non-default tiers.
+
+Companion client work lands as Slice E (`PreLobbyModal` UI selector).
+
 ## 1.33 — 2026-05-07 — Display-card portrait fields
 
 Adds cosmetic display-card metadata so non-Commander decks can choose a

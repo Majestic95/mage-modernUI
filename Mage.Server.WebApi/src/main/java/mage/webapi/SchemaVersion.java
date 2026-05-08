@@ -14,7 +14,7 @@ package mage.webapi;
  */
 public final class SchemaVersion {
 
-    public static final String CURRENT = "1.33";
+    public static final String CURRENT = "1.34";
 
     private SchemaVersion() {
     }

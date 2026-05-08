@@ -497,6 +497,37 @@ class WebApiServerTest {
     }
 
     @Test
+    void addAi_withDifficultyEasy_returns204() throws Exception {
+        // Slice D (2026-05-08) — wire `difficulty` is now an optional
+        // field on WebAddAiRequest. Lock the parse path: a known-good
+        // value lands the AI cleanly.
+        String roomId = mainRoomId();
+        String tableId = createTableWithSeats(roomId,
+                List.of("HUMAN", "COMPUTER_MONTE_CARLO"));
+
+        HttpResponse<String> r = postJsonAuthed(
+                "/api/rooms/" + roomId + "/tables/" + tableId + "/ai",
+                "{\"playerType\":\"COMPUTER_MONTE_CARLO\",\"difficulty\":\"easy\"}");
+        assertEquals(204, r.statusCode(), r.body());
+    }
+
+    @Test
+    void addAi_unknownDifficulty_returns400() throws Exception {
+        // Slice D (2026-05-08) — unknown difficulty strings fail loudly
+        // rather than silently defaulting. Mirrors the unknownPlayerType
+        // contract one assertion above.
+        String roomId = mainRoomId();
+        String tableId = createTableWithSeats(roomId,
+                List.of("HUMAN", "COMPUTER_MONTE_CARLO"));
+
+        HttpResponse<String> r = postJsonAuthed(
+                "/api/rooms/" + roomId + "/tables/" + tableId + "/ai",
+                "{\"playerType\":\"COMPUTER_MONTE_CARLO\",\"difficulty\":\"nightmare\"}");
+        assertEquals(400, r.statusCode());
+        assertEquals("BAD_REQUEST", JSON.readTree(r.body()).get("code").asText());
+    }
+
+    @Test
     void unknownTable_addAi_returns404() throws Exception {
         // 2026-05-02 — addAi now pre-validates the AI fallback deck
         // before calling upstream. The pre-validation does a
