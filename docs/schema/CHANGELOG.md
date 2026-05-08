@@ -93,7 +93,7 @@ empty strings and missing request `displayCard` to `null`, so rolling
 upgrades keep rendering existing Commander portraits and old non-
 Commander fallback avatars.
 
-## 1.32 — 2026-05-08 — `isToken` flag on WebCardView (token Scryfall URL fix)
+## 1.32 — 2026-05-07 — `isToken` flag on WebCardView (token Scryfall URL fix)
 
 Adds an additive boolean field to every `WebCardView` so the webclient
 can route token-type cards through Scryfall's named-lookup endpoint
