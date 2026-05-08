@@ -633,12 +633,15 @@ public final class WebApiServer {
             WebAddAiRequest req = parseBody(ctx.body(), WebAddAiRequest.class);
             PlayerType aiType = parseEnum(PlayerType.class, req.playerType(), "playerType");
             SessionEntry session = sessionFrom(ctx);
-            // Slice B (2026-05-07) — difficulty plumbing landed but no
-            // wire field yet. HARD preserves pre-Slice-B behavior. Slice
-            // D adds the optional `difficulty` field to WebAddAiRequest
-            // and rewires this callsite to AiDifficulty.fromString(req.difficulty()).
+            // Slice C (2026-05-07) — Medium pool is live; flipped the
+            // server default from HARD to WIRE_DEFAULT (= MEDIUM) so live
+            // AI gets the rebalanced Bracket 2-3 decks. Slice D adds the
+            // optional `difficulty` field to WebAddAiRequest and rewires
+            // this callsite to AiDifficulty.fromString(req.difficulty()),
+            // which preserves the same default for clients that omit the
+            // field.
             lobbyService.addAi(session.upstreamSessionId(), roomId, tableId,
-                    aiType, mage.webapi.lobby.AiDifficulty.HARD);
+                    aiType, mage.webapi.lobby.AiDifficulty.WIRE_DEFAULT);
             ctx.status(204);
         });
         app.post("/api/rooms/{roomId}/tables/{tableId}/start", ctx -> {

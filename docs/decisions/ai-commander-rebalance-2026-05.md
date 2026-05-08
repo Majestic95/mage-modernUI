@@ -27,7 +27,7 @@ This slice's *additional* constraints:
 | Exponential snowball | Coat of Arms, Anointed Procession, Cathars' Crusade, Necropolis Regent |
 | Board-locking finishers | Avacyn (indestructible everything), Sheoldred (sac-each-turn), Stormtide Leviathan (no creature attacks), Asceticism (full hexproof) |
 | Bracket 4 game-enders | Craterhoof Behemoth, Hellkite Charger, Apex Devastator, Cyclonic Rift |
-| Heavy draw engines | Mind's Eye in 4 of 5 decks; Mystic Remora; double draw-on-attack (Bident + Coastal Piracy in same deck) |
+| Heavy draw engines | Mystic Remora; double draw-on-attack (Bident + Coastal Piracy in same deck). Mind's Eye intentionally KEPT in W/B/R/G — it's only cut from Blue Medium where it stacks with Mystic Remora + Bident + Coastal Piracy as redundant draw overload. |
 | Free / on-cast amplifiers | Purphoros God of the Forge, Hellrider, Lurking Predators |
 
 Sol Ring stays — it's a precon staple and explicitly exempt from the WotC Game Changers list.
@@ -59,8 +59,8 @@ Pile shape unchanged: 36 Plains / 8 ramp / 6 draw / 30 creatures / 8 removal / 1
 
 | Card | Role |
 |---|---|
-| Steadfast Sentry | 2-drop human |
-| Town Gossipmonger | 1-drop human |
+| Dragon Hunter | 1-drop human (1W 2/1 prot-from-Dragon — M14; replaces "Steadfast Sentry" which is card-DB-uncertain) |
+| Trueheart Duelist | 1-drop human (1W 2/1 first strike, mono-white — Kaldheim; replaces "Town Gossipmonger" which has {R} color identity in its transform face) |
 | Veteran Armorsmith | 2-drop soldier (small body anthem, NOT global) |
 | Veteran Swordsmith | 3-drop soldier (paired with Armorsmith above) |
 | Crusader of Odric | 4-drop variable human |
@@ -91,7 +91,7 @@ Pile shape unchanged: 36 Island / 8 ramp / 14 cantrips+draw / 16 removal+bounce 
 | Card | Role |
 |---|---|
 | Brainstorm | Cantrip (still drake fuel) |
-| Whirlpool Whelm | Bounce (drake fuel) |
+| Snap | Bounce + untap 2 lands (drake fuel — replaces "Whirlpool Whelm" which is card-DB-uncertain) |
 | Lay Claim | One-shot steal (no engine) |
 | Mahamoti Djinn | 5/6 flyer top-end |
 | Spire Owl | 2-drop scry-ETB flyer |
@@ -118,12 +118,12 @@ Pile shape unchanged: 36 Swamp / 8 ramp / 6 draw / 30 creatures / 8 removal / 11
 
 | Card | Role |
 |---|---|
-| Markov Patrician | 3-drop 3/3 lifelink |
-| Falkenrath Noble | 4-drop drain on creature death (one-shot trigger, not engine) |
-| Falkenrath Marauders | 4-drop flyer |
-| Vampire Outcasts | 4-drop bloodthirst body |
-| Markov Blademaster | 3-drop double-strike |
-| Crossway Vampire | 4-drop haste-grant (single, not field-wide) |
+| Markov Patrician | 3-drop 3/3 lifelink (mono-black vamp) |
+| Falkenrath Noble | 4-drop drain on creature death (one-shot trigger, mono-black) |
+| Bloodhunter Bat | 4-drop 2/2 flying ETB-drain (replaces "Falkenrath Marauders" which is RED — Falkenrath family is red) |
+| Vampire Outcasts | 4-drop bloodthirst body (mono-black) |
+| Phyrexian Rager | 3-drop 2/2 ETB-draw + 1 life loss (replaces "Markov Blademaster" which is RED) |
+| Dusk Legion Zealot | 1-drop vampire soldier ETB-draw (replaces "Crossway Vampire" which is RED) |
 | Bloodrite Invoker | 5-drop top-end vamp |
 
 **Anthem kept:** Bad Moon (line 287) — the single global +1/+1.
@@ -152,8 +152,8 @@ Pile shape unchanged: 36 Mountain / 8 ramp / 6 draw / 30 creatures / 10 removal 
 
 | Card | Role |
 |---|---|
+| Browbeat | 4-mana draw-or-burn (replaces Outpost Siege's draw slot; opponent-modal, not caster-modal — passes AI filter) |
 | Goblin Cohort | 1-drop goblin |
-| Krenko's Enforcer | 2-drop goblin |
 | Goblin Heelcutter | 3-drop reach |
 | Mogg Maniac | 1-drop reflect |
 | Cinder Pyromancer | 2-drop ping |
@@ -163,7 +163,8 @@ Pile shape unchanged: 36 Mountain / 8 ramp / 6 draw / 30 creatures / 10 removal 
 | Inferno Hellion | 6-drop trampler |
 
 **Engine kept:** Goblin Chieftain (line 332) — the single tribal anthem (+1/+1 + haste, *not* exponential).
-**Draw replacement for Outpost Siege:** add **Wheel of Misfortune** — wait, X-spell-flavored. **Pick:** add **Browbeat** (4-of-3 draw-or-burn, no X). Counted in Adds list as the draw-slot fill. *Slice B note:* the cut/add count is 9/9 for creatures+utility; the Outpost Siege cut leaves a draw-slot hole — fill with `Browbeat` in the draw section so the 6-card draw count is preserved. Net Adds = 10 with Browbeat included.
+
+**Shape note:** Outpost Siege's draw slot is filled by Browbeat (above). The other 8 cuts (5 creatures + 3 utility) are replaced by 8 creatures, so the deck shifts slightly toward "more creatures, less utility" (33 creatures + 6 utility) vs. Hard's 30+9. Acceptable for goblin tribal feel.
 
 ### Green (Yeva) — `buildCommanderFallbackDeckGreen`, line 361
 
@@ -192,13 +193,14 @@ Pile shape unchanged: 36 Forest / 10 ramp / 6 draw / 30 creatures / 8 removal / 
 | Phantom Centaur | 4-drop pro-black |
 | Giant Spider | 2-drop reach |
 | Ravenous Baloth | 4-drop sac-for-life |
-| Silklash Spider | 5-drop flying-sweeper (single-mode, X-free version on the printing) — *Slice B verify the printing has fixed cost* |
+| Stingerfling Spider | 5-drop 2/4 reach with destroy-flying ETB (replaces "Silklash Spider" — that card has an X-cost activation, violating the AI-friendliness filter) |
 | Loaming Shaman | 3-drop graveyard removal |
 | Heart Warden | 1-drop sac-cantrip |
-| Charging Badger | 1-drop trample |
+| Quirion Sentinel | 1-drop ETB-add-G elf (replaces "Charging Badger" which is card-DB-uncertain; Quirion Sentinel is already proven present — it's used in the bears-deck fallback) |
 
-**Anthem kept:** Garruk's Uprising (line 403) — anthem + draw-on-cast (mild engine, single trigger per cast).
-**Protection kept:** Heroic Intervention (line 402) — single-cast, no lock.
+**Anthems kept (2 — Green's documented exception):** Garruk's Uprising (anthem + draw-on-cast) AND Nylea, God of the Hunt (anthem + trample-grant activation). Both are static +1/+1 effects — modest, no exponential or stacking. Green keeps two because both also serve secondary roles (Garruk's = draw, Nylea = trample) and Yeva's deck has no other "bigness" payoff. Test threshold for `medium_atMostNAnthemsPerDeck` raises to N=2 to accommodate; other 4 colors stay at 1.
+
+**Protection kept:** Heroic Intervention — single-cast, no lock.
 
 ---
 

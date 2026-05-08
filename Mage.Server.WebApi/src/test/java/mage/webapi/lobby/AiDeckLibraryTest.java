@@ -1,6 +1,7 @@
 package mage.webapi.lobby;
 
 import mage.cards.decks.Deck;
+import mage.cards.decks.DeckCardInfo;
 import mage.cards.decks.DeckCardLists;
 import mage.cards.decks.DeckValidator;
 import mage.cards.decks.DeckValidatorError;
@@ -8,11 +9,13 @@ import mage.game.GameException;
 import mage.webapi.embed.EmbeddedServer;
 import mage.webapi.lobby.deck.BasicLandsFallback;
 import mage.webapi.lobby.deck.CommanderDecksHard;
+import mage.webapi.lobby.deck.CommanderDecksMedium;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
 import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -42,6 +45,7 @@ class AiDeckLibraryTest {
     private static final String CONFIG_PATH = "../Mage.Server/config/config.xml";
 
     private final CommanderDecksHard hard = new CommanderDecksHard();
+    private final CommanderDecksMedium medium = new CommanderDecksMedium();
 
     @BeforeAll
     void boot() {
@@ -82,6 +86,144 @@ class AiDeckLibraryTest {
         assertCommanderLegal("green", deck);
         assertNoSilentSubstitutions("green commander deck", deck, "Forest", 36);
     }
+
+    // ---- Medium pool (Bracket 2-3, the production default) -------------
+
+    @Test
+    void medium_white_passesCommanderValidator() {
+        DeckCardLists deck = medium.buildWhite();
+        assertCommanderLegal("white-medium", deck);
+        assertNoSilentSubstitutions("white medium commander deck", deck, "Plains", 36);
+    }
+
+    @Test
+    void medium_blue_passesCommanderValidator() {
+        DeckCardLists deck = medium.buildBlue();
+        assertCommanderLegal("blue-medium", deck);
+        assertNoSilentSubstitutions("blue medium commander deck", deck, "Island", 36);
+    }
+
+    @Test
+    void medium_black_passesCommanderValidator() {
+        DeckCardLists deck = medium.buildBlack();
+        assertCommanderLegal("black-medium", deck);
+        assertNoSilentSubstitutions("black medium commander deck", deck, "Swamp", 36);
+    }
+
+    @Test
+    void medium_red_passesCommanderValidator() {
+        DeckCardLists deck = medium.buildRed();
+        assertCommanderLegal("red-medium", deck);
+        assertNoSilentSubstitutions("red medium commander deck", deck, "Mountain", 36);
+    }
+
+    @Test
+    void medium_green_passesCommanderValidator() {
+        DeckCardLists deck = medium.buildGreen();
+        assertCommanderLegal("green-medium", deck);
+        assertNoSilentSubstitutions("green medium commander deck", deck, "Forest", 36);
+    }
+
+    /**
+     * Pins the spec's "no Bracket 4 game-ender / no exponential snowball
+     * / no board-lock finisher" cuts across every Medium deck. If any
+     * of these names ever reappears in CommanderDecksMedium, the bracket
+     * promise to the user is broken and this fires.
+     */
+    @Test
+    void medium_noBracket4DisallowListCardsAcrossAllDecks() {
+        Set<String> disallowed = Set.of(
+                // White stacked anthems / lock
+                "Honor of the Pure", "Spear of Heliod", "True Conviction",
+                "Marshal's Anthem", "Cathars' Crusade", "Anointed Procession",
+                "Hero of Bladehold", "Avacyn, Angel of Hope",
+                // Blue lock / overdraw / Game Changer (Mind's Eye is
+                // intentionally NOT here — spec only cut it from Blue
+                // Medium because Blue stacked it with Mystic Remora +
+                // Bident + Coastal Piracy. Other decks keep it as a
+                // single, slow draw source.)
+                "Cyclonic Rift", "Treasure Cruise",
+                "Coastal Piracy", "Mystic Remora",
+                "Stormtide Leviathan", "Inkwell Leviathan",
+                // Black combo / lock / steal-engine
+                "Whip of Erebos", "Sanguine Bond",
+                "Vito, Thorn of the Dusk Rose", "Necropolis Regent",
+                "Sheoldred, Whispering One", "Captivating Vampire",
+                "Reaper from the Abyss",
+                // Red snowball amplifiers
+                "Coat of Arms", "Purphoros, God of the Forge",
+                "Hellrider", "Hellkite Charger", "Goblin Bombardment",
+                "Hanweir Garrison", "Krenko's Command", "Goldspan Dragon",
+                "Outpost Siege",
+                // Green game-enders / lock
+                "Craterhoof Behemoth", "Avenger of Zendikar",
+                "Apex Devastator", "Asceticism", "Lurking Predators",
+                "Overrun", "Beastmaster Ascension", "Hornet Queen",
+                "Terastodon"
+        );
+        DeckCardLists[] mediumDecks = {
+                medium.buildWhite(), medium.buildBlue(), medium.buildBlack(),
+                medium.buildRed(), medium.buildGreen()
+        };
+        // White, Blue (no anthem), Black, Red, Green
+        for (DeckCardLists deck : mediumDecks) {
+            for (DeckCardInfo entry : deck.getCards()) {
+                assertTrue(!disallowed.contains(entry.getCardName()),
+                        "Medium deck '" + deck.getName() + "' contains "
+                                + "Bracket-4 disallow-list card '" + entry.getCardName()
+                                + "' — re-cut per "
+                                + "docs/decisions/ai-commander-rebalance-2026-05.md");
+            }
+        }
+    }
+
+    /**
+     * Pins the spec's anthem ceiling per Medium deck: 1 anthem max for
+     * White/Blue/Black/Red; 2 for Green (documented exception — both
+     * are static +1/+1 effects with secondary roles, not stacked
+     * snowballs). Only "anthem" cards listed in {@code GLOBAL_ANTHEMS}
+     * count — local anthems on individual creatures (Veteran Armorsmith
+     * etc.) don't apply to the global ceiling.
+     */
+    @Test
+    void medium_atMostNAnthemsPerDeck() {
+        Set<String> globalAnthems = Set.of(
+                // Whites
+                "Glorious Anthem", "Honor of the Pure", "Spear of Heliod",
+                "True Conviction", "Marshal's Anthem", "Cathars' Crusade",
+                "Anointed Procession",
+                // Black
+                "Bad Moon",
+                // Red (creature anthem; tribal but mono-red so not exempt)
+                "Goblin Chieftain", "Coat of Arms",
+                // Green
+                "Garruk's Uprising", "Nylea, God of the Hunt",
+                "Beastmaster Ascension"
+        );
+        assertAnthemCount("white-medium", medium.buildWhite(), globalAnthems, 1);
+        assertAnthemCount("blue-medium", medium.buildBlue(), globalAnthems, 1);
+        assertAnthemCount("black-medium", medium.buildBlack(), globalAnthems, 1);
+        assertAnthemCount("red-medium", medium.buildRed(), globalAnthems, 1);
+        // Green is the documented exception — see CommanderDecksMedium
+        // javadoc + spec doc.
+        assertAnthemCount("green-medium", medium.buildGreen(), globalAnthems, 2);
+    }
+
+    private static void assertAnthemCount(String label, DeckCardLists deck,
+                                          Set<String> anthemAllowList, int max) {
+        long count = deck.getCards().stream()
+                .filter(c -> anthemAllowList.contains(c.getCardName()))
+                .count();
+        assertTrue(count <= max,
+                label + " has " + count + " global anthem(s) — spec ceiling is "
+                        + max + " for this color. Anthem cards are: "
+                        + deck.getCards().stream()
+                                .filter(c -> anthemAllowList.contains(c.getCardName()))
+                                .map(DeckCardInfo::getCardName)
+                                .toList());
+    }
+
+    // ---- Non-Commander fallback (60-card bears pile) -------------------
 
     /**
      * The non-Commander fallback deck has its own count contract — 60

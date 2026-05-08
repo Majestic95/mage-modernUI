@@ -10,16 +10,16 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 /**
- * Pins the Slice B stub guarantee: until Slice C / C2 author the per-
- * difficulty card lists, {@link CommanderDecksMedium} and
- * {@link CommanderDecksEasy} delegate to {@link CommanderDecksHard} so
- * the dispatcher returns a buildable deck for every (difficulty, color)
- * cell.
+ * Pins the remaining stub guarantee after Slice C (2026-05-07):
+ * {@link CommanderDecksEasy} still delegates to {@link CommanderDecksHard}
+ * because Slice C2 hasn't authored the Easy pool yet. Medium is now
+ * a real divergent pool — its tests live in {@link mage.webapi.lobby.AiDeckLibraryTest}
+ * (validator pin + Bracket-4 disallow-list + anthem ceiling).
  *
- * <p>Once Slice C lands, the {@code mediumDelegatesToHard} test should
- * be replaced with a "Medium has at most one anthem per deck" check
- * (per the spec at {@code docs/decisions/ai-commander-rebalance-2026-05.md}).
- * Same for {@code easyDelegatesToHard} after Slice C2.
+ * <p>Once Slice C2 lands, the {@code easyDelegatesToHard} test should
+ * be deleted and replaced with Easy-pool tests in {@code AiDeckLibraryTest}
+ * (mirroring the Medium pattern: validator pin + Easy-tier compliance
+ * checks).
  *
  * <p>{@code @TestInstance(PER_CLASS)} required for the non-static
  * {@code @BeforeAll}; {@code EmbeddedServer.boot} populates the card
@@ -34,22 +34,6 @@ class CommanderDeckPoolDelegationTest {
     @BeforeAll
     void boot() {
         EmbeddedServer.boot(CONFIG_PATH);
-    }
-
-    @Test
-    void mediumDelegatesToHard_forAllFiveColors() {
-        CommanderDecksHard hard = new CommanderDecksHard();
-        CommanderDecksMedium medium = new CommanderDecksMedium();
-        for (int idx = 0; idx < ROTATION_LENGTH; idx++) {
-            DeckCardLists hardDeck = hard.build(idx);
-            DeckCardLists mediumDeck = medium.build(idx);
-            assertNotNull(mediumDeck, "Medium build returned null at idx=" + idx);
-            assertEquals(hardDeck.getName(), mediumDeck.getName(),
-                    "Medium stub should mirror Hard's deck name at idx=" + idx
-                            + " (delegation guarantee — Slice C will diverge this).");
-            assertEquals(sumMain(hardDeck), sumMain(mediumDeck),
-                    "Medium stub mainboard count should mirror Hard's at idx=" + idx);
-        }
     }
 
     @Test
