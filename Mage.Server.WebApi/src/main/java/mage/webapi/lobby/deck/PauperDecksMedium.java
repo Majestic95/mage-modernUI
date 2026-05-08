@@ -17,11 +17,20 @@ import static mage.webapi.lobby.deck.AiDeckBuilderSupport.requireBasic;
  * creature decks selected by predictable rotation. The lists are kept
  * combat-forward and low-decision: no counterspells, no X-cost spells,
  * no modal "choose one" cards, no tutors, no extra turns, and no
- * cascade / suspend / foretell / madness / echo alternate-cost bait.
+ * cascade / suspend / foretell / madness / echo / dash alternate-cost
+ * bait.
  *
  * <p>Two-color lists include at least four common dual lands and stay
  * creature-heavy so the current AI spends most decisions on attacking,
  * blocking, and simple removal.
+ *
+ * <p>Most archetypes carry a 4-slot spell package — AI-safe removal
+ * (Lightning Bolt, Doom Blade, Disfigure, Journey to Nowhere, Pacifism,
+ * Vapor Snag, Hunt the Weak) and / or raw card draw (Sign in Blood) —
+ * to avoid the cardboard-flat feel of pure creature piles. Mono-Blue
+ * Faeries is the only archetype left as a clean evasive aggro shell;
+ * Pauper's blue toolkit is too counter-heavy to pull a clean spell
+ * package from.
  */
 public final class PauperDecksMedium implements PauperDeckPool {
 
@@ -50,8 +59,9 @@ public final class PauperDecksMedium implements PauperDeckPool {
         addEntry(cards, "Plains", plains, 24);
         addAll(cards, plains, 4,
                 "Doomed Traveler", "Thraben Inspector", "Youthful Knight",
-                "Veteran Armorsmith", "Veteran Swordsmith", "Aven Squire",
+                "Veteran Armorsmith", "Veteran Swordsmith",
                 "Soltari Trooper", "Kor Skyfisher", "Gideon's Lawkeeper");
+        addAll(cards, plains, 2, "Journey to Nowhere", "Pacifism");
         deck.setCards(cards);
         deck.setSideboard(new ArrayList<>());
         return deck;
@@ -79,7 +89,8 @@ public final class PauperDecksMedium implements PauperDeckPool {
         addAll(cards, swamp, 4,
                 "Vampire Lacerator", "Pulse Tracker", "Blood Seeker",
                 "Child of Night", "Vampire Spawn", "Markov Patrician",
-                "Bloodhunter Bat", "Dusk Legion Zealot", "Vampire Aristocrat");
+                "Dusk Legion Zealot", "Vampire Aristocrat");
+        addAll(cards, swamp, 2, "Disfigure", "Sign in Blood");
         deck.setCards(cards);
         deck.setSideboard(new ArrayList<>());
         return deck;
@@ -93,7 +104,7 @@ public final class PauperDecksMedium implements PauperDeckPool {
         addAll(cards, mountain, 4,
                 "Mogg Fanatic", "Goblin Cohort", "Frenzied Goblin",
                 "Goblin Piker", "Goblin Roughrider", "Goblin Shortcutter",
-                "Goblin Sky Raider", "Beetleback Chief", "Valley Dasher");
+                "Goblin Sky Raider", "Beetleback Chief", "Lightning Bolt");
         deck.setCards(cards);
         deck.setSideboard(new ArrayList<>());
         return deck;
@@ -107,7 +118,7 @@ public final class PauperDecksMedium implements PauperDeckPool {
         addAll(cards, forest, 4,
                 "Llanowar Elves", "Quirion Ranger", "Werebear",
                 "Garruk's Companion", "Centaur Courser", "Nessian Courser",
-                "Yavimaya Wurm", "Craw Wurm", "Sentinel Spider");
+                "Yavimaya Wurm", "Hunt the Weak", "Sentinel Spider");
         deck.setCards(cards);
         deck.setSideboard(new ArrayList<>());
         return deck;
@@ -124,7 +135,7 @@ public final class PauperDecksMedium implements PauperDeckPool {
         addAll(cards, plains, 4,
                 "Thraben Inspector", "Soltari Trooper", "Veteran Armorsmith",
                 "Mogg Fanatic", "Goblin Cohort", "Goblin Piker",
-                "Goblin Roughrider", "Goblin Shortcutter");
+                "Goblin Roughrider", "Lightning Bolt");
         addAll(cards, plains, 2, "Beetleback Chief");
         deck.setCards(cards);
         deck.setSideboard(new ArrayList<>());
@@ -140,7 +151,7 @@ public final class PauperDecksMedium implements PauperDeckPool {
         addAll(cards, plains, 4, "Tranquil Cove");
         addAll(cards, plains, 2, "Azorius Chancery");
         addAll(cards, plains, 4,
-                "Suntail Hawk", "Kor Skyfisher", "Mistral Charger",
+                "Suntail Hawk", "Kor Skyfisher", "Journey to Nowhere",
                 "Faerie Miscreant", "Spire Owl", "Wind Drake",
                 "Cloud Elemental", "Phantom Monster");
         addAll(cards, plains, 2, "Aven Fleetwing");
@@ -160,8 +171,8 @@ public final class PauperDecksMedium implements PauperDeckPool {
         addAll(cards, swamp, 4,
                 "Pulse Tracker", "Child of Night", "Dusk Legion Zealot",
                 "Llanowar Elves", "Werebear", "Garruk's Companion",
-                "Centaur Courser", "Nessian Courser");
-        addAll(cards, swamp, 2, "Craw Wurm");
+                "Nessian Courser");
+        addAll(cards, swamp, 2, "Doom Blade", "Sign in Blood", "Craw Wurm");
         deck.setCards(cards);
         deck.setSideboard(new ArrayList<>());
         return deck;
@@ -178,8 +189,8 @@ public final class PauperDecksMedium implements PauperDeckPool {
         addAll(cards, island, 4,
                 "Faerie Miscreant", "Cloud Sprite", "Spire Owl",
                 "Wind Drake", "Child of Night", "Pulse Tracker",
-                "Dusk Legion Zealot", "Bloodhunter Bat");
-        addAll(cards, island, 2, "Markov Patrician");
+                "Dusk Legion Zealot");
+        addAll(cards, island, 2, "Vapor Snag", "Sign in Blood", "Markov Patrician");
         deck.setCards(cards);
         deck.setSideboard(new ArrayList<>());
         return deck;
@@ -195,9 +206,9 @@ public final class PauperDecksMedium implements PauperDeckPool {
         addAll(cards, mountain, 2, "Rugged Highlands");
         addAll(cards, mountain, 4,
                 "Mogg Fanatic", "Goblin Cohort", "Goblin Roughrider",
-                "Goblin Shortcutter", "Llanowar Elves", "Werebear",
+                "Llanowar Elves", "Werebear",
                 "Garruk's Companion", "Centaur Courser");
-        addAll(cards, mountain, 2, "Nessian Courser");
+        addAll(cards, mountain, 2, "Lightning Bolt", "Hunt the Weak", "Nessian Courser");
         deck.setCards(cards);
         deck.setSideboard(new ArrayList<>());
         return deck;
