@@ -8,6 +8,7 @@ import mage.cards.decks.DeckValidatorError;
 import mage.game.GameException;
 import mage.webapi.embed.EmbeddedServer;
 import mage.webapi.lobby.deck.BasicLandsFallback;
+import mage.webapi.lobby.deck.CommanderDecksEasy;
 import mage.webapi.lobby.deck.CommanderDecksHard;
 import mage.webapi.lobby.deck.CommanderDecksMedium;
 import org.junit.jupiter.api.BeforeAll;
@@ -46,6 +47,7 @@ class AiDeckLibraryTest {
 
     private final CommanderDecksHard hard = new CommanderDecksHard();
     private final CommanderDecksMedium medium = new CommanderDecksMedium();
+    private final CommanderDecksEasy easy = new CommanderDecksEasy();
 
     @BeforeAll
     void boot() {
@@ -221,6 +223,69 @@ class AiDeckLibraryTest {
                                 .filter(c -> anthemAllowList.contains(c.getCardName()))
                                 .map(DeckCardInfo::getCardName)
                                 .toList());
+    }
+
+    // ---- Easy pool (Bracket 1, opt-in via difficulty=easy) -------------
+
+    @Test
+    void easy_white_passesCommanderValidator() {
+        DeckCardLists deck = easy.buildWhite();
+        assertCommanderLegal("white-easy", deck);
+        assertNoSilentSubstitutions("white easy commander deck", deck, "Plains", 36);
+    }
+
+    @Test
+    void easy_blue_passesCommanderValidator() {
+        DeckCardLists deck = easy.buildBlue();
+        assertCommanderLegal("blue-easy", deck);
+        assertNoSilentSubstitutions("blue easy commander deck", deck, "Island", 36);
+    }
+
+    @Test
+    void easy_black_passesCommanderValidator() {
+        DeckCardLists deck = easy.buildBlack();
+        assertCommanderLegal("black-easy", deck);
+        assertNoSilentSubstitutions("black easy commander deck", deck, "Swamp", 36);
+    }
+
+    @Test
+    void easy_red_passesCommanderValidator() {
+        DeckCardLists deck = easy.buildRed();
+        assertCommanderLegal("red-easy", deck);
+        assertNoSilentSubstitutions("red easy commander deck", deck, "Mountain", 36);
+    }
+
+    @Test
+    void easy_green_passesCommanderValidator() {
+        DeckCardLists deck = easy.buildGreen();
+        assertCommanderLegal("green-easy", deck);
+        assertNoSilentSubstitutions("green easy commander deck", deck, "Forest", 36);
+    }
+
+    /**
+     * Easy pool is the strictest tier: ZERO global anthems across all
+     * 5 colors. If any anthem allow-list card ever reappears in the
+     * Easy pool, the Bracket 1 promise is broken and this fires.
+     * (Magic-rules note: tribal-gated local anthems on creatures —
+     * Goblin Chieftain etc. — are caught here too because they're in
+     * the global anthem allow-list, even though their effect is local.
+     * For Easy we want the strictest interpretation.)
+     */
+    @Test
+    void easy_zeroAnthemsPerDeck() {
+        Set<String> globalAnthems = Set.of(
+                "Glorious Anthem", "Honor of the Pure", "Spear of Heliod",
+                "True Conviction", "Marshal's Anthem", "Cathars' Crusade",
+                "Anointed Procession", "Bad Moon",
+                "Goblin Chieftain", "Coat of Arms",
+                "Garruk's Uprising", "Nylea, God of the Hunt",
+                "Beastmaster Ascension"
+        );
+        assertAnthemCount("white-easy", easy.buildWhite(), globalAnthems, 0);
+        assertAnthemCount("blue-easy", easy.buildBlue(), globalAnthems, 0);
+        assertAnthemCount("black-easy", easy.buildBlack(), globalAnthems, 0);
+        assertAnthemCount("red-easy", easy.buildRed(), globalAnthems, 0);
+        assertAnthemCount("green-easy", easy.buildGreen(), globalAnthems, 0);
     }
 
     // ---- Non-Commander fallback (60-card bears pile) -------------------
