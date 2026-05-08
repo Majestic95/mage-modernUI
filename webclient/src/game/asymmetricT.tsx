@@ -299,7 +299,7 @@ export function AsymmetricTLayout({
             size="medium"
             glow
             layout="vertical"
-            onSpend={onSpendMana ?? undefined}
+            {...(onSpendMana ? { onSpend: onSpendMana } : {})}
           />
         </div>
       )}

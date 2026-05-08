@@ -615,7 +615,7 @@ export function Battlefield({
             size="medium"
             glow
             layout="vertical"
-            onSpend={onSpendMana ?? undefined}
+            {...(onSpendMana ? { onSpend: onSpendMana } : {})}
           />
         </div>
       )}

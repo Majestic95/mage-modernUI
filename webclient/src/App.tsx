@@ -321,17 +321,20 @@ export function App() {
   // for that purpose); when activeGameId gets set elsewhere we
   // clear activeLobbyId here so the route swap is clean.
   if (activeLobbyId) {
+    const lobbyProps = {
+      tableId: activeLobbyId,
+      onRequestPasswordReprompt: (pw: string) => setJoinPassword(pw),
+      onLeave: () => setActiveLobbyId(null),
+      ...(joinPassword !== undefined ? { joinPassword } : {}),
+    };
     return (
       <NewLobbyScreen
-        tableId={activeLobbyId}
-        joinPassword={joinPassword}
         // Audit fix (HIGH #3) — let the lobby request a fresh
         // password prompt when the server rejects with WRONG_PASSWORD
         // (or returns 422 on first-take with an empty password). The
         // lobby renders a small "re-enter password" affordance that
         // calls back here.
-        onRequestPasswordReprompt={(pw) => setJoinPassword(pw)}
-        onLeave={() => setActiveLobbyId(null)}
+        {...lobbyProps}
       />
     );
   }
