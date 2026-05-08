@@ -17,6 +17,19 @@ import java.util.concurrent.ConcurrentHashMap;
  * outside the engine deck format, so the display-card selection cannot
  * live on {@code Deck}. Keep it in WebApi memory keyed by table +
  * player name and resolve it for lobby seats and game frames.
+ *
+ * <p><b>Lifecycle / memory bound (H2):</b> entries are written on
+ * {@code joinTable} / {@code swapDeck}, removed on {@code leaveSeat}
+ * and {@code removeTable}. There is intentionally NO reconciliation
+ * against an upstream-driven seat eviction (e.g. disconnect timeout
+ * + auto-leave that bypasses the WebApi route): an orphaned entry
+ * is harmless (a future {@code joinTable} for the same name
+ * overwrites; removal happens on table tear-down) and the size bound
+ * is {@code tables × seats × ~3 short strings} — kilobytes at most
+ * on a healthy server. If we ever expose long-lived display-card
+ * state per-user (across tables) we'd want a real GC strategy here,
+ * but for the per-table cosmetic the lazy "removeTable cleans it up"
+ * model is sufficient.
  */
 public final class DisplayCardRegistry {
 
