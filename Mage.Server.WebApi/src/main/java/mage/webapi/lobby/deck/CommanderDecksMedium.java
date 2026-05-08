@@ -136,14 +136,17 @@ public final class CommanderDecksMedium implements CommanderDeckPool {
                 "Sol Ring", "Arcane Signet", "Mind Stone", "Sky Diamond",
                 "Wayfarer's Bauble", "Sapphire Medallion", "Worn Powerstone",
                 "Thran Dynamo");
-        // Cantrips & draw (15) — Hard's 14 minus Treasure Cruise, plus
-        // Brainstorm + Snap.
+        // Cantrips & draw (14) — Hard's 14 minus Treasure Cruise, plus
+        // Brainstorm. Slice C3 post-audit: dropped Snap (1U bounce +
+        // untap 2 lands was free-drake-fuel that pushed Talrand's
+        // structural self-engine advantage too far per within-tier
+        // balance audit).
         addAll(cards, island, 1,
                 "Ponder", "Preordain", "Telling Time", "Divination",
                 "Compulsive Research", "Tidings", "Concentrate", "Foresee",
                 "Opportunity", "Counsel of the Soratami", "Inspiration",
                 "See Beyond", "Slip Through Space",
-                "Brainstorm", "Snap");
+                "Brainstorm");
         // Removal / bounce / wipes (16) — Hard's 16 minus Cyclonic Rift,
         // plus Lay Claim.
         addAll(cards, island, 1,
@@ -153,8 +156,10 @@ public final class CommanderDecksMedium implements CommanderDeckPool {
                 "Whelming Wave", "Time Ebb", "Aether Tradewinds", "Sleep",
                 "Talrand's Invocation", "Repulse",
                 "Lay Claim");
-        // Creatures (17) — Hard's 15 minus Stormtide + Inkwell, plus
-        // Mahamoti Djinn, Spire Owl, Air Elemental, Sphinx of Magosi.
+        // Creatures (18) — Hard's 15 minus Stormtide + Inkwell, plus
+        // Mahamoti Djinn, Spire Owl, Air Elemental, Sphinx of Magosi,
+        // and Slice C3 post-audit add of Wind Drake (vanilla 2U 2/2
+        // flyer) to compensate for Snap removal.
         addAll(cards, island, 1,
                 "Snapcaster Mage", "Augur of Bolas", "Mulldrifter",
                 "Sea Gate Oracle", "Cloudkin Seer", "Murmuring Mystic",
@@ -162,13 +167,18 @@ public final class CommanderDecksMedium implements CommanderDeckPool {
                 "Aven Wind Mage", "Thieving Magpie", "Frost Titan",
                 "Pearl Lake Ancient",
                 "Mahamoti Djinn", "Spire Owl", "Air Elemental",
-                "Sphinx of Magosi");
+                "Sphinx of Magosi", "Wind Drake");
         // Utility (7) — Hard's 10 minus Mind's Eye, Mystic Remora,
-        // Coastal Piracy.
+        // Coastal Piracy, plus Slice C3 post-audit cut of Bident of
+        // Thassa (creatures-attack draw engine — paired with Talrand's
+        // self-scaling, Bident sustained too much card velocity per
+        // within-tier balance audit). Replaced with Wall of Air
+        // (vanilla 1UU 1/5 defender flying) as a defensive utility
+        // body that doesn't feed Talrand's drake count.
         addAll(cards, island, 1,
                 "Wonder", "Merfolk Looter", "Phantasmal Bear",
                 "Murder of Crows", "Curiosity",
-                "Bident of Thassa", "Sword of the Animist");
+                "Wall of Air", "Sword of the Animist");
         deck.setCards(cards);
         attachCommander(deck, commander);
         return deck;
@@ -291,10 +301,16 @@ public final class CommanderDecksMedium implements CommanderDeckPool {
                 "Lava Spike", "Searing Blaze", "Pyroclasm",
                 "Anger of the Gods", "Magma Jet", "Volcanic Hammer");
         // Utility (5) — Hard's 9 minus Coat of Arms, Goblin
-        // Bombardment, Purphoros, Krenko's Command. Single anthem
-        // (Goblin Chieftain in creatures) preserved.
+        // Bombardment, Purphoros, Krenko's Command, plus Slice C3
+        // post-audit cut of Dragon Tempest (haste-on-flying ETB +
+        // dragon-attack damage was still amplifying Krenko's tokens
+        // enough that Medium Red felt close to Hard Red per cross-
+        // tier audit). Replaced with Loxodon Warhammer — vanilla
+        // colorless equipment with +3/+0 trample lifelink, no
+        // triggered abilities. Single anthem (Goblin Chieftain in
+        // creatures) preserved.
         addAll(cards, mountain, 1,
-                "Impact Tremors", "Dragon Tempest",
+                "Impact Tremors", "Loxodon Warhammer",
                 "Sword of the Animist", "Chaos Warp",
                 "Hammer of Purphoros");
         deck.setCards(cards);

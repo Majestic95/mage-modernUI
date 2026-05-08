@@ -86,17 +86,24 @@ Pile shape unchanged: 36 Island / 8 ramp / 14 cantrips+draw / 16 removal+bounce 
 | Stormtide Leviathan | Board-lock finisher (no creature attacks) | 227 |
 | Inkwell Leviathan | Uncounterable shroud finisher | 226 |
 
-**Adds (7):**
+**Adds (7, plus Slice C3 post-audit adjustments):**
 
 | Card | Role |
 |---|---|
 | Brainstorm | Cantrip (still drake fuel) |
-| Snap | Bounce + untap 2 lands (drake fuel — replaces "Whirlpool Whelm" which is card-DB-uncertain) |
+| ~~Snap~~ → **CUT post-audit (Slice C3)** | Originally: bounce + untap 2 lands. Critic flagged as too efficient for Talrand's structural self-engine. Cantrips dropped 15 → 14, no replacement. |
 | Lay Claim | One-shot steal (no engine) |
 | Mahamoti Djinn | 5/6 flyer top-end |
 | Spire Owl | 2-drop scry-ETB flyer |
 | Air Elemental | 4-drop vanilla flyer |
 | Sphinx of Magosi | 6-drop top-end (no haste, no doubler) |
+| **Wind Drake** | **Slice C3 post-audit add: vanilla 2U 2/2 flyer; restores 1 creature slot after a separate utility cut (see below).** |
+| **Wall of Air** | **Slice C3 post-audit add: vanilla 1UU 1/5 defender flying — replaces Bident of Thassa (cut) in utility section.** |
+
+**Slice C3 post-audit utility cut:**
+| Card | Reason |
+|---|---|
+| Bident of Thassa | Creatures-attack draw engine; paired with Talrand's self-scaling, sustained too much card velocity per within-tier balance audit. Replaced by Wall of Air (defensive utility body, doesn't feed Talrand drake count). |
 
 ### Black (Drana) — `buildCommanderFallbackDeckBlack`, line 246
 
@@ -166,6 +173,11 @@ Pile shape unchanged: 36 Mountain / 8 ramp / 6 draw / 30 creatures / 10 removal 
 
 **Shape note:** Outpost Siege's draw slot is filled by Browbeat (above). The other 8 cuts (5 creatures + 3 utility) are replaced by 8 creatures, so the deck shifts slightly toward "more creatures, less utility" (33 creatures + 6 utility) vs. Hard's 30+9. Acceptable for goblin tribal feel.
 
+**Slice C3 post-audit utility swap:**
+| Card | Reason |
+|---|---|
+| Dragon Tempest → **Loxodon Warhammer** | Cross-tier coherence audit flagged Medium Red as still too close to Hard Red — Dragon Tempest's haste-on-flying-ETB + dragon-attack damage was amplifying Krenko's tokens enough that the "noticeable Medium drop" failed for Red. Replaced with Loxodon Warhammer (vanilla colorless equipment, +3/+0 trample lifelink, no triggered abilities). Krenko-specific synergy now strictly via Goblin Chieftain (kept anthem) and Impact Tremors (single ETB-damage trigger). |
+
 ### Green (Yeva) — `buildCommanderFallbackDeckGreen`, line 361
 
 Pile shape unchanged: 36 Forest / 10 ramp / 6 draw / 30 creatures / 8 removal / 9 utility + commander.
@@ -203,6 +215,28 @@ Pile shape unchanged: 36 Forest / 10 ramp / 6 draw / 30 creatures / 8 removal / 
 **Protection kept:** Heroic Intervention — single-cast, no lock.
 
 ---
+
+## Slice C3 post-audit Easy-pool fix (2026-05-07)
+
+The `CommanderDecksEasy.java` Easy pool spec is inline in that file's Javadoc (Slice C2 didn't get a separate doc since the philosophy is simple). Slice C3's per-deck audit caught one Easy outlier:
+
+**Easy Red cuts (4):**
+| Card | Reason |
+|---|---|
+| Stalking Vengeance | 5R 4/3 with "when another creature dies, deals damage = power to any target" — death-trigger damage engine. With ~38 creatures in the Easy Red deck, even just combat deaths cumulate into a snowball. Per-deck audit rated Easy Red at Bracket 1.5 vs. claimed 1; Stalking Vengeance was the primary culprit. |
+| Drakuseth, Maw of Flames | 5RR 7/6 flying with "when attacks, 3 damage divided among 3 targets." 7-mana strong finisher misaligned with Bracket 1 battlecruiser feel. |
+| Searing Blaze | 1R conditional landfall burn — Bracket 2-3 staple, too efficient for Easy. |
+| Magma Jet | 1R burn + scry 2 — scry is a mild engine, removed for Easy strictness. |
+
+**Easy Red adds (4):**
+| Card | Role |
+|---|---|
+| Goblin Glider | R 1/1 flying can't block — vanilla evasion. |
+| Mountain Goat | 1R 1/2 mountainwalk — vanilla. |
+| Cinder Wall | 1R 0/3 defender — vanilla wall. |
+| Two-Headed Dragon | 3RR 5/4 flying double strike — top-end vanilla finisher (single body, no triggered abilities). |
+
+Net Easy Red shape: 36L + 8R + 4D + 41C + 9X + 1U = 99 (vs. previous 38C + 11X = same total).
 
 ## Risks / open questions for Slice B
 

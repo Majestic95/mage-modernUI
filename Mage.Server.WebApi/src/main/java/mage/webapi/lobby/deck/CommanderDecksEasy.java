@@ -272,7 +272,6 @@ public final class CommanderDecksEasy implements CommanderDeckPool {
                 "Pyreheart Wolf",
                 "Inferno Titan",
                 "Tuktuk the Explorer",
-                "Drakuseth, Maw of Flames", "Stalking Vengeance",
                 "Bogardan Hellkite",
                 "Goblin Cohort", "Goblin Heelcutter",
                 "Mogg Maniac", "Cinder Pyromancer",
@@ -284,13 +283,22 @@ public final class CommanderDecksEasy implements CommanderDeckPool {
                 "Mountain Yeti", "Stone Giant",
                 "Anaba Bodyguard", "Two-Headed Giant of Foriys",
                 "Avalanche Riders",
-                "Goblin Sky Raider");
-        // Removal (11) — Medium's 10 plus Lava Axe (5R sorcery, 5
-        // damage to player — vanilla burn finisher, fits Easy).
+                "Goblin Sky Raider",
+                // Slice C3 post-audit adds: replace Drakuseth +
+                // Stalking Vengeance (the latter's death-trigger
+                // damage engine pushed Easy Red to Bracket 1.5 per
+                // per-deck audit; the former is a 7-mana strong
+                // finisher misaligned with Bracket 1).
+                "Goblin Glider", "Mountain Goat",
+                "Cinder Wall", "Two-Headed Dragon");
+        // Removal (9) — Medium's 10 plus Lava Axe minus Slice C3
+        // post-audit cuts of Searing Blaze (lands-trigger conditional
+        // burn) + Magma Jet (scry filter, mild engine). 11 -> 9 brings
+        // the burn density back to vanilla Bracket 1.
         addAll(cards, mountain, 1,
                 "Lightning Bolt", "Shock", "Lightning Strike", "Magma Spray",
-                "Lava Spike", "Searing Blaze", "Pyroclasm",
-                "Anger of the Gods", "Magma Jet", "Volcanic Hammer",
+                "Lava Spike", "Pyroclasm",
+                "Anger of the Gods", "Volcanic Hammer",
                 "Lava Axe");
         // Utility (1) — no Impact Tremors (engine), no Dragon Tempest
         // (engine), no Sword of the Animist (engine), no Hammer of
