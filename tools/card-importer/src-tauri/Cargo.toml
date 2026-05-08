@@ -1,0 +1,21 @@
+[package]
+name = "xmage-card-importer"
+version = "0.1.0"
+description = "XMage Card Importer Workbench"
+authors = ["XMage Modern UI"]
+edition = "2021"
+
+[lib]
+name = "xmage_card_importer_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+regex = "1"
+rayon = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
