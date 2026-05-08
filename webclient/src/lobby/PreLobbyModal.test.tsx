@@ -189,12 +189,16 @@ describe('PreLobbyModal', () => {
       ],
     });
 
-    // Each /ai POST carries the playerType.
+    // Each /ai POST carries the playerType + the schema-1.34 default
+    // difficulty (Slice E, 2026-05-08).
     for (let i = 1; i <= 3; i++) {
       const aiBody = JSON.parse(
         fetchMock.mock.calls[i]?.[1]?.body as string,
       ) as Record<string, unknown>;
-      expect(aiBody).toEqual({ playerType: 'COMPUTER_MAD' });
+      expect(aiBody).toEqual({
+        playerType: 'COMPUTER_MAD',
+        difficulty: 'medium',
+      });
     }
   });
 
@@ -244,7 +248,10 @@ describe('PreLobbyModal', () => {
       const aiBody = JSON.parse(
         fetchMock.mock.calls[i]?.[1]?.body as string,
       ) as Record<string, unknown>;
-      expect(aiBody).toEqual({ playerType: 'COMPUTER_MONTE_CARLO' });
+      expect(aiBody).toEqual({
+        playerType: 'COMPUTER_MONTE_CARLO',
+        difficulty: 'medium',
+      });
     }
   });
 
@@ -302,7 +309,72 @@ describe('PreLobbyModal', () => {
     const aiBody = JSON.parse(
       fetchMock.mock.calls[1]?.[1]?.body as string,
     ) as Record<string, unknown>;
-    expect(aiBody).toEqual({ playerType: 'COMPUTER_MAD' });
+    expect(aiBody).toEqual({
+      playerType: 'COMPUTER_MAD',
+      difficulty: 'medium',
+    });
+  });
+
+  it('lets the user pick a non-default AI difficulty (Hard) and forwards it on each /ai POST', async () => {
+    // Slice E (2026-05-08) — schema 1.34 wire field. Locks the
+    // difficulty selector → POST body roundtrip; without this test a
+    // future refactor of the dropdown could silently drop the field
+    // and clients would get the WIRE_DEFAULT (= 'medium') instead.
+    const user = userEvent.setup();
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(tableResponse())
+      .mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <PreLobbyModal
+        roomId={ROOM_ID}
+        serverState={SERVER_STATE}
+        onClose={() => {}}
+        onCreated={() => {}}
+      />,
+    );
+
+    const aiSeatCount = screen.getByTestId(
+      'pre-lobby-ai-seat-count',
+    ) as HTMLInputElement;
+    await user.clear(aiSeatCount);
+    await user.type(aiSeatCount, '3');
+
+    const difficultySelect = screen.getByTestId(
+      'pre-lobby-ai-difficulty',
+    ) as HTMLSelectElement;
+    expect(difficultySelect.value).toBe('medium');
+    await user.selectOptions(difficultySelect, 'hard');
+
+    await user.click(screen.getByTestId('pre-lobby-create'));
+
+    // 1 create + 3 AI fills.
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    for (let i = 1; i <= 3; i++) {
+      const aiBody = JSON.parse(
+        fetchMock.mock.calls[i]?.[1]?.body as string,
+      ) as Record<string, unknown>;
+      expect(aiBody).toEqual({
+        playerType: 'COMPUTER_MAD',
+        difficulty: 'hard',
+      });
+    }
+  });
+
+  it('hides the AI-difficulty dropdown when AI seat count is 0', () => {
+    render(
+      <PreLobbyModal
+        roomId={ROOM_ID}
+        serverState={SERVER_STATE}
+        onClose={() => {}}
+        onCreated={() => {}}
+      />,
+    );
+    expect(
+      screen.queryByTestId('pre-lobby-ai-difficulty'),
+    ).not.toBeInTheDocument();
   });
 
   it('clamps player count to the selected mode min/max', async () => {

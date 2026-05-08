@@ -25,6 +25,13 @@ import { ApiError, request } from '../api/client';
 import { webTableSchema, type WebServerState } from '../api/schemas';
 import { useAuthStore } from '../auth/store';
 import { getFormatInfo } from './formatInfo';
+import { PreLobbyAiSection } from './PreLobbyAiSection';
+import {
+  DEFAULT_AI_TYPE,
+  DEFAULT_AI_DIFFICULTY,
+  type AiTypeValue,
+  type AiDifficultyValue,
+} from './aiSelectionConstants';
 
 interface Props {
   roomId: string;
@@ -33,35 +40,6 @@ interface Props {
   /** Called with the newly-created table ID on success. */
   onCreated: (tableId: string) => void;
 }
-
-/**
- * AI types the user can pick when filling seats. Order = display order;
- * the first entry is the default selection. MAD (`ComputerPlayer7`)
- * leads because it's the engine-blessed playable AI; MCTS is exposed
- * as an "experimental" alternative.
- *
- * <p>Hardcoded rather than derived from {@code serverState.playerTypes}
- * so unforeseen PlayerType enum additions don't accidentally surface
- * in the UI without explicit review (e.g. Draft-only bots, or a
- * future custom Commander AI that needs its own labelling). When a
- * new playable AI lands, append a row here.
- */
-const AI_OPTIONS = [
-  {
-    value: 'COMPUTER_MAD',
-    label: 'MAD (recommended)',
-    hint: 'Simulation-based AI. Plays strategically.',
-  },
-  {
-    value: 'COMPUTER_MONTE_CARLO',
-    label: 'Monte Carlo',
-    hint: 'MCTS search. Experimental — may pass priority often.',
-  },
-] as const;
-
-type AiTypeValue = (typeof AI_OPTIONS)[number]['value'];
-
-const DEFAULT_AI_TYPE: AiTypeValue = AI_OPTIONS[0].value;
 
 export function PreLobbyModal({
   roomId,
@@ -110,6 +88,11 @@ export function PreLobbyModal({
   // Range: 0 → playerCount - 1 (the host always occupies slot 0).
   const [aiSeatCount, setAiSeatCount] = useState(0);
   const [aiType, setAiType] = useState<AiTypeValue>(DEFAULT_AI_TYPE);
+  // Slice E (2026-05-08) — surface the schema-1.34 `difficulty` field.
+  // Defaults to 'medium' to match the server's WIRE_DEFAULT (Bracket
+  // 2-3 pool); user can pick easy / hard once any AI seat is declared.
+  const [aiDifficulty, setAiDifficulty] =
+    useState<AiDifficultyValue>(DEFAULT_AI_DIFFICULTY);
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -216,7 +199,7 @@ export function PreLobbyModal({
             {
               token: session.token,
               method: 'POST',
-              body: { playerType: aiType },
+              body: { playerType: aiType, difficulty: aiDifficulty },
             },
           );
         } catch (err) {
@@ -364,59 +347,15 @@ export function PreLobbyModal({
           )}
         </Field>
 
-        <div className="flex flex-col gap-2">
-          <Field
-            label={`AI opponents (0–${maxAiSeats})`}
-          >
-            <input
-              type="number"
-              data-testid="pre-lobby-ai-seat-count"
-              min={0}
-              max={maxAiSeats}
-              value={clampedAiSeatCount}
-              onChange={(e) =>
-                setAiSeatCount(
-                  clamp(parseInt(e.target.value, 10) || 0, 0, maxAiSeats),
-                )
-              }
-              className={inputClass()}
-            />
-          </Field>
-          <p className="text-xs text-text-secondary">
-            {clampedAiSeatCount === 0
-              ? `${maxAiSeats} open seat${maxAiSeats === 1 ? '' : 's'} for friends.`
-              : clampedAiSeatCount === maxAiSeats
-                ? `Solo vs ${maxAiSeats} AI opponent${maxAiSeats === 1 ? '' : 's'}.`
-                : `${clampedAiSeatCount} AI + ${maxAiSeats - clampedAiSeatCount} open seat${maxAiSeats - clampedAiSeatCount === 1 ? '' : 's'} for friends.`}
-          </p>
-          {clampedAiSeatCount > 0 && (
-            <div className="flex flex-col gap-1">
-              <label
-                htmlFor="pre-lobby-ai-type"
-                className="text-xs uppercase text-text-secondary"
-                style={{ letterSpacing: '0.08em' }}
-              >
-                AI type
-              </label>
-              <select
-                id="pre-lobby-ai-type"
-                data-testid="pre-lobby-ai-type"
-                value={aiType}
-                onChange={(e) => setAiType(e.target.value as AiTypeValue)}
-                className={inputClass()}
-              >
-                {AI_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-              <p className="text-xs text-text-secondary">
-                {AI_OPTIONS.find((o) => o.value === aiType)?.hint}
-              </p>
-            </div>
-          )}
-        </div>
+        <PreLobbyAiSection
+          maxAiSeats={maxAiSeats}
+          aiSeatCount={aiSeatCount}
+          setAiSeatCount={setAiSeatCount}
+          aiType={aiType}
+          setAiType={setAiType}
+          aiDifficulty={aiDifficulty}
+          setAiDifficulty={setAiDifficulty}
+        />
 
         {error && (
           <p
