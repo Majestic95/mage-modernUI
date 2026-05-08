@@ -633,7 +633,12 @@ public final class WebApiServer {
             WebAddAiRequest req = parseBody(ctx.body(), WebAddAiRequest.class);
             PlayerType aiType = parseEnum(PlayerType.class, req.playerType(), "playerType");
             SessionEntry session = sessionFrom(ctx);
-            lobbyService.addAi(session.upstreamSessionId(), roomId, tableId, aiType);
+            // Slice B (2026-05-07) — difficulty plumbing landed but no
+            // wire field yet. HARD preserves pre-Slice-B behavior. Slice
+            // D adds the optional `difficulty` field to WebAddAiRequest
+            // and rewires this callsite to AiDifficulty.fromString(req.difficulty()).
+            lobbyService.addAi(session.upstreamSessionId(), roomId, tableId,
+                    aiType, mage.webapi.lobby.AiDifficulty.HARD);
             ctx.status(204);
         });
         app.post("/api/rooms/{roomId}/tables/{tableId}/start", ctx -> {

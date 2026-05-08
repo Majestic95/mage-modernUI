@@ -6,6 +6,8 @@ import mage.cards.decks.DeckValidator;
 import mage.cards.decks.DeckValidatorError;
 import mage.game.GameException;
 import mage.webapi.embed.EmbeddedServer;
+import mage.webapi.lobby.deck.BasicLandsFallback;
+import mage.webapi.lobby.deck.CommanderDecksHard;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
@@ -39,7 +41,7 @@ class AiDeckLibraryTest {
 
     private static final String CONFIG_PATH = "../Mage.Server/config/config.xml";
 
-    private final AiDeckLibrary library = new AiDeckLibrary();
+    private final CommanderDecksHard hard = new CommanderDecksHard();
 
     @BeforeAll
     void boot() {
@@ -48,35 +50,35 @@ class AiDeckLibraryTest {
 
     @Test
     void white_passesCommanderValidator() {
-        DeckCardLists deck = library.buildCommanderFallbackDeckWhite();
+        DeckCardLists deck = hard.buildWhite();
         assertCommanderLegal("white", deck);
         assertNoSilentSubstitutions("white commander deck", deck, "Plains", 36);
     }
 
     @Test
     void blue_passesCommanderValidator() {
-        DeckCardLists deck = library.buildCommanderFallbackDeckBlue();
+        DeckCardLists deck = hard.buildBlue();
         assertCommanderLegal("blue", deck);
         assertNoSilentSubstitutions("blue commander deck", deck, "Island", 36);
     }
 
     @Test
     void black_passesCommanderValidator() {
-        DeckCardLists deck = library.buildCommanderFallbackDeckBlack();
+        DeckCardLists deck = hard.buildBlack();
         assertCommanderLegal("black", deck);
         assertNoSilentSubstitutions("black commander deck", deck, "Swamp", 36);
     }
 
     @Test
     void red_passesCommanderValidator() {
-        DeckCardLists deck = library.buildCommanderFallbackDeckRed();
+        DeckCardLists deck = hard.buildRed();
         assertCommanderLegal("red", deck);
         assertNoSilentSubstitutions("red commander deck", deck, "Mountain", 36);
     }
 
     @Test
     void green_passesCommanderValidator() {
-        DeckCardLists deck = library.buildCommanderFallbackDeckGreen();
+        DeckCardLists deck = hard.buildGreen();
         assertCommanderLegal("green", deck);
         assertNoSilentSubstitutions("green commander deck", deck, "Forest", 36);
     }
@@ -88,7 +90,7 @@ class AiDeckLibraryTest {
      */
     @Test
     void bearsDeck_isSixtyCards_zeroSideboard_noSubstitutions() {
-        DeckCardLists deck = library.buildFallbackBasicLandsDeck();
+        DeckCardLists deck = BasicLandsFallback.buildBearsDeck();
         int main = deck.getCards().stream().mapToInt(c -> c.getAmount()).sum();
         int side = deck.getSideboard().stream().mapToInt(c -> c.getAmount()).sum();
         assertEquals(60, main, "Bears deck mainboard must total 60 cards.");

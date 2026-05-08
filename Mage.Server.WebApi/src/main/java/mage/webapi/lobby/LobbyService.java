@@ -361,10 +361,14 @@ public final class LobbyService {
         }
     }
 
-    public void addAi(String upstreamSessionId, UUID roomId, UUID tableId, PlayerType aiType) {
+    public void addAi(String upstreamSessionId, UUID roomId, UUID tableId,
+                      PlayerType aiType, AiDifficulty difficulty) {
         if (aiType == PlayerType.HUMAN) {
             throw new WebApiException(400, "BAD_REQUEST",
                     "playerType must be a COMPUTER_* value.");
+        }
+        if (difficulty == null) {
+            difficulty = AiDifficulty.WIRE_DEFAULT;
         }
         // 2026-05-02 — root-cause fix for "Table closed instantly".
         // upstream's TableController.joinTable runs deck validation
@@ -379,7 +383,7 @@ public final class LobbyService {
         if (table == null) {
             throw new WebApiException(404, "NOT_FOUND", "Table not found: " + tableId);
         }
-        DeckCardLists fallbackDeck = aiDeckLibrary.buildFallbackDeckForTable(table);
+        DeckCardLists fallbackDeck = aiDeckLibrary.buildFallbackDeckForTable(table, difficulty);
         DeckValidator tableValidator = table.getValidator();
         if (tableValidator != null) {
             DeckValidator fresh = newValidatorLike(tableValidator);
