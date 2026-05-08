@@ -1,5 +1,6 @@
 package mage.webapi.upstream;
 
+import mage.webapi.lobby.DisplayCardRegistry;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -209,5 +210,74 @@ class MultiplayerFrameContextTest {
         // present rather than locking a specific order.
         assertTrue(goaders.contains(goader1.toString()));
         assertTrue(goaders.contains(goader2.toString()));
+    }
+
+    // ---- Schema 1.33 displayCard plumbing (audit-fix M2 broader).
+    // Locks the in-memory wiring — extract(Game) reads live engine
+    // state and is exercised in the e2e specs; here we pin
+    // withDisplayCards / displayCardFor / null guards.
+
+    @Test
+    void displayCardFor_emptyContext_returnsNull() {
+        assertNull(MultiplayerFrameContext.EMPTY.displayCardFor(UUID.randomUUID()));
+    }
+
+    @Test
+    void displayCardFor_nullPlayerId_returnsNull() {
+        assertNull(MultiplayerFrameContext.EMPTY.displayCardFor(null));
+    }
+
+    @Test
+    void withDisplayCards_populatesPerPlayerLookup() {
+        UUID alice = UUID.fromString("aaaaaaaa-1111-1111-1111-111111111111");
+        UUID bob = UUID.fromString("bbbbbbbb-2222-2222-2222-222222222222");
+        DisplayCardRegistry.DisplayCard swiftspear =
+                new DisplayCardRegistry.DisplayCard("Monastery Swiftspear", "KTK", "118");
+        DisplayCardRegistry.DisplayCard bolt =
+                new DisplayCardRegistry.DisplayCard("Lightning Bolt", "LEA", "161");
+
+        MultiplayerFrameContext ctx = MultiplayerFrameContext.EMPTY
+                .withDisplayCards(Map.of(alice, swiftspear, bob, bolt));
+
+        assertEquals(swiftspear, ctx.displayCardFor(alice));
+        assertEquals(bolt, ctx.displayCardFor(bob));
+        assertNull(ctx.displayCardFor(UUID.randomUUID()),
+                "unknown player → no display card");
+    }
+
+    @Test
+    void withDisplayCards_nullMap_isEquivalentToEmpty() {
+        MultiplayerFrameContext ctx =
+                MultiplayerFrameContext.EMPTY.withDisplayCards(null);
+        assertNull(ctx.displayCardFor(UUID.randomUUID()));
+    }
+
+    @Test
+    void withDisplayCards_emptyMapOnEmptyContext_returnsSameInstance() {
+        // Idempotency: empty + empty is a no-op (no fresh allocation).
+        assertSame(MultiplayerFrameContext.EMPTY,
+                MultiplayerFrameContext.EMPTY.withDisplayCards(Map.of()),
+                "Re-binding empty display-cards on EMPTY must be a no-op.");
+    }
+
+    @Test
+    void withDisplayCards_preservesGoadingAndConnectionTracker() {
+        UUID permId = UUID.fromString("ddddddd1-1111-1111-1111-111111111111");
+        UUID goader = UUID.fromString("ddddddd2-2222-2222-2222-222222222222");
+        UUID alice = UUID.fromString("aaaaaaaa-1111-1111-1111-111111111111");
+        DisplayCardRegistry.DisplayCard card =
+                new DisplayCardRegistry.DisplayCard("Monastery Swiftspear", "KTK", "118");
+
+        MultiplayerFrameContext ctx = MultiplayerFrameContext
+                .forTesting(Map.of(permId, Set.of(goader)))
+                .withDisplayCards(Map.of(alice, card));
+
+        // Goading data still surfaces.
+        assertEquals(1, ctx.goadingFor(permId).size());
+        assertEquals(goader.toString(), ctx.goadingFor(permId).get(0));
+        // Connection-tracker default still in place.
+        assertEquals("connected", ctx.connectionStateFor(UUID.randomUUID()));
+        // Display card now resolves.
+        assertEquals(card, ctx.displayCardFor(alice));
     }
 }
