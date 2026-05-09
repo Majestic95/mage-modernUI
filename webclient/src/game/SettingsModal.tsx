@@ -9,6 +9,7 @@ import {
   popoverWidthPx,
   useHoverPreviewSettings,
 } from './hoverPreviewSettings';
+import { usePriorityStopsSettings } from './priorityStopsSettings';
 
 /**
  * Slice 70-O (picture-catalog §1.3) — settings modal launched from
@@ -102,6 +103,8 @@ export function SettingsModal({
         </header>
 
         <CardPreviewSettings />
+
+        <CombatPrioritySettings />
 
         <AudioCueSettings />
 
@@ -232,6 +235,55 @@ function CardPreviewSettings() {
           {Math.round(popoverScale * 100)}% · {previewWidth}px
         </span>
       </div>
+    </section>
+  );
+}
+
+/**
+ * Combat priority — toggle for the per-combat-step priority stop.
+ * When ON (default 2026-05-09), the webclient auto-cancels any
+ * active-player skip-macros upon entering combat steps where the
+ * engine doesn't stop by default (BEGIN_COMBAT, DECLARE_BLOCKERS,
+ * FIRST_COMBAT_DAMAGE, COMBAT_DAMAGE, END_COMBAT). The active
+ * player gets priority granted on each combat step and can cast
+ * instants per CR 117 / 507-511.
+ *
+ * <p>OFF preserves the legacy behavior where "Next Phase" macros
+ * burn through the entire combat phase to the next main phase.
+ */
+function CombatPrioritySettings() {
+  const stopOnEachCombatStep = usePriorityStopsSettings(
+    (s) => s.stopOnEachCombatStep,
+  );
+  const setStopOnEachCombatStep = usePriorityStopsSettings(
+    (s) => s.setStopOnEachCombatStep,
+  );
+  return (
+    <section
+      data-testid="settings-combat-priority-section"
+      className="space-y-2 border-t border-zinc-800 pt-4"
+    >
+      <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
+        Combat priority
+      </h3>
+      <label className="flex items-start gap-2 text-xs text-text-primary cursor-pointer">
+        <input
+          type="checkbox"
+          data-testid="settings-stop-on-each-combat-step"
+          checked={stopOnEachCombatStep}
+          onChange={(e) => setStopOnEachCombatStep(e.target.checked)}
+          className="h-3.5 w-3.5 mt-0.5 accent-fuchsia-500"
+        />
+        <span>
+          <span className="font-medium">Stop on each combat step</span>
+          <span className="block text-text-secondary text-[11px] font-normal mt-0.5">
+            Get priority to cast instants on every combat step
+            (begin combat, blockers, damage, end of combat). When
+            off, "Next Phase" skips through the entire combat phase
+            to the next main.
+          </span>
+        </span>
+      </label>
     </section>
   );
 }

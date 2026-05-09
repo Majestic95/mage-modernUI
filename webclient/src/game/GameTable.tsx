@@ -32,6 +32,7 @@ import { CommanderColorsProvider } from './useCommanderColors';
 import { buildOnSpendMana } from './manaPaymentAdapter';
 import { TurnEdgeGlow } from './TurnEdgeGlow';
 import { useTurnTabTitle } from './useTurnTabTitle';
+import { useStopOnCombatSteps } from './useStopOnCombatSteps';
 
 /**
  * Slice 70-E (ADR 0011 D5) — 6-region CSS Grid shell per
@@ -156,8 +157,13 @@ export function GameTable({ gameId, gameView, stream }: Props) {
   // title with "🎲 Your turn" so a player who has tabbed away
   // sees the change in their tab bar. Pairs with the priority
   // chime (audioSettingsStore default flipped to ON) and the
-  // PriorityEdgeGlow ring rendered below.
+  // TurnEdgeGlow ring rendered below.
   useTurnTabTitle();
+  // 2026-05-09 — auto-cancel active-player skip-macros on entering
+  // combat steps where the engine doesn't stop by default, so the
+  // player gets priority granted on each combat step (CR 507-511).
+  // Gated on the `stopOnEachCombatStep` settings toggle (default ON).
+  useStopOnCombatSteps(stream);
   const variant = useLayoutVariant();
   const sidePanelCollapsedRaw = useGameStore((s) => s.sidePanelCollapsed);
   const sidePanelCollapsed = variant === 'tabletop' || sidePanelCollapsedRaw;
