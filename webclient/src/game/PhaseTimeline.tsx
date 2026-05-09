@@ -1,7 +1,7 @@
 import type { WebGameView } from '../api/schemas';
 import { useLayoutVariant } from '../layoutVariants';
 
-/* ---------- phase timeline (slice 28) ---------- */
+/* ---------- phase timeline (slice 28; bundle 3-A 2026-05-09) ---------- */
 
 /**
  * Each phase is a colored segment on the timeline. {@code steps} are
@@ -97,6 +97,40 @@ const TIMELINE_PHASES: PhaseConfig[] = [
 ];
 
 /**
+ * Derived priority state for the active sub-step ribbon — bundle 3-A
+ * (2026-05-09). Surfaces "is this priority moment mine, am I auto-passing
+ * through it, or am I waiting on someone else." Computed once at the
+ * top of {@link PhaseTimeline} from {@code gameView} and threaded
+ * down to {@link PhaseSegment}; the segment renders the suffix only
+ * when its phase is the active combat phase in compact (tabletop)
+ * mode, so non-combat phases ignore the prop entirely.
+ *
+ * <p>The waiting-on copy intentionally surfaces the priority-holder's
+ * name from {@code gameView.priorityPlayerName} (a top-level field,
+ * not a per-player crawl), so the source of truth survives if the
+ * matched-player crawl can't find {@code me} (defensive fallback for
+ * spectator-style flows where {@code myPlayerId} doesn't resolve).
+ */
+type PriorityStatus =
+  | { kind: 'priority'; waitingOn: '' }
+  | { kind: 'passing'; waitingOn: '' }
+  | { kind: 'waiting'; waitingOn: string };
+
+function deriveCombatPriorityStatus(gameView: WebGameView): PriorityStatus {
+  const me = gameView.players.find((p) => p.playerId === gameView.myPlayerId);
+  if (!me) return { kind: 'waiting', waitingOn: gameView.priorityPlayerName };
+  if (me.hasPriority) return { kind: 'priority', waitingOn: '' };
+  if (me.skipState) return { kind: 'passing', waitingOn: '' };
+  return { kind: 'waiting', waitingOn: gameView.priorityPlayerName };
+}
+
+const PRIORITY_STATUS_LABEL: Record<PriorityStatus['kind'], string> = {
+  priority: 'PRIORITY',
+  passing: 'PASSING',
+  waiting: 'WAITING',
+};
+
+/**
  * Horizontal turn-progress timeline. Highlights the current step
  * with a pulsing bloom orb in the phase's accent color; all other
  * ticks dim out. Mirrors the visual idiom from the user's reference
@@ -110,6 +144,15 @@ const TIMELINE_PHASES: PhaseConfig[] = [
  * strike is in play; the tick is always rendered (so the phase
  * geometry is consistent across turns) but only lights up when the
  * engine actually visits that step.
+ *
+ * <p><b>Bundle 3-A (2026-05-09)</b> — when the active phase is
+ * {@code Combat} in tabletop's compact mode, the combat segment
+ * expands to show its sub-step labels (other phases stay
+ * label-suppressed per the P3 header-budget invariant), past combat
+ * sub-steps get a check-mark prefix and muted color, and the phase
+ * label gains a {@code · PRIORITY / · PASSING / · WAITING (name)}
+ * ribbon derived from {@link deriveCombatPriorityStatus}. Outside
+ * combat the header collapses back to ~24px exactly as before.
  */
 export function PhaseTimeline({ gameView }: { gameView: WebGameView }) {
   const variant = useLayoutVariant();
@@ -118,12 +161,14 @@ export function PhaseTimeline({ gameView }: { gameView: WebGameView }) {
     (n, p) => n + p.steps.length,
     0,
   );
+  const priorityStatus = deriveCombatPriorityStatus(gameView);
   // Polish-pass P3 (audit must-close #4) — for variant=tabletop the
   // top header is slimmed: drop the redundant "Turn N / activePlayer"
   // left block (already in the central focal P2), drop sub-step labels
-  // (combat phase's six step names), and shrink py-2 → py-1. Net
-  // ~52px → ~24px header, freeing pod budget. variant=current keeps
-  // the original full timeline.
+  // for non-combat phases (combat phase reintroduces them in 3-A only
+  // when it's the active phase), and shrink py-2 → py-1. Net ~52px →
+  // ~24px header outside combat, ~38px during combat. variant=current
+  // keeps the original full timeline.
   return (
     <div
       data-testid="phase-timeline"
@@ -153,8 +198,10 @@ export function PhaseTimeline({ gameView }: { gameView: WebGameView }) {
             key={phase.label}
             phase={phase}
             activeStep={gameView.step}
+            activePhase={gameView.phase}
             totalSteps={totalSteps}
             compact={compact}
+            priorityStatus={priorityStatus}
           />
         ))}
       </div>
@@ -165,30 +212,55 @@ export function PhaseTimeline({ gameView }: { gameView: WebGameView }) {
 function PhaseSegment({
   phase,
   activeStep,
+  activePhase,
   totalSteps,
   compact = false,
+  priorityStatus,
 }: {
   phase: PhaseConfig;
   activeStep: string;
+  activePhase: string;
   totalSteps: number;
   compact?: boolean;
+  priorityStatus: PriorityStatus;
 }) {
-  const isActivePhase = phase.steps.some((s) => s.name === activeStep);
+  const isActivePhaseByStep = phase.steps.some((s) => s.name === activeStep);
+  const activeStepIdx = phase.steps.findIndex((s) => s.name === activeStep);
+  // Bundle 3-A — only the combat phase reintroduces sub-step labels
+  // in compact mode, and only when it's currently active. This is the
+  // surgical exemption to the P3 header-budget invariant.
+  //
+  // 3-X.2 (B.4) — also treat the segment as active when gameView.phase
+  // says we're in COMBAT but gameView.step is an unknown enum value
+  // (defensive against upstream adding a new combat sub-step we
+  // haven't enumerated). The runway still expands with all six known
+  // ticks in their default state — better than a silent collapse to
+  // compact-no-runway, which would mislead the user about whether
+  // they're in combat at all.
+  const isActivePhaseByPhase =
+    phase.label === 'Combat' && activePhase === 'COMBAT';
+  const isActivePhase = isActivePhaseByStep || isActivePhaseByPhase;
+  const isCombatActive = compact && phase.label === 'Combat' && isActivePhase;
+  const showSubStepLabels =
+    (phase.showStepLabels && !compact) || isCombatActive;
+
   return (
     <div
       data-testid="phase-segment"
       data-phase={phase.label}
       data-active-phase={isActivePhase || undefined}
+      data-combat-active={isCombatActive || undefined}
       className="flex flex-col"
       style={{ flex: phase.steps.length / totalSteps }}
     >
       <div
         className={
-          'text-[10px] uppercase tracking-wider mb-1 ' +
+          'text-[10px] uppercase tracking-wider mb-1 whitespace-nowrap overflow-hidden text-ellipsis ' +
           (isActivePhase ? phase.fgClass + ' font-semibold' : 'text-zinc-600')
         }
       >
         {phase.label}
+        {isCombatActive && <PriorityStatusSuffix status={priorityStatus} />}
       </div>
       <div className="relative flex items-center h-5">
         {/* Track bar — saturated phase color, slightly thicker than v1 */}
@@ -237,31 +309,49 @@ function PhaseSegment({
           );
         })}
       </div>
-      {/* Per-step labels row — only rendered for phases with showStepLabels
-          (currently Combat) so single-step phases don't get a redundant
-          duplicate of their phase header. Suppressed in tabletop's
-          compact mode (P3) so the header stays at ~24px. */}
-      {phase.showStepLabels && !compact && (
+      {/* Per-step labels row — shown for all phases in non-compact
+          variant; ALSO shown for the combat phase in compact mode
+          when it's the active phase (bundle 3-A). Past combat
+          sub-steps in compact+combat mode get a ✓ prefix + muted
+          color so the runway "shape" of the combat round is legible
+          at a glance. */}
+      {showSubStepLabels && (
         <div
           data-testid="phase-step-labels"
+          data-combat-runway={isCombatActive || undefined}
           className="relative h-3 mt-0.5"
         >
           {phase.steps.map((step, idx) => {
             const isActiveStep = step.name === activeStep;
+            const isPastStep =
+              isCombatActive && activeStepIdx >= 0 && idx < activeStepIdx;
             const left = `${((idx + 0.5) / phase.steps.length) * 100}%`;
+            const position = isActiveStep
+              ? 'active'
+              : isPastStep
+                ? 'past'
+                : 'future';
             return (
               <span
                 key={step.name}
                 data-testid="phase-step-label"
                 data-step={step.name}
+                data-step-position={position}
                 className={
                   'absolute -translate-x-1/2 text-[9px] uppercase tracking-wide whitespace-nowrap ' +
                   (isActiveStep
                     ? phase.fgClass + ' font-semibold'
-                    : 'text-zinc-500')
+                    : isPastStep
+                      ? 'text-zinc-600'
+                      : 'text-zinc-500')
                 }
                 style={{ left, top: 0 }}
               >
+                {isPastStep && (
+                  <span data-testid="phase-step-past-mark" className="mr-0.5">
+                    ✓
+                  </span>
+                )}
                 {step.short}
               </span>
             );
@@ -269,5 +359,61 @@ function PhaseSegment({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Priority-status suffix attached to the Combat phase label when the
+ * combat phase is active in compact (tabletop) mode. Renders inline
+ * inside the phase-label `<div>`, which already has
+ * {@code whitespace-nowrap overflow-hidden text-ellipsis}, so a long
+ * waiting-on player name truncates at the segment boundary instead
+ * of pushing into neighbor segments.
+ *
+ * <p><b>A11y (3-X.1 A.4):</b> the visible decoration (bullets +
+ * uppercase status word + name) is purely typographic, so the
+ * composite span carries an {@code aria-label} that reads naturally
+ * to assistive tech ("Priority status: you have priority" /
+ * "Priority status: waiting on lyrra"). The inner spans keep their
+ * visible text for sighted users; aria-label on the parent overrides
+ * the read-out of the children.
+ */
+function PriorityStatusSuffix({ status }: { status: PriorityStatus }) {
+  const label = PRIORITY_STATUS_LABEL[status.kind];
+  const colorClass =
+    status.kind === 'priority'
+      ? 'text-amber-300 font-semibold'
+      : 'text-zinc-400';
+  const ariaLabel =
+    status.kind === 'priority'
+      ? 'Priority status: you have priority'
+      : status.kind === 'passing'
+        ? 'Priority status: auto-passing'
+        : status.waitingOn
+          ? `Priority status: waiting on ${status.waitingOn}`
+          : 'Priority status: waiting';
+  return (
+    <span
+      data-testid="phase-priority-suffix"
+      data-priority-kind={status.kind}
+      aria-label={ariaLabel}
+      className="ml-1"
+    >
+      <span className="opacity-50 mr-1">·</span>
+      <span className={colorClass}>{label}</span>
+      {status.kind === 'waiting' && (
+        <>
+          <span className="opacity-50 mx-1">·</span>
+          <span
+            data-testid="phase-priority-waiting-on"
+            data-waiting-unknown={!status.waitingOn || undefined}
+            className="text-zinc-400"
+            title={status.waitingOn || 'Unknown opponent'}
+          >
+            {status.waitingOn || '—'}
+          </span>
+        </>
+      )}
+    </span>
   );
 }

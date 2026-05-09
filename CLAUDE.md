@@ -292,6 +292,17 @@ If you find yourself coding without having written this analysis, **stop, revert
 6. **Upstream rebase impact** — does this touch upstream-tracked files? **If yes: stop and confirm with the user before continuing.**
 7. **Test plan** — which new tests, which existing tests cover the change.
 
+### When you wrote the spec yourself — extra rigor (per ADR 0014)
+
+Self-authored specs are the highest-risk class for comprehension drift. When the brief author and the implementer are the same agent (or sequential sessions of the same agent), the breakage analysis carries two extra mandatory items on top of the seven above:
+
+8. **Spec paraphrase** — re-read the brief's section for this slice and paraphrase what it asks for in your own words, in 1–2 sentences. Then paraphrase what your implementation will produce, in 1–2 sentences. End with an explicit "Paraphrases match: yes / no" line. If "no," the slice does not enter builder phase until the disagreement is resolved.
+9. **Acceptance criteria are countable, not abstract** — every acceptance line for a self-authored slice must be a literal testable assertion ("renders 6 elements with `data-testid='X'`," "`element.clientHeight <= 24` when `phase !== 'COMBAT'`"), not a feeling ("feels in lock-step with the runway," "no jank"). Tests written from countable criteria fail-loud on spec divergence; tests written from "feels" pass on whatever the implementer happened to build.
+
+The cost of these two extra items is ~3 sentences per slice. The benefit is catching spec divergences at typing time instead of at bundle-critic-pass time several commits later. ADR 0014 documents the failure mode that motivated this rule (Bundle 3 Slice 3-C shipped a stopwatch when the brief asked for a 6-tick step indicator; the divergence cost ~7 KB of dead code and 4 commits of wrong-axis work).
+
+**Mechanical-tier exemption:** rename / extract / doc-reconciliation slices skip the paraphrase block because the implementation IS the paraphrase ("rename X to Y" is its own spec). All other tiers (Trivial doc edits aside) include both items.
+
 ### The rule is ALWAYS — the depth scales
 
 - **Trivial change** (rename a local var, typo, formatting, comment fix): a single sentence covering scope + "no breakage expected, covered by existing tests" is sufficient — but it must be written.

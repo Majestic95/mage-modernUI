@@ -1,10 +1,99 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { CombatBanner } from './CombatBanner';
 import { useGameStore } from '../store';
 import type { GameStream } from '../stream';
-import { webGameClientMessageSchema } from '../../api/schemas';
+import {
+  webGameClientMessageSchema,
+  type WebGameView,
+} from '../../api/schemas';
+
+/**
+ * Bundle 3-B + 3-D + 3-X.1 helper — set just enough of {@code gameView}
+ * on the store for the banner's sub-title, tempo-meter, and recap
+ * reads. Always populates {@code myPlayerId} + a single player so
+ * the banner's {@code myName} selector resolves to {@code 'alice'};
+ * recap fixtures default permanent controllers to {@code 'alice'}
+ * so they match without explicit overrides. Tests that need the
+ * empty-{@code myName} branch should set {@code gameView=null} via
+ * {@code reset()}.
+ *
+ * <p>Partial cast is safe because the banner only dereferences a
+ * narrow slice of the game view (step / combat / players /
+ * myPlayerId); the full schema-validated builder lives in
+ * store.test.ts where the broader store interface justifies it.
+ */
+const ME_ID = 'me-uuid';
+const ME_NAME = 'alice';
+
+function setStep(
+  step: string,
+  combat: ReadonlyArray<unknown> = [],
+) {
+  useGameStore.setState({
+    gameView: {
+      step,
+      combat,
+      myPlayerId: ME_ID,
+      players: [{ playerId: ME_ID, name: ME_NAME }],
+    } as unknown as WebGameView,
+  });
+}
+
+function makePermanent(id: string, name: string, controller = ME_NAME) {
+  return {
+    card: {
+      id,
+      name,
+      displayName: name,
+      expansionSetCode: 'M21',
+      cardNumber: '1',
+      manaCost: '',
+      manaValue: 0,
+      typeLine: 'Creature',
+      supertypes: [],
+      types: ['CREATURE'],
+      subtypes: [],
+      colors: [],
+      rarity: 'COMMON',
+      power: '2',
+      toughness: '2',
+      startingLoyalty: '',
+      rules: [],
+      faceDown: false,
+      counters: {},
+      transformable: false,
+      transformed: false,
+      secondCardFace: null,
+    },
+    controllerName: controller,
+    tapped: false,
+  };
+}
+
+function combatGroup(
+  attackers: Array<{ id: string; name: string; controller?: string }>,
+  blockers: Array<{ id: string; name: string; controller?: string }> = [],
+) {
+  return {
+    defenderId: 'def-1',
+    defenderName: 'lyrra',
+    attackers: Object.fromEntries(
+      attackers.map((a) => [
+        a.id,
+        makePermanent(a.id, a.name, a.controller ?? ME_NAME),
+      ]),
+    ),
+    blockers: Object.fromEntries(
+      blockers.map((b) => [
+        b.id,
+        makePermanent(b.id, b.name, b.controller ?? ME_NAME),
+      ]),
+    ),
+    blocked: blockers.length > 0,
+  };
+}
 
 const fakeStream = (): GameStream =>
   ({
@@ -208,5 +297,343 @@ describe('CombatBanner — defensive', () => {
     const banner = screen.getByTestId('combat-banner');
     expect(banner.hasAttribute('data-drag-handle')).toBe(true);
     expect(banner.className).toContain('cursor-move');
+  });
+});
+
+describe('CombatBanner — bundle 3-B depth ladder', () => {
+  beforeEach(() => {
+    useGameStore.getState().reset();
+  });
+
+  it('title row reads "Combat" (dropped the "— attackers/blockers" suffix; sub-step lives in sub-title now)', () => {
+    setCombatDialog('Select attackers', { possibleAttackers: ['a-1'] });
+    setStep('DECLARE_ATTACKERS');
+    render(<CombatBanner stream={fakeStream()} isAttackers />);
+    expect(screen.getByTestId('combat-banner-title').textContent).toBe(
+      'Combat',
+    );
+  });
+
+  it('renders the sub-title with the active combat sub-step name (DECLARE_ATTACKERS → "Declare attackers")', () => {
+    setCombatDialog('Select attackers', { possibleAttackers: ['a-1'] });
+    setStep('DECLARE_ATTACKERS');
+    render(<CombatBanner stream={fakeStream()} isAttackers />);
+    const subtitle = screen.getByTestId('combat-banner-subtitle');
+    expect(subtitle.textContent).toBe('Declare attackers');
+    expect(subtitle.getAttribute('data-step')).toBe('DECLARE_ATTACKERS');
+  });
+
+  it('sub-title flips to "Declare blockers" when step = DECLARE_BLOCKERS', () => {
+    setCombatDialog('Select blockers', { possibleBlockers: ['b-1'] });
+    setStep('DECLARE_BLOCKERS');
+    render(<CombatBanner stream={fakeStream()} isAttackers={false} />);
+    expect(screen.getByTestId('combat-banner-subtitle').textContent).toBe(
+      'Declare blockers',
+    );
+  });
+
+  it('hides the sub-title row when step is empty (defensive — banner without gameView)', () => {
+    setCombatDialog('Select attackers', { possibleAttackers: ['a-1'] });
+    // gameView is null after reset; setStep not called. The banner
+    // must still render — the sub-title is purely an enrichment.
+    render(<CombatBanner stream={fakeStream()} isAttackers />);
+    expect(screen.queryByTestId('combat-banner-subtitle')).toBeNull();
+    expect(screen.getByTestId('combat-banner-message')).toBeInTheDocument();
+  });
+
+  it('hides the sub-title row when step is outside the combat enum range', () => {
+    setCombatDialog('Select attackers', { possibleAttackers: ['a-1'] });
+    setStep('PRECOMBAT_MAIN');
+    render(<CombatBanner stream={fakeStream()} isAttackers />);
+    expect(screen.queryByTestId('combat-banner-subtitle')).toBeNull();
+  });
+
+  it('renders the de-emphasized hint row at testid combat-banner-hint', () => {
+    setCombatDialog('Select attackers', { possibleAttackers: ['a-1'] });
+    setStep('DECLARE_ATTACKERS');
+    render(<CombatBanner stream={fakeStream()} isAttackers />);
+    const hint = screen.getByTestId('combat-banner-hint');
+    expect(hint.textContent).toBe('Click creatures on the board to toggle');
+    // De-emphasized one notch (zinc-500 → zinc-600) per spec.
+    expect(hint.className).toContain('text-zinc-600');
+    expect(hint.className).not.toContain('text-zinc-500');
+  });
+
+  it('Done button is the outlined-pill primary affordance', () => {
+    setCombatDialog('Select attackers', { possibleAttackers: ['a-1'] });
+    render(<CombatBanner stream={fakeStream()} isAttackers />);
+    const done = screen.getByTestId('combat-banner-done');
+    expect(done.className).toContain('rounded-full');
+    expect(done.className).toContain('border-2');
+    expect(done.className).toContain('border-amber-400');
+  });
+
+  it('banner has the inset top-edge highlight (lifts the frosted band off battlefield)', () => {
+    setCombatDialog('Select attackers', { possibleAttackers: ['a-1'] });
+    render(<CombatBanner stream={fakeStream()} isAttackers />);
+    const banner = screen.getByTestId('combat-banner');
+    // Inline style merges the spotlight + the inset highlight; we
+    // check the inset stripe by string-match on the boxShadow value.
+    expect(banner.style.boxShadow).toContain('inset 0 1px 0');
+  });
+
+  it('Done click still sends boolean true (regression — depth ladder must not break dispatch)', async () => {
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    setCombatDialog('Select attackers', { possibleAttackers: ['a-1'] });
+    setStep('DECLARE_ATTACKERS');
+    render(<CombatBanner stream={stream} isAttackers />);
+    await user.click(screen.getByTestId('combat-banner-done'));
+    expect(stream.sendPlayerResponse).toHaveBeenCalledWith(11, 'boolean', true);
+  });
+});
+
+describe('CombatBanner — bundle 3-C sub-step meter', () => {
+  beforeEach(() => {
+    useGameStore.getState().reset();
+  });
+
+  it('renders six ticks in turn order, mirroring the runway', () => {
+    setCombatDialog('Select attackers', { possibleAttackers: ['a-1'] });
+    setStep('DECLARE_ATTACKERS');
+    render(<CombatBanner stream={fakeStream()} isAttackers />);
+    const ticks = screen.getAllByTestId('combat-banner-tempo-tick');
+    expect(ticks.map((t) => t.getAttribute('data-step'))).toEqual([
+      'BEGIN_COMBAT',
+      'DECLARE_ATTACKERS',
+      'DECLARE_BLOCKERS',
+      'FIRST_COMBAT_DAMAGE',
+      'COMBAT_DAMAGE',
+      'END_COMBAT',
+    ]);
+  });
+
+  it('marks past / active / future ticks based on gameView.step', () => {
+    setCombatDialog('Select blockers', { possibleBlockers: ['b-1'] });
+    setStep('COMBAT_DAMAGE');
+    render(<CombatBanner stream={fakeStream()} isAttackers={false} />);
+    const positions = Object.fromEntries(
+      screen
+        .getAllByTestId('combat-banner-tempo-tick')
+        .map((t) => [
+          t.getAttribute('data-step'),
+          t.getAttribute('data-tick-position'),
+        ]),
+    );
+    expect(positions).toEqual({
+      BEGIN_COMBAT: 'past',
+      DECLARE_ATTACKERS: 'past',
+      DECLARE_BLOCKERS: 'past',
+      FIRST_COMBAT_DAMAGE: 'past',
+      COMBAT_DAMAGE: 'active',
+      END_COMBAT: 'future',
+    });
+  });
+
+  it('all ticks are future when step is outside the combat enum (defensive — meter still renders)', () => {
+    setCombatDialog('Select attackers', { possibleAttackers: ['a-1'] });
+    setStep('PRECOMBAT_MAIN');
+    render(<CombatBanner stream={fakeStream()} isAttackers />);
+    const ticks = screen.getAllByTestId('combat-banner-tempo-tick');
+    expect(ticks).toHaveLength(6);
+    for (const tick of ticks) {
+      expect(tick.getAttribute('data-tick-position')).toBe('future');
+    }
+  });
+
+  it('exposes the meter as a progressbar with aria-valuenow tracking the step index', () => {
+    setCombatDialog('Select attackers', { possibleAttackers: ['a-1'] });
+    setStep('DECLARE_ATTACKERS');
+    render(<CombatBanner stream={fakeStream()} isAttackers />);
+    const meter = screen.getByTestId('combat-banner-tempo');
+    expect(meter.getAttribute('role')).toBe('progressbar');
+    expect(meter.getAttribute('aria-valuemin')).toBe('0');
+    expect(meter.getAttribute('aria-valuemax')).toBe('6');
+    expect(meter.getAttribute('aria-valuenow')).toBe('2');
+    expect(meter.getAttribute('aria-label')).toBe('Combat sub-step 2 of 6');
+  });
+
+  it('aria-label reads "Outside combat" when step is not in the combat enum', () => {
+    setCombatDialog('Select attackers', { possibleAttackers: ['a-1'] });
+    setStep('PRECOMBAT_MAIN');
+    render(<CombatBanner stream={fakeStream()} isAttackers />);
+    const meter = screen.getByTestId('combat-banner-tempo');
+    expect(meter.getAttribute('aria-valuenow')).toBe('0');
+    expect(meter.getAttribute('aria-label')).toBe('Outside combat');
+  });
+
+  it('active tick uses motion-safe ramp + motion-reduce scale fallback for reduced-motion users', () => {
+    setCombatDialog('Select attackers', { possibleAttackers: ['a-1'] });
+    setStep('DECLARE_ATTACKERS');
+    render(<CombatBanner stream={fakeStream()} isAttackers />);
+    const active = screen
+      .getAllByTestId('combat-banner-tempo-tick')
+      .find((t) => t.getAttribute('data-tick-position') === 'active');
+    expect(active).toBeDefined();
+    // motion-safe prefix gates the translate-up; motion-reduce
+    // adds a 25% scale-up so reduced-motion users still see the
+    // active state distinctly without animation.
+    expect(active!.className).toContain('motion-safe:-translate-y-0.5');
+    expect(active!.className).toContain('motion-reduce:scale-125');
+  });
+});
+
+describe('CombatBanner — Rules of Hooks regression (3-X critic-pass blocker)', () => {
+  beforeEach(() => {
+    useGameStore.getState().reset();
+  });
+
+  it('does not crash when pendingDialog flips null -> set on the same mounted instance', () => {
+    // Mount with no dialog -> banner returns null after running its
+    // unconditional hook prelude (3 useGameStore + useCombatTempo +
+    // useDraggable). Then set the dialog on the store and re-render
+    // the SAME instance: hook count must stay stable, otherwise React
+    // crashes with "Rendered more/fewer hooks than expected." Pre-fix
+    // useCombatTempo lived AFTER the early returns; this test was the
+    // smoke check that catches that regression.
+    setStep('DECLARE_ATTACKERS');
+    const { rerender } = render(
+      <CombatBanner stream={fakeStream()} isAttackers />,
+    );
+    expect(screen.queryByTestId('combat-banner')).toBeNull();
+    act(() => {
+      setCombatDialog('Select attackers', { possibleAttackers: ['a-1'] });
+    });
+    rerender(<CombatBanner stream={fakeStream()} isAttackers />);
+    expect(screen.getByTestId('combat-banner')).toBeInTheDocument();
+  });
+
+  it('does not crash when pendingDialog flips set -> null on the same mounted instance', () => {
+    setStep('DECLARE_ATTACKERS');
+    setCombatDialog('Select attackers', { possibleAttackers: ['a-1'] });
+    const { rerender } = render(
+      <CombatBanner stream={fakeStream()} isAttackers />,
+    );
+    expect(screen.getByTestId('combat-banner')).toBeInTheDocument();
+    act(() => {
+      useGameStore.setState({ pendingDialog: null });
+    });
+    rerender(<CombatBanner stream={fakeStream()} isAttackers />);
+    expect(screen.queryByTestId('combat-banner')).toBeNull();
+  });
+});
+
+describe('CombatBanner — bundle 3-D + 3-X.1 staged-action recap', () => {
+  beforeEach(() => {
+    useGameStore.getState().reset();
+  });
+
+  it('renders the empty-state copy "No attackers chosen" when nothing is staged (A.1)', () => {
+    setCombatDialog('Select attackers', { possibleAttackers: ['a-1', 'a-2'] });
+    setStep('DECLARE_ATTACKERS', []);
+    render(<CombatBanner stream={fakeStream()} isAttackers />);
+    const recap = screen.getByTestId('combat-banner-recap');
+    expect(recap.textContent).toBe('No attackers chosen');
+    expect(recap.getAttribute('data-recap-empty')).toBe('true');
+  });
+
+  it('renders the empty-state copy "No blockers chosen" during declare-blockers (A.1)', () => {
+    setCombatDialog('Select blockers', { possibleBlockers: ['b-1'] });
+    setStep('DECLARE_BLOCKERS', []);
+    render(<CombatBanner stream={fakeStream()} isAttackers={false} />);
+    expect(screen.getByTestId('combat-banner-recap').textContent).toBe(
+      'No blockers chosen',
+    );
+  });
+
+  it('renders the attacker recap with count + names when attackers are staged', () => {
+    setCombatDialog('Select attackers', { possibleAttackers: ['a-1', 'a-2'] });
+    setStep('DECLARE_ATTACKERS', [
+      combatGroup([
+        { id: 'a-1', name: 'Wolf' },
+        { id: 'a-2', name: 'Bear' },
+      ]),
+    ]);
+    render(<CombatBanner stream={fakeStream()} isAttackers />);
+    const recap = screen.getByTestId('combat-banner-recap');
+    expect(recap.textContent).toBe('2 attackers — Wolf, Bear');
+    expect(recap.getAttribute('data-recap-count')).toBe('2');
+    expect(recap.getAttribute('data-recap-empty')).toBeNull();
+  });
+
+  it('filters out enemy attackers (A.6 — only local player)', () => {
+    setCombatDialog('Select attackers', { possibleAttackers: ['a-1'] });
+    setStep('DECLARE_ATTACKERS', [
+      combatGroup([
+        { id: 'a-1', name: 'My Wolf' },
+        { id: 'a-2', name: 'Their Wolf', controller: 'lyrra' },
+      ]),
+    ]);
+    render(<CombatBanner stream={fakeStream()} isAttackers />);
+    expect(screen.getByTestId('combat-banner-recap').textContent).toBe(
+      '1 attacker — My Wolf',
+    );
+  });
+
+  it('renders the blocker recap with "X blocks Y" copy in single-attacker groups', () => {
+    setCombatDialog('Select blockers', { possibleBlockers: ['b-1'] });
+    setStep('DECLARE_BLOCKERS', [
+      combatGroup(
+        [{ id: 'a-1', name: 'Wolf', controller: 'lyrra' }],
+        [{ id: 'b-1', name: 'Knight' }],
+      ),
+    ]);
+    render(<CombatBanner stream={fakeStream()} isAttackers={false} />);
+    expect(screen.getByTestId('combat-banner-recap').textContent).toBe(
+      '1 blocker — Knight blocks Wolf',
+    );
+  });
+
+  it('drops the "blocks X" suffix in multi-attacker groups (B.6 — ambiguous pairing)', () => {
+    setCombatDialog('Select blockers', { possibleBlockers: ['b-1'] });
+    setStep('DECLARE_BLOCKERS', [
+      combatGroup(
+        [
+          { id: 'a-1', name: 'Wolf', controller: 'lyrra' },
+          { id: 'a-2', name: 'Bear', controller: 'lyrra' },
+        ],
+        [{ id: 'b-1', name: 'Knight' }],
+      ),
+    ]);
+    render(<CombatBanner stream={fakeStream()} isAttackers={false} />);
+    expect(screen.getByTestId('combat-banner-recap').textContent).toBe(
+      '1 blocker — Knight',
+    );
+  });
+
+  it('overflows past 4 names with "…and N more" (A.3 — Unicode ellipsis)', () => {
+    setCombatDialog('Select attackers', {
+      possibleAttackers: ['a-1', 'a-2', 'a-3', 'a-4', 'a-5', 'a-6'],
+    });
+    setStep('DECLARE_ATTACKERS', [
+      combatGroup([
+        { id: 'a-1', name: 'A' },
+        { id: 'a-2', name: 'B' },
+        { id: 'a-3', name: 'C' },
+        { id: 'a-4', name: 'D' },
+        { id: 'a-5', name: 'E' },
+        { id: 'a-6', name: 'F' },
+      ]),
+    ]);
+    render(<CombatBanner stream={fakeStream()} isAttackers />);
+    expect(screen.getByTestId('combat-banner-recap').textContent).toBe(
+      '6 attackers — A, B, C, D, …and 2 more',
+    );
+  });
+
+  it('recap row uses line-clamp-2 (A.2) so long content wraps to 2 lines instead of single-line truncating', () => {
+    setCombatDialog('Select attackers', { possibleAttackers: ['a-1'] });
+    setStep('DECLARE_ATTACKERS', [
+      combatGroup([
+        { id: 'a-1', name: 'Atraxa, Praetors\' Voice' },
+      ]),
+    ]);
+    render(<CombatBanner stream={fakeStream()} isAttackers />);
+    const recap = screen.getByTestId('combat-banner-recap');
+    expect(recap.className).toContain('line-clamp-2');
+    expect(recap.className).not.toContain('truncate');
+    expect(recap.getAttribute('title')).toBe(
+      "1 attacker — Atraxa, Praetors' Voice",
+    );
   });
 });
