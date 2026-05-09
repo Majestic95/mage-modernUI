@@ -121,12 +121,21 @@ export function SecondaryButton({
   children: React.ReactNode;
   'data-testid'?: string;
 }) {
+  // 2026-05-09 (item 6 of evening user-feedback batch) — bumped from
+  // text-link styling (`text-zinc-300 hover:bg-zinc-800`) to a proper
+  // outlined-button look so Cancel / Skip / Dismiss / No actions are
+  // unmistakable across all dialogs (AbilityPickerDialog Cancel,
+  // ChoiceDialog Skip, SelectDialog Skip, TargetDialog Skip,
+  // CardChooserList Skip, LibrarySearchModal Skip, AskDialog "No").
+  // PrimaryButton stays the dominant action via its fuchsia fill;
+  // SecondaryButton now reads as an actual button (bordered + filled)
+  // rather than a quiet link.
   return (
     <button
       type="button"
       onClick={onClick}
       data-testid={testId}
-      className="px-4 py-2 rounded text-zinc-300 hover:bg-zinc-800"
+      className="px-4 py-2 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 text-zinc-100 font-medium transition-colors"
     >
       {children}
     </button>

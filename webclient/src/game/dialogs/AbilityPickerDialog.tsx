@@ -84,7 +84,13 @@ export function AbilityPickerDialog({
               type="button"
               data-testid="ability-cancel"
               onClick={() => submit(ABILITY_PICKER_CANCEL_ID)}
-              className="px-4 py-2 rounded text-zinc-300 hover:bg-zinc-800"
+              // Match the SecondaryButton style after item 6's
+              // visual-prominence bump (2026-05-09) so the Cancel
+              // here reads as a proper button — Pay Mana parity per
+              // user feedback. Inline rather than via SecondaryButton
+              // because we need to render the engine-supplied
+              // `cancelLabel` string verbatim.
+              className="px-4 py-2 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 text-zinc-100 font-medium transition-colors"
             >
               {cancelLabel}
             </button>
