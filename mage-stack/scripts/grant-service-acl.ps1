@@ -50,6 +50,11 @@ $userName = $identity.Name
 # Permission bundle. ASCII-safe SDDL token; no separators inside.
 $rights = 'RPWPDTLO'
 $newAce = "(A;;$rights;;;$userSid)"
+# Anchor SID matches to `;<sid>)` so we look for the SID at the ACE
+# terminator position, not as a substring. Defends against a
+# hypothetical other ACE whose SID happens to have ours as a prefix.
+# The trailing `)` is regex-escaped — it's a metacharacter (group close).
+$sidEndPattern = ';' + [regex]::Escape($userSid) + '\)'
 
 Write-Section "Grant service-control ACL"
 Write-Step "User    : $userName"
@@ -93,8 +98,10 @@ foreach ($svc in $Services) {
     }
     Write-Step "before: $oldSd"
 
-    # Idempotency: skip if user SID is already in the DACL.
-    if ($oldSd -match [regex]::Escape($userSid)) {
+    # Idempotency: skip if user SID is already in the DACL. Match
+    # the ACE-terminator anchor so we don't false-positive on a SID
+    # that happens to contain ours as a prefix.
+    if ($oldSd -match $sidEndPattern) {
         Write-Ok "[SKIP] User SID already present in DACL."
         $skippedCount++
         Write-Host ""
@@ -141,8 +148,8 @@ foreach ($svc in $Services) {
     $verifySd = ($verifyRaw | Where-Object { $_ -match '^\s*[DS]:' }) -join ''
     $verifySd = $verifySd -replace '\s', ''
     Write-Step "after : $verifySd"
-    if ($verifySd -notmatch [regex]::Escape($userSid)) {
-        Write-Err "Verification FAILED for '$svc' -- new SDDL does not contain user SID."
+    if ($verifySd -notmatch $sidEndPattern) {
+        Write-Err "Verification FAILED for '$svc' -- new SDDL does not contain user SID at ACE-terminator position."
         Write-Err "Recover with: sc.exe sdset $svc `"$oldSd`""
         $errorCount++
         Write-Host ""

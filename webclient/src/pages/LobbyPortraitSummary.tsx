@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { WebDeckCardInfo } from '../api/schemas';
 
 interface Props {
@@ -31,6 +31,13 @@ interface Props {
  */
 export function LobbyPortraitSummary({ displayCard }: Props) {
   const [imgFailed, setImgFailed] = useState(false);
+  // Reset on prop change so a one-time Scryfall 404 on card A doesn't
+  // keep the placeholder rendered when the user picks a different
+  // card B with valid art. Without this, the component instance
+  // persists `imgFailed=true` across re-renders.
+  useEffect(() => {
+    setImgFailed(false);
+  }, [displayCard?.cardName, displayCard?.setCode, displayCard?.cardNumber]);
   if (!displayCard) {
     return (
       <div

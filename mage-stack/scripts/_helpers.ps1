@@ -182,7 +182,13 @@ function Test-AdminOrAclGrant {
     }
     $sd = ($sdRaw | Where-Object { $_ -match '^\s*[DS]:' }) -join ''
     $sd = $sd -replace '\s', ''
-    return [bool]($sd -match [regex]::Escape($identity.User.Value))
+    # Anchor the match to `;<sid>)` so we hit the SID at the ACE
+    # terminator position, not as a substring of a longer SID.
+    # Defends against a hypothetical other ACE whose SID has the
+    # running user's SID as a prefix. The trailing `)` must be
+    # regex-escaped — it's a metacharacter (group close).
+    $sidPattern = ';' + [regex]::Escape($identity.User.Value) + '\)'
+    return [bool]($sd -match $sidPattern)
 }
 
 function Assert-AdminOrAclGrant {
