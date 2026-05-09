@@ -16,6 +16,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import type {
   WebCardView,
   WebCombatGroupView,
+  WebPlayerView,
 } from '../api/schemas';
 import { slow, SLOWMO } from '../animation/debug';
 import {
@@ -97,6 +98,7 @@ import { ZoneBrowser } from './ZoneBrowser';
 export function StackZone({
   stack,
   combat = [],
+  players = [],
 }: {
   stack: Record<string, WebCardView>;
   /**
@@ -106,6 +108,14 @@ export function StackZone({
    * Ignored entirely outside REDESIGN mode.
    */
   combat?: readonly WebCombatGroupView[];
+  /**
+   * Slice 1-A — players list threaded through to {@link CombatArrows}
+   * for defender-color stroke + dash routing. Defaults to {@code []}
+   * so legacy / non-REDESIGN callers don't need to change; arrows
+   * fall back to the legacy neutral teal when no defender match is
+   * found.
+   */
+  players?: readonly WebPlayerView[];
 }) {
   // Wire contract: the server emits the stack as a LinkedHashMap with
   // newest-first iteration order (the topmost / next-to-resolve spell
@@ -122,7 +132,7 @@ export function StackZone({
 
   if (REDESIGN) {
     return (
-      <StackZoneRedesigned entries={entries} combat={combat} />
+      <StackZoneRedesigned entries={entries} combat={combat} players={players} />
     );
   }
 
@@ -197,9 +207,11 @@ export function StackZone({
 function StackZoneRedesigned({
   entries,
   combat,
+  players,
 }: {
   entries: readonly WebCardView[];
   combat: readonly WebCombatGroupView[];
+  players: readonly WebPlayerView[];
 }) {
   const stackEmpty = entries.length === 0;
   const combatActive = combat.length > 0;
@@ -215,7 +227,7 @@ function StackZoneRedesigned({
   }
 
   if (stackEmpty && combatActive) {
-    return <CombatArrows combat={combat} />;
+    return <CombatArrows combat={combat} players={players} />;
   }
 
   return <StackFan entries={entries} />;

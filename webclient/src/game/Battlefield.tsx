@@ -455,7 +455,11 @@ export function Battlefield({
               data-testid="central-focal-tile"
               className="flex flex-col items-center gap-2 rounded-lg border border-zinc-700/80 bg-zinc-900/60 px-6 py-4 shadow-inner"
             >
-              <StackZone stack={gv.stack} combat={gv.combat} />
+              <StackZone
+                stack={gv.stack}
+                combat={gv.combat}
+                players={gv.players}
+              />
               <div
                 data-testid="central-focal-turn-label"
                 className="text-[11px] uppercase tracking-wider text-zinc-400 font-semibold"
@@ -464,7 +468,11 @@ export function Battlefield({
               </div>
             </div>
           ) : (
-            <StackZone stack={gv.stack} combat={gv.combat} />
+            <StackZone
+              stack={gv.stack}
+              combat={gv.combat}
+              players={gv.players}
+            />
           )}
         </div>
 

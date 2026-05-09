@@ -1,3 +1,26 @@
+/**
+ * FILE SIZE EXCEPTION (slice 1-A, 2026-05-09) — TIME-LIMITED.
+ *
+ * <p>This file was 432 LOC at the start of slice 1-A and now sits at
+ * ~513 LOC, past the project's 500 LOC hard cap. The overshoot is
+ * deliberately accepted as a temporary state: slice 1-X.0 (a
+ * mechanical-tier split queued in the Bundle 1 scope brief at
+ * {@code docs/design/combat-bundle-1-defender-lanes.md}) will
+ * extract {@link useCombatArrowGeometry}, {@link applyEndpointFan},
+ * {@link useCombatFingerprint}, and the DOM-rect helpers
+ * ({@code rectForPermanent}, {@code rectForPlayer},
+ * {@code combatEndpointNodes}, {@code centerOf}, {@code cssEscape})
+ * into a sibling {@code combatArrowGeometry.ts} module before
+ * slice 1-B (incoming-tag overlay) lands. After the split, this
+ * file owns only the {@link CombatArrows} component, the
+ * {@code useHoveredCombatId} hook, and the {@link ArrowSpec}
+ * interface — comfortably under cap with room for slices 1-C and
+ * 1-D to layer on.
+ *
+ * <p>The exception is recorded in the slice 1-A critic-pass log row.
+ * If you're reading this comment AFTER slice 1-X.0 has shipped,
+ * delete this block.
+ */
 import {
   useEffect,
   useLayoutEffect,
@@ -7,7 +30,14 @@ import {
 import type {
   WebCombatGroupView,
   WebPermanentView,
+  WebPlayerView,
 } from '../api/schemas';
+import {
+  arrowStrokeForColorIdentity,
+  defenderColorIdentity,
+  defenderDashPattern,
+  type StrokeSpec,
+} from './halo';
 import { TargetingArrow } from './TargetingArrow';
 
 /**
@@ -46,13 +76,32 @@ import { TargetingArrow } from './TargetingArrow';
  */
 
 const ARROW_FAN_SPACING_PX = 24;
-const ARROW_DIM_OPACITY = 0.25;
+// Slice 1-A — raised from 0.25 to 0.5 alongside per-defender colored
+// strokes. At 0.25 a dark-bias mana color (mono-B's lavender
+// `--color-mana-black` over the dark teal `--color-bg-base`) drops to
+// ~1.4:1 contrast — well below WCAG 1.4.11's 3:1 minimum for non-
+// text graphics. 0.5 keeps the dimmed arrow clearly de-emphasized
+// while preserving identifiability of every color identity.
+const ARROW_DIM_OPACITY = 0.5;
 
 interface ArrowSpec {
   key: string;
   source: { x: number; y: number };
   target: { x: number; y: number };
-  color: string;
+  /**
+   * Slice 1-A — full stroke spec routed from the defender's commander
+   * color identity (single-color → solid mana token; multi-color →
+   * banded gradient). Replaces the prior single-color {@code color}
+   * field; {@link TargetingArrow} consumes the spec directly.
+   */
+  stroke: StrokeSpec;
+  /**
+   * Slice 1-A — SVG dash pattern paired with the stroke color so
+   * color-blind users get a redundant signal. Indexed by defender
+   * position in the {@code players} array via
+   * {@link defenderDashPattern}.
+   */
+  dashArray: string;
   /** Originating attacker's permanent id (matches data-permanent-id). */
   attackerId: string;
   /**
@@ -61,14 +110,27 @@ interface ArrowSpec {
    * Used by hover-isolation to match arrows against the hovered DOM.
    */
   targetId: string;
+  /** Slice 1-A — defender id (player UUID) for data-attr surfacing. */
+  defenderId: string;
+  /** Slice 1-A — defender position in the players array (-1 if missing). */
+  defenderIndex: number;
 }
 
 export function CombatArrows({
   combat,
+  players = [],
 }: {
   combat: readonly WebCombatGroupView[];
+  /**
+   * Slice 1-A — players array used to resolve the defender's
+   * commander color identity into the arrow stroke + dash pattern.
+   * Optional with a default of {@code []} so older call sites that
+   * don't yet plumb players don't crash; arrows fall back to the
+   * legacy neutral teal stroke when no defender is found in the list.
+   */
+  players?: readonly WebPlayerView[];
 }) {
-  const arrows = useCombatArrowGeometry(combat);
+  const arrows = useCombatArrowGeometry(combat, players);
   const hoveredId = useHoveredCombatId();
 
   if (arrows.length === 0) {
@@ -101,8 +163,19 @@ export function CombatArrows({
             key={spec.key}
             source={spec.source}
             to={spec.target}
-            color={spec.color}
+            stroke={spec.stroke}
+            strokeDasharray={spec.dashArray}
             opacity={opacity}
+            defenderId={spec.defenderId}
+            // Slice 1-A — drop -1 sentinel (defender not in players)
+            // at the boundary so the rendered DOM doesn't surface a
+            // confusing `data-defender-index="-1"` to downstream
+            // consumers (slice 1-B's incoming-tag pin-by-defender,
+            // slice 1-D's beams). Pattern lookup already returns ''
+            // for -1 so the visual fallback is unaffected.
+            defenderIndex={
+              spec.defenderIndex >= 0 ? spec.defenderIndex : undefined
+            }
           />
         );
       })}
@@ -119,9 +192,10 @@ export function CombatArrows({
  */
 function useCombatArrowGeometry(
   combat: readonly WebCombatGroupView[],
+  players: readonly WebPlayerView[],
 ): readonly ArrowSpec[] {
   const [arrows, setArrows] = useState<readonly ArrowSpec[]>([]);
-  const combatFingerprint = useCombatFingerprint(combat);
+  const combatFingerprint = useCombatFingerprint(combat, players);
 
   useLayoutEffect(() => {
     let cancelled = false;
@@ -129,6 +203,19 @@ function useCombatArrowGeometry(
       if (cancelled) return;
       const raw: ArrowSpec[] = [];
       for (const group of combat) {
+        // Slice 1-A — derive defender stroke + dash once per group
+        // so every arrow targeting this defender shares the same
+        // visual signal (color = identity, dash = lane). Blocker
+        // arrows inherit the defender's lane signal (the brainstorm
+        // is explicit: arrow color matches the *defending* player's
+        // commander, not the blocker's).
+        const defenderIndex = players.findIndex(
+          (p) => p.playerId === group.defenderId,
+        );
+        const colorId = defenderColorIdentity(group.defenderId, players);
+        const stroke = arrowStrokeForColorIdentity(colorId);
+        const dashArray = defenderDashPattern(defenderIndex);
+
         const attackerEntries = Object.values(group.attackers);
         const blockerEntries = Object.values(group.blockers);
         for (const attacker of attackerEntries) {
@@ -150,9 +237,12 @@ function useCombatArrowGeometry(
                 key: `${attackerId}->${blockerId}`,
                 source: sourcePoint,
                 target: centerOf(targetRect),
-                color: 'var(--color-targeting-arrow)',
+                stroke,
+                dashArray,
                 attackerId,
                 targetId: blockerId,
+                defenderId: group.defenderId,
+                defenderIndex,
               });
             }
           } else {
@@ -162,9 +252,12 @@ function useCombatArrowGeometry(
               key: `${attackerId}->player:${group.defenderId}`,
               source: sourcePoint,
               target: centerOf(targetRect),
-              color: 'var(--color-targeting-arrow)',
+              stroke,
+              dashArray,
               attackerId,
               targetId: `player:${group.defenderId}`,
+              defenderId: group.defenderId,
+              defenderIndex,
             });
           }
         }
@@ -272,22 +365,34 @@ function applyEndpointFan(raw: readonly ArrowSpec[]): ArrowSpec[] {
 }
 
 /**
- * Reduces a combat array to a content-fingerprint string so the
- * geometry effect doesn't re-run on referentially-fresh-but-equal
- * gameUpdate frames.
+ * Reduces a combat array (and slice-1-A's defender-color inputs) to
+ * a content-fingerprint string so the geometry effect doesn't re-run
+ * on referentially-fresh-but-equal gameUpdate frames.
+ *
+ * <p>Players' relevant fields (playerId + colorIdentity) participate
+ * in the fingerprint because slice 1-A derives per-arrow stroke +
+ * dash from defender colors. Color identity rarely changes mid-game,
+ * but if it does, the geometry effect must rebuild ArrowSpecs so the
+ * stroke updates. This is cheap — color identity changes correspond
+ * to player joins/leaves, which are infrequent.
  */
 function useCombatFingerprint(
   combat: readonly WebCombatGroupView[],
+  players: readonly WebPlayerView[],
 ): string {
   return useMemo(() => {
-    return combat
+    const combatPart = combat
       .map((g) => {
         const att = Object.keys(g.attackers).sort().join(',');
         const blk = Object.keys(g.blockers).sort().join(',');
         return `${g.defenderId}|${att}|${blk}`;
       })
       .join(';');
-  }, [combat]);
+    const playersPart = players
+      .map((p) => `${p.playerId}:${p.colorIdentity.join('')}`)
+      .join('+');
+    return `${combatPart}@@${playersPart}`;
+  }, [combat, players]);
 }
 
 /**

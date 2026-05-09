@@ -169,6 +169,16 @@ export function AsymmetricTLayout({
     [opponents],
   );
 
+  // Slice 1-A — players list assembled from {me, opponents} for
+  // CombatArrows defender-color resolution. The asymmetric-T layout
+  // doesn't otherwise need a unified array; we build it here so the
+  // StackZone mounts below can pass it through. Memoized so reference
+  // identity stays stable across renders that don't change membership.
+  const players = useMemo<readonly WebPlayerView[]>(
+    () => (me ? [me, ...opponents] : opponents),
+    [me, opponents],
+  );
+
   // If the focused opponent leaves the table, reset focus so a
   // collapsed-strip layout doesn't outlive the seat it was built for.
   if (focusedOpponentId && !laneSlots.some((p) => p?.playerId === focusedOpponentId)) {
@@ -257,7 +267,7 @@ export function AsymmetricTLayout({
           }}
         >
           <div className="rounded-lg border border-zinc-700/60 bg-zinc-900/85 backdrop-blur-md px-4 py-3 shadow-2xl">
-            <StackZone stack={stack} combat={combat} />
+            <StackZone stack={stack} combat={combat} players={players} />
           </div>
         </div>
       )}
@@ -268,7 +278,7 @@ export function AsymmetricTLayout({
           style={{ zIndex: 5 }}
         >
           <div className="pointer-events-auto">
-            <StackZone stack={stack} combat={combat} />
+            <StackZone stack={stack} combat={combat} players={players} />
           </div>
         </div>
       )}

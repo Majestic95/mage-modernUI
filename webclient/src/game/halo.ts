@@ -201,3 +201,125 @@ function manaGlowTokenForCode(code: string): string {
 // rotate with the conic-gradient ring, so for multicolor identities
 // the bloom was a static color sum while the ring rotated through
 // bands — a visual mismatch the unified approach resolves.
+
+/* ===================================================================
+ * Bundle 1 / Slice 1-A — combat-arrow defender color + dash pattern
+ * helpers. Routes a combat arrow's stroke through the defending
+ * player's commander color identity, paired with a deterministic
+ * per-defender dash pattern so color-blind users get a redundant
+ * signal (WCAG 2.1 SC 1.4.1).
+ *
+ * Lives alongside the halo helpers because both consume the same
+ * `colorIdentity` shape and the same `manaTokenForCode` map. The
+ * banded-not-blended choice mirrors {@link computeHaloBackground}'s
+ * conic-gradient mechanism — multicolor identity reads as N hard
+ * bands along the arrow path, not a smudged mid-color.
+ * =================================================================*/
+
+/**
+ * Per-arrow stroke specification. Discriminated union so the
+ * renderer can branch cleanly: a `solid` stroke maps to a single
+ * CSS color reference; a `gradient` stroke maps to an SVG
+ * `<linearGradient>` definition with explicit stop offsets.
+ *
+ * <p>Multicolor gradients use duplicate-offset stops to produce
+ * hard color bands ({@code [{0, c1}, {0.5, c1}, {0.5, c2}, {1, c2}]})
+ * rather than smooth blends. Smooth blends on a 3px stroke turn into
+ * muddy mid-tones; bands stay readable as "blue → green" along the
+ * arrow.
+ */
+export type StrokeSpec =
+  | { kind: 'solid'; color: string }
+  | { kind: 'gradient'; stops: readonly { offset: number; color: string }[] };
+
+/**
+ * Looks up a defender's commander color identity by player id. Used
+ * by combat-arrow rendering to color the arrow targeting that
+ * defender's lane. Returns `[]` for unknown ids (defender removed
+ * mid-game, fixture drift) so the caller can fall back to a neutral
+ * stroke without crashing.
+ *
+ * <p>Structural type on `players` so test fixtures can pass minimal
+ * objects without constructing full {@code WebPlayerView} shapes.
+ */
+export function defenderColorIdentity(
+  defenderId: string,
+  players: readonly { playerId: string; colorIdentity: readonly string[] }[],
+): readonly string[] {
+  if (!defenderId) return [];
+  const player = players.find((p) => p.playerId === defenderId);
+  return player ? player.colorIdentity : [];
+}
+
+/**
+ * Maps a commander color identity to the {@link StrokeSpec} the
+ * combat-arrow renderer consumes.
+ *
+ * <ul>
+ *   <li>Empty / unknown identity → solid neutral stroke
+ *       ({@code --color-targeting-arrow}, the legacy arrow color).
+ *   <li>Single color → solid mana-token stroke.
+ *   <li>Multi-color → gradient with hard-edged bands (duplicate-offset
+ *       stops). Two colors = 4 stops, three colors = 6 stops, etc.
+ * </ul>
+ *
+ * <p>The renderer is responsible for orienting the gradient along
+ * the arrow path's chord (source → target) and for resolving the
+ * arrowhead marker fill to the gradient's last stop color so the
+ * head matches the defender-side band visually.
+ */
+export function arrowStrokeForColorIdentity(
+  colorIdentity: readonly string[],
+): StrokeSpec {
+  if (colorIdentity.length === 0) {
+    return { kind: 'solid', color: 'var(--color-targeting-arrow)' };
+  }
+  if (colorIdentity.length === 1) {
+    return { kind: 'solid', color: manaTokenForCode(colorIdentity[0]!) };
+  }
+  const n = colorIdentity.length;
+  const stops: { offset: number; color: string }[] = [];
+  for (let i = 0; i < n; i++) {
+    const start = i / n;
+    const end = (i + 1) / n;
+    const color = manaTokenForCode(colorIdentity[i]!);
+    // Duplicate-offset pattern: each color gets two stops at its
+    // band's start and end offsets, producing a hard transition at
+    // the boundary rather than a blend across the next color.
+    stops.push({ offset: start, color });
+    stops.push({ offset: end, color });
+  }
+  return { kind: 'gradient', stops };
+}
+
+/**
+ * Per-defender dash patterns used to pair color with a non-color
+ * signal (WCAG 2.1 SC 1.4.1). Indexed by the defender's position in
+ * the {@code players} array; defenders past the array length wrap
+ * via modulo (4p Commander never wraps; documented degradation for
+ * exotic 5+ player formats).
+ *
+ * <ul>
+ *   <li>0 → solid (empty string = SVG default = no dash)
+ *   <li>1 → dashed ({@code 8 6})
+ *   <li>2 → dotted ({@code 2 5})
+ *   <li>3 → ticked ({@code 1 6}) — single-pixel ticks with breathing
+ *       gaps, visually distinct from both dashed and dotted at 3px
+ *       stroke + butt linecap. (Earlier {@code 4 3 4 9} double-stroke
+ *       attempt collapsed visually with {@code 8 6} after linecap
+ *       normalization — UI critic, slice 1-A.)
+ * </ul>
+ *
+ * <p>Patterns tuned for the project's 3px stroke width with
+ * {@code stroke-linecap="butt"} (the linecap is enforced in
+ * {@link TargetingArrow}; see slice 1-A comment there for why round
+ * caps collapse dash distinctness). Sub-1440p viewports may show
+ * patterns that read as solid; degradation acceptable per the
+ * variant's load-bearing rules (T4).
+ */
+export const DEFENDER_DASH_PATTERNS = ['', '8 6', '2 5', '1 6'] as const;
+
+export function defenderDashPattern(defenderIndex: number): string {
+  if (defenderIndex < 0) return '';
+  return DEFENDER_DASH_PATTERNS[defenderIndex % DEFENDER_DASH_PATTERNS.length]!;
+}

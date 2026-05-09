@@ -17,8 +17,21 @@ import {
   type WebCardView,
   type WebCombatGroupView,
   type WebPermanentView,
+  type WebPlayerView,
 } from '../api/schemas';
 import { CombatArrows } from './CombatArrows';
+
+/* =====================================================================
+ * Slice 1-A — minimal player fixtures for defender-color tests. Tests
+ * only need {playerId, colorIdentity} so we cast a partial; full
+ * WebPlayerView fixtures would balloon every assertion. The cast is
+ * safe because CombatArrows only reads those two fields off players.
+ * =====================================================================*/
+function makePlayers(
+  list: { playerId: string; colorIdentity: readonly string[] }[],
+): readonly WebPlayerView[] {
+  return list as unknown as readonly WebPlayerView[];
+}
 
 class ResizeObserverMock {
   static instances: ResizeObserverMock[] = [];
@@ -410,7 +423,13 @@ describe('CombatArrows — hover isolation', () => {
     // Non-hovered attacker (att-2, source.x=340) → dimmed.
     const dimmed = opacityBySourceX.get(340);
     expect(dimmed).not.toBe('1');
-    expect(dimmed && parseFloat(dimmed)).toBeLessThan(0.5);
+    // Slice 1-A — dim opacity raised from 0.25 to 0.5 to keep
+    // dark-bias mana colors WCAG 1.4.11 compliant when isolated.
+    // Pin the meaningful-but-not-invisible band: must be < 1 AND
+    // ≥ 0.4 (loose lower bound around the new 0.5 default).
+    const dimVal = dimmed ? parseFloat(dimmed) : 1;
+    expect(dimVal).toBeLessThan(1);
+    expect(dimVal).toBeGreaterThanOrEqual(0.4);
   });
 
   it('full-opacity restored when hover moves to a non-combat element', () => {
@@ -443,5 +462,300 @@ describe('CombatArrows — hover isolation', () => {
     for (const p of paths) {
       expect(p.getAttribute('opacity')).toBe('1');
     }
+  });
+});
+
+// --- Bundle 1 / Slice 1-A — defender color + dash pattern ------------
+
+describe('CombatArrows — defender color + dash (slice 1-A)', () => {
+  it('routes per-defender stroke color from colorIdentity', () => {
+    const greenDefender = '00000000-0000-0000-0000-0000000000aa';
+    const blueDefender = '00000000-0000-0000-0000-0000000000bb';
+
+    mountPermanentNode('att-g', { x: 100, y: 200, w: 80, h: 112 });
+    mountPermanentNode('att-b', { x: 100, y: 400, w: 80, h: 112 });
+    mountPortraitNode(greenDefender, { x: 1200, y: 100, w: 60, h: 60 });
+    mountPortraitNode(blueDefender, { x: 1200, y: 500, w: 60, h: 60 });
+
+    const players = makePlayers([
+      { playerId: greenDefender, colorIdentity: ['G'] },
+      { playerId: blueDefender, colorIdentity: ['U'] },
+    ]);
+    const groups: WebCombatGroupView[] = [
+      makeCombatGroup({
+        defenderId: greenDefender,
+        attackers: {
+          'att-g': makePerm(makeCard({ id: 'att-g', cardId: 'att-g' })),
+        },
+      }),
+      makeCombatGroup({
+        defenderId: blueDefender,
+        attackers: {
+          'att-b': makePerm(makeCard({ id: 'att-b', cardId: 'att-b' })),
+        },
+      }),
+    ];
+    const { container } = render(
+      <CombatArrows combat={groups} players={players} />,
+    );
+
+    const greenArrow = container.querySelector(
+      `path[data-arrow-defender-id="${greenDefender}"]`,
+    );
+    const blueArrow = container.querySelector(
+      `path[data-arrow-defender-id="${blueDefender}"]`,
+    );
+    expect(greenArrow?.getAttribute('stroke')).toBe(
+      'var(--color-mana-green)',
+    );
+    expect(greenArrow?.getAttribute('data-arrow-stroke-kind')).toBe('solid');
+    expect(blueArrow?.getAttribute('stroke')).toBe('var(--color-mana-blue)');
+    expect(blueArrow?.getAttribute('data-arrow-stroke-kind')).toBe('solid');
+  });
+
+  it('emits a gradient stroke for multicolor defenders', () => {
+    const sultaiDefender = '00000000-0000-0000-0000-0000000000cc';
+    mountPermanentNode('att-s', { x: 100, y: 200, w: 80, h: 112 });
+    mountPortraitNode(sultaiDefender, { x: 1200, y: 100, w: 60, h: 60 });
+
+    const players = makePlayers([
+      { playerId: sultaiDefender, colorIdentity: ['U', 'B', 'G'] },
+    ]);
+    const groups: WebCombatGroupView[] = [
+      makeCombatGroup({
+        defenderId: sultaiDefender,
+        attackers: {
+          'att-s': makePerm(makeCard({ id: 'att-s', cardId: 'att-s' })),
+        },
+      }),
+    ];
+    const { container } = render(
+      <CombatArrows combat={groups} players={players} />,
+    );
+
+    const arrow = container.querySelector(
+      `path[data-arrow-defender-id="${sultaiDefender}"]`,
+    );
+    expect(arrow?.getAttribute('data-arrow-stroke-kind')).toBe('gradient');
+    expect(arrow?.getAttribute('stroke')).toMatch(
+      /^url\(#targeting-arrow-grad-/,
+    );
+    // 3 colors × 2 stops each = 6 stops along the chord. jsdom's
+    // descendant-selector path doesn't match SVG camelCase elements
+    // reliably, so chain the queries instead of using
+    // 'linearGradient stop' directly.
+    const gradient = container.querySelector('linearGradient');
+    const stops = gradient?.querySelectorAll('stop');
+    expect(stops?.length).toBe(6);
+  });
+
+  it('assigns dash patterns by defender position in players (color-blind partner signal)', () => {
+    const defA = '00000000-0000-0000-0000-0000000000aa';
+    const defB = '00000000-0000-0000-0000-0000000000bb';
+    const defC = '00000000-0000-0000-0000-0000000000cc';
+    mountPermanentNode('att-a', { x: 100, y: 200, w: 80, h: 112 });
+    mountPermanentNode('att-b', { x: 100, y: 400, w: 80, h: 112 });
+    mountPermanentNode('att-c', { x: 100, y: 600, w: 80, h: 112 });
+    mountPortraitNode(defA, { x: 1200, y: 100, w: 60, h: 60 });
+    mountPortraitNode(defB, { x: 1200, y: 350, w: 60, h: 60 });
+    mountPortraitNode(defC, { x: 1200, y: 600, w: 60, h: 60 });
+
+    const players = makePlayers([
+      { playerId: defA, colorIdentity: ['G'] },
+      { playerId: defB, colorIdentity: ['R'] },
+      { playerId: defC, colorIdentity: ['W'] },
+    ]);
+    const groups = [
+      makeCombatGroup({
+        defenderId: defA,
+        attackers: {
+          'att-a': makePerm(makeCard({ id: 'att-a', cardId: 'att-a' })),
+        },
+      }),
+      makeCombatGroup({
+        defenderId: defB,
+        attackers: {
+          'att-b': makePerm(makeCard({ id: 'att-b', cardId: 'att-b' })),
+        },
+      }),
+      makeCombatGroup({
+        defenderId: defC,
+        attackers: {
+          'att-c': makePerm(makeCard({ id: 'att-c', cardId: 'att-c' })),
+        },
+      }),
+    ];
+    const { container } = render(
+      <CombatArrows combat={groups} players={players} />,
+    );
+
+    // Defender 0 → solid (no dash attribute).
+    const arrowA = container.querySelector(
+      `path[data-arrow-defender-id="${defA}"]`,
+    );
+    expect(arrowA?.hasAttribute('stroke-dasharray')).toBe(false);
+    expect(arrowA?.getAttribute('data-defender-index')).toBe('0');
+    // Defender 1 → dashed.
+    const arrowB = container.querySelector(
+      `path[data-arrow-defender-id="${defB}"]`,
+    );
+    expect(arrowB?.getAttribute('stroke-dasharray')).toBe('8 6');
+    expect(arrowB?.getAttribute('data-defender-index')).toBe('1');
+    // Defender 2 → dotted.
+    const arrowC = container.querySelector(
+      `path[data-arrow-defender-id="${defC}"]`,
+    );
+    expect(arrowC?.getAttribute('stroke-dasharray')).toBe('2 5');
+    expect(arrowC?.getAttribute('data-defender-index')).toBe('2');
+  });
+
+  it('falls back to legacy neutral stroke when defender is not in players (graceful)', () => {
+    const ghostDefender = '00000000-0000-0000-0000-00000000ffff';
+    mountPermanentNode('att-x', { x: 100, y: 200, w: 80, h: 112 });
+    mountPortraitNode(ghostDefender, { x: 1200, y: 100, w: 60, h: 60 });
+
+    // Players list does NOT contain the defender (mid-game removal,
+    // fixture drift, etc.). Arrow renders with neutral fallback rather
+    // than crashing.
+    const players = makePlayers([
+      {
+        playerId: '00000000-0000-0000-0000-000000001111',
+        colorIdentity: ['W'],
+      },
+    ]);
+    const groups = [
+      makeCombatGroup({
+        defenderId: ghostDefender,
+        attackers: {
+          'att-x': makePerm(makeCard({ id: 'att-x', cardId: 'att-x' })),
+        },
+      }),
+    ];
+    const { container } = render(
+      <CombatArrows combat={groups} players={players} />,
+    );
+    const arrow = container.querySelector(
+      `path[data-arrow-defender-id="${ghostDefender}"]`,
+    );
+    expect(arrow?.getAttribute('stroke')).toBe(
+      'var(--color-targeting-arrow)',
+    );
+    expect(arrow?.getAttribute('data-arrow-stroke-kind')).toBe('solid');
+    // Slice 1-A fixer — CombatArrows normalizes defenderIndex=-1
+    // (defender not in players) to undefined at the TargetingArrow
+    // boundary, so the data-defender-index attribute is absent
+    // rather than surfacing the "-1" sentinel to downstream readers.
+    expect(arrow?.hasAttribute('data-defender-index')).toBe(false);
+  });
+
+  it('blocker arrows inherit the defender lane signal (color + dash from defender, not blocker)', () => {
+    const defenderId = '00000000-0000-0000-0000-0000000000aa';
+    mountPermanentNode('att-1', { x: 100, y: 200, w: 80, h: 112 });
+    mountPermanentNode('blk-1', { x: 600, y: 200, w: 80, h: 112 });
+    mountPortraitNode(defenderId, { x: 1200, y: 100, w: 60, h: 60 });
+
+    const players = makePlayers([
+      { playerId: defenderId, colorIdentity: ['R'] },
+    ]);
+    const groups = [
+      makeCombatGroup({
+        defenderId,
+        attackers: {
+          'att-1': makePerm(makeCard({ id: 'att-1', cardId: 'att-1' })),
+        },
+        blockers: {
+          'blk-1': makePerm(makeCard({ id: 'blk-1', cardId: 'blk-1' })),
+        },
+      }),
+    ];
+    const { container } = render(
+      <CombatArrows combat={groups} players={players} />,
+    );
+
+    // Single arrow (attacker → blocker) — its defender-id metadata
+    // should be the lane defender, not the blocker's owner. Stroke =
+    // defender's red, NOT the blocker's color (which we don't even
+    // pass in this fixture).
+    const arrow = container.querySelector(
+      `path[data-arrow-defender-id="${defenderId}"]`,
+    );
+    expect(arrow).not.toBeNull();
+    expect(arrow?.getAttribute('stroke')).toBe('var(--color-mana-red)');
+  });
+
+  it('similar-color defenders (mono-G vs Selesnya WG) remain distinguishable by dash (WCAG 1.4.1 redundancy)', () => {
+    // Worst-case visual confusion: two opponents whose color
+    // identities both lead with green. Without the dash signal a
+    // color-blind player could not tell which arrow targets which
+    // defender. Pin that the dash patterns disambiguate them so a
+    // future "simplify" refactor can't quietly defeat the redundancy.
+    const monoGreenDef = '00000000-0000-0000-0000-00000000ee01';
+    const selesnyaDef = '00000000-0000-0000-0000-00000000ee02';
+    mountPermanentNode('att-mg', { x: 100, y: 200, w: 80, h: 112 });
+    mountPermanentNode('att-sl', { x: 100, y: 400, w: 80, h: 112 });
+    mountPortraitNode(monoGreenDef, { x: 1200, y: 100, w: 60, h: 60 });
+    mountPortraitNode(selesnyaDef, { x: 1200, y: 500, w: 60, h: 60 });
+
+    const players = makePlayers([
+      { playerId: monoGreenDef, colorIdentity: ['G'] },
+      { playerId: selesnyaDef, colorIdentity: ['G', 'W'] },
+    ]);
+    const groups = [
+      makeCombatGroup({
+        defenderId: monoGreenDef,
+        attackers: {
+          'att-mg': makePerm(makeCard({ id: 'att-mg', cardId: 'att-mg' })),
+        },
+      }),
+      makeCombatGroup({
+        defenderId: selesnyaDef,
+        attackers: {
+          'att-sl': makePerm(makeCard({ id: 'att-sl', cardId: 'att-sl' })),
+        },
+      }),
+    ];
+    const { container } = render(
+      <CombatArrows combat={groups} players={players} />,
+    );
+
+    const mgArrow = container.querySelector(
+      `path[data-arrow-defender-id="${monoGreenDef}"]`,
+    );
+    const slArrow = container.querySelector(
+      `path[data-arrow-defender-id="${selesnyaDef}"]`,
+    );
+    // Mono-G defender at index 0 → solid + solid stroke.
+    expect(mgArrow?.hasAttribute('stroke-dasharray')).toBe(false);
+    expect(mgArrow?.getAttribute('data-arrow-stroke-kind')).toBe('solid');
+    // Selesnya defender at index 1 → dashed pattern + gradient
+    // stroke. The dash pattern is the load-bearing signal here; even
+    // if a deuteranopic user collapses both gradients toward a
+    // similar yellow-ish band, the dashed-vs-solid difference still
+    // distinguishes the two arrows.
+    expect(slArrow?.getAttribute('stroke-dasharray')).toBe('8 6');
+    expect(slArrow?.getAttribute('data-arrow-stroke-kind')).toBe('gradient');
+  });
+
+  it('absent players prop falls back gracefully (legacy call sites)', () => {
+    // Older mounts may not yet plumb players (e.g. before slice 1-A's
+    // StackZone / Battlefield / asymmetricT updates land). All arrows
+    // should render in the legacy neutral stroke without crashing.
+    const defenderId = '00000000-0000-0000-0000-0000000000aa';
+    mountPermanentNode('att-1', { x: 100, y: 200, w: 80, h: 112 });
+    mountPortraitNode(defenderId, { x: 1200, y: 100, w: 60, h: 60 });
+
+    const groups = [
+      makeCombatGroup({
+        defenderId,
+        attackers: {
+          'att-1': makePerm(makeCard({ id: 'att-1', cardId: 'att-1' })),
+        },
+      }),
+    ];
+    const { container } = render(<CombatArrows combat={groups} />);
+    const arrow = container.querySelector('path[marker-end]');
+    expect(arrow?.getAttribute('stroke')).toBe(
+      'var(--color-targeting-arrow)',
+    );
   });
 });
