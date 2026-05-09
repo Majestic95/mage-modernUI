@@ -38,14 +38,27 @@ function CardDetail({
   // as large as they want, even if it blocks other elements"). Inline
   // style replaces the legacy `w-64` Tailwind class so the same
   // markup serves any width in the configured 1.0..3.0 range.
+  //
+  // Viewport-fit clamps (added 2026-05-09 follow-up — popover spilled
+  // off-screen at 300% on sub-1440p displays): maxWidth / maxHeight
+  // bound the popover to the viewport with a 1rem safety margin.
+  // The image inside gets max-h-[60vh] object-contain so it scales
+  // down preserving aspect ratio when the popover's height is
+  // clamped. The position math in useLayoutEffect reads the
+  // post-clamp `getBoundingClientRect`, so it picks up the new
+  // dimensions automatically — no math changes required.
   const popoverScale = useHoverPreviewSettings((s) => s.popoverScale);
   const widthPx = popoverWidthPx(popoverScale);
   return (
     <div
       data-testid="card-detail"
       data-flipped={isFlipped || undefined}
-      style={{ width: widthPx }}
-      className="bg-zinc-900 border border-zinc-700 rounded shadow-xl text-xs overflow-hidden relative"
+      style={{
+        width: widthPx,
+        maxWidth: 'calc(100vw - 1rem)',
+        maxHeight: 'calc(100vh - 1rem)',
+      }}
+      className="bg-zinc-900 border border-zinc-700 rounded shadow-xl text-xs overflow-hidden relative flex flex-col"
     >
       {imageUrl && <CardImage url={imageUrl} alt={card.name} />}
       {/* Bug fix #2 (2026-05-02) — DFC flip toggle. Per CR 712.x both
@@ -137,7 +150,12 @@ function CardImage({ url, alt }: { url: string; alt: string }) {
       loading="lazy"
       onError={() => setFailed(true)}
       data-testid="card-image"
-      className="w-full block"
+      // max-h-[60vh] + object-contain shrink the image when the
+      // outer popover's maxHeight clamp engages (e.g., user picked
+      // 300% on a 1080p screen — popover height would naturally
+      // exceed viewport). Image scales preserving aspect ratio;
+      // text section below stays visible.
+      className="w-full max-h-[60vh] object-contain block flex-shrink"
     />
   );
 }
