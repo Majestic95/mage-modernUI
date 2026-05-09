@@ -4,6 +4,7 @@ import type { WebCardView } from '../api/schemas';
 import { scryfallImageUrl } from './scryfall';
 import { ManaCost } from './ManaCost';
 import { renderUpstreamMarkup } from './dialogs/markupRenderer';
+import { effectiveToughness } from './effectiveToughness';
 import { popoverWidthPx, useHoverPreviewSettings } from './hoverPreviewSettings';
 
 /* ---------- card detail overlay (slice 30) ---------- */
@@ -25,10 +26,14 @@ function CardDetail({
   card,
   onFlip,
   isFlipped,
+  damage,
 }: {
   card: WebCardView;
   onFlip?: () => void;
   isFlipped?: boolean;
+  /** Marked damage from the parent permanent (battlefield context).
+   *  Drives the same red-toughness display as CardFace per CR 121.3. */
+  damage?: number;
 }) {
   const isCreature = card.power || card.toughness;
   const isPlaneswalker = !!card.startingLoyalty;
@@ -101,9 +106,22 @@ function CardDetail({
         )}
         {(isCreature || isPlaneswalker) && (
           <div className="text-zinc-300 font-mono">
-            {isPlaneswalker
-              ? `Loyalty: ${card.startingLoyalty}`
-              : `${card.power} / ${card.toughness}`}
+            {isPlaneswalker ? (
+              `Loyalty: ${card.startingLoyalty}`
+            ) : (() => {
+              const t = effectiveToughness(card.toughness, damage ?? 0);
+              return (
+                <>
+                  {card.power} /{' '}
+                  <span
+                    data-damaged={t.damaged || undefined}
+                    className={t.damaged ? 'text-status-danger' : undefined}
+                  >
+                    {t.display}
+                  </span>
+                </>
+              );
+            })()}
           </div>
         )}
         {card.rules && card.rules.length > 0 && (
@@ -173,9 +191,16 @@ function CardImage({ url, alt }: { url: string; alt: string }) {
 export function HoverCardDetail({
   card,
   children,
+  damage,
 }: {
   card: WebCardView;
   children: ReactNode;
+  /** Marked damage from the parent permanent (battlefield context).
+   *  Forwarded to the popover's CardDetail so the tooltip shows
+   *  effective toughness in red, matching CardFace's on-card P/T.
+   *  Optional — non-battlefield call sites (hand, stack, mulligan,
+   *  library search, zone browser, game log) leave undefined. */
+  damage?: number;
 }) {
   const [show, setShow] = useState(false);
   // Bug fix #2 (2026-05-02) — DFC flip state. `flipped` toggles the
@@ -278,6 +303,7 @@ export function HoverCardDetail({
             <CardDetail
               card={displayCard}
               isFlipped={flipped}
+              {...(damage !== undefined ? { damage } : {})}
               {...(transformable ? { onFlip: () => setFlipped((f) => !f) } : {})}
             />
           </div>,

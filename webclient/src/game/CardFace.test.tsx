@@ -283,3 +283,66 @@ describe('CardFace counter pop (slice 59)', () => {
     expect(chip.getAttribute('data-counter-pop-key')).toBe('0');
   });
 });
+
+describe('CardFace damaged toughness display (CR 121.3)', () => {
+  it('renders effective toughness in red when damage > 0', () => {
+    // 2/2 with 1 damage marked → renders as 2/1 with the toughness
+    // span carrying data-damaged + the danger-color class. Mirrors
+    // MTGO/MTGA convention; damage chip stays as the absolute marker.
+    render(
+      <CardFace
+        card={BASE_CARD}
+        size="battlefield"
+        perm={buildPerm(BASE_CARD, 1)}
+      />,
+    );
+    const tough = screen.getByTestId('permanent-toughness');
+    expect(tough.textContent).toBe('1');
+    expect(tough.getAttribute('data-damaged')).toBe('true');
+    expect(tough.className).toContain('text-status-danger');
+  });
+
+  it('renders raw toughness without red when damage is 0', () => {
+    render(
+      <CardFace
+        card={BASE_CARD}
+        size="battlefield"
+        perm={buildPerm(BASE_CARD, 0)}
+      />,
+    );
+    const tough = screen.getByTestId('permanent-toughness');
+    expect(tough.textContent).toBe('2');
+    expect(tough.getAttribute('data-damaged')).toBeNull();
+    expect(tough.className).not.toContain('text-status-danger');
+  });
+
+  it('clamps display to 0 when damage exceeds toughness', () => {
+    // Mid-frame snapshot before SBAs destroy the creature. We render
+    // 0 (red) rather than a negative number; the next wire update
+    // removes the permanent.
+    render(
+      <CardFace
+        card={BASE_CARD}
+        size="battlefield"
+        perm={buildPerm(BASE_CARD, 5)}
+      />,
+    );
+    const tough = screen.getByTestId('permanent-toughness');
+    expect(tough.textContent).toBe('0');
+    expect(tough.getAttribute('data-damaged')).toBe('true');
+  });
+
+  it('passes through `*` toughness unchanged even with damage', () => {
+    const tarmogoyf = { ...BASE_CARD, power: '*', toughness: '1+*' };
+    render(
+      <CardFace
+        card={tarmogoyf}
+        size="battlefield"
+        perm={buildPerm(tarmogoyf, 2)}
+      />,
+    );
+    const tough = screen.getByTestId('permanent-toughness');
+    expect(tough.textContent).toBe('1+*');
+    expect(tough.getAttribute('data-damaged')).toBeNull();
+  });
+});

@@ -96,7 +96,7 @@ export function BattlefieldTile({
     // also keep `justify-center` to horizontally center the
     // narrower-than-slot portrait (5/7 of the slot width).
     <div className="aspect-square w-full flex items-stretch justify-center">
-      <HoverCardDetail card={perm.card}>
+      <HoverCardDetail card={perm.card} damage={perm.damage}>
         <button
           type="button"
           data-testid="permanent"

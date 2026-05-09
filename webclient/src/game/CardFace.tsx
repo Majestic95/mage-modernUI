@@ -4,6 +4,7 @@ import type { WebCardView, WebPermanentView } from '../api/schemas';
 import { ManaCost } from './ManaCost';
 import { scryfallImageUrl, type ScryfallVersion } from './scryfall';
 import { computeHaloBackground } from './halo';
+import { effectiveToughness } from './effectiveToughness';
 import { useCommanderColorsForCard } from './useCommanderColors';
 import { slow } from '../animation/debug';
 import {
@@ -509,7 +510,12 @@ export function CardFace(props: CardFaceProps): JSX.Element {
         </p>
       </div>
       {/* P/T or loyalty (bottom-right, above the name banner). Stack
-          tiles skip this — the stack is for spells/abilities. */}
+          tiles skip this — the stack is for spells/abilities.
+          Damaged-creature display: 3/3 with 2 damage marked renders
+          as `3/<red>1</red>` per CR 121.3 (damage marked persists
+          until cleanup) and MTGO/MTGA convention. The damage chip
+          (lower-left, "-2") stays as the absolute marker; this red
+          toughness is the derived effective state. */}
       {showPT && (
         <div
           className={
@@ -519,9 +525,23 @@ export function CardFace(props: CardFaceProps): JSX.Element {
             spec.ptText
           }
         >
-          {isPlaneswalker
-            ? face.startingLoyalty
-            : `${face.power}/${face.toughness}`}
+          {isPlaneswalker ? (
+            face.startingLoyalty
+          ) : (() => {
+            const t = effectiveToughness(face.toughness, damage);
+            return (
+              <>
+                {face.power}/
+                <span
+                  data-testid="permanent-toughness"
+                  data-damaged={t.damaged || undefined}
+                  className={t.damaged ? 'text-status-danger' : undefined}
+                >
+                  {t.display}
+                </span>
+              </>
+            );
+          })()}
         </div>
       )}
       {/* 2026-05-04 — Flip button for double-faced cards. Only mounts
