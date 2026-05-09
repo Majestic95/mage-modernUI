@@ -18,6 +18,7 @@ import { PilePickerDialog } from './PilePickerDialog';
 import { MultiAmountDialog } from './MultiAmountDialog';
 import { useDialogTargets } from '../useDialogTargets';
 import { DialogBanner } from './DialogBanner';
+import { LibrarySearchModal } from './LibrarySearchModal';
 
 interface Props {
   stream: GameStream | null;
@@ -183,25 +184,41 @@ export function GameDialog({ stream }: Props) {
         />
       );
     }
-    // Case 2 — modal with card grid (Demonic Tutor etc.) when the
-    // cards live in HIDDEN zones (library search). On-board target
-    // dispatch is handled by Case 3 above. Width is fixed (was
-    // {@code max-w-sm w-full} inside a flex container; the hook
-    // makes the dialog {@code position: fixed} so a percentage width
-    // would resolve against the viewport — concrete clamp instead).
+    // Case 2a — trigger-order prompt rides the gameTarget channel
+    // with cardsView1 populated (triggered abilities to order). Keeps
+    // the legacy bottom-right floating shell because it's a
+    // non-blocking ordering UX, not a library-search browse.
+    const isTriggerOrder =
+      targetData &&
+      'options' in targetData &&
+      targetData.options?.isTriggerOrder === true;
+    if (isTriggerOrder) {
+      return (
+        <div
+          ref={bottomRight.ref}
+          role="dialog"
+          aria-modal="false"
+          data-testid="game-dialog"
+          data-method={dialog.method}
+          className="z-40 w-[min(90vw,384px)] bg-zinc-900 border border-zinc-700 rounded-lg p-5 space-y-3 shadow-2xl"
+          style={bottomRight.style}
+          {...bottomRight.containerProps}
+        >
+          <DialogContent dialog={dialog} stream={stream} clearDialog={clearDialog} />
+        </div>
+      );
+    }
+    // Case 2b — library search (Demonic Tutor / Worldly Tutor /
+    // Fierce Empath / cascade reveal etc.). Cards live in HIDDEN
+    // zones — the only sensible UI is a focused modal. Centered +
+    // scrim with name + type filters and CMC-grouped grid via
+    // LibrarySearchModal.
     return (
-      <div
-        ref={bottomRight.ref}
-        role="dialog"
-        aria-modal="false"
-        data-testid="game-dialog"
-        data-method={dialog.method}
-        className="z-40 w-[min(90vw,384px)] bg-zinc-900 border border-zinc-700 rounded-lg p-5 space-y-3 shadow-2xl"
-        style={bottomRight.style}
-        {...bottomRight.containerProps}
-      >
-        <DialogContent dialog={dialog} stream={stream} clearDialog={clearDialog} />
-      </div>
+      <LibrarySearchModal
+        dialog={dialog}
+        stream={stream}
+        clearDialog={clearDialog}
+      />
     );
   }
 
