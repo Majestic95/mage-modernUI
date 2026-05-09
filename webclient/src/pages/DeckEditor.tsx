@@ -24,6 +24,7 @@ import { ArtPickerModal } from '../decks/ArtPickerModal';
 import { CardSearchPanel } from '../decks/CardSearchPanel';
 import { useDeckCardData } from '../decks/useDeckCardData';
 import { useDecksStore } from '../decks/store';
+import { LobbyPortraitSummary } from './LobbyPortraitSummary';
 
 interface Props {
   deckId: string;
@@ -258,6 +259,8 @@ export function DeckEditor({ deckId, onClose }: Props) {
           sideboard
         </p>
       </header>
+
+      <LobbyPortraitSummary displayCard={deck.displayCard} />
 
       <CardSearchPanel onAdd={addFromSearch} />
 
