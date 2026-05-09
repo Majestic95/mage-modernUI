@@ -231,9 +231,10 @@ The brainstorm flags that Bundles 1, 5, 6 all touch the arrow renderer and **a s
 
 | File | Current | Δ post-bundle | Risk |
 |---|---|---|---|
-| `CombatArrows.tsx` | 432 | ~480 (1-A: +20, 1-C: +25) | Approaching 500 hard cap. **Plan a split now.** Candidate: extract `useCombatArrowGeometry` + `applyEndpointFan` into `combatArrowGeometry.ts` as a 1-X mechanical follow-up before slice 1-D lands, OR document the hard-cap exception inline. Decision at 1-A end. |
-| `TargetingArrow.tsx` | 122 | ~180 | Comfortable. |
-| `halo.ts` | 204 | ~260 | Comfortable. |
+| `CombatArrows.tsx` | 175 (post-split, slice 1-X.0 2026-05-09) | ~210 (1-B: +20, 1-C: +15) | Comfortable. Slice 1-X.0 (mechanical-tier) extracted the geometry layer to `combatArrowGeometry.ts`; this file now owns only the renderer + `useHoveredCombatId`. Runway for 1-B/C/D growth. |
+| `combatArrowGeometry.ts` (new, slice 1-X.0) | 374 | ~400 (1-C: +20 for `revealDelayMs` derivation) | Comfortable. Hosts `ArrowSpec`, `useCombatArrowGeometry`, `useCombatFingerprint`, `applyEndpointFan`, DOM-rect helpers. |
+| `TargetingArrow.tsx` | 238 (post-1-A) | ~270 (1-C: +30 for `revealDelayMs` prop + reduced-motion gating) | Comfortable. |
+| `halo.ts` | 325 (post-1-A) | ~340 | Comfortable. |
 | `PlayerPortrait.tsx` | 504 (already over hard cap, documented exception) | +5 (mount-point only) | Don't make it worse. 1-B's incoming-tag lives in a sibling. |
 | `IncomingTag.tsx` (new) | — | ~120 | Comfortable. |
 | `DefenderBeams.tsx` (new) | — | ~150 | Comfortable. |
