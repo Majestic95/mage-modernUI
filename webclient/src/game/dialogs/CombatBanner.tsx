@@ -4,7 +4,6 @@ import { BannerSpotlightHalo } from './BannerSpotlightHalo';
 import { renderUpstreamMarkup } from './markupRenderer';
 import type { GameStream } from '../stream';
 import type { WebCombatGroupView } from '../../api/schemas';
-import { useCombatTempo } from '../useCombatTempo';
 import {
   buildAttackerRecap,
   buildBlockerRecap,
@@ -37,6 +36,81 @@ const COMBAT_STEP_LABEL: Record<string, string> = {
   COMBAT_DAMAGE: 'Combat damage',
   END_COMBAT: 'End of combat',
 };
+
+/**
+ * Bundle 3-C (revised, 2026-05-09 critic-pass amendment) — combat
+ * sub-step meter ordering. Mirrors {@code TIMELINE_PHASES} in
+ * {@link PhaseTimeline} so the meter renders one tick per combat
+ * sub-step in turn order, with past / active / future styling that
+ * mirrors the runway. The original Slice 3-C shipped a continuous
+ * duration-tracker bar by mistake; the brief always called for a
+ * sub-step indicator, and this constant + {@link CombatStepMeter}
+ * implement that spec.
+ */
+const COMBAT_METER_STEPS: ReadonlyArray<{ name: string; short: string }> = [
+  { name: 'BEGIN_COMBAT', short: 'Begin' },
+  { name: 'DECLARE_ATTACKERS', short: 'Attackers' },
+  { name: 'DECLARE_BLOCKERS', short: 'Blockers' },
+  { name: 'FIRST_COMBAT_DAMAGE', short: '1st Strike' },
+  { name: 'COMBAT_DAMAGE', short: 'Damage' },
+  { name: 'END_COMBAT', short: 'End' },
+];
+
+/**
+ * Renders a horizontal row of dots — one per combat sub-step — at
+ * the bottom edge of the banner. Active dot is amber-on-red, lifted
+ * by 2px under {@code motion-safe} (or scaled up 25% for reduced-
+ * motion users so the active state stays visually distinguishable
+ * without animation). Past dots are muted; future dots are ghosted.
+ *
+ * <p><b>A11y:</b> wrapped in {@code role="progressbar"} with
+ * {@code aria-valuenow / valuemin / valuemax} so assistive tech
+ * surfaces "step N of 6" without depending on the visual idiom.
+ */
+function CombatStepMeter({ step }: { step: string }) {
+  const activeIdx = COMBAT_METER_STEPS.findIndex((s) => s.name === step);
+  const stepNumber = activeIdx >= 0 ? activeIdx + 1 : 0;
+  return (
+    <div
+      data-testid="combat-banner-tempo"
+      data-active-step={step}
+      role="progressbar"
+      aria-valuemin={0}
+      aria-valuemax={COMBAT_METER_STEPS.length}
+      aria-valuenow={stepNumber}
+      aria-label={
+        stepNumber > 0
+          ? `Combat sub-step ${stepNumber} of ${COMBAT_METER_STEPS.length}`
+          : 'Outside combat'
+      }
+      className="absolute inset-x-0 bottom-1 flex justify-center items-center gap-1.5 h-2 pointer-events-none"
+    >
+      {COMBAT_METER_STEPS.map((s, idx) => {
+        const isActive = idx === activeIdx;
+        const isPast = activeIdx >= 0 && idx < activeIdx;
+        const position = isActive ? 'active' : isPast ? 'past' : 'future';
+        return (
+          <span
+            key={s.name}
+            data-testid="combat-banner-tempo-tick"
+            data-step={s.name}
+            data-tick-position={position}
+            title={s.short}
+            className={
+              'w-1.5 h-1.5 rounded-sm ease-out ' +
+              'motion-safe:transition-[opacity,transform,background-color] motion-safe:duration-150 ' +
+              (isActive
+                ? 'bg-red-300 opacity-100 motion-safe:-translate-y-0.5 motion-reduce:scale-125'
+                : isPast
+                  ? 'bg-zinc-400 opacity-50'
+                  : 'bg-zinc-500 opacity-30')
+            }
+          />
+        );
+      })}
+    </div>
+  );
+}
 
 /**
  * Slice 70-Y.4 (2026-05-01) — bottom-center banner for declare-
@@ -101,12 +175,16 @@ export function CombatBanner({ stream, isAttackers }: CombatBannerProps) {
   const dialog = useGameStore((s) => s.pendingDialog);
   const step = useGameStore((s) => s.gameView?.step ?? '');
   const combat = useGameStore((s) => s.gameView?.combat ?? EMPTY_COMBAT);
-  // Bundle 3-C — tempo hook lives ABOVE the early returns. Cost is
-  // a 1Hz setInterval running while the banner is mounted-but-hidden
-  // (step === '' between games or dialogs). The setState is a no-op
-  // when nothing has changed, so the perf hit is a single timer per
-  // mounted banner — negligible.
-  const tempo = useCombatTempo(step);
+  // 3-X.1 (A.6) — local player's name, used to filter the recap to
+  // only my attackers/blockers. Returns a primitive string so the
+  // selector stays identity-stable across renders without needing
+  // shallow equality.
+  const myName = useGameStore((s) => {
+    const me = s.gameView?.players.find(
+      (p) => p.playerId === s.gameView?.myPlayerId,
+    );
+    return me?.name ?? '';
+  });
   const { ref, containerProps, style } = useDraggable({
     placement: {
       kind: 'bottom-center',
@@ -140,22 +218,17 @@ export function CombatBanner({ stream, isAttackers }: CombatBannerProps) {
   // tiny look-up tables, so it stays duplicated by design.
   const subTitleLabel = COMBAT_STEP_LABEL[step] ?? '';
 
-  const tempoFillClass =
-    tempo.intensity === 'hot'
-      ? 'bg-red-400/80'
-      : tempo.intensity === 'warm'
-        ? 'bg-amber-400/70'
-        : 'bg-zinc-500/60';
-
-  // Bundle 3-D — staged-action recap. Reads gameView.combat from the
-  // store; staged attackers/blockers update there immediately because
-  // declare-attackers/declare-blockers clicks round-trip through the
-  // engine (clickRouter.ts:144-152) and the engine re-emits the full
-  // game view after every toggle. So the recap is always in sync
-  // with the user's selections without a client-side tracker.
+  // Bundle 3-D + 3-X.1 (A.1, A.6) — staged-action recap. Reads
+  // gameView.combat from the store; staged attackers/blockers update
+  // there immediately because declare-attackers/declare-blockers
+  // clicks round-trip through the engine (clickRouter.ts:144-152)
+  // and the engine re-emits the full game view after every toggle.
+  // Recap is filtered to the local player via myName (controllerId
+  // not on wire today). formatRecap returns passive empty-state copy
+  // ("No attackers chosen") so the row renders unconditionally.
   const recapItems = isAttackers
-    ? buildAttackerRecap(combat)
-    : buildBlockerRecap(combat);
+    ? buildAttackerRecap(combat, myName)
+    : buildBlockerRecap(combat, myName);
   const recapText = formatRecap(
     recapItems,
     isAttackers ? 'attacker' : 'blocker',
@@ -230,16 +303,15 @@ export function CombatBanner({ stream, isAttackers }: CombatBannerProps) {
         <span data-testid="combat-banner-message" className="text-sm mt-1">
           {renderUpstreamMarkup(message)}
         </span>
-        {recapText && (
-          <span
-            data-testid="combat-banner-recap"
-            data-recap-count={recapItems.length}
-            className="text-xs text-zinc-300 mt-0.5 truncate"
-            title={recapText}
-          >
-            {recapText}
-          </span>
-        )}
+        <span
+          data-testid="combat-banner-recap"
+          data-recap-count={recapItems.length}
+          data-recap-empty={recapItems.length === 0 || undefined}
+          className="text-xs text-zinc-300 mt-0.5 line-clamp-2 max-w-[36ch]"
+          title={recapText}
+        >
+          {recapText}
+        </span>
         <span
           data-testid="combat-banner-hint"
           className="text-xs text-zinc-600 italic mt-0.5"
@@ -271,20 +343,7 @@ export function CombatBanner({ stream, isAttackers }: CombatBannerProps) {
           Done
         </button>
       </div>
-      <div
-        data-testid="combat-banner-tempo"
-        className="absolute inset-x-4 bottom-1.5 h-[2px] bg-zinc-800/40 rounded-full overflow-hidden"
-      >
-        <div
-          data-testid="combat-banner-tempo-fill"
-          data-intensity={tempo.intensity}
-          className={
-            'h-full ease-linear motion-safe:transition-[width,background-color] motion-safe:duration-700 ' +
-            tempoFillClass
-          }
-          style={{ width: `${tempo.progress * 100}%` }}
-        />
-      </div>
+      <CombatStepMeter step={step} />
     </div>
   );
 }

@@ -259,6 +259,53 @@ describe('PhaseTimeline — priority-status suffix in compact+combat', () => {
     expect(waitingOn.getAttribute('title')).toBe('lyrra');
   });
 
+  it('exposes a composite aria-label on the suffix for assistive tech (3-X.1 A.4)', () => {
+    renderTimeline(
+      buildGameView({
+        step: 'DECLARE_ATTACKERS',
+        phase: 'COMBAT',
+        priorityPlayerName: 'alice',
+        players: [buildPlayer({ hasPriority: true })],
+      }),
+      'tabletop',
+    );
+    expect(
+      screen.getByTestId('phase-priority-suffix').getAttribute('aria-label'),
+    ).toBe('Priority status: you have priority');
+  });
+
+  it('aria-label reads "auto-passing" when local player has skip armed (A.4)', () => {
+    renderTimeline(
+      buildGameView({
+        step: 'DECLARE_BLOCKERS',
+        phase: 'COMBAT',
+        priorityPlayerName: 'opponent',
+        players: [
+          buildPlayer({ hasPriority: false, skipState: 'NEXT_MAIN' }),
+        ],
+      }),
+      'tabletop',
+    );
+    expect(
+      screen.getByTestId('phase-priority-suffix').getAttribute('aria-label'),
+    ).toBe('Priority status: auto-passing');
+  });
+
+  it('aria-label reads "waiting on {name}" when remote player has priority (A.4)', () => {
+    renderTimeline(
+      buildGameView({
+        step: 'COMBAT_DAMAGE',
+        phase: 'COMBAT',
+        priorityPlayerName: 'lyrra',
+        players: [buildPlayer({ hasPriority: false, skipState: '' })],
+      }),
+      'tabletop',
+    );
+    expect(
+      screen.getByTestId('phase-priority-suffix').getAttribute('aria-label'),
+    ).toBe('Priority status: waiting on lyrra');
+  });
+
   it('falls back to WAITING when local player can\'t be matched (spectator-style)', () => {
     // myPlayerId set to a uuid that doesn't match any player in the
     // list — defensive branch in deriveCombatPriorityStatus.

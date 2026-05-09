@@ -355,6 +355,14 @@ function PhaseSegment({
  * {@code whitespace-nowrap overflow-hidden text-ellipsis}, so a long
  * waiting-on player name truncates at the segment boundary instead
  * of pushing into neighbor segments.
+ *
+ * <p><b>A11y (3-X.1 A.4):</b> the visible decoration (bullets +
+ * uppercase status word + name) is purely typographic, so the
+ * composite span carries an {@code aria-label} that reads naturally
+ * to assistive tech ("Priority status: you have priority" /
+ * "Priority status: waiting on lyrra"). The inner spans keep their
+ * visible text for sighted users; aria-label on the parent overrides
+ * the read-out of the children.
  */
 function PriorityStatusSuffix({ status }: { status: PriorityStatus }) {
   const label = PRIORITY_STATUS_LABEL[status.kind];
@@ -362,10 +370,19 @@ function PriorityStatusSuffix({ status }: { status: PriorityStatus }) {
     status.kind === 'priority'
       ? 'text-amber-300 font-semibold'
       : 'text-zinc-400';
+  const ariaLabel =
+    status.kind === 'priority'
+      ? 'Priority status: you have priority'
+      : status.kind === 'passing'
+        ? 'Priority status: auto-passing'
+        : status.waitingOn
+          ? `Priority status: waiting on ${status.waitingOn}`
+          : 'Priority status: waiting';
   return (
     <span
       data-testid="phase-priority-suffix"
       data-priority-kind={status.kind}
+      aria-label={ariaLabel}
       className="ml-1"
     >
       <span className="opacity-50 mr-1">·</span>
