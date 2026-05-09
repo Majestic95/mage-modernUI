@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { CombatBanner } from './CombatBanner';
 import { useGameStore } from '../store';
@@ -401,6 +401,46 @@ describe('CombatBanner — bundle 3-C tempo meter', () => {
     // when prefers-reduced-motion is NOT reduce; reduced-motion users
     // see discrete 1s width steps.
     expect(fill.className).toContain('motion-safe:transition-');
+  });
+});
+
+describe('CombatBanner — Rules of Hooks regression (3-X critic-pass blocker)', () => {
+  beforeEach(() => {
+    useGameStore.getState().reset();
+  });
+
+  it('does not crash when pendingDialog flips null -> set on the same mounted instance', () => {
+    // Mount with no dialog -> banner returns null after running its
+    // unconditional hook prelude (3 useGameStore + useCombatTempo +
+    // useDraggable). Then set the dialog on the store and re-render
+    // the SAME instance: hook count must stay stable, otherwise React
+    // crashes with "Rendered more/fewer hooks than expected." Pre-fix
+    // useCombatTempo lived AFTER the early returns; this test was the
+    // smoke check that catches that regression.
+    setStep('DECLARE_ATTACKERS');
+    const { rerender } = render(
+      <CombatBanner stream={fakeStream()} isAttackers />,
+    );
+    expect(screen.queryByTestId('combat-banner')).toBeNull();
+    act(() => {
+      setCombatDialog('Select attackers', { possibleAttackers: ['a-1'] });
+    });
+    rerender(<CombatBanner stream={fakeStream()} isAttackers />);
+    expect(screen.getByTestId('combat-banner')).toBeInTheDocument();
+  });
+
+  it('does not crash when pendingDialog flips set -> null on the same mounted instance', () => {
+    setStep('DECLARE_ATTACKERS');
+    setCombatDialog('Select attackers', { possibleAttackers: ['a-1'] });
+    const { rerender } = render(
+      <CombatBanner stream={fakeStream()} isAttackers />,
+    );
+    expect(screen.getByTestId('combat-banner')).toBeInTheDocument();
+    act(() => {
+      useGameStore.setState({ pendingDialog: null });
+    });
+    rerender(<CombatBanner stream={fakeStream()} isAttackers />);
+    expect(screen.queryByTestId('combat-banner')).toBeNull();
   });
 });
 

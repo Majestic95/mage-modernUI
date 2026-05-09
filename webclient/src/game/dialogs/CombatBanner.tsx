@@ -91,9 +91,22 @@ interface CombatBannerProps {
 }
 
 export function CombatBanner({ stream, isAttackers }: CombatBannerProps) {
+  // ALL hooks must run unconditionally on every render — moving any
+  // hook below the early-return guards below would change the hook
+  // count between renders of the same component instance, violating
+  // the Rules of Hooks. Tests pass without this discipline only
+  // because each test mounts a fresh component; in production the
+  // banner stays mounted across pendingDialog state flips and React
+  // would error on the count mismatch. (Critic-pass blocker, 3-X.)
   const dialog = useGameStore((s) => s.pendingDialog);
   const step = useGameStore((s) => s.gameView?.step ?? '');
   const combat = useGameStore((s) => s.gameView?.combat ?? EMPTY_COMBAT);
+  // Bundle 3-C — tempo hook lives ABOVE the early returns. Cost is
+  // a 1Hz setInterval running while the banner is mounted-but-hidden
+  // (step === '' between games or dialogs). The setState is a no-op
+  // when nothing has changed, so the perf hit is a single timer per
+  // mounted banner — negligible.
+  const tempo = useCombatTempo(step);
   const { ref, containerProps, style } = useDraggable({
     placement: {
       kind: 'bottom-center',
@@ -127,12 +140,6 @@ export function CombatBanner({ stream, isAttackers }: CombatBannerProps) {
   // tiny look-up tables, so it stays duplicated by design.
   const subTitleLabel = COMBAT_STEP_LABEL[step] ?? '';
 
-  // Bundle 3-C — tempo meter at the bottom edge. Resets on step
-  // change (engine moving us between combat sub-steps), grows from
-  // 0% to 100% width over 120s, color-grades from calm grey to warm
-  // amber to hot red. The hook is the sole source of pacing state;
-  // tests in useCombatTempo.test.ts lock in the thresholds.
-  const tempo = useCombatTempo(step);
   const tempoFillClass =
     tempo.intensity === 'hot'
       ? 'bg-red-400/80'
