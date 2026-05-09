@@ -30,7 +30,7 @@ import { useGameStore } from './store';
 import { useLayoutVariant } from '../layoutVariants';
 import { CommanderColorsProvider } from './useCommanderColors';
 import { buildOnSpendMana } from './manaPaymentAdapter';
-import { PriorityEdgeGlow } from './PriorityEdgeGlow';
+import { TurnEdgeGlow } from './TurnEdgeGlow';
 import { useTurnTabTitle } from './useTurnTabTitle';
 
 /**
@@ -331,12 +331,13 @@ export function GameTable({ gameId, gameView, stream }: Props) {
         {connectionStateText}
       </div>
 
-      {/* 2026-05-09 — soft pulsing fuchsia ring at the viewport edges
-          when self has priority. Hard-to-miss peripheral signal that
-          pairs with the chime + tab title. position:fixed + z-20 +
-          pointer-events-none → never blocks clicks, sits below
+      {/* 2026-05-09 — slow-rotating commander-identity-colored ring
+          at the viewport edges when it's the player's turn (not just
+          priority). Conic-gradient bands rotate around the perimeter
+          via the shared --halo-angle keyframe. position:fixed + z-20
+          + pointer-events-none → never blocks clicks, sits below
           ActionPanel (z-30) / dialogs / modals. */}
-      <PriorityEdgeGlow />
+      <TurnEdgeGlow />
 
       {/* Slice 70-O — REDESIGN drops the in-grid header slot. The
           actual GameHeader is rendered as a sibling of GameTable
