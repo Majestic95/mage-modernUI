@@ -1,5 +1,5 @@
 import { useGameStore } from './store';
-import { computeHaloBackground } from './halo';
+import { computeBlendedHaloBackground } from './halo';
 
 /**
  * Slow-rotating commander-identity-colored ring at the viewport
@@ -54,7 +54,13 @@ export function TurnEdgeGlow() {
   if (!me?.isActive) return null;
   // Match the elimination signal used by PlayerPortrait halos
   // (player.hasLeft is the terminal "out of the game" flag).
-  const background = computeHaloBackground(me.colorIdentity ?? [], !!me.hasLeft);
+  // Use the blended helper (smooth crossfade between colors) rather
+  // than the banded one — the viewport halo reads better as a soft
+  // gradient than as discrete arc bands.
+  const background = computeBlendedHaloBackground(
+    me.colorIdentity ?? [],
+    !!me.hasLeft,
+  );
   return (
     <div
       data-testid="turn-edge-glow"

@@ -59,6 +59,41 @@ export function computeHaloBackground(
 }
 
 /**
+ * 2026-05-09 — soft-blended variant of {@link computeHaloBackground}
+ * for surfaces that want smooth color crossfading instead of hard
+ * arc bands. Used by {@link TurnEdgeGlow} where the viewport ring
+ * reads better as a smooth gradient than as discrete bands.
+ *
+ * <p>Single color → solid fill. Multi-color → conic-gradient with
+ * one stop per color at evenly-spaced angles, plus a wrap-stop
+ * repeating the first color at 360deg so the gradient seams back to
+ * itself smoothly. {@code from var(--halo-angle, 0deg)} reads the
+ * same animated property as {@link computeHaloBackground} so the
+ * same {@code halo-rotate} keyframe rotates the gradient origin.
+ */
+export function computeBlendedHaloBackground(
+  colorIdentity: readonly string[],
+  eliminated: boolean,
+): string {
+  if (eliminated || colorIdentity.length === 0) {
+    return 'var(--color-team-neutral)';
+  }
+  if (colorIdentity.length === 1) {
+    return manaTokenForCode(colorIdentity[0]!);
+  }
+  const n = colorIdentity.length;
+  const stops: string[] = [];
+  for (let i = 0; i < n; i++) {
+    const angle = (i * 360) / n;
+    stops.push(`${manaTokenForCode(colorIdentity[i]!)} ${angle}deg`);
+  }
+  // Wrap: re-emit the first color at 360deg so the seam is smooth
+  // rather than snapping from the last color back to the first.
+  stops.push(`${manaTokenForCode(colorIdentity[0]!)} 360deg`);
+  return `conic-gradient(from var(--halo-angle, 0deg), ${stops.join(', ')})`;
+}
+
+/**
  * Slice 70-D — single-character mana code (W/U/B/R/G) → CSS
  * variable reference. Unknown codes default to the neutral team
  * ring; defends against a future engine upgrade with a sixth color.
