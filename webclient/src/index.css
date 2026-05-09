@@ -324,34 +324,44 @@ input[type="checkbox"] {
 }
 
 /*
- * 2026-05-09 — viewport-edge ring used by TurnEdgeGlow to signal
+ * 2026-05-09 — viewport-edge GLOW used by TurnEdgeGlow to signal
  * "it's your turn." The conic-gradient background (set inline via
  * computeHaloBackground using the player's commander color identity)
- * fills the whole element; the mask-composite trick clips the paint
- * to a 12px ring at the viewport perimeter. The halo-rotate keyframe
- * (already registered above) animates --halo-angle 0→360deg, which
- * the conic-gradient's `from var(--halo-angle)` reads — so the bands
- * rotate slowly around the screen edge. 20s/cycle (vs portrait
- * halo's 12s) since the perimeter is much longer; slower feels
- * ambient rather than busy.
+ * fills the whole element; the radial-gradient mask fades the
+ * center transparent so only a soft feathered halo remains at the
+ * viewport perimeter. The halo-rotate keyframe (already registered
+ * above) animates --halo-angle 0→360deg, which the conic-gradient's
+ * `from var(--halo-angle)` reads — so multicolor bands rotate
+ * slowly around the screen edge. 20s/cycle (vs portrait halo's
+ * 12s) since the perimeter is much longer; slower feels ambient
+ * rather than busy. The breathe animation pulses opacity so even
+ * mono-color or colorless commanders (where the conic-gradient
+ * collapses to a solid color and the rotation is visually invisible)
+ * still show motion.
+ *
+ * 2026-05-09 follow-up — pre-fix used a mask-composite hard-edged
+ * frame, which read as a solid colored "border" rather than a glow,
+ * especially on mono-color identities. Switched to radial-gradient
+ * fade for a true soft halo.
  *
  * Non-essential motion — the global prefers-reduced-motion rule
- * silences the rotation; the static colored ring stays visible so
- * the signal is preserved without animation.
+ * silences both animations; the static feathered halo stays visible
+ * so the signal is preserved without motion.
  */
 .turn-edge-glow {
-  padding: 12px;
-  /* Mask out the inner content-box, leaving only the 12px padding
-   * (the ring) visible. -webkit prefix retained for older WebKit. */
-  -webkit-mask:
-    linear-gradient(#000, #000) content-box,
-    linear-gradient(#000, #000);
-  mask:
-    linear-gradient(#000, #000) content-box,
-    linear-gradient(#000, #000);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  animation: halo-rotate 20000ms linear infinite;
+  /* Center transparent, fading to opaque at the viewport edges.
+   * Default ellipse extends to the farthest corner, giving an
+   * even soft fade across all four edges + corners. */
+  -webkit-mask: radial-gradient(ellipse at center, transparent 45%, black 95%);
+  mask: radial-gradient(ellipse at center, transparent 45%, black 95%);
+  animation:
+    halo-rotate 20000ms linear infinite,
+    turn-edge-breathe 2800ms ease-in-out infinite;
+}
+
+@keyframes turn-edge-breathe {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 0.95; }
 }
 
 /*
