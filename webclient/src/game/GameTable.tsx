@@ -30,6 +30,8 @@ import { useGameStore } from './store';
 import { useLayoutVariant } from '../layoutVariants';
 import { CommanderColorsProvider } from './useCommanderColors';
 import { buildOnSpendMana } from './manaPaymentAdapter';
+import { PriorityEdgeGlow } from './PriorityEdgeGlow';
+import { useTurnTabTitle } from './useTurnTabTitle';
 
 /**
  * Slice 70-E (ADR 0011 D5) — 6-region CSS Grid shell per
@@ -150,6 +152,12 @@ export function GameTable({ gameId, gameView, stream }: Props) {
   // forces the panel collapsed regardless of store state, so the play
   // surface gets the full viewport width per the reference. The store
   // flag is ignored under tabletop; in `current` it still rules.
+  // 2026-05-09 — when self has priority, prefix the browser tab
+  // title with "🎲 Your turn" so a player who has tabbed away
+  // sees the change in their tab bar. Pairs with the priority
+  // chime (audioSettingsStore default flipped to ON) and the
+  // PriorityEdgeGlow ring rendered below.
+  useTurnTabTitle();
   const variant = useLayoutVariant();
   const sidePanelCollapsedRaw = useGameStore((s) => s.sidePanelCollapsed);
   const sidePanelCollapsed = variant === 'tabletop' || sidePanelCollapsedRaw;
@@ -322,6 +330,13 @@ export function GameTable({ gameId, gameView, stream }: Props) {
       >
         {connectionStateText}
       </div>
+
+      {/* 2026-05-09 — soft pulsing fuchsia ring at the viewport edges
+          when self has priority. Hard-to-miss peripheral signal that
+          pairs with the chime + tab title. position:fixed + z-20 +
+          pointer-events-none → never blocks clicks, sits below
+          ActionPanel (z-30) / dialogs / modals. */}
+      <PriorityEdgeGlow />
 
       {/* Slice 70-O — REDESIGN drops the in-grid header slot. The
           actual GameHeader is rendered as a sibling of GameTable

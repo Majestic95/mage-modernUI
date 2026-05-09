@@ -20,7 +20,13 @@ export interface AudioSettings {
 }
 
 const DEFAULTS: AudioSettings = {
-  priorityEnabled: false,
+  // 2026-05-09 — flipped to ON by default. Per user direction
+  // ("players are missing their turns"), a chime when priority arrives
+  // is the lowest-friction way to surface turn handoffs to a tabbed-
+  // away player. Existing players with persisted settings keep their
+  // current preference (load() reads localStorage first); the new
+  // default only affects fresh installs.
+  priorityEnabled: true,
   priorityVolume: 0.6,
   turnEnabled: false,
   turnVolume: 0.6,
