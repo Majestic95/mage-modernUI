@@ -11,7 +11,6 @@ import { slow } from '../animation/debug';
 import { ELIMINATION_SLASH } from '../animation/transitions';
 import { formatColorIdentity } from './PlayerFrame.helpers';
 import { useGameStore } from './store';
-import { useLayoutVariant } from '../layoutVariants';
 
 /**
  * Slice 70-Z (P2 audit) — extracted from PlayerFrame.tsx so the
@@ -76,8 +75,6 @@ export function PlayerFrameRedesigned({
   // their battlefield rows).
   void position;
   const portraitSize = perspective === 'self' ? 'large' : 'medium';
-  const variant = useLayoutVariant();
-  const isTabletop = variant === 'tabletop';
 
   // Bug fix (2026-05-01) — colorIdentity snapshot fallback for the
   // SR label. PlayerPortrait below applies the same fallback for its
@@ -187,44 +184,33 @@ export function PlayerFrameRedesigned({
             haloVariant="circular"
           />
         )}
-        {/* Slice 70-Z polish round 22 (user direction 2026-04-30) —
-            Hearthstone-style floating life badge: a circular black
+        {/* Hearthstone-style floating life badge: a circular black
             disc sits at the bottom-center of the portrait, half-
-            overlapping the portrait's lower edge. Replaces the
-            slice-70-D in-portrait white numeral (which was getting
-            lost against varied commander art). The badge is a
-            self-contained read regardless of art tonality.
+            overlapping the portrait's lower edge. Self-contained
+            read regardless of portrait art tonality.
             - bg-zinc-900: solid dark disc.
-            - ring-2 ring-zinc-700: subtle outline so the disc
-              reads as separate from the portrait halo.
+            - ring-2 ring-white: high-contrast white outline so the
+              disc reads against any background, including dark
+              commander art. (User feedback 2026-05-09 item 5 —
+              reverses Polish P10 which had dropped the chrome
+              under tabletop in favor of bare text + shadow.)
             - shadow-lg: floating affordance.
             - left-1/2 -translate-x-1/2: horizontal center.
             - -bottom-{N}: center of the badge sits at the
               portrait's bottom edge (badge half-height = bottom
               offset). h-10 = 40px → -bottom-5 (=-20px); h-8 = 32px
-              → -bottom-4 (=-16px). */}
-        {/* Polish-pass P10 (audit nice-to-have #12, spec §9.4 "plain
-            number, no shield/heart") — for variant=tabletop drop the
-            disc chrome (bg / ring / shadow) and rely on a strong text
-            shadow for legibility against arbitrary portrait art. The
-            sizing slot stays the same so positioning relative to the
-            portrait doesn't shift. variant=current keeps the badge. */}
+              → -bottom-4 (=-16px).
+            - Color is fixed (white text on dark disc) — does NOT
+              shift based on life total per direct user direction. */}
         <div
           data-testid={`life-numeral-${perspective}`}
           aria-hidden="true"
           className={
             'absolute left-1/2 -translate-x-1/2 z-10 flex items-center justify-center rounded-full font-bold text-white tabular-nums leading-none ' +
-            (isTabletop
-              ? ''
-              : 'bg-zinc-900 ring-2 ring-zinc-700 shadow-lg ') +
+            'bg-zinc-900 ring-2 ring-white shadow-lg ' +
             (perspective === 'self'
               ? 'h-10 w-10 -bottom-5 text-base'
               : 'h-8 w-8 -bottom-4 text-sm')
-          }
-          style={
-            isTabletop
-              ? { textShadow: '0 1px 3px rgba(0,0,0,0.95), 0 0 6px rgba(0,0,0,0.85)' }
-              : undefined
           }
         >
           {player.life}
