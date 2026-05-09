@@ -4,6 +4,7 @@ import type { WebCardView } from '../api/schemas';
 import { scryfallImageUrl } from './scryfall';
 import { ManaCost } from './ManaCost';
 import { renderUpstreamMarkup } from './dialogs/markupRenderer';
+import { popoverWidthPx, useHoverPreviewSettings } from './hoverPreviewSettings';
 
 /* ---------- card detail overlay (slice 30) ---------- */
 
@@ -32,11 +33,19 @@ function CardDetail({
   const isCreature = card.power || card.toughness;
   const isPlaneswalker = !!card.startingLoyalty;
   const imageUrl = scryfallImageUrl(card);
+  // Width is user-tunable via the settings modal slider (per user
+  // direction 2026-05-09 — "make the card tooltip and the card image
+  // as large as they want, even if it blocks other elements"). Inline
+  // style replaces the legacy `w-64` Tailwind class so the same
+  // markup serves any width in the configured 1.0..3.0 range.
+  const popoverScale = useHoverPreviewSettings((s) => s.popoverScale);
+  const widthPx = popoverWidthPx(popoverScale);
   return (
     <div
       data-testid="card-detail"
       data-flipped={isFlipped || undefined}
-      className="bg-zinc-900 border border-zinc-700 rounded shadow-xl w-64 text-xs overflow-hidden relative"
+      style={{ width: widthPx }}
+      className="bg-zinc-900 border border-zinc-700 rounded shadow-xl text-xs overflow-hidden relative"
     >
       {imageUrl && <CardImage url={imageUrl} alt={card.name} />}
       {/* Bug fix #2 (2026-05-02) — DFC flip toggle. Per CR 712.x both

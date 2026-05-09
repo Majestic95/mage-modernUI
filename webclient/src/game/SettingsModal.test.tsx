@@ -133,3 +133,63 @@ describe('SettingsModal', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('SettingsModal — card preview size slider', () => {
+  it('renders the card-preview section above the audio section', () => {
+    render(
+      <SettingsModal
+        onClose={() => {}}
+        onConcede={() => {}}
+        onLeave={() => {}}
+      />,
+    );
+    const previewSection = screen.getByTestId('settings-card-preview-section');
+    const audioSection = screen.getByTestId('settings-audio-section');
+    expect(previewSection).toBeInTheDocument();
+    expect(audioSection).toBeInTheDocument();
+    // DOM order — preview comes first
+    const both = screen.getByTestId('settings-modal').querySelectorAll(
+      '[data-testid="settings-card-preview-section"], [data-testid="settings-audio-section"]',
+    );
+    expect(both[0]).toBe(previewSection);
+    expect(both[1]).toBe(audioSection);
+  });
+
+  it('slider exposes the current scale + pixel readout', async () => {
+    const { useHoverPreviewSettings } = await import('./hoverPreviewSettings');
+    useHoverPreviewSettings.setState({ popoverScale: 1.0 });
+    render(
+      <SettingsModal
+        onClose={() => {}}
+        onConcede={() => {}}
+        onLeave={() => {}}
+      />,
+    );
+    const slider = screen.getByTestId('settings-card-preview-scale');
+    expect(slider).toHaveAttribute('min', '1');
+    expect(slider).toHaveAttribute('max', '3');
+    expect(slider).toHaveValue('1');
+    expect(
+      screen.getByTestId('settings-card-preview-section'),
+    ).toHaveTextContent('100% · 256px');
+  });
+
+  it('changing the slider updates the store + readout', async () => {
+    const { useHoverPreviewSettings } = await import('./hoverPreviewSettings');
+    useHoverPreviewSettings.setState({ popoverScale: 1.0 });
+    const { fireEvent } = await import('@testing-library/react');
+    render(
+      <SettingsModal
+        onClose={() => {}}
+        onConcede={() => {}}
+        onLeave={() => {}}
+      />,
+    );
+    const slider = screen.getByTestId('settings-card-preview-scale');
+    fireEvent.change(slider, { target: { value: '2.5' } });
+    expect(useHoverPreviewSettings.getState().popoverScale).toBe(2.5);
+    expect(
+      screen.getByTestId('settings-card-preview-section'),
+    ).toHaveTextContent('250% · 640px');
+  });
+});

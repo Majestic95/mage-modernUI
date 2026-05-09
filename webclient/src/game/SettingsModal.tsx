@@ -3,6 +3,12 @@ import { useDraggable } from '../util/useDraggable';
 import { useModalA11y } from '../util/useModalA11y';
 import { playChime } from './audioCues';
 import { useAudioSettings } from './audioSettingsStore';
+import {
+  POPOVER_MAX_SCALE,
+  POPOVER_MIN_SCALE,
+  popoverWidthPx,
+  useHoverPreviewSettings,
+} from './hoverPreviewSettings';
 
 /**
  * Slice 70-O (picture-catalog §1.3) — settings modal launched from
@@ -95,6 +101,8 @@ export function SettingsModal({
           </button>
         </header>
 
+        <CardPreviewSettings />
+
         <AudioCueSettings />
 
         <div className="border-t border-zinc-800 pt-4 space-y-3">
@@ -177,6 +185,54 @@ export function SettingsModal({
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Card-preview size — user-tunable scale factor for the on-hover
+ * card detail popover ({@link HoverCardDetail}). Default 1.0 (256 px,
+ * matches the legacy hard-coded width). Max 3.0 (768 px, ~half a
+ * 1440p screen). Persists per-user via {@link useHoverPreviewSettings}.
+ *
+ * <p>Scoped to the floating tooltip popover only — does NOT scale the
+ * actual cards on the battlefield or in the hand (per user direction
+ * 2026-05-09).
+ */
+function CardPreviewSettings() {
+  const popoverScale = useHoverPreviewSettings((s) => s.popoverScale);
+  const setPopoverScale = useHoverPreviewSettings((s) => s.setPopoverScale);
+  const previewWidth = popoverWidthPx(popoverScale);
+  return (
+    <section
+      data-testid="settings-card-preview-section"
+      className="space-y-2 border-t border-zinc-800 pt-4"
+    >
+      <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
+        Card preview
+      </h3>
+      <label className="block text-xs text-text-primary">
+        <span className="font-medium">Tooltip size</span>
+        <span className="text-text-secondary text-[11px] font-normal ml-1">
+          On-hover card detail + image scale.
+        </span>
+      </label>
+      <div className="flex items-center gap-2">
+        <input
+          type="range"
+          data-testid="settings-card-preview-scale"
+          min={POPOVER_MIN_SCALE}
+          max={POPOVER_MAX_SCALE}
+          step={0.1}
+          value={popoverScale}
+          onChange={(e) => setPopoverScale(Number(e.target.value))}
+          className="flex-1 accent-fuchsia-500"
+          aria-label="Card preview tooltip size"
+        />
+        <span className="text-[10px] text-text-secondary tabular-nums w-14 text-right">
+          {Math.round(popoverScale * 100)}% · {previewWidth}px
+        </span>
+      </div>
+    </section>
   );
 }
 
