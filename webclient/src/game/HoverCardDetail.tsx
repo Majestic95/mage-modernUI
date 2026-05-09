@@ -260,7 +260,15 @@ export function HoverCardDetail({
           <div
             ref={popoverRef}
             data-testid="card-detail-overlay"
-            className="fixed z-50 pointer-events-none"
+            // z-[60] — sits above every modal/backdrop in the app
+            // (all currently at z-50: Mulligan, Settings, Sideboard,
+            // GameEnd, GameLogWindow, TriggerOrder, etc.). Without
+            // this, the popover relies on DOM-paint-order tiebreaks
+            // through the modal's own stacking context (useDraggable
+            // applies a transform → creates a context), which is
+            // brittle. ActionButton menu is z-[55]; popover-on-top
+            // there is intentional.
+            className="fixed z-[60] pointer-events-none"
             style={
               pos
                 ? { left: pos.left, top: pos.top }
