@@ -9,7 +9,9 @@ import {
   popoverWidthPx,
   useHoverPreviewSettings,
 } from './hoverPreviewSettings';
+import { ManaPaymentSettingsSection } from './ManaPaymentSettingsSection';
 import { usePriorityStopsSettings } from './priorityStopsSettings';
+import type { GameStream } from './stream';
 
 /**
  * Slice 70-O (picture-catalog §1.3) — settings modal launched from
@@ -39,6 +41,7 @@ export function SettingsModal({
   onClose,
   onConcede,
   onLeave,
+  stream,
 }: {
   /** Backdrop click / Esc / Cancel button. */
   onClose: () => void;
@@ -54,6 +57,12 @@ export function SettingsModal({
    * dialog.
    */
   onLeave: () => void;
+  /**
+   * Optional WebSocket stream for engine-side preference dispatch
+   * (e.g. mana auto-payment toggles forward to PlayerAction enums).
+   * When null/undefined the toggles still persist locally but the
+   * engine state stays whatever the user last established. */
+  stream?: GameStream | null;
 }) {
   const { ref: dialogRef, containerProps, style: dragStyle } = useDraggable({
     placement: { kind: 'center' },
@@ -105,6 +114,8 @@ export function SettingsModal({
         <CardPreviewSettings />
 
         <CombatPrioritySettings />
+
+        <ManaPaymentSettingsSection stream={stream ?? null} />
 
         <AudioCueSettings />
 

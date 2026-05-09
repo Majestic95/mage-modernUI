@@ -225,6 +225,7 @@ function RedesignedHeader({
             stream?.sendPlayerAction('CONCEDE');
           }}
           onLeave={onLeave}
+          stream={stream}
         />
       )}
     </>

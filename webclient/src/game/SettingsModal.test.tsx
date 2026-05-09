@@ -193,3 +193,98 @@ describe('SettingsModal — card preview size slider', () => {
     ).toHaveTextContent('250% · 640px');
   });
 });
+
+describe('SettingsModal — mana payment section', () => {
+  // The store persists across tests (module-scope zustand). Reset
+  // both localStorage and the in-memory state in each case.
+  function resetManaSettings() {
+    window.localStorage.removeItem('xmage.manaPayment.v1');
+    return import('./manaPaymentSettings').then(({ useManaPaymentSettings }) => {
+      useManaPaymentSettings.setState({
+        autoPay: false,
+        autoPayRestricted: false,
+      });
+      return useManaPaymentSettings;
+    });
+  }
+
+  it('renders the section with both checkboxes; restricted disabled by default', async () => {
+    await resetManaSettings();
+    render(
+      <SettingsModal
+        onClose={() => {}}
+        onConcede={() => {}}
+        onLeave={() => {}}
+      />,
+    );
+    expect(
+      screen.getByTestId('settings-mana-payment-section'),
+    ).toBeInTheDocument();
+    const autoPay = screen.getByTestId('settings-mana-auto-pay') as HTMLInputElement;
+    const restricted = screen.getByTestId(
+      'settings-mana-auto-pay-restricted',
+    ) as HTMLInputElement;
+    expect(autoPay.checked).toBe(false);
+    expect(restricted.checked).toBe(false);
+    expect(restricted.disabled).toBe(true);
+  });
+
+  it('toggling auto-pay dispatches MANA_AUTO_PAYMENT_ON via the stream', async () => {
+    await resetManaSettings();
+    const sendPlayerAction = vi.fn();
+    const stream = {
+      sendPlayerAction,
+    } as unknown as import('./stream').GameStream;
+    render(
+      <SettingsModal
+        onClose={() => {}}
+        onConcede={() => {}}
+        onLeave={() => {}}
+        stream={stream}
+      />,
+    );
+    await userEvent.click(screen.getByTestId('settings-mana-auto-pay'));
+    expect(sendPlayerAction).toHaveBeenCalledWith('MANA_AUTO_PAYMENT_ON');
+  });
+
+  it('toggling restricted (after enabling auto-pay) dispatches the RESTRICTED enum', async () => {
+    const useManaPaymentSettings = await resetManaSettings();
+    useManaPaymentSettings.setState({
+      autoPay: true,
+      autoPayRestricted: false,
+    });
+    const sendPlayerAction = vi.fn();
+    const stream = {
+      sendPlayerAction,
+    } as unknown as import('./stream').GameStream;
+    render(
+      <SettingsModal
+        onClose={() => {}}
+        onConcede={() => {}}
+        onLeave={() => {}}
+        stream={stream}
+      />,
+    );
+    const restricted = screen.getByTestId(
+      'settings-mana-auto-pay-restricted',
+    ) as HTMLInputElement;
+    expect(restricted.disabled).toBe(false);
+    await userEvent.click(restricted);
+    expect(sendPlayerAction).toHaveBeenCalledWith(
+      'MANA_AUTO_PAYMENT_RESTRICTED_ON',
+    );
+  });
+
+  it('toggling auto-pay with no stream still saves the preference (no crash)', async () => {
+    const useManaPaymentSettings = await resetManaSettings();
+    render(
+      <SettingsModal
+        onClose={() => {}}
+        onConcede={() => {}}
+        onLeave={() => {}}
+      />,
+    );
+    await userEvent.click(screen.getByTestId('settings-mana-auto-pay'));
+    expect(useManaPaymentSettings.getState().autoPay).toBe(true);
+  });
+});
