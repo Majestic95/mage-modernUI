@@ -10,17 +10,69 @@ import {
 } from '../../api/schemas';
 
 /**
- * Bundle 3-B helper — set just enough of {@code gameView} on the store
- * for the banner's sub-title read. The banner only dereferences
- * {@code gameView?.step}, so a partial cast is safe and avoids the
- * overhead of building a full schema-validated game view for every
- * test case (the full builder pattern lives in store.test.ts and is
- * justified there because the store itself reads many fields).
+ * Bundle 3-B + 3-D helper — set just enough of {@code gameView} on
+ * the store for the banner's sub-title and recap reads. The banner
+ * only dereferences {@code gameView?.step} and {@code gameView?.combat},
+ * so a partial cast is safe and avoids the overhead of building a
+ * full schema-validated game view for every test case (the full
+ * builder pattern lives in store.test.ts and is justified there
+ * because the store itself reads many fields).
  */
-function setStep(step: string) {
+function setStep(
+  step: string,
+  combat: ReadonlyArray<unknown> = [],
+) {
   useGameStore.setState({
-    gameView: { step } as unknown as WebGameView,
+    gameView: { step, combat } as unknown as WebGameView,
   });
+}
+
+function makePermanent(id: string, name: string) {
+  return {
+    card: {
+      id,
+      name,
+      displayName: name,
+      expansionSetCode: 'M21',
+      cardNumber: '1',
+      manaCost: '',
+      manaValue: 0,
+      typeLine: 'Creature',
+      supertypes: [],
+      types: ['CREATURE'],
+      subtypes: [],
+      colors: [],
+      rarity: 'COMMON',
+      power: '2',
+      toughness: '2',
+      startingLoyalty: '',
+      rules: [],
+      faceDown: false,
+      counters: {},
+      transformable: false,
+      transformed: false,
+      secondCardFace: null,
+    },
+    controllerName: 'alice',
+    tapped: false,
+  };
+}
+
+function combatGroup(
+  attackers: Array<{ id: string; name: string }>,
+  blockers: Array<{ id: string; name: string }> = [],
+) {
+  return {
+    defenderId: 'def-1',
+    defenderName: 'lyrra',
+    attackers: Object.fromEntries(
+      attackers.map((a) => [a.id, makePermanent(a.id, a.name)]),
+    ),
+    blockers: Object.fromEntries(
+      blockers.map((b) => [b.id, makePermanent(b.id, b.name)]),
+    ),
+    blocked: blockers.length > 0,
+  };
 }
 
 const fakeStream = (): GameStream =>
@@ -349,5 +401,93 @@ describe('CombatBanner — bundle 3-C tempo meter', () => {
     // when prefers-reduced-motion is NOT reduce; reduced-motion users
     // see discrete 1s width steps.
     expect(fill.className).toContain('motion-safe:transition-');
+  });
+});
+
+describe('CombatBanner — bundle 3-D staged-action recap', () => {
+  beforeEach(() => {
+    useGameStore.getState().reset();
+  });
+
+  it('hides the recap row when nothing is staged', () => {
+    setCombatDialog('Select attackers', { possibleAttackers: ['a-1', 'a-2'] });
+    setStep('DECLARE_ATTACKERS', []);
+    render(<CombatBanner stream={fakeStream()} isAttackers />);
+    expect(screen.queryByTestId('combat-banner-recap')).toBeNull();
+  });
+
+  it('renders the attacker recap with count + names when attackers are staged', () => {
+    setCombatDialog('Select attackers', { possibleAttackers: ['a-1', 'a-2'] });
+    setStep('DECLARE_ATTACKERS', [
+      combatGroup([
+        { id: 'a-1', name: 'Wolf' },
+        { id: 'a-2', name: 'Bear' },
+      ]),
+    ]);
+    render(<CombatBanner stream={fakeStream()} isAttackers />);
+    const recap = screen.getByTestId('combat-banner-recap');
+    expect(recap.textContent).toBe('2 attackers — Wolf, Bear');
+    expect(recap.getAttribute('data-recap-count')).toBe('2');
+  });
+
+  it('renders the blocker recap with "X blocks Y" copy when blockers are staged', () => {
+    setCombatDialog('Select blockers', { possibleBlockers: ['b-1'] });
+    setStep('DECLARE_BLOCKERS', [
+      combatGroup(
+        [{ id: 'a-1', name: 'Wolf' }],
+        [{ id: 'b-1', name: 'Knight' }],
+      ),
+    ]);
+    render(<CombatBanner stream={fakeStream()} isAttackers={false} />);
+    const recap = screen.getByTestId('combat-banner-recap');
+    expect(recap.textContent).toBe('1 blocker — Knight blocks Wolf');
+  });
+
+  it('overflows past 4 names with "+N more"', () => {
+    setCombatDialog('Select attackers', {
+      possibleAttackers: ['a-1', 'a-2', 'a-3', 'a-4', 'a-5', 'a-6'],
+    });
+    setStep('DECLARE_ATTACKERS', [
+      combatGroup([
+        { id: 'a-1', name: 'A' },
+        { id: 'a-2', name: 'B' },
+        { id: 'a-3', name: 'C' },
+        { id: 'a-4', name: 'D' },
+        { id: 'a-5', name: 'E' },
+        { id: 'a-6', name: 'F' },
+      ]),
+    ]);
+    render(<CombatBanner stream={fakeStream()} isAttackers />);
+    expect(screen.getByTestId('combat-banner-recap').textContent).toBe(
+      '6 attackers — A, B, C, D, +2 more',
+    );
+  });
+
+  it('attacker recap is independent of blockers in the same combat group (declare-attackers ignores stale blockers)', () => {
+    setCombatDialog('Select attackers', { possibleAttackers: ['a-1'] });
+    setStep('DECLARE_ATTACKERS', [
+      combatGroup(
+        [{ id: 'a-1', name: 'Wolf' }],
+        [{ id: 'b-1', name: 'Knight' }],
+      ),
+    ]);
+    render(<CombatBanner stream={fakeStream()} isAttackers />);
+    expect(screen.getByTestId('combat-banner-recap').textContent).toBe(
+      '1 attacker — Wolf',
+    );
+  });
+
+  it('recap row has a title attribute carrying the full text (so truncate-truncated content is hover-readable)', () => {
+    setCombatDialog('Select attackers', { possibleAttackers: ['a-1', 'a-2'] });
+    setStep('DECLARE_ATTACKERS', [
+      combatGroup([
+        { id: 'a-1', name: 'Wolf' },
+        { id: 'a-2', name: 'Bear' },
+      ]),
+    ]);
+    render(<CombatBanner stream={fakeStream()} isAttackers />);
+    const recap = screen.getByTestId('combat-banner-recap');
+    expect(recap.getAttribute('title')).toBe('2 attackers — Wolf, Bear');
+    expect(recap.className).toContain('truncate');
   });
 });

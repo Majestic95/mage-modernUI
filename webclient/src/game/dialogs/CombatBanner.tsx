@@ -3,7 +3,23 @@ import { useGameStore } from '../store';
 import { BannerSpotlightHalo } from './BannerSpotlightHalo';
 import { renderUpstreamMarkup } from './markupRenderer';
 import type { GameStream } from '../stream';
+import type { WebCombatGroupView } from '../../api/schemas';
 import { useCombatTempo } from '../useCombatTempo';
+import {
+  buildAttackerRecap,
+  buildBlockerRecap,
+  formatRecap,
+} from '../combatRecap';
+
+/**
+ * Bundle 3-D — stable empty-array fallback for the Zustand combat
+ * selector. {@code (s) => s.gameView?.combat ?? []} would create a
+ * fresh array reference on every render whenever gameView is null,
+ * triggering an infinite re-render loop because Zustand defaults to
+ * {@code Object.is} reference equality. Hoisting a frozen reference
+ * keeps the selector identity-stable across renders.
+ */
+const EMPTY_COMBAT: ReadonlyArray<WebCombatGroupView> = Object.freeze([]);
 
 /**
  * Bundle 3-B (2026-05-09) — sub-title display map. Engine PhaseStep
@@ -77,6 +93,7 @@ interface CombatBannerProps {
 export function CombatBanner({ stream, isAttackers }: CombatBannerProps) {
   const dialog = useGameStore((s) => s.pendingDialog);
   const step = useGameStore((s) => s.gameView?.step ?? '');
+  const combat = useGameStore((s) => s.gameView?.combat ?? EMPTY_COMBAT);
   const { ref, containerProps, style } = useDraggable({
     placement: {
       kind: 'bottom-center',
@@ -122,6 +139,20 @@ export function CombatBanner({ stream, isAttackers }: CombatBannerProps) {
       : tempo.intensity === 'warm'
         ? 'bg-amber-400/70'
         : 'bg-zinc-500/60';
+
+  // Bundle 3-D — staged-action recap. Reads gameView.combat from the
+  // store; staged attackers/blockers update there immediately because
+  // declare-attackers/declare-blockers clicks round-trip through the
+  // engine (clickRouter.ts:144-152) and the engine re-emits the full
+  // game view after every toggle. So the recap is always in sync
+  // with the user's selections without a client-side tracker.
+  const recapItems = isAttackers
+    ? buildAttackerRecap(combat)
+    : buildBlockerRecap(combat);
+  const recapText = formatRecap(
+    recapItems,
+    isAttackers ? 'attacker' : 'blocker',
+  );
 
   const sendDone = () => {
     // Read the latest messageId at click time — combat may have
@@ -192,6 +223,16 @@ export function CombatBanner({ stream, isAttackers }: CombatBannerProps) {
         <span data-testid="combat-banner-message" className="text-sm mt-1">
           {renderUpstreamMarkup(message)}
         </span>
+        {recapText && (
+          <span
+            data-testid="combat-banner-recap"
+            data-recap-count={recapItems.length}
+            className="text-xs text-zinc-300 mt-0.5 truncate"
+            title={recapText}
+          >
+            {recapText}
+          </span>
+        )}
         <span
           data-testid="combat-banner-hint"
           className="text-xs text-zinc-600 italic mt-0.5"
