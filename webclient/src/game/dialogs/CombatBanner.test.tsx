@@ -4,7 +4,24 @@ import userEvent from '@testing-library/user-event';
 import { CombatBanner } from './CombatBanner';
 import { useGameStore } from '../store';
 import type { GameStream } from '../stream';
-import { webGameClientMessageSchema } from '../../api/schemas';
+import {
+  webGameClientMessageSchema,
+  type WebGameView,
+} from '../../api/schemas';
+
+/**
+ * Bundle 3-B helper — set just enough of {@code gameView} on the store
+ * for the banner's sub-title read. The banner only dereferences
+ * {@code gameView?.step}, so a partial cast is safe and avoids the
+ * overhead of building a full schema-validated game view for every
+ * test case (the full builder pattern lives in store.test.ts and is
+ * justified there because the store itself reads many fields).
+ */
+function setStep(step: string) {
+  useGameStore.setState({
+    gameView: { step } as unknown as WebGameView,
+  });
+}
 
 const fakeStream = (): GameStream =>
   ({
@@ -208,5 +225,93 @@ describe('CombatBanner — defensive', () => {
     const banner = screen.getByTestId('combat-banner');
     expect(banner.hasAttribute('data-drag-handle')).toBe(true);
     expect(banner.className).toContain('cursor-move');
+  });
+});
+
+describe('CombatBanner — bundle 3-B depth ladder', () => {
+  beforeEach(() => {
+    useGameStore.getState().reset();
+  });
+
+  it('title row reads "Combat" (dropped the "— attackers/blockers" suffix; sub-step lives in sub-title now)', () => {
+    setCombatDialog('Select attackers', { possibleAttackers: ['a-1'] });
+    setStep('DECLARE_ATTACKERS');
+    render(<CombatBanner stream={fakeStream()} isAttackers />);
+    expect(screen.getByTestId('combat-banner-title').textContent).toBe(
+      'Combat',
+    );
+  });
+
+  it('renders the sub-title with the active combat sub-step name (DECLARE_ATTACKERS → "Declare attackers")', () => {
+    setCombatDialog('Select attackers', { possibleAttackers: ['a-1'] });
+    setStep('DECLARE_ATTACKERS');
+    render(<CombatBanner stream={fakeStream()} isAttackers />);
+    const subtitle = screen.getByTestId('combat-banner-subtitle');
+    expect(subtitle.textContent).toBe('Declare attackers');
+    expect(subtitle.getAttribute('data-step')).toBe('DECLARE_ATTACKERS');
+  });
+
+  it('sub-title flips to "Declare blockers" when step = DECLARE_BLOCKERS', () => {
+    setCombatDialog('Select blockers', { possibleBlockers: ['b-1'] });
+    setStep('DECLARE_BLOCKERS');
+    render(<CombatBanner stream={fakeStream()} isAttackers={false} />);
+    expect(screen.getByTestId('combat-banner-subtitle').textContent).toBe(
+      'Declare blockers',
+    );
+  });
+
+  it('hides the sub-title row when step is empty (defensive — banner without gameView)', () => {
+    setCombatDialog('Select attackers', { possibleAttackers: ['a-1'] });
+    // gameView is null after reset; setStep not called. The banner
+    // must still render — the sub-title is purely an enrichment.
+    render(<CombatBanner stream={fakeStream()} isAttackers />);
+    expect(screen.queryByTestId('combat-banner-subtitle')).toBeNull();
+    expect(screen.getByTestId('combat-banner-message')).toBeInTheDocument();
+  });
+
+  it('hides the sub-title row when step is outside the combat enum range', () => {
+    setCombatDialog('Select attackers', { possibleAttackers: ['a-1'] });
+    setStep('PRECOMBAT_MAIN');
+    render(<CombatBanner stream={fakeStream()} isAttackers />);
+    expect(screen.queryByTestId('combat-banner-subtitle')).toBeNull();
+  });
+
+  it('renders the de-emphasized hint row at testid combat-banner-hint', () => {
+    setCombatDialog('Select attackers', { possibleAttackers: ['a-1'] });
+    setStep('DECLARE_ATTACKERS');
+    render(<CombatBanner stream={fakeStream()} isAttackers />);
+    const hint = screen.getByTestId('combat-banner-hint');
+    expect(hint.textContent).toBe('Click creatures on the board to toggle');
+    // De-emphasized one notch (zinc-500 → zinc-600) per spec.
+    expect(hint.className).toContain('text-zinc-600');
+    expect(hint.className).not.toContain('text-zinc-500');
+  });
+
+  it('Done button is the outlined-pill primary affordance', () => {
+    setCombatDialog('Select attackers', { possibleAttackers: ['a-1'] });
+    render(<CombatBanner stream={fakeStream()} isAttackers />);
+    const done = screen.getByTestId('combat-banner-done');
+    expect(done.className).toContain('rounded-full');
+    expect(done.className).toContain('border-2');
+    expect(done.className).toContain('border-amber-400');
+  });
+
+  it('banner has the inset top-edge highlight (lifts the frosted band off battlefield)', () => {
+    setCombatDialog('Select attackers', { possibleAttackers: ['a-1'] });
+    render(<CombatBanner stream={fakeStream()} isAttackers />);
+    const banner = screen.getByTestId('combat-banner');
+    // Inline style merges the spotlight + the inset highlight; we
+    // check the inset stripe by string-match on the boxShadow value.
+    expect(banner.style.boxShadow).toContain('inset 0 1px 0');
+  });
+
+  it('Done click still sends boolean true (regression — depth ladder must not break dispatch)', async () => {
+    const stream = fakeStream();
+    const user = userEvent.setup();
+    setCombatDialog('Select attackers', { possibleAttackers: ['a-1'] });
+    setStep('DECLARE_ATTACKERS');
+    render(<CombatBanner stream={stream} isAttackers />);
+    await user.click(screen.getByTestId('combat-banner-done'));
+    expect(stream.sendPlayerResponse).toHaveBeenCalledWith(11, 'boolean', true);
   });
 });

@@ -5,6 +5,23 @@ import { renderUpstreamMarkup } from './markupRenderer';
 import type { GameStream } from '../stream';
 
 /**
+ * Bundle 3-B (2026-05-09) — sub-title display map. Engine PhaseStep
+ * enum names mapped to title-case labels for the banner's secondary
+ * row. Limited to the six combat sub-steps because (a) the banner
+ * only fires during gameSelect with combat options, and (b) showing
+ * a non-combat label here would be misleading. Steps not in this
+ * map cause the sub-title row to be omitted.
+ */
+const COMBAT_STEP_LABEL: Record<string, string> = {
+  BEGIN_COMBAT: 'Begin combat',
+  DECLARE_ATTACKERS: 'Declare attackers',
+  DECLARE_BLOCKERS: 'Declare blockers',
+  FIRST_COMBAT_DAMAGE: 'First-strike damage',
+  COMBAT_DAMAGE: 'Combat damage',
+  END_COMBAT: 'End of combat',
+};
+
+/**
  * Slice 70-Y.4 (2026-05-01) — bottom-center banner for declare-
  * attackers + declare-blockers. Replaces the bottom-right side
  * panel that CombatPanel rendered through GameDialog. Per the
@@ -58,6 +75,7 @@ interface CombatBannerProps {
 
 export function CombatBanner({ stream, isAttackers }: CombatBannerProps) {
   const dialog = useGameStore((s) => s.pendingDialog);
+  const step = useGameStore((s) => s.gameView?.step ?? '');
   const { ref, containerProps, style } = useDraggable({
     placement: {
       kind: 'bottom-center',
@@ -83,6 +101,14 @@ export function CombatBanner({ stream, isAttackers }: CombatBannerProps) {
   const allAttackLabel = data.options?.specialButton ?? '';
   const showAllAttack = isAttackers && allAttackLabel.length > 0;
 
+  // Bundle 3-B — sub-title row from gameView.step. The banner only
+  // fires during combat-related gameSelect frames in practice; steps
+  // outside the combat enum range collapse to no sub-title (the row
+  // simply doesn't render). The map above is internal to this file
+  // — sharing it with PhaseTimeline would be over-coupling for two
+  // tiny look-up tables, so it stays duplicated by design.
+  const subTitleLabel = COMBAT_STEP_LABEL[step] ?? '';
+
   const sendDone = () => {
     // Read the latest messageId at click time — combat may have
     // re-fired with fresh frames during the user's selection.
@@ -99,6 +125,19 @@ export function CombatBanner({ stream, isAttackers }: CombatBannerProps) {
     stream?.sendPlayerResponse(mid, 'string', 'special');
   };
 
+  // Bundle 3-B — banner restructured into a two-column layout:
+  //   left = stacked typography (title / sub-title / message / hint),
+  //   right = action buttons (All-attack secondary, Done primary).
+  // The horizontal footprint is unchanged at the segment level; the
+  // banner grows vertically by ~30px to accommodate the sub-title +
+  // hint rows. Banner-sprawl monitoring (per the bundle 3 brief) is
+  // a 3-D concern — at this stage the height is well under the
+  // hand-fan clearance budget.
+  //
+  // Top-edge inset highlight (boxShadow style) lifts the frosted
+  // band off busy battlefield content; uses a literal style rather
+  // than a Tailwind utility because Tailwind's box-shadow utilities
+  // don't compose with `shadow-xl` cleanly (would override it).
   return (
     <div
       ref={ref}
@@ -108,44 +147,68 @@ export function CombatBanner({ stream, isAttackers }: CombatBannerProps) {
       data-combat-phase={isAttackers ? 'attackers' : 'blockers'}
       data-drag-handle
       className={
-        'relative pointer-events-auto inline-flex items-center gap-3 rounded-lg ' +
+        'relative pointer-events-auto inline-flex items-stretch gap-4 rounded-lg ' +
         'bg-zinc-900/95 border border-amber-400/60 shadow-xl ' +
         'px-4 py-2 text-zinc-100 backdrop-blur-sm cursor-move select-none z-40'
       }
-      style={style}
+      style={{
+        ...style,
+        boxShadow:
+          '0 25px 50px -12px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.06)',
+      }}
       {...containerProps}
     >
       <BannerSpotlightHalo testId="combat-banner-halo" />
-      <span
-        className="text-xs uppercase tracking-wider text-amber-300 font-semibold"
-        data-testid="combat-banner-title"
-      >
-        {isAttackers ? 'Combat — attackers' : 'Combat — blockers'}
-      </span>
-      <span className="text-sm" data-testid="combat-banner-message">
-        {renderUpstreamMarkup(message)}
-      </span>
-      <span className="text-xs text-zinc-500 italic">
-        Click creatures on the board to toggle
-      </span>
-      {showAllAttack && (
+      <div className="flex flex-col justify-center flex-1 min-w-0">
+        <span
+          data-testid="combat-banner-title"
+          className="text-xs uppercase tracking-wider text-amber-300 font-semibold"
+        >
+          Combat
+        </span>
+        {subTitleLabel && (
+          <span
+            data-testid="combat-banner-subtitle"
+            data-step={step}
+            className="text-[10px] uppercase tracking-wide text-zinc-400 mt-0.5"
+          >
+            {subTitleLabel}
+          </span>
+        )}
+        <span data-testid="combat-banner-message" className="text-sm mt-1">
+          {renderUpstreamMarkup(message)}
+        </span>
+        <span
+          data-testid="combat-banner-hint"
+          className="text-xs text-zinc-600 italic mt-0.5"
+        >
+          Click creatures on the board to toggle
+        </span>
+      </div>
+      <div className="flex items-center gap-2 self-center">
+        {showAllAttack && (
+          <button
+            type="button"
+            onClick={sendAllAttack}
+            data-testid="combat-banner-all-attack"
+            className="px-3 py-1 rounded text-sm font-medium bg-amber-700/70 hover:bg-amber-700 text-amber-50 transition"
+          >
+            {allAttackLabel}
+          </button>
+        )}
         <button
           type="button"
-          onClick={sendAllAttack}
-          data-testid="combat-banner-all-attack"
-          className="px-3 py-1 rounded text-sm font-medium bg-amber-700/70 hover:bg-amber-700 text-amber-50 transition"
+          onClick={sendDone}
+          data-testid="combat-banner-done"
+          className={
+            'px-4 py-1.5 rounded-full text-sm font-semibold transition ' +
+            'bg-amber-500 hover:bg-amber-400 text-zinc-950 ' +
+            'border-2 border-amber-400'
+          }
         >
-          {allAttackLabel}
+          Done
         </button>
-      )}
-      <button
-        type="button"
-        onClick={sendDone}
-        data-testid="combat-banner-done"
-        className="px-3 py-1 rounded text-sm font-medium bg-amber-500 hover:bg-amber-400 text-zinc-950 transition"
-      >
-        Done
-      </button>
+      </div>
     </div>
   );
 }
