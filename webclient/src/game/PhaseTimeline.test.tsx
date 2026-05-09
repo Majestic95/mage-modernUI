@@ -306,6 +306,63 @@ describe('PhaseTimeline — priority-status suffix in compact+combat', () => {
     ).toBe('Priority status: waiting on lyrra');
   });
 
+  it('PRIORITY wins over PASSING when both hasPriority and skipState are set (B.3 — precedence lock)', () => {
+    // Defensive: it shouldn't be possible for a player to hold
+    // priority AND have a skip macro armed simultaneously, but the
+    // wire could conceivably emit both. PRIORITY is the actionable
+    // signal — a user with priority should NOT be told they're
+    // auto-passing. This test locks that precedence so a future
+    // refactor of deriveCombatPriorityStatus can't silently flip it.
+    renderTimeline(
+      buildGameView({
+        step: 'DECLARE_ATTACKERS',
+        phase: 'COMBAT',
+        priorityPlayerName: 'alice',
+        players: [
+          buildPlayer({ hasPriority: true, skipState: 'NEXT_MAIN' }),
+        ],
+      }),
+      'tabletop',
+    );
+    expect(
+      screen
+        .getByTestId('phase-priority-suffix')
+        .getAttribute('data-priority-kind'),
+    ).toBe('priority');
+  });
+
+  it('renders an em-dash placeholder when WAITING but priorityPlayerName is empty (B.1)', () => {
+    // Defensive: transient frames or mapper bugs could emit empty
+    // priorityPlayerName while the local player isn't priority. The
+    // ribbon used to render bare "WAITING" with no name; B.1 now
+    // surfaces an em-dash so the missing data is visually distinct
+    // from an actual unnamed opponent.
+    const orphan = webGameViewSchema.parse({
+      turn: 4,
+      phase: 'COMBAT',
+      step: 'BEGIN_COMBAT',
+      activePlayerName: 'alice',
+      priorityPlayerName: '',
+      special: false,
+      rollbackTurnsAllowed: false,
+      totalErrorsCount: 0,
+      totalEffectsCount: 0,
+      gameCycle: 0,
+      myPlayerId: ME_ID,
+      myHand: {},
+      stack: {},
+      combat: [],
+      players: [
+        buildPlayer({ hasPriority: false, skipState: '' }),
+      ],
+    });
+    renderTimeline(orphan, 'tabletop');
+    const waitingOn = screen.getByTestId('phase-priority-waiting-on');
+    expect(waitingOn.textContent).toBe('—');
+    expect(waitingOn.getAttribute('data-waiting-unknown')).toBe('true');
+    expect(waitingOn.getAttribute('title')).toBe('Unknown opponent');
+  });
+
   it('falls back to WAITING when local player can\'t be matched (spectator-style)', () => {
     // myPlayerId set to a uuid that doesn't match any player in the
     // list — defensive branch in deriveCombatPriorityStatus.
@@ -369,6 +426,35 @@ describe('PhaseTimeline — non-compact (current variant) preserves legacy behav
   it('omits the legacy left block in compact mode', () => {
     renderTimeline(buildGameView({ step: 'PRECOMBAT_MAIN' }), 'tabletop');
     expect(screen.queryByTestId('active-player-name')).toBeNull();
+  });
+
+  it('runway expands when gameView.phase=COMBAT even if step is an unknown enum value (B.4 — enum drift defense)', () => {
+    // Hypothetical: upstream adds a new combat sub-step we haven't
+    // enumerated in TIMELINE_PHASES. Pre-fix, the runway silently
+    // collapsed because no step matched. Post-fix, gameView.phase
+    // alone is enough to keep the runway expanded, so the user
+    // still sees "we're in combat" — the unknown step just lights
+    // no specific tick.
+    renderTimeline(
+      buildGameView({
+        phase: 'COMBAT',
+        step: 'POST_COMBAT_THIRD_STRIKE_DAMAGE',
+      }),
+      'tabletop',
+    );
+    expect(screen.getAllByTestId('phase-step-label')).toHaveLength(6);
+    const positions = screen
+      .getAllByTestId('phase-step-label')
+      .map((l) => l.getAttribute('data-step-position'));
+    expect(positions.every((p) => p === 'future')).toBe(true);
+    expect(screen.queryByTestId('phase-step-past-mark')).toBeNull();
+    // The combat segment still flags itself as combat-active so
+    // downstream consumers (e.g. styling, the legacy variant's
+    // header detection) see consistent state.
+    const combatSegment = screen
+      .getAllByTestId('phase-segment')
+      .find((s) => s.getAttribute('data-phase') === 'Combat');
+    expect(combatSegment?.getAttribute('data-combat-active')).toBe('true');
   });
 
   it('past combat sub-steps are NOT marked past in non-compact mode (P3 exemption is compact-only)', () => {

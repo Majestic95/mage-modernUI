@@ -198,6 +198,7 @@ export function PhaseTimeline({ gameView }: { gameView: WebGameView }) {
             key={phase.label}
             phase={phase}
             activeStep={gameView.step}
+            activePhase={gameView.phase}
             totalSteps={totalSteps}
             compact={compact}
             priorityStatus={priorityStatus}
@@ -211,21 +212,34 @@ export function PhaseTimeline({ gameView }: { gameView: WebGameView }) {
 function PhaseSegment({
   phase,
   activeStep,
+  activePhase,
   totalSteps,
   compact = false,
   priorityStatus,
 }: {
   phase: PhaseConfig;
   activeStep: string;
+  activePhase: string;
   totalSteps: number;
   compact?: boolean;
   priorityStatus: PriorityStatus;
 }) {
-  const isActivePhase = phase.steps.some((s) => s.name === activeStep);
+  const isActivePhaseByStep = phase.steps.some((s) => s.name === activeStep);
   const activeStepIdx = phase.steps.findIndex((s) => s.name === activeStep);
   // Bundle 3-A — only the combat phase reintroduces sub-step labels
   // in compact mode, and only when it's currently active. This is the
   // surgical exemption to the P3 header-budget invariant.
+  //
+  // 3-X.2 (B.4) — also treat the segment as active when gameView.phase
+  // says we're in COMBAT but gameView.step is an unknown enum value
+  // (defensive against upstream adding a new combat sub-step we
+  // haven't enumerated). The runway still expands with all six known
+  // ticks in their default state — better than a silent collapse to
+  // compact-no-runway, which would mislead the user about whether
+  // they're in combat at all.
+  const isActivePhaseByPhase =
+    phase.label === 'Combat' && activePhase === 'COMBAT';
+  const isActivePhase = isActivePhaseByStep || isActivePhaseByPhase;
   const isCombatActive = compact && phase.label === 'Combat' && isActivePhase;
   const showSubStepLabels =
     (phase.showStepLabels && !compact) || isCombatActive;
@@ -387,15 +401,16 @@ function PriorityStatusSuffix({ status }: { status: PriorityStatus }) {
     >
       <span className="opacity-50 mr-1">·</span>
       <span className={colorClass}>{label}</span>
-      {status.kind === 'waiting' && status.waitingOn && (
+      {status.kind === 'waiting' && (
         <>
           <span className="opacity-50 mx-1">·</span>
           <span
             data-testid="phase-priority-waiting-on"
+            data-waiting-unknown={!status.waitingOn || undefined}
             className="text-zinc-400"
-            title={status.waitingOn}
+            title={status.waitingOn || 'Unknown opponent'}
           >
-            {status.waitingOn}
+            {status.waitingOn || '—'}
           </span>
         </>
       )}
