@@ -315,3 +315,39 @@ describe('CombatBanner — bundle 3-B depth ladder', () => {
     expect(stream.sendPlayerResponse).toHaveBeenCalledWith(11, 'boolean', true);
   });
 });
+
+describe('CombatBanner — bundle 3-C tempo meter', () => {
+  beforeEach(() => {
+    useGameStore.getState().reset();
+  });
+
+  it('renders the tempo bar container and fill sub-element', () => {
+    setCombatDialog('Select attackers', { possibleAttackers: ['a-1'] });
+    setStep('DECLARE_ATTACKERS');
+    render(<CombatBanner stream={fakeStream()} isAttackers />);
+    expect(screen.getByTestId('combat-banner-tempo')).toBeInTheDocument();
+    expect(screen.getByTestId('combat-banner-tempo-fill')).toBeInTheDocument();
+  });
+
+  it('tempo fill starts at calm intensity (initial state — no time elapsed)', () => {
+    setCombatDialog('Select attackers', { possibleAttackers: ['a-1'] });
+    setStep('DECLARE_ATTACKERS');
+    render(<CombatBanner stream={fakeStream()} isAttackers />);
+    const fill = screen.getByTestId('combat-banner-tempo-fill');
+    expect(fill.getAttribute('data-intensity')).toBe('calm');
+    expect(fill.style.width).toBe('0%');
+    // Calm color class.
+    expect(fill.className).toContain('bg-zinc-500/60');
+  });
+
+  it('tempo bar respects motion-safe transition (reduced-motion users get no width-anim)', () => {
+    setCombatDialog('Select attackers', { possibleAttackers: ['a-1'] });
+    setStep('DECLARE_ATTACKERS');
+    render(<CombatBanner stream={fakeStream()} isAttackers />);
+    const fill = screen.getByTestId('combat-banner-tempo-fill');
+    // motion-safe variant prefix means the transition only applies
+    // when prefers-reduced-motion is NOT reduce; reduced-motion users
+    // see discrete 1s width steps.
+    expect(fill.className).toContain('motion-safe:transition-');
+  });
+});

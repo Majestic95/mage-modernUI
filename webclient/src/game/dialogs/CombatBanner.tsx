@@ -3,6 +3,7 @@ import { useGameStore } from '../store';
 import { BannerSpotlightHalo } from './BannerSpotlightHalo';
 import { renderUpstreamMarkup } from './markupRenderer';
 import type { GameStream } from '../stream';
+import { useCombatTempo } from '../useCombatTempo';
 
 /**
  * Bundle 3-B (2026-05-09) — sub-title display map. Engine PhaseStep
@@ -109,6 +110,19 @@ export function CombatBanner({ stream, isAttackers }: CombatBannerProps) {
   // tiny look-up tables, so it stays duplicated by design.
   const subTitleLabel = COMBAT_STEP_LABEL[step] ?? '';
 
+  // Bundle 3-C — tempo meter at the bottom edge. Resets on step
+  // change (engine moving us between combat sub-steps), grows from
+  // 0% to 100% width over 120s, color-grades from calm grey to warm
+  // amber to hot red. The hook is the sole source of pacing state;
+  // tests in useCombatTempo.test.ts lock in the thresholds.
+  const tempo = useCombatTempo(step);
+  const tempoFillClass =
+    tempo.intensity === 'hot'
+      ? 'bg-red-400/80'
+      : tempo.intensity === 'warm'
+        ? 'bg-amber-400/70'
+        : 'bg-zinc-500/60';
+
   const sendDone = () => {
     // Read the latest messageId at click time — combat may have
     // re-fired with fresh frames during the user's selection.
@@ -208,6 +222,20 @@ export function CombatBanner({ stream, isAttackers }: CombatBannerProps) {
         >
           Done
         </button>
+      </div>
+      <div
+        data-testid="combat-banner-tempo"
+        className="absolute inset-x-4 bottom-1.5 h-[2px] bg-zinc-800/40 rounded-full overflow-hidden"
+      >
+        <div
+          data-testid="combat-banner-tempo-fill"
+          data-intensity={tempo.intensity}
+          className={
+            'h-full ease-linear motion-safe:transition-[width,background-color] motion-safe:duration-700 ' +
+            tempoFillClass
+          }
+          style={{ width: `${tempo.progress * 100}%` }}
+        />
       </div>
     </div>
   );
