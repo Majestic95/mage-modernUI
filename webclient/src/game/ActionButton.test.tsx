@@ -25,6 +25,7 @@ const storeState = vi.hoisted(() => ({
       playerId: string;
       skipState: string;
       hasPriority?: boolean;
+      isActive?: boolean;
     }>;
   },
 }));
@@ -132,10 +133,14 @@ describe('ActionButton — TURN counter', () => {
 });
 
 describe('ActionButton — morphing label', () => {
-  it('shows "Attack" during DECLARE_ATTACKERS step with my priority', () => {
+  it('shows "Attack" during DECLARE_ATTACKERS step when local is the active player', () => {
     setGame({
       step: 'DECLARE_ATTACKERS',
       priorityPlayerName: 'alice',
+      players: [
+        { playerId: 'p-alice', skipState: '', hasPriority: true, isActive: true },
+        { playerId: 'p-bob', skipState: '', hasPriority: false, isActive: false },
+      ],
     });
     authState.session = { username: 'alice' };
     render(<ActionButton stream={makeStream()} />);
@@ -144,16 +149,56 @@ describe('ActionButton — morphing label', () => {
     ).toHaveTextContent('Attack');
   });
 
-  it('shows "Block" during DECLARE_BLOCKERS with my priority', () => {
+  it('shows "Next Phase" during DECLARE_ATTACKERS when defender holds priority (not "Attack")', () => {
+    // Item 4 (2026-05-09) — defender during opponent's declare-attackers
+    // priority window must NOT see "Attack"; they can't declare attackers.
+    setGame({
+      step: 'DECLARE_ATTACKERS',
+      priorityPlayerName: 'alice',
+      players: [
+        { playerId: 'p-alice', skipState: '', hasPriority: true, isActive: false },
+        { playerId: 'p-bob', skipState: '', hasPriority: false, isActive: true },
+      ],
+    });
+    authState.session = { username: 'alice' };
+    render(<ActionButton stream={makeStream()} />);
+    expect(
+      screen.getByTestId('action-button-primary'),
+    ).toHaveTextContent('Next Phase');
+  });
+
+  it('shows "Block" during DECLARE_BLOCKERS when local is the defender (not active)', () => {
     setGame({
       step: 'DECLARE_BLOCKERS',
       priorityPlayerName: 'alice',
+      players: [
+        { playerId: 'p-alice', skipState: '', hasPriority: true, isActive: false },
+        { playerId: 'p-bob', skipState: '', hasPriority: false, isActive: true },
+      ],
     });
     authState.session = { username: 'alice' };
     render(<ActionButton stream={makeStream()} />);
     expect(
       screen.getByTestId('action-button-primary'),
     ).toHaveTextContent('Block');
+  });
+
+  it('shows "Next Phase" during DECLARE_BLOCKERS when active player holds priority (not "Block")', () => {
+    // Item 4 (2026-05-09) — active player during their own declare-blockers
+    // priority window must NOT see "Block"; they're not blocking, opponents are.
+    setGame({
+      step: 'DECLARE_BLOCKERS',
+      priorityPlayerName: 'alice',
+      players: [
+        { playerId: 'p-alice', skipState: '', hasPriority: true, isActive: true },
+        { playerId: 'p-bob', skipState: '', hasPriority: false, isActive: false },
+      ],
+    });
+    authState.session = { username: 'alice' };
+    render(<ActionButton stream={makeStream()} />);
+    expect(
+      screen.getByTestId('action-button-primary'),
+    ).toHaveTextContent('Next Phase');
   });
 
   it('shows "Pass Priority" when stack non-empty + my priority', () => {

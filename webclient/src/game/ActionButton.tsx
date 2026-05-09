@@ -212,6 +212,14 @@ function deriveActionLabel(
   myPriority: boolean,
   stackEmpty: boolean,
   hasNextPhase: boolean,
+  /** True iff the local player is the active player (whose turn it
+   *  is). Required to gate the "Attack" / "Block" labels: the active
+   *  player attacks, the non-active player(s) block. Without this,
+   *  the post-declaration priority window during DECLARE_ATTACKERS
+   *  would surface "Attack" to the defender (who has priority but
+   *  cannot declare attackers), which is misleading. Same mirror
+   *  case for DECLARE_BLOCKERS / active-player priority. */
+  isActive: boolean,
 ): string {
   // Slice 70-M critic IMPORTANT-2/3/4 fix — labels match catalog
   // §5.C verbatim. Catalog wording ("Attack" / "Block" / "End Step")
@@ -220,10 +228,15 @@ function deriveActionLabel(
   if (!hasNextPhase) {
     return 'Done';
   }
-  if (step === 'DECLARE_ATTACKERS' && myPriority) {
+  // 2026-05-09 (item 4) — gate Attack / Block on whose turn it is.
+  // Active player declares attackers; defenders declare blockers.
+  // The priority window stays open to both during each step, so
+  // myPriority alone is insufficient to know what action the local
+  // player is about to take.
+  if (step === 'DECLARE_ATTACKERS' && myPriority && isActive) {
     return 'Attack';
   }
-  if (step === 'DECLARE_BLOCKERS' && myPriority) {
+  if (step === 'DECLARE_BLOCKERS' && myPriority && !isActive) {
     return 'Block';
   }
   if (!stackEmpty && myPriority) {
@@ -375,7 +388,15 @@ export function ActionButton({ stream }: Props) {
   // games has no phase to advance to.
   const nextPhase = nextPhaseAction(gv.step);
   const primaryAction = primaryActionFor(gv.step, stackEmpty, myPriority);
-  const label = deriveActionLabel(gv.step, myPriority, stackEmpty, !!nextPhase);
+  const isActive =
+    gv.players.find((p) => p.playerId === gv.myPlayerId)?.isActive ?? false;
+  const label = deriveActionLabel(
+    gv.step,
+    myPriority,
+    stackEmpty,
+    !!nextPhase,
+    isActive,
+  );
 
   // Disabled when no phase action is available or the local player
   // lacks priority. Matches the legacy footer and avoids clicks that
