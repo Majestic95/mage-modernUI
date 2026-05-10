@@ -20,6 +20,7 @@ import {
   type WebPlayerView,
 } from '../api/schemas';
 import { CombatArrows } from './CombatArrows';
+import { useArrowIsolation } from './arrowIsolationStore';
 
 /* =====================================================================
  * Slice 1-A — minimal player fixtures for defender-color tests. Tests
@@ -183,12 +184,19 @@ beforeEach(() => {
   ResizeObserverMock.instances = [];
   globalThis.ResizeObserver =
     ResizeObserverMock as unknown as typeof ResizeObserver;
+  // Slice 1-B — clear any pin lingering from a prior test before
+  // each render. The store is a module singleton; without this the
+  // pin would leak across tests.
+  useArrowIsolation.getState().clearPin();
 });
 
 afterEach(() => {
   vi.useRealTimers();
   globalThis.ResizeObserver = originalResizeObserver;
   document.body.innerHTML = '';
+  // Slice 1-B — extra safety: clear pin after each test so a
+  // failure that didn't unmount cleanly doesn't poison the next.
+  useArrowIsolation.getState().clearPin();
 });
 
 // --- Endpoint fan ----------------------------------------------------
@@ -757,5 +765,235 @@ describe('CombatArrows — defender color + dash (slice 1-A)', () => {
     expect(arrow?.getAttribute('stroke')).toBe(
       'var(--color-targeting-arrow)',
     );
+  });
+});
+
+// --- Bundle 1 / Slice 1-B — pinned-defender isolation ---------------
+
+describe('CombatArrows — pinned-defender isolation (slice 1-B)', () => {
+  it('pinned defender id dims arrows targeting other defenders', () => {
+    const pinnedDef = '00000000-0000-0000-0000-0000000000aa';
+    const otherDef = '00000000-0000-0000-0000-0000000000bb';
+    mountPermanentNode('att-p', { x: 100, y: 200, w: 80, h: 112 });
+    mountPermanentNode('att-o', { x: 100, y: 400, w: 80, h: 112 });
+    mountPortraitNode(pinnedDef, { x: 1200, y: 100, w: 60, h: 60 });
+    mountPortraitNode(otherDef, { x: 1200, y: 500, w: 60, h: 60 });
+
+    const players = makePlayers([
+      { playerId: pinnedDef, colorIdentity: ['G'] },
+      { playerId: otherDef, colorIdentity: ['U'] },
+    ]);
+    const groups = [
+      makeCombatGroup({
+        defenderId: pinnedDef,
+        attackers: {
+          'att-p': makePerm(makeCard({ id: 'att-p', cardId: 'att-p' })),
+        },
+      }),
+      makeCombatGroup({
+        defenderId: otherDef,
+        attackers: {
+          'att-o': makePerm(makeCard({ id: 'att-o', cardId: 'att-o' })),
+        },
+      }),
+    ];
+
+    // Pin BEFORE render so the very first paint already shows the
+    // dim. Pin is read by CombatArrows on render.
+    useArrowIsolation.getState().togglePin(pinnedDef);
+    const { container } = render(
+      <CombatArrows combat={groups} players={players} />,
+    );
+
+    const pinnedArrow = container.querySelector(
+      `path[data-arrow-defender-id="${pinnedDef}"]`,
+    );
+    const otherArrow = container.querySelector(
+      `path[data-arrow-defender-id="${otherDef}"]`,
+    );
+    // Pinned defender's arrow stays at full opacity.
+    expect(pinnedArrow?.getAttribute('opacity')).toBe('1');
+    // Other defender's arrow is dimmed.
+    const otherOpacity = parseFloat(otherArrow?.getAttribute('opacity') ?? '1');
+    expect(otherOpacity).toBeLessThan(1);
+    expect(otherOpacity).toBeGreaterThanOrEqual(0.4);
+    // Stack-zone wrapper announces isolation is active.
+    const stackZone = container.querySelector('[data-testid="stack-zone"]');
+    expect(stackZone?.getAttribute('data-hover-isolating')).toBe('true');
+  });
+
+  it('clearing the pin restores all arrows to full opacity', () => {
+    const defA = '00000000-0000-0000-0000-0000000000aa';
+    const defB = '00000000-0000-0000-0000-0000000000bb';
+    mountPermanentNode('att-a', { x: 100, y: 200, w: 80, h: 112 });
+    mountPermanentNode('att-b', { x: 100, y: 400, w: 80, h: 112 });
+    mountPortraitNode(defA, { x: 1200, y: 100, w: 60, h: 60 });
+    mountPortraitNode(defB, { x: 1200, y: 500, w: 60, h: 60 });
+
+    const players = makePlayers([
+      { playerId: defA, colorIdentity: ['G'] },
+      { playerId: defB, colorIdentity: ['U'] },
+    ]);
+    const groups = [
+      makeCombatGroup({
+        defenderId: defA,
+        attackers: {
+          'att-a': makePerm(makeCard({ id: 'att-a', cardId: 'att-a' })),
+        },
+      }),
+      makeCombatGroup({
+        defenderId: defB,
+        attackers: {
+          'att-b': makePerm(makeCard({ id: 'att-b', cardId: 'att-b' })),
+        },
+      }),
+    ];
+
+    useArrowIsolation.getState().togglePin(defA);
+    const { container } = render(
+      <CombatArrows combat={groups} players={players} />,
+    );
+
+    // Confirm dimming is in effect first.
+    expect(
+      parseFloat(
+        container
+          .querySelector(`path[data-arrow-defender-id="${defB}"]`)
+          ?.getAttribute('opacity') ?? '1',
+      ),
+    ).toBeLessThan(1);
+
+    // Clear pin — arrows must re-render at full opacity.
+    act(() => {
+      useArrowIsolation.getState().clearPin();
+    });
+
+    const paths = container.querySelectorAll('path[marker-end]');
+    for (const p of paths) {
+      expect(p.getAttribute('opacity')).toBe('1');
+    }
+  });
+
+  it('Escape clears the pin while CombatArrows is mounted', () => {
+    const defenderId = '00000000-0000-0000-0000-0000000000aa';
+    mountPermanentNode('att-1', { x: 100, y: 200, w: 80, h: 112 });
+    mountPortraitNode(defenderId, { x: 1200, y: 100, w: 60, h: 60 });
+    const players = makePlayers([
+      { playerId: defenderId, colorIdentity: ['G'] },
+    ]);
+    const groups = [
+      makeCombatGroup({
+        defenderId,
+        attackers: {
+          'att-1': makePerm(makeCard({ id: 'att-1', cardId: 'att-1' })),
+        },
+      }),
+    ];
+
+    useArrowIsolation.getState().togglePin(defenderId);
+    render(<CombatArrows combat={groups} players={players} />);
+    expect(useArrowIsolation.getState().pinnedDefenderId).toBe(defenderId);
+
+    // Fire Escape on document — CombatArrows registers a keydown
+    // listener at the document level for exactly this case.
+    act(() => {
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+      );
+    });
+    expect(useArrowIsolation.getState().pinnedDefenderId).toBeNull();
+  });
+
+  it('unmounting CombatArrows preserves the pin (mid-combat stack push must not clear it)', () => {
+    // Slice 1-B critic-pass fix: the pin's lifetime is "for one
+    // combat phase," not "for the lifetime of the CombatArrows
+    // component." StackZoneRedesigned unmounts CombatArrows every
+    // time a stack appears mid-combat (instant cast, triggered
+    // ability) and remounts on stack-resolution. If the pin died on
+    // CombatArrows unmount, the user would lose their pin silently
+    // on every stack push. Phase-driven auto-clear in the
+    // arrowIsolationStore handles the actual "combat ends" case.
+    const defenderId = '00000000-0000-0000-0000-0000000000aa';
+    mountPermanentNode('att-1', { x: 100, y: 200, w: 80, h: 112 });
+    mountPortraitNode(defenderId, { x: 1200, y: 100, w: 60, h: 60 });
+    const players = makePlayers([
+      { playerId: defenderId, colorIdentity: ['G'] },
+    ]);
+    const groups = [
+      makeCombatGroup({
+        defenderId,
+        attackers: {
+          'att-1': makePerm(makeCard({ id: 'att-1', cardId: 'att-1' })),
+        },
+      }),
+    ];
+
+    useArrowIsolation.getState().togglePin(defenderId);
+    const { unmount } = render(
+      <CombatArrows combat={groups} players={players} />,
+    );
+    expect(useArrowIsolation.getState().pinnedDefenderId).toBe(defenderId);
+
+    unmount();
+    // Pin SURVIVES the unmount — ready to re-engage when CombatArrows
+    // remounts after the stack resolves.
+    expect(useArrowIsolation.getState().pinnedDefenderId).toBe(defenderId);
+  });
+
+  it('pin wins over hover (sticky filter takes precedence over cursor)', () => {
+    const pinnedDef = '00000000-0000-0000-0000-0000000000aa';
+    const hoverDef = '00000000-0000-0000-0000-0000000000bb';
+    const { node: hoverPortraitNode } = (() => {
+      const node = mountPortraitNode(hoverDef, {
+        x: 1200,
+        y: 500,
+        w: 60,
+        h: 60,
+      });
+      return { node };
+    })();
+    mountPermanentNode('att-p', { x: 100, y: 200, w: 80, h: 112 });
+    mountPermanentNode('att-h', { x: 100, y: 400, w: 80, h: 112 });
+    mountPortraitNode(pinnedDef, { x: 1200, y: 100, w: 60, h: 60 });
+
+    const players = makePlayers([
+      { playerId: pinnedDef, colorIdentity: ['G'] },
+      { playerId: hoverDef, colorIdentity: ['U'] },
+    ]);
+    const groups = [
+      makeCombatGroup({
+        defenderId: pinnedDef,
+        attackers: {
+          'att-p': makePerm(makeCard({ id: 'att-p', cardId: 'att-p' })),
+        },
+      }),
+      makeCombatGroup({
+        defenderId: hoverDef,
+        attackers: {
+          'att-h': makePerm(makeCard({ id: 'att-h', cardId: 'att-h' })),
+        },
+      }),
+    ];
+
+    useArrowIsolation.getState().togglePin(pinnedDef);
+    const { container } = render(
+      <CombatArrows combat={groups} players={players} />,
+    );
+
+    // Hover the OTHER defender's portrait. Without a pin, this would
+    // pull isolation onto hoverDef's arrow. With pinnedDef pinned,
+    // the pin must win.
+    fireEvent.pointerOver(hoverPortraitNode);
+
+    const pinnedArrow = container.querySelector(
+      `path[data-arrow-defender-id="${pinnedDef}"]`,
+    );
+    const hoverArrow = container.querySelector(
+      `path[data-arrow-defender-id="${hoverDef}"]`,
+    );
+    expect(pinnedArrow?.getAttribute('opacity')).toBe('1');
+    expect(
+      parseFloat(hoverArrow?.getAttribute('opacity') ?? '1'),
+    ).toBeLessThan(1);
   });
 });

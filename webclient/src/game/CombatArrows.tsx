@@ -5,6 +5,7 @@ import type {
 } from '../api/schemas';
 import { TargetingArrow } from './TargetingArrow';
 import { useCombatArrowGeometry } from './combatArrowGeometry';
+import { useArrowIsolation } from './arrowIsolationStore';
 
 /**
  * Combat-arrow overlay — extracted from StackZone.tsx (was at 865
@@ -55,6 +56,33 @@ export function CombatArrows({
 }) {
   const arrows = useCombatArrowGeometry(combat, players);
   const hoveredId = useHoveredCombatId();
+  // Slice 1-B — pinned-defender id from the IncomingTag click affordance.
+  // Pin wins over hover (sticky filter takes precedence over transient
+  // cursor hover); cursor hover still works when no pin is active.
+  const pinnedDefenderId = useArrowIsolation((s) => s.pinnedDefenderId);
+  const clearPin = useArrowIsolation((s) => s.clearPin);
+
+  // Slice 1-B — Escape clears the pin globally. Listener registers
+  // alongside CombatArrows and tears down on unmount. The cleanup
+  // does NOT clear the pin: CombatArrows unmounts every time a stack
+  // appears mid-combat (StackZoneRedesigned mounts arrows only when
+  // stack is empty + combat active), so unmount-clearing would
+  // silently kill the user's pin on every instant cast. Pin lifetime
+  // instead lives on a module-level phase watcher in
+  // {@link arrowIsolationStore} that auto-clears on COMBAT → non-
+  // COMBAT transitions — surviving stack pushes within combat,
+  // dying only when combat actually ends.
+  useEffect(() => {
+    const onKeyDown = (ev: KeyboardEvent) => {
+      if (ev.key === 'Escape') {
+        clearPin();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [clearPin]);
 
   if (arrows.length === 0) {
     return (
@@ -66,7 +94,15 @@ export function CombatArrows({
     );
   }
 
-  const isolating = hoveredId !== null;
+  // Slice 1-B — isolation precedence: pinned id (sticky, from
+  // IncomingTag click) wins over hovered id (transient, from cursor).
+  // The pinned id is a player UUID; convert to the same `player:<id>`
+  // shape `useHoveredCombatId` returns for portrait hits so downstream
+  // matching is uniform.
+  const isolatingId = pinnedDefenderId
+    ? `player:${pinnedDefenderId}`
+    : hoveredId;
+  const isolating = isolatingId !== null;
 
   return (
     <div
@@ -79,7 +115,7 @@ export function CombatArrows({
       {arrows.map((spec) => {
         const matches =
           isolating &&
-          (spec.attackerId === hoveredId || spec.targetId === hoveredId);
+          (spec.attackerId === isolatingId || spec.targetId === isolatingId);
         const opacity = !isolating ? 1 : matches ? 1 : ARROW_DIM_OPACITY;
         return (
           <TargetingArrow

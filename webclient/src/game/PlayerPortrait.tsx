@@ -48,6 +48,7 @@ import { type CSSProperties, useMemo } from 'react';
 import type { WebPlayerView } from '../api/schemas';
 import { computeHaloBackground, manaTokenForCode } from './halo';
 import { scryfallCommanderImageUrl, scryfallPrintingImageUrl } from './scryfall';
+import { IncomingTag } from './IncomingTag';
 import { useGameStore } from './store';
 import { usePlayerCommanders } from './usePlayerCommanders';
 
@@ -229,6 +230,11 @@ export function PlayerPortrait({
           paddingPx={HALO_PADDING_PX[size]}
         />
       )}
+      {/* Slice 1-B — incoming-attacker badge for opponents during
+          combat. IncomingTag self-gates on phase + own-portrait
+          + count > 0, so it renders nothing in non-combat states.
+          Position is absolute (T1: portrait footprint unchanged). */}
+      <IncomingTag playerId={player.playerId} />
     </div>
   );
 }
