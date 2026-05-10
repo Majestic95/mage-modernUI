@@ -302,6 +302,16 @@ export const CARD_TARGETED_PULSE_PERIOD_MS = 1000;
 export const PARTICLE_DRIFT_CLASS = 'animate-particle-drift';
 export const PARTICLE_DRIFT_PERIOD_MS = 60_000;
 
+// Bundle 5 / Slice 5-A — damage parcel cinematic. Per the brief:
+// 300-400ms per parcel travel along the arrow path. 350ms is the
+// midpoint — long enough that the parcel's path is legible at
+// 1440p, short enough that multi-attacker stagger doesn't pile up
+// uncomfortably. STAGGER_MS spaces multi-event frames so the user
+// can count individual hits ("three parcels arrived in sequence")
+// instead of seeing a single muddled flash.
+export const DAMAGE_PARCEL_TRAVEL_MS = 350;
+export const DAMAGE_PARCEL_STAGGER_MS = 50;
+
 /* ============================================================
    Slice 70-Z.2 / 70-Z.3 / 70-Z.4 — card animation system timing.
    The seam ships in 70-Z.2 (no visual change); the constants here

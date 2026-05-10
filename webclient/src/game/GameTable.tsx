@@ -31,6 +31,7 @@ import { useLayoutVariant } from '../layoutVariants';
 import { CommanderColorsProvider } from './useCommanderColors';
 import { buildOnSpendMana } from './manaPaymentAdapter';
 import { TurnEdgeGlow } from './TurnEdgeGlow';
+import { DamageParcelOverlay } from './DamageParcelOverlay';
 import { useTurnTabTitle } from './useTurnTabTitle';
 import { useStopOnCombatSteps } from './useStopOnCombatSteps';
 
@@ -344,6 +345,13 @@ export function GameTable({ gameId, gameView, stream }: Props) {
           + pointer-events-none → never blocks clicks, sits below
           ActionPanel (z-30) / dialogs / modals. */}
       <TurnEdgeGlow />
+
+      {/* Bundle 5 / Slice 5-A — damage parcels travel along combat
+          arrows when life decreases. Viewport-fixed SVG overlay
+          mounted at z=25 (above arrows + below ActionPanel chrome
+          at z=30). Empty SVG when no parcels in flight; pointer-
+          events:none so it never blocks clicks. */}
+      <DamageParcelOverlay />
 
       {/* Slice 70-O — REDESIGN drops the in-grid header slot. The
           actual GameHeader is rendered as a sibling of GameTable
