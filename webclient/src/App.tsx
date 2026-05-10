@@ -4,6 +4,7 @@ import { webRoomRefSchema } from './api/schemas';
 import { useAuthStore } from './auth/store';
 import { useGameStore } from './game/store';
 import { DemoGame } from './pages/DemoGame';
+import { CinematicLab } from './pages/CinematicLab';
 import { NewLobbyScreen } from './lobby/NewLobbyScreen';
 import { CardSearch } from './pages/CardSearch';
 import { Decks } from './pages/Decks';
@@ -303,6 +304,14 @@ export function App() {
   const gameParam = new URLSearchParams(window.location.search).get('game');
   if (gameParam === 'fixture') {
     return <DemoGame />;
+  }
+  // Bundle 5 cinematic lab — same fixture as DemoGame but with a
+  // floating control panel for triggering each Bundle 5 cinematic
+  // (5-A parcels / 5-B portrait bloom / 5-C freeze-frame /
+  // 5-D creature death / 5-E lethal commander damage) on demand.
+  // Dev verification surface; reachable from any environment.
+  if (gameParam === 'cinematic-lab') {
+    return <CinematicLab />;
   }
 
   if (!session) {
