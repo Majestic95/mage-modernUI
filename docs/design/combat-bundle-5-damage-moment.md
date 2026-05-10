@@ -67,10 +67,9 @@ Sub-features 1-4 read existing fields via the established `gameDelta` frame-diff
 
 **Files touched (client side):**
 - `webclient/src/api/schemas.ts` — add `commanderDamageReceived: Record<string, number>` to `webPlayerViewSchema` + matching TS interface. `.default({})` so older 1.34 servers parse cleanly during a rolling deploy.
-- `webclient/src/api/protocol.ts` (or wherever `EXPECTED_SCHEMA_VERSION` lives) — bump to `'1.35'`.
-- `docs/schema/web-player-view.json` — schema snapshot updated.
-- `docs/schema/CHANGELOG.md` — migration note: *"1.34 → 1.35 — `WebPlayerView.commanderDamageReceived` added (Map<commanderId, totalDamage>). Empty `{}` default for older clients. Engine-side tracker has always existed; this exposes it for client-side cinematic and tracker UI."*
-- `webclient/src/game/CommanderDamageTracker.tsx` — migrate from localStorage source-of-truth to wire source-of-truth. Keep localStorage as a fallback during the rolling-deploy window only. Update its tests to assert the wire path.
+- `docs/schema/CHANGELOG.md` — migration note for 1.35.
+
+**CommanderDamageTracker migration deferred to slice 5-F.1.** The tracker currently uses localStorage as source-of-truth with manual +/- entry. Migrating it to wire-source-first is meaningful UI work (tracker decides whether to hide the manual-entry buttons in wire-mode, when to fall back during rolling deploy, etc.) and gets its own focused slice with a UI critic pass. Slice 5-F's wire field is additive — the tracker keeps working unchanged on either schema. Slice 5-E (lethal-21 cinematic) reads the wire field directly via `useGameDelta`-style frame diff, NOT through the tracker.
 
 **Test plan:**
 - Mapper snapshot test verifies `commanderDamageReceived` shape matches expected fixtures across (a) no commander damage, (b) one opponent dealt N damage with one commander, (c) partner-pairings where two opponent commanders deal damage independently, (d) Karn-the-Liberated colorless commander identity.
@@ -289,7 +288,8 @@ This brief covers damage parcels, portrait bloom, freeze-frame, and death desatu
 
 | Slice | Ships | Gate to next |
 |---|---|---|
-| 5-F | Foundation: per-opponent commander damage on the wire (schema 1.34 → 1.35) | Mapper integration test green; client zod parses 1.35 fixture; CommanderDamageTracker reads wire field; rolling-deploy fallback verified |
+| 5-F | Foundation: per-opponent commander damage on the wire (schema 1.34 → 1.35) | Mapper unit tests green; client zod parses 1.35 fixture; existing CommanderDamageTracker unaffected (additive field) |
+| 5-F.1 | Migrate CommanderDamageTracker from localStorage source-of-truth to wire source-of-truth (UI critic pass for the manual-entry-vs-wire interaction) | Tracker reads `gv.players[i].commanderDamageReceived` first, falls back to localStorage on 1.34 servers; manual-entry UX decision ratified |
 | 5-A | Damage parcels traveling along arrows | 3-attacker fixture renders 3 parcels in sequence; foundation Option D obscuration acceptable; no path traversed twice |
 | 5-B | Portrait halo bloom on life-loss | Bloom peak within ±100ms of LifeCounter flash; reduced-motion clean |
 | 5-C | Freeze-frame on damage resolution | 400ms board-tint pulses correctly on multi-death frame; per-creature rim accurate; no T1 displacement |

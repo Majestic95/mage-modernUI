@@ -4,6 +4,7 @@ import mage.constants.RangeOfInfluence;
 import mage.game.Game;
 import mage.game.permanent.Permanent;
 import mage.players.Player;
+import mage.watchers.common.CommanderInfoWatcher;
 import mage.webapi.lobby.DisplayCardRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -61,6 +62,7 @@ public final class MultiplayerFrameContext {
             new MultiplayerFrameContext(
                     Map.of(),
                     WebSocketConnectionTracker.EVERY_PLAYER_CONNECTED,
+                    Map.of(),
                     Map.of());
 
     /**
@@ -86,10 +88,32 @@ public final class MultiplayerFrameContext {
     private final WebSocketConnectionTracker connectionTracker;
     private final Map<UUID, DisplayCardRegistry.DisplayCard> displayCardsByPlayer;
 
+    /**
+     * Slice 5-F (Bundle 5 / Damage Moment, 2026-05-10) — per-player
+     * inverted view of {@link CommanderInfoWatcher}'s damage tracking.
+     * Outer key: damaged player UUID. Inner key: commander UUID that
+     * dealt the damage. Inner value: total combat damage (CR 704.5b
+     * counts only combat damage). Empty inner map means "no commander
+     * has dealt damage to this player." Powers Bundle 5's lethal-21
+     * cinematic (slice 5-E) + the new wire-format
+     * `commanderDamageReceived` field on {@code WebPlayerView}.
+     *
+     * <p>Source-of-truth: each commander has its own
+     * {@link CommanderInfoWatcher} whose {@code getDamageToPlayer()}
+     * exposes a {@code Map<UUID damagedPlayerId, Integer damage>}.
+     * The engine itself iterates this in
+     * {@code GameCommanderImpl.checkStateBasedActions()} to enforce
+     * the "21+ commander damage = lose" rule. We invert the same
+     * data so each {@code WebPlayerView} carries its own incoming-
+     * damage map.
+     */
+    private final Map<UUID, Map<UUID, Integer>> commanderDamageByPlayer;
+
     private MultiplayerFrameContext(
             Map<UUID, Set<UUID>> goadingByPermanent,
             WebSocketConnectionTracker connectionTracker,
-            Map<UUID, DisplayCardRegistry.DisplayCard> displayCardsByPlayer) {
+            Map<UUID, DisplayCardRegistry.DisplayCard> displayCardsByPlayer,
+            Map<UUID, Map<UUID, Integer>> commanderDamageByPlayer) {
         this.goadingByPermanent = goadingByPermanent;
         this.connectionTracker = connectionTracker == null
                 ? WebSocketConnectionTracker.EVERY_PLAYER_CONNECTED
@@ -97,6 +121,9 @@ public final class MultiplayerFrameContext {
         this.displayCardsByPlayer = displayCardsByPlayer == null
                 ? Map.of()
                 : displayCardsByPlayer;
+        this.commanderDamageByPlayer = commanderDamageByPlayer == null
+                ? Map.of()
+                : commanderDamageByPlayer;
     }
 
     /**
@@ -120,7 +147,8 @@ public final class MultiplayerFrameContext {
             return this;
         }
         return new MultiplayerFrameContext(
-                this.goadingByPermanent, effective, this.displayCardsByPlayer);
+                this.goadingByPermanent, effective,
+                this.displayCardsByPlayer, this.commanderDamageByPlayer);
     }
 
     public MultiplayerFrameContext withDisplayCards(
@@ -131,7 +159,8 @@ public final class MultiplayerFrameContext {
             return this;
         }
         return new MultiplayerFrameContext(
-                this.goadingByPermanent, this.connectionTracker, effective);
+                this.goadingByPermanent, this.connectionTracker,
+                effective, this.commanderDamageByPlayer);
     }
 
     /**
@@ -153,6 +182,33 @@ public final class MultiplayerFrameContext {
     }
 
     /**
+     * Slice 5-F — per-commander commander-damage map for the given
+     * (damaged) player, keyed by commander UUID as String. Returns
+     * {@link Map#of()} when this player has received no commander
+     * damage (the most common case during early-game turns).
+     *
+     * <p>Output shape: {@code commanderId.toString() -> totalDamage}
+     * with String keys for direct JSON serialization (UUID is not a
+     * standard JSON map-key type — Jackson's default config rejects
+     * UUID keys without an explicit {@code @JsonSerialize}).
+     */
+    public Map<String, Integer> commanderDamageReceivedFor(UUID playerId) {
+        if (playerId == null) {
+            return Map.of();
+        }
+        Map<UUID, Integer> raw = commanderDamageByPlayer.get(playerId);
+        if (raw == null || raw.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Integer> out = new HashMap<>(raw.size());
+        for (Map.Entry<UUID, Integer> e : raw.entrySet()) {
+            if (e.getKey() == null || e.getValue() == null) continue;
+            out.put(e.getKey().toString(), e.getValue());
+        }
+        return Map.copyOf(out);
+    }
+
+    /**
      * Slice 69c — package-private factory for unit tests. Production
      * code uses {@link #extract(Game)} which reads live engine state;
      * tests use this to build a synthetic context with hand-crafted
@@ -171,7 +227,25 @@ public final class MultiplayerFrameContext {
         return new MultiplayerFrameContext(
                 goadingByPermanent == null ? Map.of() : goadingByPermanent,
                 WebSocketConnectionTracker.EVERY_PLAYER_CONNECTED,
+                Map.of(),
                 Map.of());
+    }
+
+    /**
+     * Slice 5-F — package-private factory for unit tests covering
+     * commander-damage wire population. Tests pass a synthetic
+     * {@code damagedPlayerId -> commanderId -> damage} map without
+     * needing a live engine + watchers.
+     */
+    static MultiplayerFrameContext forTestingWithCommanderDamage(
+            Map<UUID, Map<UUID, Integer>> commanderDamageByPlayer) {
+        return new MultiplayerFrameContext(
+                Map.of(),
+                WebSocketConnectionTracker.EVERY_PLAYER_CONNECTED,
+                Map.of(),
+                commanderDamageByPlayer == null
+                        ? Map.of()
+                        : commanderDamageByPlayer);
     }
 
     /**
@@ -186,34 +260,118 @@ public final class MultiplayerFrameContext {
             return EMPTY;
         }
         try {
-            var battlefield = game.getBattlefield();
-            if (battlefield == null) {
+            Map<UUID, Set<UUID>> goading = extractGoading(game);
+            Map<UUID, Map<UUID, Integer>> cmdrDamage =
+                    extractCommanderDamage(game);
+            if ((goading == null || goading.isEmpty())
+                    && cmdrDamage.isEmpty()) {
                 return EMPTY;
             }
-            var permanents = battlefield.getAllPermanents();
-            if (permanents == null || permanents.isEmpty()) {
-                return EMPTY;
-            }
-            Map<UUID, Set<UUID>> goading = null;
-            for (Permanent perm : permanents) {
-                if (perm == null) continue;
-                Set<UUID> goaders = perm.getGoadingPlayers();
-                if (goaders == null || goaders.isEmpty()) continue;
-                if (goading == null) {
-                    goading = new HashMap<>();
-                }
-                goading.put(perm.getId(), Set.copyOf(goaders));
-            }
-            return goading == null
-                    ? EMPTY
-                    : new MultiplayerFrameContext(
-                            goading,
-                            WebSocketConnectionTracker.EVERY_PLAYER_CONNECTED,
-                            Map.of());
+            return new MultiplayerFrameContext(
+                    goading == null ? Map.of() : goading,
+                    WebSocketConnectionTracker.EVERY_PLAYER_CONNECTED,
+                    Map.of(),
+                    cmdrDamage);
         } catch (RuntimeException ex) {
             LOG.debug("MultiplayerFrameContext.extract failed; returning empty: {}",
                     ex.toString());
             return EMPTY;
+        }
+    }
+
+    /**
+     * Snapshot the battlefield's goading state. Extracted from
+     * {@link #extract(Game)} during the slice 5-F refactor when a
+     * second snapshot pass (commander damage) was added; keeping the
+     * two passes as separate helpers makes the two failure modes
+     * independently observable in logs / metrics.
+     */
+    private static Map<UUID, Set<UUID>> extractGoading(Game game) {
+        var battlefield = game.getBattlefield();
+        if (battlefield == null) {
+            return null;
+        }
+        var permanents = battlefield.getAllPermanents();
+        if (permanents == null || permanents.isEmpty()) {
+            return null;
+        }
+        Map<UUID, Set<UUID>> goading = null;
+        for (Permanent perm : permanents) {
+            if (perm == null) continue;
+            Set<UUID> goaders = perm.getGoadingPlayers();
+            if (goaders == null || goaders.isEmpty()) continue;
+            if (goading == null) {
+                goading = new HashMap<>();
+            }
+            goading.put(perm.getId(), Set.copyOf(goaders));
+        }
+        return goading;
+    }
+
+    /**
+     * Slice 5-F — snapshot per-(damaged-player, commander) damage by
+     * iterating each player's {@link CommanderInfoWatcher} and
+     * inverting its {@code getDamageToPlayer()} map. The engine itself
+     * iterates these watchers in
+     * {@code GameCommanderImpl.checkStateBasedActions()} to enforce
+     * the lethal-21 rule (CR 704.5b); we read the same source-of-truth
+     * for the wire-format {@code commanderDamageReceived} field.
+     *
+     * <p>Returns an empty map if no commander has dealt damage to any
+     * player (most common case in non-Commander formats AND in
+     * early-Commander-game turns before combat damage starts).
+     *
+     * <p>Defensive on every read — a hint failure here just costs the
+     * Bundle 5 cinematic for that frame, never the frame itself.
+     */
+    private static Map<UUID, Map<UUID, Integer>> extractCommanderDamage(
+            Game game) {
+        try {
+            var players = game.getPlayers();
+            if (players == null || players.isEmpty()) {
+                return Map.of();
+            }
+            // Outer key: damaged player. Inner: commanderId -> damage.
+            // Built lazily so non-Commander games short-circuit to
+            // Map.of() without iterating watchers.
+            Map<UUID, Map<UUID, Integer>> out = null;
+            for (Player p : players.values()) {
+                if (p == null) continue;
+                Set<UUID> commanderIds = p.getCommandersIds();
+                if (commanderIds == null || commanderIds.isEmpty()) {
+                    continue;
+                }
+                for (UUID commanderId : commanderIds) {
+                    if (commanderId == null) continue;
+                    CommanderInfoWatcher watcher = game.getState()
+                            .getWatcher(CommanderInfoWatcher.class,
+                                    commanderId);
+                    if (watcher == null) continue;
+                    Map<UUID, Integer> damageMap =
+                            watcher.getDamageToPlayer();
+                    if (damageMap == null || damageMap.isEmpty()) continue;
+                    for (Map.Entry<UUID, Integer> e
+                            : damageMap.entrySet()) {
+                        UUID damagedId = e.getKey();
+                        Integer dmg = e.getValue();
+                        if (damagedId == null || dmg == null
+                                || dmg <= 0) {
+                            continue;
+                        }
+                        if (out == null) {
+                            out = new HashMap<>();
+                        }
+                        out.computeIfAbsent(damagedId,
+                                        k -> new HashMap<>())
+                                .put(commanderId, dmg);
+                    }
+                }
+            }
+            return out == null ? Map.of() : Map.copyOf(out);
+        } catch (RuntimeException ex) {
+            LOG.debug("MultiplayerFrameContext.extractCommanderDamage "
+                    + "failed; returning empty: {}", ex.toString());
+            return Map.of();
         }
     }
 

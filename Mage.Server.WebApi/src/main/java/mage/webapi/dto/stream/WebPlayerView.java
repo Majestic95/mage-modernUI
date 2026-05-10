@@ -96,6 +96,19 @@ import java.util.Map;
  * @param displayCardSetCode set code for the chosen display-card printing.
  * @param displayCardNumber collector number for the chosen display-card
  *     printing.
+ * @param commanderDamageReceived per-commander combat damage this
+ *     player has been dealt by each opposing commander, keyed by the
+ *     dealing commander's UUID (as a string for JSON-friendly map
+ *     keys). Drives Bundle 5's lethal-21 cinematic (slice 5-E
+ *     "authority sequence" when any single value crosses 20 → CR
+ *     704.5b state-based loss) AND the rewrite of the existing
+ *     CommanderDamageTracker that previously tracked manually via
+ *     localStorage. Empty map when no commander has dealt combat
+ *     damage to this player. Source-of-truth: each commander's
+ *     {@code mage.watchers.common.CommanderInfoWatcher} —
+ *     specifically its {@code getDamageToPlayer()} map, inverted
+ *     here so each WebPlayerView carries its own incoming-damage
+ *     map. Added in schema 1.35 (slice 5-F, Bundle 5 / Damage Moment).
  */
 public record WebPlayerView(
         String playerId,
@@ -125,7 +138,8 @@ public record WebPlayerView(
         String skipState,
         String displayCardName,
         String displayCardSetCode,
-        String displayCardNumber
+        String displayCardNumber,
+        Map<String, Integer> commanderDamageReceived
 ) {
 
     /** {@link #connectionState} — player has ≥1 active game-stream socket. */

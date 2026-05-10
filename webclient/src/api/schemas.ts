@@ -778,6 +778,15 @@ export const webPlayerViewSchema = z.object({
   displayCardName: z.string().default(''),
   displayCardSetCode: z.string().default(''),
   displayCardNumber: z.string().default(''),
+  // Schema 1.35 — slice 5-F (Bundle 5 / Damage Moment) — per-commander
+  // commander-damage map, keyed by commander UUID. Drives Bundle 5
+  // slice 5-E's lethal-21 cinematic AND the rewrite of
+  // CommanderDamageTracker that previously tracked manually via
+  // localStorage. `.default({})` so 1.34 servers still parse during
+  // a rolling deploy.
+  commanderDamageReceived: z
+    .record(z.string(), z.number().int().nonnegative())
+    .default({}),
 });
 export type WebPlayerView = z.infer<typeof webPlayerViewSchema>;
 export type SkipState = WebPlayerView['skipState'];

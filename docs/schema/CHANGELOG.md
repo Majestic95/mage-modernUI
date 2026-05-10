@@ -56,6 +56,60 @@ emitted newest-first; only the client interpretation was wrong. No
 
 ---
 
+## 1.35 — 2026-05-10 — `commanderDamageReceived` field on `WebPlayerView` (Bundle 5 / Slice 5-F)
+
+Adds per-commander commander-damage tracking to the wire. Each
+`WebPlayerView` now carries a `commanderDamageReceived` map keyed
+by the dealing commander's UUID (string), with values in total
+combat damage that commander has dealt to this player. Source-of-
+truth: each commander's `mage.watchers.common.CommanderInfoWatcher`
+(specifically its `getDamageToPlayer()` map, inverted per-recipient
+in `MultiplayerFrameContext.extractCommanderDamage`).
+
+Drives Bundle 5's lethal-21 cinematic (slice 5-E "authority
+sequence" when any single value crosses 20 → CR 704.5b state-based
+loss) AND replaces the existing `CommanderDamageTracker`'s
+localStorage-only manual-entry scheme with a wire-sourced read.
+
+```diff
+ // WebPlayerView — additive optional field
+ {
+   "playerId": "...",
+   "name": "alice",
+   "life": 38,
++  "commanderDamageReceived": {
++    "<opposing-commander-uuid>": 7,
++    "<another-opposing-commander-uuid>": 14
++  }
+ }
+```
+
+Parsing semantics:
+- Empty `{}` map (default) when no commander has dealt combat
+  damage to this player. Most common case in non-Commander formats
+  AND in early Commander turns before damage starts.
+- Keys are UUID-as-string; clients should NOT assume any specific
+  iteration order.
+- Values are non-negative integers; CR 704.5b's lethal threshold
+  is `>= 21` (engine enforces in
+  `GameCommanderImpl.checkStateBasedActions()`).
+
+Forward-compat: a 1.34 client connecting to a 1.35 server tolerates
+the new field via Jackson's project-wide unknown-property leniency
+(no client-side parse error). A 1.35 client connecting to a 1.34
+server gets `{}` from zod's `.default({})` since the field is absent
+in the response payload — the lethal-21 cinematic just doesn't fire
+under that pairing, which is graceful degradation rather than
+crash. Rolling deploy in either direction is safe.
+
+Companion client work:
+- `webclient/src/api/schemas.ts` — `commanderDamageReceived: z.record(z.string(), z.number().int().nonnegative()).default({})`.
+- `webclient/src/game/CommanderDamageTracker.tsx` — migrate from
+  localStorage source-of-truth to wire-source-first with localStorage
+  fallback during rolling deploy.
+- Bundle 5 slices 5-E + 5-X.0 consume the new field for the cinematic
+  + lethal-detection logic.
+
 ## 1.34 — 2026-05-08 — `difficulty` field on `WebAddAiRequest` (Slice D)
 
 Adds the optional `difficulty` field to the `POST
