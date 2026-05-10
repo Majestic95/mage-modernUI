@@ -4,7 +4,12 @@ import {
   webPlayerViewSchema,
 } from '../api/schemas';
 import { useGameStore } from './store';
-import { useArrowIsolation } from './arrowIsolationStore';
+import {
+  getAttackerDrawn,
+  markAttackerDrawn,
+  resetDrawnAttackerIds,
+  useArrowIsolation,
+} from './arrowIsolationStore';
 
 function makePlayer() {
   return webPlayerViewSchema.parse({
@@ -63,6 +68,7 @@ function setPhase(phase: string) {
 
 beforeEach(() => {
   useArrowIsolation.getState().clearPin();
+  resetDrawnAttackerIds();
   useGameStore.getState().reset();
 });
 
@@ -71,6 +77,7 @@ afterEach(() => {
   // into the next. The store is module-singleton; act on it via its
   // own clearPin action to keep the test surface honest.
   useArrowIsolation.getState().clearPin();
+  resetDrawnAttackerIds();
   useGameStore.getState().reset();
 });
 
@@ -160,5 +167,57 @@ describe('arrowIsolationStore — phase-driven auto-clear (slice 1-B fix)', () =
     setPhase('COMBAT');
     useArrowIsolation.getState().togglePin('p1');
     expect(useArrowIsolation.getState().pinnedDefenderId).toBe('p1');
+  });
+});
+
+describe('arrowIsolationStore — slice 6-A drawnAttackerIds tracking', () => {
+  it('starts with no attackers marked drawn', () => {
+    expect(getAttackerDrawn('attacker-1')).toBe(false);
+  });
+
+  it('markAttackerDrawn flips the per-attacker flag', () => {
+    expect(getAttackerDrawn('attacker-1')).toBe(false);
+    markAttackerDrawn('attacker-1');
+    expect(getAttackerDrawn('attacker-1')).toBe(true);
+  });
+
+  it('markAttackerDrawn is per-id (other attackers stay unmarked)', () => {
+    markAttackerDrawn('attacker-1');
+    expect(getAttackerDrawn('attacker-1')).toBe(true);
+    expect(getAttackerDrawn('attacker-2')).toBe(false);
+  });
+
+  it('markAttackerDrawn is idempotent (Set semantics — second mark is a no-op)', () => {
+    markAttackerDrawn('attacker-1');
+    markAttackerDrawn('attacker-1');
+    expect(getAttackerDrawn('attacker-1')).toBe(true);
+  });
+
+  it('resetDrawnAttackerIds clears every previously-marked attacker', () => {
+    markAttackerDrawn('attacker-1');
+    markAttackerDrawn('attacker-2');
+    resetDrawnAttackerIds();
+    expect(getAttackerDrawn('attacker-1')).toBe(false);
+    expect(getAttackerDrawn('attacker-2')).toBe(false);
+  });
+
+  it('phase watcher clears drawnAttackerIds on COMBAT → non-COMBAT exit', () => {
+    setPhase('COMBAT');
+    markAttackerDrawn('attacker-1');
+    markAttackerDrawn('attacker-2');
+    expect(getAttackerDrawn('attacker-1')).toBe(true);
+    setPhase('POSTCOMBAT_MAIN');
+    expect(getAttackerDrawn('attacker-1')).toBe(false);
+    expect(getAttackerDrawn('attacker-2')).toBe(false);
+  });
+
+  it('drawnAttackerIds survive stack push during combat (phase stays COMBAT)', () => {
+    setPhase('COMBAT');
+    markAttackerDrawn('attacker-1');
+    // Same-phase re-set simulates a gameUpdate frame for a stack push
+    // — the COMBAT-exit branch must not fire here, mirroring the pin
+    // lifetime invariant tested above.
+    setPhase('COMBAT');
+    expect(getAttackerDrawn('attacker-1')).toBe(true);
   });
 });

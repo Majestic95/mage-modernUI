@@ -122,6 +122,55 @@ export function resetCombatArrowsStaggered(): void {
   arrowsAlreadyStaggered = false;
 }
 
+/* ===================================================================
+ * Bundle 6 / Slice 6-A — per-attacker pen-stroke draw-in tracking.
+ *
+ * Mirrors slice 1-C's `arrowsAlreadyStaggered` lifecycle but with a
+ * Set keyed by attacker id (rather than a single combat-wide bool) so
+ * an attacker added mid-combat — e.g., a creature granted attacking
+ * via a triggered ability after attackers were originally declared —
+ * still gets its own draw-in cinematic on first appearance. The Set
+ * survives stack-push remounts of CombatArrows and is cleared by the
+ * COMBAT → non-COMBAT phase watcher below so the next combat re-draws
+ * each attacker from scratch.
+ * =================================================================*/
+
+const drawnAttackerIds = new Set<string>();
+
+/**
+ * Slice 6-A — has the pen-stroke draw-in already played for an
+ * attacker in the current combat phase? CombatArrows reads this per
+ * arrow to decide whether to pass `drawIn={true}` (animate) or
+ * `drawIn={false}` (static post-drawn state).
+ *
+ * @internal Only `CombatArrows` should consume this; tests use
+ *           {@link resetDrawnAttackerIds} for fixture cleanup.
+ */
+export function getAttackerDrawn(attackerId: string): boolean {
+  return drawnAttackerIds.has(attackerId);
+}
+
+/**
+ * Slice 6-A — mark an attacker as having played its draw-in animation,
+ * so subsequent renders within the same combat phase render the static
+ * post-drawn state. Idempotent.
+ *
+ * @internal Only `CombatArrows` should call this from a post-paint
+ *           effect.
+ */
+export function markAttackerDrawn(attackerId: string): void {
+  drawnAttackerIds.add(attackerId);
+}
+
+/**
+ * Slice 6-A — exposed for test setup so the module-level Set stays
+ * honest across the test suite. Production callers don't need this;
+ * the phase watcher resets the Set automatically on COMBAT exit.
+ */
+export function resetDrawnAttackerIds(): void {
+  drawnAttackerIds.clear();
+}
+
 let lastPhase: string = '';
 // Guard against test mocks that stub `useGameStore` without zustand's
 // .subscribe API (vi.mock('./store', ...) in unrelated tests). The
@@ -136,6 +185,10 @@ if (typeof useGameStore.subscribe === 'function') {
       // Slice 1-C — also reset the stagger flag so the NEXT combat
       // phase replays the cinematic from scratch.
       arrowsAlreadyStaggered = false;
+      // Slice 6-A — reset per-attacker draw-in tracking so each
+      // attacker re-strokes on the next combat phase. Same lifetime
+      // as the stagger flag.
+      drawnAttackerIds.clear();
     }
     lastPhase = phase;
   });
