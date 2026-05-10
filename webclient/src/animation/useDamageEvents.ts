@@ -17,12 +17,25 @@
  * <p><b>Combat-damage-only attribution:</b> when a player's life
  * decreases, we attribute the loss to attackers in `gameView.combat`
  * groups whose `defenderId` matches the affected player. One event
- * is emitted PER attacker — the parcel cinematic then traces each
- * attacker's arrow path independently. We do NOT try to apportion
- * damage proportionally across multiple attackers; the `amount`
- * field carries the player's total life delta, which is sufficient
- * for the cinematic (parcel size + bloom intensity don't depend on
- * pixel-accurate attribution).
+ * is emitted PER UNBLOCKED attacker — the parcel cinematic then
+ * traces each attacker's arrow path independently. Blocked groups
+ * (any blocker present in {@code group.blockers}) are SKIPPED at the
+ * diff layer; the attacker→player arrow doesn't render for those
+ * groups anyway (CombatArrows geometry produces attacker→blocker
+ * arrows when blockers exist), so the cinematic shouldn't fire.
+ * Trample-ignorant simplification: a trampler whose damage spilled
+ * over to the player is treated as fully blocked — accepted per the
+ * user's "Option B" direction (2026-05-10).
+ *
+ * <p><b>Per-attacker amount:</b> the {@code amount} field on each
+ * event is THIS attacker's power (parsed via {@link parseAttackerPower}),
+ * not the frame-total life delta. The damage-tier mapping in
+ * {@link damageParcelTravelMs} therefore reflects each creature's
+ * "weight" individually — a 1/1 swing fires a fast LIGHT-tier parcel
+ * even in the same frame that a 5/5 fires a slow HEAVY-tier parcel.
+ * Pre-2026-05-10-pm this was the frame total (every attacker's
+ * parcel sharing the same tier); user direction corrected the
+ * intent.
  *
  * <p>Non-combat life loss (instant cast, ETB triggers) currently
  * emits NO parcel events because we have no attacker to anchor to.
@@ -44,7 +57,12 @@ import type { WebGameView } from '../api/schemas';
  * One damage event derived from a frame-diff. `attackerId` is the
  * permanent UUID of the attacker the cinematic should anchor to;
  * `defenderId` is the player UUID whose life decreased; `amount` is
- * the total life delta for that frame (NOT per-attacker).
+ * THIS attacker's power (parsed from the wire string via
+ * {@link parseAttackerPower}, with fallback 1 for non-numeric
+ * values like {@code "*"} / {@code "X"} / {@code "1+*"}). The
+ * damage-tier mapping in {@code damageParcelTravelMs} then runs
+ * per-attacker so a 1/1 swing fires a LIGHT parcel and a 5/5 swing
+ * fires a HEAVY parcel even when both happen in the same frame.
  *
  * <p>Stable type shape so future slices can extend the union with
  * `creature_damaged` (perm.damage delta) and `creature_died` (zone
@@ -57,6 +75,18 @@ export type DamageEvent = {
   defenderId: string;
   amount: number;
 };
+
+/**
+ * Parses a creature's power string (the wire field is `string` —
+ * supports `"*"`, `"X"`, `"1+*"`, etc.) into a tier-friendly number.
+ * Non-numeric / zero / negative values fall back to 1 so the parcel
+ * still fires (visually reads as a small hit).
+ */
+export function parseAttackerPower(power: string): number {
+  const n = Number.parseInt(power, 10);
+  if (Number.isFinite(n) && n > 0) return n;
+  return 1;
+}
 
 /**
  * Slice 5-A — subscribe to game-state diffs and fire `onEvents` with
@@ -127,18 +157,25 @@ export function diffDamageEvents(
     if (prevLife === undefined) continue;
     const delta = prevLife - nextPlayer.life;
     if (delta <= 0) continue;
-    // Find combat groups attacking this player. Each attacker in
-    // those groups gets its own event so the parcel cinematic can
-    // trace one arrow per attacker.
+    // Find combat groups attacking this player. Each UNBLOCKED
+    // attacker gets its own event so the parcel cinematic can trace
+    // one arrow per attacker. Blocked groups are skipped — the
+    // attacker→player arrow doesn't render for them (CombatArrows
+    // geometry produces attacker→blocker arrows instead), so the
+    // parcel has no path to traverse anyway. Trample is ignored
+    // (Option B simplification, 2026-05-10).
     for (const group of next.combat) {
       if (group.defenderId !== nextPlayer.playerId) continue;
-      for (const attackerId of Object.keys(group.attackers ?? {})) {
+      if (Object.keys(group.blockers ?? {}).length > 0) continue;
+      for (const [attackerId, attackerPerm] of Object.entries(
+        group.attackers ?? {},
+      )) {
         if (!attackerId) continue;
         events.push({
           kind: 'parcel_hit_player',
           attackerId,
           defenderId: nextPlayer.playerId,
-          amount: delta,
+          amount: parseAttackerPower(attackerPerm.card.power),
         });
       }
     }
