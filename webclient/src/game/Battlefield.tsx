@@ -12,7 +12,6 @@ import type { DragState } from './useDragState';
 import { LAYOUT_BOUNDS, REDESIGN } from '../featureFlags';
 import { useLayoutVariant } from '../layoutVariants';
 import { AsymmetricTLayout } from './asymmetricT';
-import { DefenderBeams } from './DefenderBeams';
 
 // LEGACY-BRANCH-FORK — slice 70-X.13 (Wave 4) cleanup marker.
 // Battlefield forks on REDESIGN inline (slotPart split at ~289,
@@ -132,13 +131,16 @@ export function Battlefield({
     // user wants a static viewport — content beyond bounds is
     // clipped rather than scrolled.
     <div className="flex-1 flex flex-col relative overflow-hidden">
-      {/* Slice 1-D — defender-beams viewport overlay. Mounted once
-          here (outside the variant branch) so both tabletop and the
-          legacy asymmetric-T inherit the ambient pressure indicator
-          during combat. The component is `position: fixed` so its
-          source position in the tree is incidental; rendering null
-          outside combat is the self-gate. */}
-      <DefenderBeams />
+      {/* Slice 1-X-tunings round 3 (2026-05-09) — DefenderBeams
+          unmounted here pending further design verdict on whether
+          ambient-pressure beams add user-perceived value beyond the
+          per-arrow color/dash signal. Component file
+          `./DefenderBeams.tsx` and its tests are intact; re-enable
+          by adding `import { DefenderBeams } from './DefenderBeams'`
+          at the top of this file and `<DefenderBeams />` here. The
+          slice's value proposition is documented in
+          `docs/design/combat-bundle-1-defender-lanes.md` § Slice 1-D
+          and the accompanying critic-pass log row. */}
       {/* 2026-05-03 asymmetric-T branch — when LAYOUT_BOUNDS=true the
           battlefield switches to the "asymmetric T" layout per the
           industry-research recommendation: top 55% holds 3 stacked
