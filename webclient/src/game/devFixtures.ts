@@ -162,6 +162,27 @@ export interface BuildDemoGameViewOptions {
    * "incoming N — M unblocked" math surfaces both cases.
    */
   combatActive?: boolean;
+  /**
+   * Slice 4-X.1 — combat sub-step. Defaults to {@code 'damage'}
+   * when {@link combatActive} is true (legacy `?combat=1` behavior:
+   * step = COMBAT_DAMAGE, all 3 groups already declared). Set to
+   * {@code 'declare'} to park at DECLARE_ATTACKERS with
+   * possibleAttackers populated — surfaces Bundle 4 slice 4-C's
+   * eligibility pulse + slice 4-X.0 N-E's pulse-off-when-assigned
+   * gate. The 'declare' fixture seeds half the attackers as already
+   * in combat (pulse OFF, brackets + ring on) and half as eligible-
+   * but-not-yet-picked (pulse ON, no brackets), demonstrating both
+   * states side-by-side.
+   */
+  combatPhase?: 'damage' | 'declare' | undefined;
+  /**
+   * Slice 4-X.1 — when true AND combatActive is true, mark a subset
+   * of the attacker perms as tapped so the tap-rotation fix
+   * (slice 4-X.0 B-1) is verifiable: the brackets + halo + inner
+   * ring should rotate 90° with the cardart, not stay upright as
+   * an outline of the un-tapped tile.
+   */
+  tappedAttackers?: boolean;
 }
 
 export function buildDemoGameView(
@@ -180,6 +201,23 @@ export function buildDemoGameView(
   // big-board (20 lands + 20 creatures + 20 artifacts) so peek
   // stacking renders at scale on all 4 pods simultaneously.
   const meBf: Record<string, WebPermanentView> = bf('MAJEST1C', bigBoardEntries('Plains'));
+
+  // Slice 4-X.1 — when `?tapped=1` is set alongside combatActive,
+  // mark the first 2 me-creatures (which become att1 + att2 in
+  // buildCombatGroups' deterministic ordering) as tapped so the
+  // tap-rotation fix from slice 4-X.0 B-1 is visible: the marker
+  // chrome (halo + brackets + inner ring) should rotate 90° with
+  // the cardart, not stay upright as a portrait-shaped frame
+  // around a sideways card. Mutates meBf BEFORE the me player is
+  // parsed (zod re-parse would otherwise discard the mutation).
+  if (opts.combatActive && opts.tappedAttackers) {
+    const meCreatures = Object.values(meBf).filter((p) =>
+      p.card.types.includes('CREATURE'),
+    );
+    for (const p of meCreatures.slice(0, 2)) {
+      p.tapped = true;
+    }
+  }
 
   // Helper — build a Record<id, card> from a list of [name, kind] pairs
   // for graveyard / exile seeding so every player has scannable
@@ -351,14 +389,31 @@ export function buildDemoGameView(
   // mono-R defender (alloc), with the alloc group having a
   // blocker so the "incoming N — M unblocked" math surfaces both
   // M < N and M = N cases.
-  const combat = opts.combatActive
-    ? buildCombatGroups(meBf, alloc.battlefield, goatId, momurId, allocId)
-    : [];
+  //
+  // Slice 4-X.1 — `combatPhase: 'declare'` parks at
+  // DECLARE_ATTACKERS with a SUBSET of attackers in combat (just
+  // att1 vs goat). The remaining 3 me-creatures (att2-att4) are
+  // surfaced as eligible-but-not-yet-picked via possibleAttackers
+  // in DemoGame.tsx's pendingDialog seed, demonstrating both the
+  // "pulse OFF on already-assigned" (att1 with brackets+ring) AND
+  // "pulse ON on eligible-unassigned" (att2-4 with amber breath)
+  // pulse-gate states from slice 4-X.0 N-E.
+  const combatPhase = opts.combatPhase ?? 'damage';
+  const isDeclarePhase = opts.combatActive && combatPhase === 'declare';
+  const combat = !opts.combatActive
+    ? []
+    : isDeclarePhase
+      ? buildPartialCombatGroups(meBf, goatId)
+      : buildCombatGroups(meBf, alloc.battlefield, goatId, momurId, allocId);
 
   return webGameViewSchema.parse({
     turn: 4,
     phase: opts.combatActive ? 'COMBAT' : 'PRECOMBAT_MAIN',
-    step: opts.combatActive ? 'COMBAT_DAMAGE' : 'PRECOMBAT_MAIN',
+    step: !opts.combatActive
+      ? 'PRECOMBAT_MAIN'
+      : isDeclarePhase
+        ? 'DECLARE_ATTACKERS'
+        : 'COMBAT_DAMAGE',
     activePlayerName: 'goat',
     priorityPlayerName: 'MAJEST1C',
     special: false,
@@ -413,6 +468,57 @@ export function buildDemoGameView(
  * isn't present (defensive — fixture always has enough but
  * future fixture refactors could shrink the battlefields).
  */
+/**
+ * Slice 4-X.1 — partial combat groups for the `?combat=declare`
+ * fixture mode. Only att1 is committed to combat (vs goat); the
+ * remaining 3 me-creatures (att2-att4) are surfaced separately via
+ * `getPossibleAttackerIds` + DemoGame.tsx's pendingDialog seed so
+ * they pulse as eligible-but-not-yet-picked candidates. Demonstrates
+ * both pulse-gate states (slice 4-X.0 N-E) side-by-side: att1
+ * shows brackets+ring without pulse (already assigned); att2-4
+ * show pulse without brackets (eligible but unassigned).
+ */
+function buildPartialCombatGroups(
+  meBf: Record<string, WebPermanentView>,
+  goatId: string,
+) {
+  const meCreatures = Object.values(meBf).filter((p) =>
+    p.card.types.includes('CREATURE'),
+  );
+  if (meCreatures.length < 1) return [];
+  const att1 = meCreatures[0]!;
+  return [
+    {
+      defenderId: goatId,
+      defenderName: 'goat',
+      attackers: { [att1.card.id]: att1 },
+      blockers: {},
+      blocked: false,
+    },
+  ];
+}
+
+/**
+ * Slice 4-X.1 — extracts the first 4 me-creature ids from the
+ * fixture's gameView. DemoGame.tsx feeds this into the pendingDialog
+ * seed for the `?combat=declare` mode so all 4 me-creatures show
+ * up as `possibleAttackers` (driving `eligibleCombatIds` →
+ * `isEligibleCombat` → 4-C eligibility-pulse + 4-X.0 N-E pulse
+ * gate). Returns an empty array if the fixture's me-battlefield
+ * doesn't have at least 4 creatures (defensive — current fixture
+ * always has 20 me-creatures from bigBoardEntries).
+ */
+export function getPossibleAttackerIds(gameView: WebGameView): string[] {
+  const me = gameView.players.find(
+    (p) => p.playerId === gameView.myPlayerId,
+  );
+  if (!me) return [];
+  const creatures = Object.values(me.battlefield).filter((p) =>
+    p.card.types.includes('CREATURE'),
+  );
+  return creatures.slice(0, 4).map((p) => p.card.id);
+}
+
 function buildCombatGroups(
   meBf: Record<string, WebPermanentView>,
   allocBf: Record<string, WebPermanentView>,

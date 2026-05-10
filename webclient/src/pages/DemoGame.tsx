@@ -28,10 +28,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { LayoutGroup, MotionConfig } from 'framer-motion';
 import { GameHeader } from '../game/GameHeader';
 import { GameTable } from '../game/GameTable';
-import { buildDemoGameView } from '../game/devFixtures';
+import {
+  buildDemoGameView,
+  getPossibleAttackerIds,
+} from '../game/devFixtures';
 import { VariantSwitcher } from '../game/VariantSwitcher';
 import { useGameStore } from '../game/store';
 import { useAuthStore } from '../auth/store';
+import { webGameClientMessageSchema } from '../api/schemas';
 import {
   LayoutVariantProvider,
   getActiveVariant,
@@ -44,15 +48,32 @@ export function DemoGame() {
   // 3 attacker groups across 3 different defenders so Bundle 1's
   // combat-active features (defender-color + dash arrows,
   // IncomingTag badges, wave-reveal stagger, DefenderBeams) all
-  // light up at once for live verification. Default-off keeps the
-  // pre-combat layout-iteration behavior intact for other tests.
-  const combatActive = useMemo(() => {
-    if (typeof window === 'undefined') return false;
-    return new URLSearchParams(window.location.search).get('combat') === '1';
+  // light up at once for live verification.
+  //
+  // Slice 4-X.1 — `?combat=declare` parks at DECLARE_ATTACKERS
+  // with possibleAttackers populated, surfacing Bundle 4's
+  // eligibility pulse (4-C) + pulse-off-when-assigned gate (4-X.0
+  // N-E) — neither was reachable under the static `?combat=1`
+  // damage-step fixture. `?tapped=1` taps a subset of attackers
+  // to verify the tap-rotation fix (4-X.0 B-1).
+  //
+  // Default-off keeps the pre-combat layout-iteration behavior
+  // intact for other tests.
+  const fixtureOpts = useMemo(() => {
+    if (typeof window === 'undefined') {
+      return { combatActive: false } as const;
+    }
+    const params = new URLSearchParams(window.location.search);
+    const combat = params.get('combat');
+    const combatActive = combat === '1' || combat === 'declare';
+    const combatPhase: 'damage' | 'declare' | undefined =
+      combat === 'declare' ? 'declare' : undefined;
+    const tappedAttackers = params.get('tapped') === '1';
+    return { combatActive, combatPhase, tappedAttackers };
   }, []);
   const gameView = useMemo(
-    () => buildDemoGameView({ combatActive }),
-    [combatActive],
+    () => buildDemoGameView(fixtureOpts),
+    [fixtureOpts],
   );
   // Source-of-truth for the active variant lives here — above the
   // Provider — so the switcher can update both React state (forces
@@ -71,7 +92,45 @@ export function DemoGame() {
   // button. Username matches the fixture's MAJEST1C so the
   // myPriority derivation reads true.
   useEffect(() => {
-    useGameStore.setState({ gameView, connection: 'open' });
+    // Slice 4-X.1 — when `?combat=declare`, seed a pendingDialog
+    // gameSelect message with possibleAttackers populated so
+    // interactionMode resolves to `declareAttackers`, eligibleCombatIds
+    // populates, and Bundle 4 slice 4-C's eligibility pulse fires on
+    // the eligible-but-unassigned creatures (att2-att4). att1 sits in
+    // combat already → pulse-off path (4-X.0 N-E gate) demonstrated
+    // side-by-side with the pulse-on path.
+    const possibleAttackers =
+      fixtureOpts.combatPhase === 'declare'
+        ? getPossibleAttackerIds(gameView)
+        : [];
+    const pendingDialog =
+      possibleAttackers.length > 0
+        ? {
+            method: 'gameSelect' as const,
+            messageId: 1,
+            data: webGameClientMessageSchema.parse({
+              gameView: null,
+              message: 'Select attackers',
+              targets: [],
+              cardsView1: {},
+              cardsView2: {},
+              min: 0,
+              max: 0,
+              flag: false,
+              choice: null,
+              options: {
+                leftBtnText: '',
+                rightBtnText: '',
+                possibleAttackers,
+                possibleBlockers: [],
+                specialButton: '',
+                isTriggerOrder: false,
+              },
+              multiAmount: null,
+            }),
+          }
+        : null;
+    useGameStore.setState({ gameView, connection: 'open', pendingDialog });
     useAuthStore.setState({
       session: {
         schemaVersion: '1.15',
@@ -82,7 +141,7 @@ export function DemoGame() {
         expiresAt: '2099-01-01T00:00:00Z',
       },
     });
-  }, [gameView]);
+  }, [gameView, fixtureOpts]);
 
   const onVariantChange = (next: LayoutVariant) => {
     setVariantInUrl(next);
