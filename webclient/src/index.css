@@ -702,6 +702,24 @@ input[type="checkbox"] {
   animation: damage-freeze-frame-edge 400ms cubic-bezier(0.4, 0, 0.6, 1) 1;
 }
 
+/*
+ * Bundle 5 / Slice 5-D — death handoff desaturate beat. 150ms
+ * grayscale filter applied via a CSS class on the dying card's
+ * existing button element. Painted in parallel with the existing
+ * fly-to-graveyard exit animation; the brief 150ms overlap reads
+ * as "the card desaturated AS it flew." Duration mirrors
+ * `CREATURE_DEATH_DESATURATE_MS` in
+ * webclient/src/animation/transitions.ts.
+ *
+ * NOT keyframe-driven — single static filter for the duration.
+ * Removed by the JS timeout in CardDeathSequence.tsx (pure DOM
+ * mutation; no React re-render in the hot path).
+ */
+.animate-card-death-desaturate {
+  filter: grayscale(1) brightness(0.85);
+  transition: filter 50ms ease-in;
+}
+
 .animate-lane-active-glow {
   /* Same 1900ms period as `animate-player-active-halo` so the lane
    * border breathes in sync with the portrait halo. */

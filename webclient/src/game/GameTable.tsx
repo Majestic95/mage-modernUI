@@ -33,6 +33,7 @@ import { buildOnSpendMana } from './manaPaymentAdapter';
 import { TurnEdgeGlow } from './TurnEdgeGlow';
 import { DamageParcelOverlay } from './DamageParcelOverlay';
 import { DamageFreezeFrame } from './DamageFreezeFrame';
+import { CardDeathSequence } from './CardDeathSequence';
 import { useTurnTabTitle } from './useTurnTabTitle';
 import { useStopOnCombatSteps } from './useStopOnCombatSteps';
 
@@ -360,6 +361,13 @@ export function GameTable({ gameId, gameView, stream }: Props) {
           z=28 — above parcels (z=25) so the freeze-frame paints
           briefly over them, below ActionPanel chrome (z=30). */}
       <DamageFreezeFrame />
+
+      {/* Bundle 5 / Slice 5-D — death handoff desaturate beat.
+          Mountless side-effect component subscribing to
+          useGameDelta `creature_died` events; applies a 150ms
+          grayscale CSS class to the dying card's existing button
+          via DOM query. Renders nothing visible. */}
+      <CardDeathSequence />
 
       {/* Slice 70-O — REDESIGN drops the in-grid header slot. The
           actual GameHeader is rendered as a sibling of GameTable

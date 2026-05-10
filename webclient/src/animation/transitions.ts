@@ -324,6 +324,12 @@ export const PORTRAIT_BLOOM_MS = 600;
 // short enough to not interrupt gameplay rhythm).
 export const DAMAGE_FREEZE_FRAME_MS = 400;
 
+// Bundle 5 / Slice 5-D — death handoff desaturate beat. Brief
+// 150ms grayscale filter on a dying creature, painting in
+// parallel with the existing fly-to-graveyard animation so the
+// card visibly desaturates AS it leaves the battlefield.
+export const CREATURE_DEATH_DESATURATE_MS = 150;
+
 /* ============================================================
    Slice 70-Z.2 / 70-Z.3 / 70-Z.4 — card animation system timing.
    The seam ships in 70-Z.2 (no visual change); the constants here
