@@ -17,9 +17,7 @@ import { describe, it, expect } from 'vitest';
 import {
   arrowStrokeForColorIdentity,
   computeTabletopZoneBackground,
-  DEFENDER_DASH_PATTERNS,
   defenderColorIdentity,
-  defenderDashPattern,
 } from './halo';
 
 describe('computeTabletopZoneBackground', () => {
@@ -235,29 +233,3 @@ describe('arrowStrokeForColorIdentity', () => {
   });
 });
 
-describe('defenderDashPattern + DEFENDER_DASH_PATTERNS', () => {
-  it('exposes 4 pre-canned patterns: solid / dashed / dotted / ticked', () => {
-    expect(DEFENDER_DASH_PATTERNS).toHaveLength(4);
-    expect(DEFENDER_DASH_PATTERNS[0]).toBe(''); // solid (no dash)
-    expect(DEFENDER_DASH_PATTERNS[1]).toBe('8 6'); // dashed
-    expect(DEFENDER_DASH_PATTERNS[2]).toBe('2 5'); // dotted
-    expect(DEFENDER_DASH_PATTERNS[3]).toBe('1 6'); // ticked (single-pixel ticks)
-  });
-
-  it('indexes patterns by defender position', () => {
-    expect(defenderDashPattern(0)).toBe('');
-    expect(defenderDashPattern(1)).toBe('8 6');
-    expect(defenderDashPattern(2)).toBe('2 5');
-    expect(defenderDashPattern(3)).toBe('1 6');
-  });
-
-  it('wraps via modulo for 5+ defenders (exotic format degradation)', () => {
-    expect(defenderDashPattern(4)).toBe(''); // wraps back to solid
-    expect(defenderDashPattern(5)).toBe('8 6');
-    expect(defenderDashPattern(7)).toBe('1 6');
-  });
-
-  it('returns solid for negative index (defensive)', () => {
-    expect(defenderDashPattern(-1)).toBe('');
-  });
-});

@@ -300,34 +300,11 @@ export function arrowStrokeForColorIdentity(
   return { kind: 'gradient', stops };
 }
 
-/**
- * Per-defender dash patterns used to pair color with a non-color
- * signal (WCAG 2.1 SC 1.4.1). Indexed by the defender's position in
- * the {@code players} array; defenders past the array length wrap
- * via modulo (4p Commander never wraps; documented degradation for
- * exotic 5+ player formats).
- *
- * <ul>
- *   <li>0 → solid (empty string = SVG default = no dash)
- *   <li>1 → dashed ({@code 8 6})
- *   <li>2 → dotted ({@code 2 5})
- *   <li>3 → ticked ({@code 1 6}) — single-pixel ticks with breathing
- *       gaps, visually distinct from both dashed and dotted at 3px
- *       stroke + butt linecap. (Earlier {@code 4 3 4 9} double-stroke
- *       attempt collapsed visually with {@code 8 6} after linecap
- *       normalization — UI critic, slice 1-A.)
- * </ul>
- *
- * <p>Patterns tuned for the project's 3px stroke width with
- * {@code stroke-linecap="butt"} (the linecap is enforced in
- * {@link TargetingArrow}; see slice 1-A comment there for why round
- * caps collapse dash distinctness). Sub-1440p viewports may show
- * patterns that read as solid; degradation acceptable per the
- * variant's load-bearing rules (T4).
- */
-export const DEFENDER_DASH_PATTERNS = ['', '8 6', '2 5', '1 6'] as const;
-
-export function defenderDashPattern(defenderIndex: number): string {
-  if (defenderIndex < 0) return '';
-  return DEFENDER_DASH_PATTERNS[defenderIndex % DEFENDER_DASH_PATTERNS.length]!;
-}
+// Slice 1-X-tunings round 7 (2026-05-09) — `defenderDashPattern` +
+// `DEFENDER_DASH_PATTERNS` removed. The per-defender dash-variation
+// signal turned out to be redundant visual noise alongside the
+// gradient stroke; user direction was to use one shared dash pattern
+// for all arrows. The shared `'8 6'` constant lives in
+// `combatArrowGeometry.ts` (the only consumer). WCAG 1.4.1 redundant-
+// signal claim narrowed — color is now the sole differentiator;
+// re-introduce dash variation if a future a11y audit insists.

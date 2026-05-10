@@ -565,7 +565,13 @@ describe('CombatArrows — defender color + dash (slice 1-A)', () => {
     expect(stops?.length).toBe(6);
   });
 
-  it('assigns dash patterns by defender position in players (color-blind partner signal)', () => {
+  it('all arrows use the same uniform dash pattern (slice 1-X-tunings round 7)', () => {
+    // Slice 1-X-tunings round 7 (live-test verdict 2026-05-09):
+    // dropped per-defender dash variation. All combat arrows now
+    // share `'8 6'` (medium dashed); color is the sole defender
+    // differentiator. WCAG 1.4.1 redundant-signal claim narrowed
+    // accordingly — re-introduce per-defender dashes in a future
+    // slice if a11y audit insists.
     const defA = '00000000-0000-0000-0000-0000000000aa';
     const defB = '00000000-0000-0000-0000-0000000000bb';
     const defC = '00000000-0000-0000-0000-0000000000cc';
@@ -605,24 +611,12 @@ describe('CombatArrows — defender color + dash (slice 1-A)', () => {
       <CombatArrows combat={groups} players={players} />,
     );
 
-    // Defender 0 → solid (no dash attribute).
-    const arrowA = container.querySelector(
-      `path[data-arrow-defender-id="${defA}"]`,
-    );
-    expect(arrowA?.hasAttribute('stroke-dasharray')).toBe(false);
-    expect(arrowA?.getAttribute('data-defender-index')).toBe('0');
-    // Defender 1 → dashed.
-    const arrowB = container.querySelector(
-      `path[data-arrow-defender-id="${defB}"]`,
-    );
-    expect(arrowB?.getAttribute('stroke-dasharray')).toBe('8 6');
-    expect(arrowB?.getAttribute('data-defender-index')).toBe('1');
-    // Defender 2 → dotted.
-    const arrowC = container.querySelector(
-      `path[data-arrow-defender-id="${defC}"]`,
-    );
-    expect(arrowC?.getAttribute('stroke-dasharray')).toBe('2 5');
-    expect(arrowC?.getAttribute('data-defender-index')).toBe('2');
+    // Every arrow shares the same '8 6' dash pattern.
+    const arrows = container.querySelectorAll('path[data-arrow-defender-id]');
+    expect(arrows.length).toBe(3);
+    for (const arrow of arrows) {
+      expect(arrow.getAttribute('stroke-dasharray')).toBe('8 6');
+    }
   });
 
   it('falls back to legacy neutral stroke when defender is not in players (graceful)', () => {
@@ -699,12 +693,14 @@ describe('CombatArrows — defender color + dash (slice 1-A)', () => {
     expect(arrow?.getAttribute('stroke')).toBe('var(--color-mana-red)');
   });
 
-  it('similar-color defenders (mono-G vs Selesnya WG) remain distinguishable by dash (WCAG 1.4.1 redundancy)', () => {
-    // Worst-case visual confusion: two opponents whose color
-    // identities both lead with green. Without the dash signal a
-    // color-blind player could not tell which arrow targets which
-    // defender. Pin that the dash patterns disambiguate them so a
-    // future "simplify" refactor can't quietly defeat the redundancy.
+  it('similar-color defenders (mono-G vs Selesnya WG) differ via stroke-kind (post-uniform-dash)', () => {
+    // Slice 1-X-tunings round 7 (2026-05-09) reframed the WCAG
+    // 1.4.1 redundancy: dash is uniform now, so the stroke-kind
+    // axis (solid vs gradient) is the secondary signal beyond the
+    // color itself. Mono-G renders as a solid green stroke; Selesnya
+    // WG renders as a multi-stop gradient with white + green bands.
+    // The test pins this distinction so a future refactor can't
+    // collapse both into the same render shape.
     const monoGreenDef = '00000000-0000-0000-0000-00000000ee01';
     const selesnyaDef = '00000000-0000-0000-0000-00000000ee02';
     mountPermanentNode('att-mg', { x: 100, y: 200, w: 80, h: 112 });
@@ -740,15 +736,11 @@ describe('CombatArrows — defender color + dash (slice 1-A)', () => {
     const slArrow = container.querySelector(
       `path[data-arrow-defender-id="${selesnyaDef}"]`,
     );
-    // Mono-G defender at index 0 → solid + solid stroke.
-    expect(mgArrow?.hasAttribute('stroke-dasharray')).toBe(false);
-    expect(mgArrow?.getAttribute('data-arrow-stroke-kind')).toBe('solid');
-    // Selesnya defender at index 1 → dashed pattern + gradient
-    // stroke. The dash pattern is the load-bearing signal here; even
-    // if a deuteranopic user collapses both gradients toward a
-    // similar yellow-ish band, the dashed-vs-solid difference still
-    // distinguishes the two arrows.
+    // Both arrows share the uniform dash pattern.
+    expect(mgArrow?.getAttribute('stroke-dasharray')).toBe('8 6');
     expect(slArrow?.getAttribute('stroke-dasharray')).toBe('8 6');
+    // But the stroke-kind axis still distinguishes them.
+    expect(mgArrow?.getAttribute('data-arrow-stroke-kind')).toBe('solid');
     expect(slArrow?.getAttribute('data-arrow-stroke-kind')).toBe('gradient');
   });
 

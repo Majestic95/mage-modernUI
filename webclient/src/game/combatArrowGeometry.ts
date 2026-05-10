@@ -11,9 +11,19 @@ import type {
 import {
   arrowStrokeForColorIdentity,
   defenderColorIdentity,
-  defenderDashPattern,
   type StrokeSpec,
 } from './halo';
+
+/**
+ * Slice 1-X-tunings round 7 (live-test verdict 2026-05-09) —
+ * uniform dash pattern across all combat arrows. Color encodes
+ * defender identity; the original per-defender dash variation
+ * (solid / dashed / dotted / ticked) was unnecessary visual noise
+ * once the gradient stroke + dash were both present. User
+ * direction: "colors are differentiators enough, they don't need
+ * different dashed lines."
+ */
+const ARROW_DASH_PATTERN = '8 6';
 
 /**
  * Combat-arrow geometry — extracted from {@link ./CombatArrows} in
@@ -117,7 +127,7 @@ export function useCombatArrowGeometry(
         );
         const colorId = defenderColorIdentity(group.defenderId, players);
         const stroke = arrowStrokeForColorIdentity(colorId);
-        const dashArray = defenderDashPattern(defenderIndex);
+        const dashArray = ARROW_DASH_PATTERN;
 
         const attackerEntries = Object.values(group.attackers);
         const blockerEntries = Object.values(group.blockers);
