@@ -281,8 +281,16 @@ export function PlayerPortrait({
       {/* Slice 1-B — incoming-attacker badge for opponents during
           combat. IncomingTag self-gates on phase + own-portrait
           + count > 0, so it renders nothing in non-combat states.
-          Position is absolute (T1: portrait footprint unchanged). */}
-      <IncomingTag playerId={player.playerId} podPosition={podPosition} />
+          Position is absolute (T1: portrait footprint unchanged).
+          Slice 1-X-tunings round 8 (2026-05-09): mount only when
+          `podPosition` is set so the badge stays scoped to the
+          4-pod combat surface. Non-pod consumers
+          (CommanderDamageTracker, GameLog avatars, LobbySeatPortrait,
+          DeckEditor commander preview) leave podPosition undefined
+          and don't get the badge. */}
+      {podPosition !== undefined && (
+        <IncomingTag playerId={player.playerId} podPosition={podPosition} />
+      )}
     </div>
   );
 }

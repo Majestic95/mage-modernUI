@@ -439,13 +439,13 @@ describe('CombatArrows — hover isolation', () => {
     // Non-hovered attacker (att-2, source.x=340) → dimmed.
     const dimmed = opacityBySourceX.get(340);
     expect(dimmed).not.toBe('1');
-    // Slice 1-A — dim opacity raised from 0.25 to 0.5 to keep
-    // dark-bias mana colors WCAG 1.4.11 compliant when isolated.
-    // Pin the meaningful-but-not-invisible band: must be < 1 AND
-    // ≥ 0.4 (loose lower bound around the new 0.5 default).
+    // User-tuned dim — non-hovered arrows drop to ~0.2 so the
+    // isolated arrow visually owns the canvas. Test pins the band
+    // strictly below 1 (must dim) and strictly above 0 (must
+    // remain pickable / not fully removed).
     const dimVal = dimmed ? parseFloat(dimmed) : 1;
     expect(dimVal).toBeLessThan(1);
-    expect(dimVal).toBeGreaterThanOrEqual(0.4);
+    expect(dimVal).toBeGreaterThan(0);
   });
 
   it('full-opacity restored when hover moves to a non-combat element', () => {
@@ -813,10 +813,11 @@ describe('CombatArrows — pinned-defender isolation (slice 1-B)', () => {
     );
     // Pinned defender's arrow stays at full opacity.
     expect(pinnedArrow?.getAttribute('opacity')).toBe('1');
-    // Other defender's arrow is dimmed.
+    // Other defender's arrow is dimmed (band strictly inside (0, 1) —
+    // user-tuned default ~0.2).
     const otherOpacity = parseFloat(otherArrow?.getAttribute('opacity') ?? '1');
     expect(otherOpacity).toBeLessThan(1);
-    expect(otherOpacity).toBeGreaterThanOrEqual(0.4);
+    expect(otherOpacity).toBeGreaterThan(0);
     // Stack-zone wrapper announces isolation is active.
     const stackZone = container.querySelector('[data-testid="stack-zone"]');
     expect(stackZone?.getAttribute('data-hover-isolating')).toBe('true');

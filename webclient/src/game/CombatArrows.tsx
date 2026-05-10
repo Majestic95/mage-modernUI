@@ -41,13 +41,11 @@ import { usePrefersReducedMotion } from './usePrefersReducedMotion';
  * to {@link ARROW_DIM_OPACITY}. Hovering off-board clears isolation.
  */
 
-// Slice 1-A — raised from 0.25 to 0.5 alongside per-defender colored
-// strokes. At 0.25 a dark-bias mana color (mono-B's lavender
-// `--color-mana-black` over the dark teal `--color-bg-base`) drops to
-// ~1.4:1 contrast — well below WCAG 1.4.11's 3:1 minimum for non-
-// text graphics. 0.5 keeps the dimmed arrow clearly de-emphasized
-// while preserving identifiability of every color identity.
-const ARROW_DIM_OPACITY = 0.5;
+// User-tuned to 0.2 — hover-isolation is an opt-in focus gesture
+// (cursor on a badge / portrait / permanent), not a passive visual
+// state, so trading the WCAG 1.4.11 3:1 baseline for "barely visible"
+// dim is the intended UX: full picture stays one cursor-move away.
+const ARROW_DIM_OPACITY = 0.2;
 
 // Slice 1-C — wave-reveal stagger constants live in
 // `webclient/src/animation/transitions.ts` per the project's motion-
