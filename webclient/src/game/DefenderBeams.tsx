@@ -142,18 +142,24 @@ const BEAM_RADIUS_PCT = 50;
 /**
  * Single-beam core opacity. With overlapping beams at the viewport
  * center (worst case: 3 simultaneously-attacked defenders share the
- * same center pixels), the sum is bounded at ~0.54, well below the
- * "blinding flash" threshold. Brief target was 0.18.
+ * same center pixels), the sum is bounded at ~0.7, well below the
+ * "blinding flash" threshold. Brief target was 0.18; live-test
+ * verdict (1-X-tunings, 2026-05-09) bumped 30% stronger to 0.234
+ * because at the post-1-X.3 alpha-reduced glow tokens (effective
+ * per-beam alpha ~0.09) and the new tighter cone, the wash read
+ * too soft to register as "ambient pressure."
  */
-const BEAM_OPACITY = 0.18;
+const BEAM_OPACITY = 0.234;
 
 /**
- * Half-angle of the cone clip-path in radians. 30° (π/6) total =
- * 60° cone aperture, narrow enough to read as "pointing at this
- * pod" rather than "general spotlight," wide enough to spread the
- * gradient softly across the player's pod and adjacent space.
+ * Half-angle of the cone clip-path in radians. Live-test verdict
+ * (1-X-tunings, 2026-05-09) cut from π/6 (30° each side, 60°
+ * total) to π/12 (15° each side, 30° total) — the wider cone read
+ * as "general ray of sunshine" rather than "spotlight at this
+ * defender." π/12 reads as a directional pointer, narrow enough to
+ * clearly aim at one pod without bleeding across neighbors.
  */
-const BEAM_HALF_ANGLE_RAD = Math.PI / 6;
+const BEAM_HALF_ANGLE_RAD = Math.PI / 12;
 
 // Module-scope empty fallbacks for the gameView selectors. Returning
 // fresh `[]` each call would defeat zustand's identity-stable

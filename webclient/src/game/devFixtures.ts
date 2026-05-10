@@ -382,12 +382,19 @@ export function buildDemoGameView(
       }
       return hand;
     })(),
-    stack: (() => {
-      const stack: Record<string, ReturnType<typeof makeCard>> = {};
-      const lightning = makeCard('Lightning Bolt', 'CREATURE', 'M21', '162');
-      stack[lightning.id] = lightning;
-      return stack;
-    })(),
+    // Slice 1-X-smoke — when combatActive, the stack must be empty
+    // so StackZoneRedesigned mounts CombatArrows (its gate is
+    // `stackEmpty && combatActive`). The default fixture seeds a
+    // Lightning Bolt on the stack for stack-zone iteration; that
+    // suppresses arrows when combat is active.
+    stack: opts.combatActive
+      ? ({} as Record<string, ReturnType<typeof makeCard>>)
+      : (() => {
+          const stack: Record<string, ReturnType<typeof makeCard>> = {};
+          const lightning = makeCard('Lightning Bolt', 'CREATURE', 'M21', '162');
+          stack[lightning.id] = lightning;
+          return stack;
+        })(),
     combat,
     players: [me, goat, momur, alloc],
   });

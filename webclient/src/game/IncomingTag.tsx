@@ -119,8 +119,15 @@ export function IncomingTag({ playerId }: { playerId: string }) {
         // text-[11px] for readability (10px is below Material 12px
         // floor and iOS HIG 11pt minimum). Dropped tracking-wide so
         // the wider letters fit within the 120px footprint cap.
+        // Slice 1-X-tunings (live-test verdict): dropped
+        // `whitespace-nowrap` + capped `max-w-[88px]` so the wider
+        // "incoming N — M unblocked" string wraps to two lines
+        // instead of overflowing right into the adjacent pod's
+        // battlefield zone. `leading-tight` keeps the two lines
+        // visually compact; `text-right` mirrors the top-right
+        // anchor.
         'px-1.5 py-0.5 rounded text-[11px] uppercase ' +
-        'font-semibold whitespace-nowrap select-none ' +
+        'font-semibold leading-tight max-w-[88px] text-right select-none ' +
         'border shadow-sm transition-colors duration-100 ' +
         // Slice 1-B critic-pass: WCAG 2.4.7 (Focus Visible) —
         // keyboard-focused badge gets an amber ring. Slice 1-X.3
