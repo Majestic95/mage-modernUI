@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useMemo } from 'react';
 import type { WebCombatGroupView } from '../api/schemas';
 import { useGameStore } from './store';
 import { useArrowIsolation } from './arrowIsolationStore';
@@ -37,7 +37,23 @@ import { useArrowIsolation } from './arrowIsolationStore';
  * isolation. Pinned id wins over hover (precedence resolved at
  * the CombatArrows render call site).
  */
-export function IncomingTag({ playerId }: { playerId: string }) {
+export function IncomingTag({
+  playerId,
+  podPosition,
+}: {
+  playerId: string;
+  /**
+   * Slice 1-X-tunings round 5 (2026-05-09) — explicit pod position
+   * passed through from PlayerPortrait. Replaces the prior closest()
+   * DOM-walk approach which failed in tabletop's actual rendered
+   * tree (no `[data-position]` ancestor on the IncomingTag's path
+   * despite PlayerArea/PlayerFrameRedesigned both emitting it
+   * elsewhere). Optional — fixtures and non-game consumers
+   * (LobbySeatPortrait etc.) leave it undefined and get the
+   * single-line above-portrait default layout.
+   */
+  podPosition?: 'top' | 'left' | 'right' | 'bottom' | undefined;
+}) {
   // Subscribe with primitive selectors so identity-stable
   // gameView frames don't trigger re-render. `combat` is a
   // referenced array slice (will change identity per frame),
@@ -56,11 +72,10 @@ export function IncomingTag({ playerId }: { playerId: string }) {
     [combat, playerId],
   );
 
-  // Slice 1-X-tunings round 4 (live-test verdict 2026-05-09) — detect
-  // the pod position via the nearest ancestor's `data-position`
-  // attribute (PlayerFrameRedesigned emits it; PlayerArea threads
-  // 'top' | 'left' | 'right' | 'bottom' through the layout). Layout
-  // varies per position:
+  // Slice 1-X-tunings round 5 (2026-05-09) — `podPosition` is now
+  // a prop threaded down from PlayerPortrait → IncomingTag.
+  // Replaces the closest() DOM-walk that failed in tabletop's
+  // actual rendered tree. Layout varies per position:
   //   - left/right pods: enough vertical space for two-line stack
   //     ("incoming N" / "unblocked M"). No em-dash separator.
   //   - top pod: phase ladder above clips a tag that floats above
@@ -69,12 +84,6 @@ export function IncomingTag({ playerId }: { playerId: string }) {
   //     across the badge's width.
   //   - bottom / unknown: falls back to single-line above (current
   //     default; preserves existing test fixtures' rendering).
-  const ref = useRef<HTMLButtonElement>(null);
-  const [podPosition, setPodPosition] = useState<string | null>(null);
-  useLayoutEffect(() => {
-    const ancestor = ref.current?.closest('[data-position]');
-    setPodPosition(ancestor?.getAttribute('data-position') ?? null);
-  }, []);
 
   // Render gates. None of these mid-render reads should change
   // referentially without a real game-state change, so memoising
@@ -89,7 +98,6 @@ export function IncomingTag({ playerId }: { playerId: string }) {
 
   return (
     <button
-      ref={ref}
       type="button"
       data-testid={`incoming-tag-${playerId}`}
       data-pinned={pinned || undefined}

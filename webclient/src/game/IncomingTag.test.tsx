@@ -354,21 +354,15 @@ describe('IncomingTag — slice 1-X.3 critic-pass fixes', () => {
   });
 
   it('left/right pod renders two-line stack with no separator', () => {
-    // Slice 1-X-tunings round 4: when the IncomingTag's nearest
-    // ancestor with `data-position` reads 'left' or 'right', the
-    // badge stacks "incoming N" / "unblocked M" on two lines (no
-    // em-dash). The vertical pod has space for the stack; a
-    // hyphen-separated single line was unnecessary for those
-    // positions.
+    // Slice 1-X-tunings round 5: podPosition prop drives layout
+    // ("left" or "right" → two-line stack with no em-dash). The
+    // vertical pod has space for the stack; the single-line
+    // hyphen form was unnecessary there.
     setGameView({
       phase: 'COMBAT',
       combat: [{ defenderId: OPP1_ID, attackerIds: ['a-1', 'a-2'] }],
     });
-    render(
-      <div data-position="left">
-        <IncomingTag playerId={OPP1_ID} />
-      </div>,
-    );
+    render(<IncomingTag playerId={OPP1_ID} podPosition="left" />);
     const tag = screen.getByTestId(`incoming-tag-${OPP1_ID}`);
     expect(tag.getAttribute('data-pod-position')).toBe('left');
     // Two-line stack — no em-dash separator.
@@ -379,37 +373,30 @@ describe('IncomingTag — slice 1-X.3 critic-pass fixes', () => {
   });
 
   it('top pod overlaps portrait via translate-y-2 (avoids phase-ladder clip)', () => {
-    // Slice 1-X-tunings round 4: top opponent pod is clipped from
+    // Slice 1-X-tunings round 5: top opponent pod is clipped from
     // above by the GameHeader phase ladder. Badge slides DOWN ~8px
-    // to overlap the portrait's top edge by ~10% rather than
-    // floating in the gap where the phase ladder lives.
+    // to overlap the portrait's top edge.
     setGameView({
       phase: 'COMBAT',
       combat: [{ defenderId: OPP1_ID, attackerIds: ['a-1'] }],
     });
-    render(
-      <div data-position="top">
-        <IncomingTag playerId={OPP1_ID} />
-      </div>,
-    );
+    render(<IncomingTag playerId={OPP1_ID} podPosition="top" />);
     const tag = screen.getByTestId(`incoming-tag-${OPP1_ID}`);
     expect(tag.getAttribute('data-pod-position')).toBe('top');
-    // Top pod uses single-line form (with em-dash) so the wider
-    // text reads across the badge's width.
+    // Top pod uses single-line form (with em-dash).
     expect(tag.textContent).toBe('incoming 1 — 1 unblocked');
     // Layout class signals the overlap via translate-y-2.
     expect(tag.className).toContain('translate-y-2');
     expect(tag.className).not.toContain('mb-1.5');
   });
 
-  it('default (no data-position ancestor) keeps the single-line above-portrait layout', () => {
+  it('default (no podPosition prop) keeps the single-line above-portrait layout', () => {
     setGameView({
       phase: 'COMBAT',
       combat: [{ defenderId: OPP1_ID, attackerIds: ['a-1'] }],
     });
     render(<IncomingTag playerId={OPP1_ID} />);
     const tag = screen.getByTestId(`incoming-tag-${OPP1_ID}`);
-    // No data-position ancestor → falls through to default.
     expect(tag.hasAttribute('data-pod-position')).toBe(false);
     expect(tag.className).toContain('mb-1.5');
     expect(tag.className).not.toContain('translate-y-2');

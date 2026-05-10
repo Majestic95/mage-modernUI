@@ -85,6 +85,15 @@ interface Props {
    * the player + commander name.
    */
   ariaLabel?: string;
+  /**
+   * Slice 1-X-tunings round 5 (2026-05-09) — pod position passed
+   * through to {@link IncomingTag} for per-pod layout (top pod
+   * overlaps portrait; left/right pods stack two-line; default
+   * floats above). Optional; consumers outside the 4-pod combat
+   * surface (LobbySeatPortrait, GameLog avatars, CommanderDamage
+   * cells) leave it undefined.
+   */
+  podPosition?: 'top' | 'left' | 'right' | 'bottom' | undefined;
 }
 
 /**
@@ -114,6 +123,7 @@ export function PlayerPortrait({
   size = 'medium',
   haloVariant = 'circular',
   ariaLabel,
+  podPosition,
 }: Props) {
   const sizePx = SIZE_PX[size];
   // Slice 70-X.14 (Bug 4) — read from the store's commander snapshot
@@ -272,7 +282,7 @@ export function PlayerPortrait({
           combat. IncomingTag self-gates on phase + own-portrait
           + count > 0, so it renders nothing in non-combat states.
           Position is absolute (T1: portrait footprint unchanged). */}
-      <IncomingTag playerId={player.playerId} />
+      <IncomingTag playerId={player.playerId} podPosition={podPosition} />
     </div>
   );
 }
