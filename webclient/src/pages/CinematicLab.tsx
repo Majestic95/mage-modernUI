@@ -63,6 +63,7 @@
  * </ul>
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { LayoutGroup, MotionConfig } from 'framer-motion';
 import { GameHeader } from '../game/GameHeader';
 import { GameTable } from '../game/GameTable';
@@ -253,30 +254,43 @@ export function CinematicLab() {
 
   const triggerDeclareAttackers = useCallback(() => {
     // Slice 6-A demo. Two-step transition exits combat then re-enters
-    // it the next frame, exercising the arrowIsolationStore phase
-    // watcher's COMBAT → non-COMBAT branch which clears the per-arrow
-    // ink-draw Set. Without the exit step, the arrowsDrawn Set still
-    // contains every attacker id from the lab's initial mount, so a
-    // direct combatActive=true → combatActive=true setState wouldn't
-    // re-fire the ink-overlay draw-in.
+    // it, exercising the arrowIsolationStore phase watcher's COMBAT →
+    // non-COMBAT branch which clears the per-arrow ink-draw Set, AND
+    // forcing CombatArrows to unmount so the next mount re-runs
+    // TargetingArrow's `latchedDrawIn` lazy-init with the new prop
+    // (the ink animation depends on the mount lifecycle, not on a
+    // prop change to a still-mounted instance).
     //
-    // Same epochRef supersession as the lethal trigger — a Reset (or
-    // another trigger) bumping the epoch between step 1 and step 2
-    // drops the deferred restore so the post-reset state isn't
-    // clobbered.
-    const epoch = ++epochRef.current;
-    const cleared = buildDemoGameView({ combatActive: false });
-    useGameStore.setState({ gameView: cleared });
-    requestAnimationFrame(() => {
-      if (epoch !== epochRef.current) return;
-      const live = useGameStore.getState().gameView;
-      if (!live) return;
-      const declared = buildDemoGameView({ combatActive: true });
-      useGameStore.setState({ gameView: declared });
+    // **flushSync is load-bearing** (2026-05-10 fix). The original
+    // rAF-deferred pattern (mirroring the lethal trigger) silently
+    // batched both setStates into a single React commit, because:
+    //   - useSyncExternalStore reads the LATEST snapshot at re-render
+    //     time, so by the time React reconciles after the click
+    //     handler, the rAF has already fired and store.gameView is
+    //     the declared state — React never commits the cleared state.
+    //   - CombatArrows therefore never unmounts → TargetingArrow
+    //     instances stay mounted → latchedDrawIn (captured on the
+    //     lab's initial mount when drawIn was undefined) stays
+    //     undefined → ink layer never fires.
+    // The lethal trigger doesn't hit this because its cinematic is
+    // frame-DIFF based (Zustand subscribe sees every set), not
+    // RENDER-MOUNT based.
+    //
+    // flushSync forces React to commit the cleared state synchronously
+    // before the second setState lands, guaranteeing CombatArrows
+    // unmounts → re-mounts and the TargetingArrow children capture
+    // the fresh drawIn prop on their re-mount.
+    flushSync(() => {
+      useGameStore.setState({
+        gameView: buildDemoGameView({ combatActive: false }),
+      });
+    });
+    useGameStore.setState({
+      gameView: buildDemoGameView({ combatActive: true }),
     });
     setLabState({
       lastAction:
-        'Declare attackers — combat exited then re-entered. Watch the ink-overlay pen-stroke draw-in (slice 6-A v2) sweep along each attack arrow over 400ms while the dashed Bundle 1 base path stays underneath.',
+        'Declare attackers — combat re-entered after a synchronous unmount. Watch the ink-overlay pen-stroke draw-in (slice 6-A v2) sweep along each attack arrow over 400ms while the dashed Bundle 1 base path stays underneath.',
     });
   }, []);
 
@@ -284,7 +298,9 @@ export function CinematicLab() {
     // Bump the epoch so any in-flight lethal raf is silently dropped
     // (see N2 fix above). Without this, "Lethal" → "Reset" before
     // the next frame would clobber the reset with the step-2 state.
-    // Same epoch ALSO supersedes any in-flight Declare-attackers raf.
+    // (Declare-attackers no longer uses raf — flushSync runs both
+    // setStates synchronously inside the click handler — so it can't
+    // race against Reset.)
     epochRef.current += 1;
     const fresh = buildDemoGameView({ combatActive: true });
     useGameStore.setState({ gameView: fresh });
