@@ -1,41 +1,37 @@
-import {
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useState,
-} from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type {
   WebCombatGroupView,
-  WebPermanentView,
+  WebPlayerView,
 } from '../api/schemas';
+import {
+  ARROW_REVEAL_MAX_INDEX,
+  ARROW_REVEAL_STEP_MS,
+} from '../animation/transitions';
 import { TargetingArrow } from './TargetingArrow';
+import { useCombatArrowGeometry } from './combatArrowGeometry';
+import {
+  getCombatArrowsAlreadyStaggered,
+  markCombatArrowsStaggered,
+  useArrowIsolation,
+} from './arrowIsolationStore';
+import { usePrefersReducedMotion } from './usePrefersReducedMotion';
 
 /**
  * Combat-arrow overlay — extracted from StackZone.tsx (was at 865
- * LOC, past the 500 hard cap with no documented exception). This
- * module owns:
+ * LOC, past the 500 hard cap with no documented exception). The
+ * geometry layer (ArrowSpec, useCombatArrowGeometry, applyEndpointFan,
+ * fingerprint memo, DOM-rect helpers) was further split out into
+ * {@link ./combatArrowGeometry} in slice 1-X.0 (mechanical-tier,
+ * 2026-05-09) so this file lands back under cap with room for slices
+ * 1-B / 1-C / 1-D to layer on. This file owns only:
  *
  * <ul>
  *   <li>{@link CombatArrows} — renders one TargetingArrow per
  *       attacker→defender (or attacker→blocker) pair.</li>
- *   <li>{@link useCombatArrowGeometry} — measures source/target
- *       rects from {@code data-permanent-id} /
- *       {@code data-portrait-target-player-id} and applies the
- *       endpoint-fan pass.</li>
  *   <li>{@link useHoveredCombatId} — tracks which combat
  *       participant the cursor is over so the renderer can dim
  *       non-hovered arrows.</li>
  * </ul>
- *
- * <p><b>Why endpoint-fanning:</b> when N attackers all target the
- * same defender (or N attackers all pile onto one blocker), every
- * arrow's {@code target} resolved to the same {@code centerOf(rect)}
- * point. Arrowheads stacked on a single pixel — visually unreadable.
- * The fan offsets each shared-target endpoint along the perpendicular
- * to that arrow's source→target direction by
- * {@link ARROW_FAN_SPACING_PX} × signed-index, producing a small
- * fan at the receiving end. Sources are unchanged because each
- * attacker is a distinct DOM tile.
  *
  * <p><b>Why hover-isolation:</b> in dense combat the user wants to
  * trace one creature's connection without losing the full picture.
@@ -45,31 +41,97 @@ import { TargetingArrow } from './TargetingArrow';
  * to {@link ARROW_DIM_OPACITY}. Hovering off-board clears isolation.
  */
 
-const ARROW_FAN_SPACING_PX = 24;
-const ARROW_DIM_OPACITY = 0.25;
+// User-tuned to 0.2 — hover-isolation is an opt-in focus gesture
+// (cursor on a badge / portrait / permanent), not a passive visual
+// state, so trading the WCAG 1.4.11 3:1 baseline for "barely visible"
+// dim is the intended UX: full picture stays one cursor-move away.
+const ARROW_DIM_OPACITY = 0.2;
 
-interface ArrowSpec {
-  key: string;
-  source: { x: number; y: number };
-  target: { x: number; y: number };
-  color: string;
-  /** Originating attacker's permanent id (matches data-permanent-id). */
-  attackerId: string;
-  /**
-   * Receiving end's id. Either a blocker permanent id (same scheme
-   * as attackerId) or {@code "player:<defenderId>"} when unblocked.
-   * Used by hover-isolation to match arrows against the hovered DOM.
-   */
-  targetId: string;
-}
+// Slice 1-C — wave-reveal stagger constants live in
+// `webclient/src/animation/transitions.ts` per the project's motion-
+// registry convention (Graphical critic 1-C, GC-N3). Both
+// `ARROW_REVEAL_STEP_MS` and `ARROW_REVEAL_MAX_INDEX` are imported
+// from there so future retunes happen in one place.
 
 export function CombatArrows({
   combat,
+  players = [],
 }: {
   combat: readonly WebCombatGroupView[];
+  /**
+   * Slice 1-A — players array used to resolve the defender's
+   * commander color identity into the arrow stroke + dash pattern.
+   * Optional with a default of {@code []} so older call sites that
+   * don't yet plumb players don't crash; arrows fall back to the
+   * legacy neutral teal stroke when no defender is found in the list.
+   */
+  players?: readonly WebPlayerView[];
 }) {
-  const arrows = useCombatArrowGeometry(combat);
+  const arrows = useCombatArrowGeometry(combat, players);
   const hoveredId = useHoveredCombatId();
+  // Slice 1-B — pinned-defender id from the IncomingTag click affordance.
+  // Pin wins over hover (sticky filter takes precedence over transient
+  // cursor hover); cursor hover still works when no pin is active.
+  const pinnedDefenderId = useArrowIsolation((s) => s.pinnedDefenderId);
+  const clearPin = useArrowIsolation((s) => s.clearPin);
+
+  // Slice 1-C — first-paint reveal stagger. State lives at module
+  // scope in arrowIsolationStore so a stack push during combat
+  // (which unmounts CombatArrows entirely — see StackZoneRedesigned)
+  // doesn't replay the cinematic when the stack resolves and arrows
+  // remount. The phase watcher in arrowIsolationStore auto-resets
+  // the flag on COMBAT → non-COMBAT transitions, so a fresh combat
+  // re-staggers from scratch.
+  const reducedMotion = usePrefersReducedMotion();
+  const isFirstPaint = !getCombatArrowsAlreadyStaggered() && arrows.length > 0;
+  useEffect(() => {
+    if (arrows.length > 0) {
+      markCombatArrowsStaggered();
+    }
+  }, [arrows.length]);
+
+  // Slice 1-C — defender-order index for the stagger cadence.
+  // Brief: `defenderOrder.indexOf(arrow.defenderId) * 90` (the
+  // defender's index in *the order they appear in combat*), NOT
+  // their position in the players array. Sparse cases — e.g., only
+  // opponents at players-indices 2 and 3 are being attacked — should
+  // produce consecutive 0/90 ms delays, not gap-prone 180/270 ms.
+  // Memo deps just on `arrows` (not on a fingerprint) — adding a
+  // fingerprint would conflict with the brief's load-bearing
+  // "delay derivation must NOT enter useCombatFingerprint" rule.
+  const defenderOrder = useMemo(() => {
+    const seen = new Set<string>();
+    const order: string[] = [];
+    for (const arrow of arrows) {
+      if (!seen.has(arrow.defenderId)) {
+        seen.add(arrow.defenderId);
+        order.push(arrow.defenderId);
+      }
+    }
+    return order;
+  }, [arrows]);
+
+  // Slice 1-B — Escape clears the pin globally. Listener registers
+  // alongside CombatArrows and tears down on unmount. The cleanup
+  // does NOT clear the pin: CombatArrows unmounts every time a stack
+  // appears mid-combat (StackZoneRedesigned mounts arrows only when
+  // stack is empty + combat active), so unmount-clearing would
+  // silently kill the user's pin on every instant cast. Pin lifetime
+  // instead lives on a module-level phase watcher in
+  // {@link arrowIsolationStore} that auto-clears on COMBAT → non-
+  // COMBAT transitions — surviving stack pushes within combat,
+  // dying only when combat actually ends.
+  useEffect(() => {
+    const onKeyDown = (ev: KeyboardEvent) => {
+      if (ev.key === 'Escape') {
+        clearPin();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [clearPin]);
 
   if (arrows.length === 0) {
     return (
@@ -81,7 +143,15 @@ export function CombatArrows({
     );
   }
 
-  const isolating = hoveredId !== null;
+  // Slice 1-B — isolation precedence: pinned id (sticky, from
+  // IncomingTag click) wins over hovered id (transient, from cursor).
+  // The pinned id is a player UUID; convert to the same `player:<id>`
+  // shape `useHoveredCombatId` returns for portrait hits so downstream
+  // matching is uniform.
+  const isolatingId = pinnedDefenderId
+    ? `player:${pinnedDefenderId}`
+    : hoveredId;
+  const isolating = isolatingId !== null;
 
   return (
     <div
@@ -94,200 +164,47 @@ export function CombatArrows({
       {arrows.map((spec) => {
         const matches =
           isolating &&
-          (spec.attackerId === hoveredId || spec.targetId === hoveredId);
+          (spec.attackerId === isolatingId || spec.targetId === isolatingId);
         const opacity = !isolating ? 1 : matches ? 1 : ARROW_DIM_OPACITY;
+        // Slice 1-C — per-arrow reveal delay. Only applied on the
+        // first-paint transition (no prior stagger this combat) AND
+        // when the user hasn't opted into reduced motion. The
+        // `Math.max(0, ...)` clamp neutralises the (-1) indexOf
+        // miss (defenderId not present in defenderOrder — shouldn't
+        // happen, defensive against future refactors).
+        const orderIndex = defenderOrder.indexOf(spec.defenderId);
+        const clampedIndex = Math.max(
+          0,
+          Math.min(orderIndex, ARROW_REVEAL_MAX_INDEX),
+        );
+        const revealDelayMs =
+          isFirstPaint && !reducedMotion
+            ? clampedIndex * ARROW_REVEAL_STEP_MS
+            : 0;
         return (
           <TargetingArrow
             key={spec.key}
             source={spec.source}
             to={spec.target}
-            color={spec.color}
+            stroke={spec.stroke}
+            strokeDasharray={spec.dashArray}
             opacity={opacity}
+            defenderId={spec.defenderId}
+            // Slice 1-A — drop -1 sentinel (defender not in players)
+            // at the boundary so the rendered DOM doesn't surface a
+            // confusing `data-defender-index="-1"` to downstream
+            // consumers (slice 1-B's incoming-tag pin-by-defender,
+            // slice 1-D's beams). Pattern lookup already returns ''
+            // for -1 so the visual fallback is unaffected.
+            defenderIndex={
+              spec.defenderIndex >= 0 ? spec.defenderIndex : undefined
+            }
+            revealDelayMs={revealDelayMs}
           />
         );
       })}
     </div>
   );
-}
-
-/**
- * Measures combat-arrow source / target geometry from the DOM and
- * applies the endpoint-fan pass. Re-runs on combat changes
- * (fingerprinted), window resize, any nested scroll, and document
- * mutations observed via ResizeObserver. Returns viewport-space
- * coordinates to match the {@code position: fixed} TargetingArrow SVG.
- */
-function useCombatArrowGeometry(
-  combat: readonly WebCombatGroupView[],
-): readonly ArrowSpec[] {
-  const [arrows, setArrows] = useState<readonly ArrowSpec[]>([]);
-  const combatFingerprint = useCombatFingerprint(combat);
-
-  useLayoutEffect(() => {
-    let cancelled = false;
-    const measure = () => {
-      if (cancelled) return;
-      const raw: ArrowSpec[] = [];
-      for (const group of combat) {
-        const attackerEntries = Object.values(group.attackers);
-        const blockerEntries = Object.values(group.blockers);
-        for (const attacker of attackerEntries) {
-          const sourceRect = rectForPermanent(attacker);
-          if (!sourceRect) continue;
-          const sourcePoint = centerOf(sourceRect);
-          // card.id is z.string() per webCardViewSchema (non-nullable).
-          // Raw access — empty fallback would collapse multiple arrows
-          // into one hover-isolation bucket and was a real bug
-          // (technical critic 2026-05-08).
-          const attackerId = attacker.card.id;
-
-          if (blockerEntries.length > 0) {
-            for (const blocker of blockerEntries) {
-              const targetRect = rectForPermanent(blocker);
-              if (!targetRect) continue;
-              const blockerId = blocker.card.id;
-              raw.push({
-                key: `${attackerId}->${blockerId}`,
-                source: sourcePoint,
-                target: centerOf(targetRect),
-                color: 'var(--color-targeting-arrow)',
-                attackerId,
-                targetId: blockerId,
-              });
-            }
-          } else {
-            const targetRect = rectForPlayer(group.defenderId);
-            if (!targetRect) continue;
-            raw.push({
-              key: `${attackerId}->player:${group.defenderId}`,
-              source: sourcePoint,
-              target: centerOf(targetRect),
-              color: 'var(--color-targeting-arrow)',
-              attackerId,
-              targetId: `player:${group.defenderId}`,
-            });
-          }
-        }
-      }
-
-      const next = applyEndpointFan(raw);
-      if (!cancelled) setArrows(next);
-    };
-
-    let frame: number | null = null;
-    const scheduleMeasure = () => {
-      if (cancelled || frame !== null) return;
-      frame = requestAnimationFrame(() => {
-        frame = null;
-        measure();
-      });
-    };
-    const onChange = () => scheduleMeasure();
-
-    measure();
-    window.addEventListener('resize', onChange);
-    // Scroll does not bubble, so capture at the document level to
-    // catch tabletop's nested zone scrollers. Without this, an
-    // attacker can move inside an overflowed creature row while the
-    // arrow stays pinned to its old viewport coordinate.
-    document.addEventListener('scroll', scheduleMeasure, {
-      capture: true,
-      passive: true,
-    });
-    const observer =
-      typeof ResizeObserver !== 'undefined'
-        ? new ResizeObserver(scheduleMeasure)
-        : null;
-    if (observer) {
-      observer.observe(document.body);
-      for (const node of combatEndpointNodes(combat)) {
-        observer.observe(node);
-      }
-    }
-
-    return () => {
-      cancelled = true;
-      if (frame !== null) {
-        cancelAnimationFrame(frame);
-      }
-      window.removeEventListener('resize', onChange);
-      document.removeEventListener('scroll', scheduleMeasure, true);
-      if (observer) observer.disconnect();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [combatFingerprint]);
-
-  return arrows;
-}
-
-/**
- * Splays endpoints of arrows that share a target. Returns a new
- * array; raw is not mutated. Single-arrow targets pass through
- * unchanged so an unblocked 1v1 attack looks identical to today.
- *
- * <p>Buckets by {@code arrow.targetId} (the canonical "same target"
- * key — blocker permanent id or {@code player:<defenderId>}) rather
- * than by quantized screen coordinate. Coordinate-based grouping
- * carried a false-positive risk if two unrelated targets ever
- * landed within a few pixels of each other.
- */
-function applyEndpointFan(raw: readonly ArrowSpec[]): ArrowSpec[] {
-  const groups = new Map<string, ArrowSpec[]>();
-  for (const arrow of raw) {
-    let bucket = groups.get(arrow.targetId);
-    if (!bucket) {
-      bucket = [];
-      groups.set(arrow.targetId, bucket);
-    }
-    bucket.push(arrow);
-  }
-
-  const out: ArrowSpec[] = [];
-  for (const bucket of groups.values()) {
-    if (bucket.length === 1) {
-      out.push(bucket[0]!);
-      continue;
-    }
-    // Stable visual order: leftmost source → leftmost fan slot.
-    bucket.sort((a, b) => a.source.x - b.source.x);
-    const n = bucket.length;
-    for (let i = 0; i < n; i++) {
-      const arrow = bucket[i]!;
-      const offset = (i - (n - 1) / 2) * ARROW_FAN_SPACING_PX;
-      const dx = arrow.target.x - arrow.source.x;
-      const dy = arrow.target.y - arrow.source.y;
-      const len = Math.hypot(dx, dy) || 1;
-      const px = -dy / len;
-      const py = dx / len;
-      out.push({
-        ...arrow,
-        target: {
-          x: arrow.target.x + px * offset,
-          y: arrow.target.y + py * offset,
-        },
-      });
-    }
-  }
-  return out;
-}
-
-/**
- * Reduces a combat array to a content-fingerprint string so the
- * geometry effect doesn't re-run on referentially-fresh-but-equal
- * gameUpdate frames.
- */
-function useCombatFingerprint(
-  combat: readonly WebCombatGroupView[],
-): string {
-  return useMemo(() => {
-    return combat
-      .map((g) => {
-        const att = Object.keys(g.attackers).sort().join(',');
-        const blk = Object.keys(g.blockers).sort().join(',');
-        return `${g.defenderId}|${att}|${blk}`;
-      })
-      .join(';');
-  }, [combat]);
 }
 
 /**
@@ -353,79 +270,4 @@ function useHoveredCombatId(): string | null {
   }, []);
 
   return hovered;
-}
-
-function rectForPermanent(perm: WebPermanentView): DOMRect | null {
-  const node = nodeForPermanent(perm);
-  if (!node) return null;
-  return node.getBoundingClientRect();
-}
-
-function nodeForPermanent(perm: WebPermanentView): HTMLElement | null {
-  const id = perm.card.id;
-  if (!id) return null;
-  const selector = `[data-permanent-id="${cssEscape(id)}"]`;
-  const node = document.querySelector(selector);
-  if (!node) return null;
-  return node as HTMLElement;
-}
-
-function rectForPlayer(playerId: string): DOMRect | null {
-  const node = nodeForPlayer(playerId);
-  if (!node) return null;
-  return node.getBoundingClientRect();
-}
-
-function nodeForPlayer(playerId: string): HTMLElement | null {
-  if (!playerId) return null;
-  // Picture-catalog §3.2 — arrow targets the PORTRAIT, not the
-  // outer pod. Falls back to the pod-level data-player-id when
-  // the portrait isn't mounted (e.g. legacy PlayerArea variant).
-  const portraitSelector = `[data-portrait-target-player-id="${cssEscape(playerId)}"]`;
-  const portrait = document.querySelector(portraitSelector);
-  if (portrait) return portrait as HTMLElement;
-  const podSelector = `[data-player-id="${cssEscape(playerId)}"]`;
-  const pod = document.querySelector(podSelector);
-  if (!pod) return null;
-  return pod as HTMLElement;
-}
-
-function combatEndpointNodes(
-  combat: readonly WebCombatGroupView[],
-): HTMLElement[] {
-  const nodes: HTMLElement[] = [];
-  const seen = new Set<HTMLElement>();
-  const push = (node: HTMLElement | null) => {
-    if (!node || seen.has(node)) return;
-    seen.add(node);
-    nodes.push(node);
-  };
-  for (const group of combat) {
-    for (const attacker of Object.values(group.attackers)) {
-      push(nodeForPermanent(attacker));
-    }
-    const blockers = Object.values(group.blockers);
-    if (blockers.length > 0) {
-      for (const blocker of blockers) {
-        push(nodeForPermanent(blocker));
-      }
-    } else {
-      push(nodeForPlayer(group.defenderId));
-    }
-  }
-  return nodes;
-}
-
-function centerOf(rect: DOMRect): { x: number; y: number } {
-  return {
-    x: rect.left + rect.width / 2,
-    y: rect.top + rect.height / 2,
-  };
-}
-
-function cssEscape(value: string): string {
-  if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
-    return CSS.escape(value);
-  }
-  return value.replace(/(["\\])/g, '\\$1');
 }

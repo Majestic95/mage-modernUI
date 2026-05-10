@@ -44,10 +44,12 @@
  *
  * <p>Reference: docs/design/picture-catalog.md §2.0, §5.A, §5.B.
  */
-import { type CSSProperties, useMemo } from 'react';
+import { type CSSProperties, useMemo, useState } from 'react';
 import type { WebPlayerView } from '../api/schemas';
-import { computeHaloBackground, manaTokenForCode } from './halo';
+import { computeHaloBackground } from './halo';
 import { scryfallCommanderImageUrl, scryfallPrintingImageUrl } from './scryfall';
+import { IncomingTag } from './IncomingTag';
+import { FallbackInitial, stateFilter } from './PlayerPortraitFallback';
 import { useGameStore } from './store';
 import { usePlayerCommanders } from './usePlayerCommanders';
 
@@ -83,6 +85,15 @@ interface Props {
    * the player + commander name.
    */
   ariaLabel?: string;
+  /**
+   * Slice 1-X-tunings round 5 (2026-05-09) — pod position passed
+   * through to {@link IncomingTag} for per-pod layout (top pod
+   * overlaps portrait; left/right pods stack two-line; default
+   * floats above). Optional; consumers outside the 4-pod combat
+   * surface (LobbySeatPortrait, GameLog avatars, CommanderDamage
+   * cells) leave it undefined.
+   */
+  podPosition?: 'top' | 'left' | 'right' | 'bottom' | undefined;
 }
 
 /**
@@ -112,6 +123,7 @@ export function PlayerPortrait({
   size = 'medium',
   haloVariant = 'circular',
   ariaLabel,
+  podPosition,
 }: Props) {
   const sizePx = SIZE_PX[size];
   // Slice 70-X.14 (Bug 4) — read from the store's commander snapshot
@@ -164,6 +176,19 @@ export function PlayerPortrait({
   // than disconnected per picture-catalog §2.4.
   const portraitFilter = stateFilter(eliminated, disconnected);
 
+  // Slice 1-X.2 — broken-image fallback. Pre-restructure the inner
+  // <img> had `alt=""` so a 404 Scryfall URL was silent; post-
+  // restructure `alt={label}` is the load-bearing accessible name,
+  // which means a broken image renders the alt as visible text
+  // ("alice portrait, commander ..."). Track the URL that errored;
+  // when it matches the current imageUrl, swap to FallbackInitial.
+  // State is keyed on the URL string (not a boolean) so a fresh
+  // imageUrl after a commander swap automatically un-errors without
+  // a useEffect — sidesteps the project's "no setState-in-effect"
+  // lint rule.
+  const [erroredUrl, setErroredUrl] = useState<string | null>(null);
+  const useFallback = !imageUrl || erroredUrl === imageUrl;
+
   return (
     <div
       data-testid="player-portrait"
@@ -178,8 +203,15 @@ export function PlayerPortrait({
       data-portrait-target-player-id={player.playerId}
       data-eliminated={eliminated || undefined}
       data-disconnected={disconnected || undefined}
-      role="img"
-      aria-label={label}
+      // Slice 1-X.2 — `role="img"` + `aria-label` moved off this
+      // outer wrapper onto the inner image surface (the <img>
+      // element when commander art is present, FallbackInitial
+      // otherwise). Keeping the leaf role on the wrapper meant
+      // the IncomingTag <button> sibling rendered as a descendant
+      // of role="img", which per ARIA 1.2 leaf-role rules can hide
+      // descendants from some assistive tech (UX critic UC-B2 on
+      // slice 1-B). The accessible name still resolves — it's
+      // just announced from the actual visual surface now.
       style={{
         position: 'relative',
         // Slice 70-Z polish — `isolation: isolate` establishes a
@@ -196,11 +228,23 @@ export function PlayerPortrait({
         flexShrink: 0,
       }}
     >
-      {imageUrl ? (
+      {!useFallback ? (
         <img
-          src={imageUrl}
-          alt=""
+          src={imageUrl ?? undefined}
+          // Slice 1-X.2 — alt now carries the load-bearing
+          // accessible name (was `alt=""` decorative when the
+          // outer wrapper held the role/aria-label). The img's
+          // implicit role="img" + alt text is the canonical SR
+          // pattern for a labeled image.
+          alt={label}
           loading="lazy"
+          // Slice 1-X.2 — onError swaps to FallbackInitial when
+          // the Scryfall URL fails at runtime. Without this guard
+          // the alt text would render as visible text inside the
+          // empty portrait circle (UX critic notable on slice
+          // 1-X.2). Records the failing URL so a fresh imageUrl
+          // (commander swap, etc.) gets a clean retry.
+          onError={() => setErroredUrl(imageUrl ?? null)}
           data-testid="player-portrait-image"
           style={{
             width: '100%',
@@ -219,6 +263,11 @@ export function PlayerPortrait({
           sizePx={sizePx}
           eliminated={eliminated}
           disconnected={disconnected}
+          // Slice 1-X.2 — push the accessible name onto the
+          // fallback so it carries role="img" + aria-label like
+          // the real-art path's <img> does. Outer wrapper no
+          // longer participates in ARIA semantics.
+          ariaLabel={label}
         />
       )}
       {haloVariant === 'circular' && (
@@ -229,100 +278,21 @@ export function PlayerPortrait({
           paddingPx={HALO_PADDING_PX[size]}
         />
       )}
+      {/* Slice 1-B — incoming-attacker badge for opponents during
+          combat. IncomingTag self-gates on phase + own-portrait
+          + count > 0, so it renders nothing in non-combat states.
+          Position is absolute (T1: portrait footprint unchanged).
+          Slice 1-X-tunings round 8 (2026-05-09): mount only when
+          `podPosition` is set so the badge stays scoped to the
+          4-pod combat surface. Non-pod consumers
+          (CommanderDamageTracker, GameLog avatars, LobbySeatPortrait,
+          DeckEditor commander preview) leave podPosition undefined
+          and don't get the badge. */}
+      {podPosition !== undefined && (
+        <IncomingTag playerId={player.playerId} podPosition={podPosition} />
+      )}
     </div>
   );
-}
-
-/**
- * Slice 70-J — fallback portrait when no commander art is available
- * (non-Commander format, partner pairing without art, or Scryfall
- * URL unresolvable). Renders the player's initial letter on a flat
- * color background derived from their first color identity (or a
- * neutral surface color for empty colorIdentity).
- *
- * <p>This is intentionally simple — the picture target is commander
- * portraits, and any frame without one is a degraded-experience
- * case. A stylized initial circle is "polished placeholder" rather
- * than "carefully designed avatar." Slice 70-Z polish may revisit
- * if the fallback paints awkwardly next to art-crop portraits in
- * mixed-format games.
- */
-function FallbackInitial({
-  name,
-  colorIdentity,
-  sizePx,
-  eliminated,
-  disconnected,
-}: {
-  name: string;
-  colorIdentity: readonly string[];
-  sizePx: number;
-  eliminated: boolean;
-  disconnected: boolean;
-}) {
-  const initial = (name?.[0] ?? '?').toUpperCase();
-  const bgColor = useMemo(() => {
-    if (eliminated || colorIdentity.length === 0) {
-      return 'var(--color-surface-card)';
-    }
-    // Single first color of identity. Multicolor commanders are
-    // expected to have art so this fallback is rare for them; if
-    // we land here for a multicolor case, just use the first.
-    return manaTokenForCode(colorIdentity[0]!);
-  }, [colorIdentity, eliminated]);
-
-  // Same desaturation / opacity treatment as the real portrait
-  // for state variants — keeps the visual contract consistent
-  // whether art loads or not. Shared helper so the two paths
-  // (img + fallback) can't drift if the catalog values change
-  // (code critic Dup2).
-  const filterValue = stateFilter(eliminated, disconnected);
-
-  // Font size scales with the portrait — large portraits get
-  // proportionally larger initials. Roughly half the portrait
-  // dimension for a balanced look.
-  const fontSize = Math.max(12, Math.round(sizePx * 0.5));
-
-  return (
-    <div
-      data-testid="player-portrait-fallback"
-      style={{
-        width: '100%',
-        height: '100%',
-        borderRadius: '50%',
-        backgroundColor: bgColor,
-        color: 'var(--color-text-primary)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontWeight: 600,
-        fontSize: `${fontSize}px`,
-        lineHeight: 1,
-        userSelect: 'none',
-        filter: filterValue,
-        transition: 'filter 700ms ease-in-out',
-      }}
-    >
-      {initial}
-    </div>
-  );
-}
-
-/**
- * Slice 70-Z polish (code critic Dup2) — shared helper for the
- * eliminated/disconnected portrait filter string. Both the real-art
- * path and the fallback-initial path apply the SAME desaturation
- * treatment per picture-catalog §2.4; centralizing the values here
- * means the catalog can be retuned with a single edit instead of
- * two parallel literals.
- */
-function stateFilter(
-  eliminated: boolean,
-  disconnected: boolean,
-): string | undefined {
-  if (eliminated) return 'grayscale(1) opacity(0.5)';
-  if (disconnected) return 'grayscale(0.6) opacity(0.7)';
-  return undefined;
 }
 
 /**

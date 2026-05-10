@@ -131,6 +131,16 @@ export function Battlefield({
     // user wants a static viewport — content beyond bounds is
     // clipped rather than scrolled.
     <div className="flex-1 flex flex-col relative overflow-hidden">
+      {/* Slice 1-X-tunings round 3 (2026-05-09) — DefenderBeams
+          unmounted here pending further design verdict on whether
+          ambient-pressure beams add user-perceived value beyond the
+          per-arrow color/dash signal. Component file
+          `./DefenderBeams.tsx` and its tests are intact; re-enable
+          by adding `import { DefenderBeams } from './DefenderBeams'`
+          at the top of this file and `<DefenderBeams />` here. The
+          slice's value proposition is documented in
+          `docs/design/combat-bundle-1-defender-lanes.md` § Slice 1-D
+          and the accompanying critic-pass log row. */}
       {/* 2026-05-03 asymmetric-T branch — when LAYOUT_BOUNDS=true the
           battlefield switches to the "asymmetric T" layout per the
           industry-research recommendation: top 55% holds 3 stacked
@@ -455,7 +465,11 @@ export function Battlefield({
               data-testid="central-focal-tile"
               className="flex flex-col items-center gap-2 rounded-lg border border-zinc-700/80 bg-zinc-900/60 px-6 py-4 shadow-inner"
             >
-              <StackZone stack={gv.stack} combat={gv.combat} />
+              <StackZone
+                stack={gv.stack}
+                combat={gv.combat}
+                players={gv.players}
+              />
               <div
                 data-testid="central-focal-turn-label"
                 className="text-[11px] uppercase tracking-wider text-zinc-400 font-semibold"
@@ -464,7 +478,11 @@ export function Battlefield({
               </div>
             </div>
           ) : (
-            <StackZone stack={gv.stack} combat={gv.combat} />
+            <StackZone
+              stack={gv.stack}
+              combat={gv.combat}
+              players={gv.players}
+            />
           )}
         </div>
 

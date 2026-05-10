@@ -175,6 +175,7 @@ export function PlayerFrameRedesigned({
               player={player}
               size={portraitSize}
               haloVariant="circular"
+              podPosition={position}
             />
           </button>
         ) : (
@@ -182,6 +183,7 @@ export function PlayerFrameRedesigned({
             player={player}
             size={portraitSize}
             haloVariant="circular"
+            podPosition={position}
           />
         )}
         {/* Hearthstone-style floating life badge: a circular black

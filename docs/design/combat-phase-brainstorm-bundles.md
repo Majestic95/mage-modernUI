@@ -3,8 +3,9 @@
 > **Source:** Original brainstorm authored 2026-05 from three parallel design passes (interaction, visual, motion design) merged into six idea bundles. Originally lived as a Cursor plan file at `~/.cursor/plans/combat_phase_brainstorm_clusters_5c8a1050.plan.md`; copied into the repo here on 2026-05-09 so future agents have a stable in-repo reference.
 >
 > **Status snapshot (2026-05-09):**
-> - **Bundle 3 — Combat Dashboard:** SHIPPED on `feat/combat-bundle-3-dashboard`. Per-bundle scope brief: [`docs/design/combat-bundle-3-dashboard.md`](combat-bundle-3-dashboard.md). Critic-pass post-mortem: [`docs/decisions/0014-self-authored-spec-failure-modes.md`](../decisions/0014-self-authored-spec-failure-modes.md).
-> - **Bundles 1, 2, 4, 5, 6:** still in brainstorm state; no per-bundle scope brief written yet.
+> - **Bundle 3 — Combat Dashboard:** SHIPPED on `feat/combat-bundle-3-dashboard` (merged into `main`). Per-bundle scope brief: [`docs/design/combat-bundle-3-dashboard.md`](combat-bundle-3-dashboard.md). Critic-pass post-mortem: [`docs/decisions/0014-self-authored-spec-failure-modes.md`](../decisions/0014-self-authored-spec-failure-modes.md).
+> - **Bundle 1 — Defender Lanes:** scope brief landed; slice work in progress on `feat/combat-bundle-1-defender-lanes`. Per-bundle scope brief: [`docs/design/combat-bundle-1-defender-lanes.md`](combat-bundle-1-defender-lanes.md).
+> - **Bundles 2, 4, 5, 6:** still in brainstorm state; no per-bundle scope brief written yet.
 >
 > **Open questions still to be answered (originally listed at the bottom of this brainstorm):**
 > - Which bundles to pursue and in what order beyond Bundle 3.
