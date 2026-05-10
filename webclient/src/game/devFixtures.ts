@@ -141,7 +141,32 @@ function bigBoardEntries(landName: string): Array<[string, CardKind]> {
  * creatures + artifacts) so the side-pod containment + shrink + new
  * single-column-stack behavior all surface in one view.
  */
-export function buildDemoGameView(): WebGameView {
+/**
+ * Slice 1-X-smoke (Bundle 1 live verification) — opt-in flag that
+ * pre-populates the fixture with combat-active state. The default
+ * fixture is parked at PRECOMBAT_MAIN with empty combat[], which
+ * means Bundle 1's four user-visible features (defender colors +
+ * dashes, incoming-tags, wave-reveal stagger, defender beams)
+ * never render. Without engine-driven phase advancement in the
+ * fixture, the only path to verifying the bundle visually is to
+ * seed combat directly. Reachable via `?combat=1` URL param
+ * (DemoGame.tsx parses).
+ *
+ * Dev-only — not consumed by tests, not reachable in production.
+ */
+export interface BuildDemoGameViewOptions {
+  /**
+   * When true, the fixture starts in `phase: 'COMBAT'` with 3
+   * attacker groups across 3 different defenders (mono-G, multicolor,
+   * mono-R) — one group blocked, the others unblocked, so the
+   * "incoming N — M unblocked" math surfaces both cases.
+   */
+  combatActive?: boolean;
+}
+
+export function buildDemoGameView(
+  opts: BuildDemoGameViewOptions = {},
+): WebGameView {
   // Reset id counter so the same fixture renders the same UUIDs
   // every time (helps with React keys + Framer layoutId stability).
   nextId = 1;
@@ -317,10 +342,23 @@ export function buildDemoGameView(): WebGameView {
     hasLeft: false, monarch: false, initiative: false, designationNames: [],
   });
 
+  // Slice 1-X-smoke — combat-active fixture state, opt-in via opts.
+  // Pull 4 attacker permanents from the local player's battlefield
+  // (so they have real `data-permanent-id` attributes the
+  // CombatArrows + DefenderBeams geometry hooks can target) plus
+  // 1 blocker from alloc's battlefield. 3 combat groups exercise
+  // mono-G defender (goat), multicolor defender (momur, B/R),
+  // mono-R defender (alloc), with the alloc group having a
+  // blocker so the "incoming N — M unblocked" math surfaces both
+  // M < N and M = N cases.
+  const combat = opts.combatActive
+    ? buildCombatGroups(meBf, alloc.battlefield, goatId, momurId, allocId)
+    : [];
+
   return webGameViewSchema.parse({
     turn: 4,
-    phase: 'PRECOMBAT_MAIN',
-    step: 'PRECOMBAT_MAIN',
+    phase: opts.combatActive ? 'COMBAT' : 'PRECOMBAT_MAIN',
+    step: opts.combatActive ? 'COMBAT_DAMAGE' : 'PRECOMBAT_MAIN',
     activePlayerName: 'goat',
     priorityPlayerName: 'MAJEST1C',
     special: false,
@@ -350,7 +388,76 @@ export function buildDemoGameView(): WebGameView {
       stack[lightning.id] = lightning;
       return stack;
     })(),
-    combat: [],
+    combat,
     players: [me, goat, momur, alloc],
   });
+}
+
+/**
+ * Slice 1-X-smoke — assembles 3 combat groups from existing
+ * fixture battlefield permanents so Bundle 1's combat-active
+ * surfaces (CombatArrows colors/dashes, IncomingTag badges,
+ * wave-reveal stagger, DefenderBeams) all light up at once
+ * when the fixture is loaded with `?combat=1`.
+ *
+ * Pulls real permanent objects from the maps so the rendered
+ * `data-permanent-id` DOM attributes match the IDs the geometry
+ * hooks query. Returns an empty array if any required permanent
+ * isn't present (defensive — fixture always has enough but
+ * future fixture refactors could shrink the battlefields).
+ */
+function buildCombatGroups(
+  meBf: Record<string, WebPermanentView>,
+  allocBf: Record<string, WebPermanentView>,
+  goatId: string,
+  momurId: string,
+  allocId: string,
+) {
+  const meCreatures = Object.values(meBf).filter(
+    (p) => p.card.types.includes('CREATURE'),
+  );
+  const allocCreatures = Object.values(allocBf).filter(
+    (p) => p.card.types.includes('CREATURE'),
+  );
+  if (meCreatures.length < 4 || allocCreatures.length < 1) return [];
+
+  const att1 = meCreatures[0]!;
+  const att2 = meCreatures[1]!;
+  const att3 = meCreatures[2]!;
+  const att4 = meCreatures[3]!;
+  const blocker = allocCreatures[0]!;
+
+  return [
+    // Goat (mono-G) — 2 unblocked attackers. Tag should read
+    // "incoming 2 — 2 unblocked"; arrow stroke = green; dash = '8 6'
+    // (defender index 1 in players-order).
+    {
+      defenderId: goatId,
+      defenderName: 'goat',
+      attackers: { [att1.card.id]: att1, [att2.card.id]: att2 },
+      blockers: {},
+      blocked: false,
+    },
+    // Momur (multicolor B/R) — 1 unblocked attacker. Tag should
+    // read "incoming 1 — 1 unblocked"; arrow stroke = banded
+    // black/red gradient; dash = '2 5' (defender index 2).
+    {
+      defenderId: momurId,
+      defenderName: 'momur',
+      attackers: { [att3.card.id]: att3 },
+      blockers: {},
+      blocked: false,
+    },
+    // Alloc (mono-R) — 1 attacker, BLOCKED by an alloc creature.
+    // Tag should read "incoming 1" (suffix dropped because
+    // unblocked = 0); arrow stroke = red; dash = '1 6' (defender
+    // index 3); arrow points to the blocker tile, not the portrait.
+    {
+      defenderId: allocId,
+      defenderName: 'Alloc',
+      attackers: { [att4.card.id]: att4 },
+      blockers: { [blocker.card.id]: blocker },
+      blocked: true,
+    },
+  ];
 }

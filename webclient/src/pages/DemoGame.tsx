@@ -40,7 +40,20 @@ import {
 } from '../layoutVariants';
 
 export function DemoGame() {
-  const gameView = useMemo(() => buildDemoGameView(), []);
+  // Slice 1-X-smoke — `?combat=1` URL knob seeds the fixture with
+  // 3 attacker groups across 3 different defenders so Bundle 1's
+  // combat-active features (defender-color + dash arrows,
+  // IncomingTag badges, wave-reveal stagger, DefenderBeams) all
+  // light up at once for live verification. Default-off keeps the
+  // pre-combat layout-iteration behavior intact for other tests.
+  const combatActive = useMemo(() => {
+    if (typeof window === 'undefined') return false;
+    return new URLSearchParams(window.location.search).get('combat') === '1';
+  }, []);
+  const gameView = useMemo(
+    () => buildDemoGameView({ combatActive }),
+    [combatActive],
+  );
   // Source-of-truth for the active variant lives here — above the
   // Provider — so the switcher can update both React state (forces
   // re-render through the context) and the URL (shareable + survives
