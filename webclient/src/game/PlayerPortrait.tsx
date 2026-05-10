@@ -47,6 +47,7 @@
 import { type CSSProperties, useMemo, useState } from 'react';
 import type { WebPlayerView } from '../api/schemas';
 import { computeHaloBackground } from './halo';
+import { usePortraitBloom } from './usePortraitBloom';
 import { scryfallCommanderImageUrl, scryfallPrintingImageUrl } from './scryfall';
 import { IncomingTag } from './IncomingTag';
 import { FallbackInitial, stateFilter } from './PlayerPortraitFallback';
@@ -276,6 +277,7 @@ export function PlayerPortrait({
           isActive={player.isActive}
           eliminated={eliminated}
           paddingPx={HALO_PADDING_PX[size]}
+          playerId={player.playerId}
         />
       )}
       {/* Slice 1-B — incoming-attacker badge for opponents during
@@ -315,11 +317,15 @@ function CircularHalo({
   isActive,
   eliminated,
   paddingPx,
+  playerId,
 }: {
   colorIdentity: readonly string[];
   isActive: boolean;
   eliminated: boolean;
   paddingPx: number;
+  // Slice 5-B (Bundle 5 / Damage Moment) — feeds usePortraitBloom
+  // so the halo can flare when this player is hit by combat damage.
+  playerId: string;
 }) {
   const haloBackground = useMemo(
     () => computeHaloBackground(colorIdentity, eliminated),
@@ -426,6 +432,12 @@ function CircularHalo({
   // it correctly paints behind the img.
   const parentAnim = rotates ? 'animate-halo-rotate' : '';
   const childAnim = pulses ? 'animate-player-active-halo' : '';
+  // Slice 5-B — portrait halo bloom on life-loss. Hook subscribes
+  // to useDamageEvents (Bundle 5 / Slice 5-A) and bumps `counter`
+  // each time this player is hit. Keying the bloom layer off the
+  // counter remounts it so the keyframe replays from frame 0 even
+  // for back-to-back hits.
+  const bloom = usePortraitBloom(playerId);
 
   return (
     <div
@@ -469,6 +481,22 @@ function CircularHalo({
         className={'pointer-events-none ' + childAnim}
         style={ringStyle}
       />
+      {/* Slice 5-B (Bundle 5) damage-bloom layer. Single-shot
+          keyframe alpha + scale spike when this player is hit.
+          Keyed off bloom.counter so back-to-back hits remount the
+          element and replay the keyframe from frame 0 instead of
+          continuing partway through the previous bloom. Sits
+          on top of the halo ring (no isolation) so the spike is
+          visible across all halo states. */}
+      {bloom.active && (
+        <div
+          key={`portrait-bloom-${bloom.counter}`}
+          data-testid="player-portrait-damage-bloom"
+          aria-hidden="true"
+          className="pointer-events-none animate-portrait-bloom"
+          style={ringStyle}
+        />
+      )}
     </div>
   );
 }

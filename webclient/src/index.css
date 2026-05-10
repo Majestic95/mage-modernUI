@@ -659,6 +659,23 @@ input[type="checkbox"] {
   animation: combat-eligibility-pulse 1500ms cubic-bezier(0.45, 0, 0.55, 1) infinite;
 }
 
+/*
+ * Bundle 5 / Slice 5-B — portrait halo bloom on life-loss.
+ * Single-shot 600ms alpha + scale spike peaking at 50% so the
+ * bloom peak coincides with the LifeCounter's flash peak —
+ * visual (halo flare) and numeric (life count) land as one event.
+ * Duration mirrors `PORTRAIT_BLOOM_MS` in
+ * webclient/src/animation/transitions.ts.
+ */
+@keyframes portrait-bloom {
+  0%   { opacity: 0; transform: scale(1); }
+  50%  { opacity: 0.85; transform: scale(1.18); }
+  100% { opacity: 0; transform: scale(1); }
+}
+.animate-portrait-bloom {
+  animation: portrait-bloom 600ms cubic-bezier(0.25, 0.1, 0.25, 1) 1;
+}
+
 .animate-lane-active-glow {
   /* Same 1900ms period as `animate-player-active-halo` so the lane
    * border breathes in sync with the portrait halo. */

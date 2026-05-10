@@ -312,6 +312,12 @@ export const PARTICLE_DRIFT_PERIOD_MS = 60_000;
 export const DAMAGE_PARCEL_TRAVEL_MS = 350;
 export const DAMAGE_PARCEL_STAGGER_MS = 50;
 
+// Bundle 5 / Slice 5-B — portrait halo bloom on life-loss. Total
+// duration peaks alpha + scale at ~50% (300ms in) so the bloom
+// peak coincides with the LifeCounter's flash peak — visual +
+// numeric land synchronously per the brief.
+export const PORTRAIT_BLOOM_MS = 600;
+
 /* ============================================================
    Slice 70-Z.2 / 70-Z.3 / 70-Z.4 — card animation system timing.
    The seam ships in 70-Z.2 (no visual change); the constants here
