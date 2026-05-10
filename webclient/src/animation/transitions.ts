@@ -249,10 +249,21 @@ export const LIFE_FLOATING_NUMBER = DELTA_FLOAT_UP;
  * keyframes modulate INTENSITY (opacity / shadow alpha), not the base
  * color. The host element must already render its own glow source
  * (a colored box-shadow, ring, or background); the class amplifies
- * and softens the glow over the cycle. The {@link
- * #CARD_TARGETED_PULSE_CLASS} keyframe is the exception — it drives
- * its own purple targeted-frame color as a self-contained box-shadow,
- * since targeting is a transient state with no resting visual.
+ * and softens the glow over the cycle. Two registered exceptions to
+ * the contract, both driving their own color because they're
+ * transient overlays with no resting visual:
+ * <ul>
+ *   <li>{@link #CARD_TARGETED_PULSE_CLASS} — purple targeted-frame
+ *       color as a self-contained box-shadow.</li>
+ *   <li>{@code .arrow-shimmer-first-strike} / {@code .arrow-shimmer-
+ *       regular} (Bundle 6 / slice 6-C, ratified at 6-X.0 graphical
+ *       critic F-G-B3) — cool cyan-white / warm amber-orange stroke
+ *       on the combat-arrow shimmer overlay path. Step-keyed palette
+ *       differentiation has no host glow to amplify; the class drives
+ *       its own stroke color, and the keyframe modulates opacity
+ *       around a faint static base (0.4) so the reduced-motion
+ *       fallback reads as a tint rather than a permanent stripe.</li>
+ * </ul>
  *
  * <p><b>Reduced-motion behavior</b>: these are NON-essential
  * animations. The global `prefers-reduced-motion` rule kills them by

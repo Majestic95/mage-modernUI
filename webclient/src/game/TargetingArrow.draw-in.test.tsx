@@ -287,6 +287,54 @@ describe('TargetingArrow — slice 6-A ink-overlay draw-in', () => {
     expect(base?.getAttribute('stroke-dasharray')).toBe('8 6');
   });
 
+  it('slice 6-X.0 (F-G-N1) — reduced-motion users still mount shimmer layer (static color persists)', () => {
+    // Cross-critic blocker F-T-B1 / F-G-B1 / F-M-N3: the brief promises
+    // that under prefers-reduced-motion the shimmer KEYFRAME is silenced
+    // but the static stroke color persists (WCAG 1.4.1 redundant-signal
+    // claim). The CSS fix in slice 6-X.0 adds a class-targeted media-
+    // query override that wins over the parent <svg>'s data-essential-
+    // motion exemption. At the DOM-shape level we assert the shimmer
+    // path STILL mounts (color signal preserved); the runtime keyframe
+    // silencing is a CSS concern verified by inspection of the override
+    // block in index.css.
+    mockReducedMotion(true);
+    const { container } = render(
+      <TargetingArrow
+        source={{ x: 0, y: 0 }}
+        to={{ x: 100, y: 100 }}
+        strokeDasharray="8 6"
+        damageStep="first-strike"
+      />,
+    );
+    const shimmer = container.querySelector(
+      'path[data-arrow-layer="shimmer"]',
+    );
+    expect(shimmer).not.toBeNull();
+    expect(shimmer?.getAttribute('class')).toBe('arrow-shimmer-first-strike');
+  });
+
+  it('slice 6-X.0 (F-T-N2) — at-rest arrow has exactly one path[marker-end] on the base layer', () => {
+    // Regression guard for the test-selector contract: 8+ existing tests
+    // across CombatArrows + TargetingArrow use `path[marker-end]` to
+    // find "the real arrow" while ignoring the <defs> arrowhead. Bundle
+    // 6 added two sibling paths (ink + shimmer); only the base layer
+    // carries marker-end at-rest. If a future change adds marker-end to
+    // the shimmer layer (it has no arrowhead today), or if the ink
+    // layer's marker-end becomes unconditional, that contract silently
+    // breaks. Pin it down here so the failure is loud.
+    const { container } = render(
+      <TargetingArrow
+        source={{ x: 0, y: 0 }}
+        to={{ x: 100, y: 100 }}
+        strokeDasharray="8 6"
+        damageStep="first-strike"
+      />,
+    );
+    const markerEndPaths = container.querySelectorAll('path[marker-end]');
+    expect(markerEndPaths).toHaveLength(1);
+    expect(markerEndPaths[0]?.getAttribute('data-arrow-layer')).toBe('base');
+  });
+
   it('latches drawIn on mount — flipping the prop to undefined mid-animation does not interrupt', () => {
     const { container, rerender } = render(
       <TargetingArrow

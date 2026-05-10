@@ -800,10 +800,32 @@ input[type="checkbox"] {
  * white reads as "fast / piercing"); slower 350ms cycle for regular
  * combat damage (warm amber-orange reads as "weighty / settling").
  *
- * Reduced motion: the global @media (prefers-reduced-motion: reduce)
- * rule kills the keyframe animation, but the static stroke + opacity
- * persist — color isn't motion, so the cool-vs-warm differentiation
- * remains as a static signal (WCAG 1.4.1 redundant-signal claim).
+ * Cross-dissolve on step transition (slice 6-X.0 — F-M-N2):
+ * `transition: stroke 300ms ease-in-out` interpolates the stroke
+ * color smoothly when the className swaps between
+ * `arrow-shimmer-first-strike` and `arrow-shimmer-regular` (double-
+ * strike attacker transitioning FIRST_COMBAT_DAMAGE → COMBAT_DAMAGE).
+ * Without the transition the swap was a hard cut.
+ *
+ * Static-fallback alpha (slice 6-X.0 — F-G-B2): the class sets
+ * `opacity: 0.4` as the CASCADE base; the keyframe's opacity values
+ * (0.2 ↔ 0.7) OVERRIDE the cascade while the animation runs, so
+ * dynamic playback is unchanged. When the keyframe is suppressed
+ * (reduced motion — see media block below), the path reverts to its
+ * class opacity 0.4 × stroke alpha 0.7 ≈ 0.28 effective alpha — a
+ * faint tint, not a permanent stripe.
+ *
+ * Reduced motion (slice 6-X.0 — cross-critic blocker F-T-B1 / F-G-B1
+ * / F-M-N3): the @media rule BELOW silences the keyframe animation
+ * explicitly. The path's parent <svg> carries `data-essential-motion`
+ * (ink draw-in is essential motion) which exempts ALL descendants
+ * from the global `*:not([data-essential-motion] *)` rule. Without an
+ * explicit class-targeted override here, the shimmer keyframe kept
+ * pulsing under `prefers-reduced-motion: reduce` — contradicting the
+ * brief and the WCAG 2.3.3 footnote justification. The class-specific
+ * `animation: none !important` rule below wins by specificity.
+ * Static stroke color persists → cool-vs-warm differentiation is a
+ * static signal (WCAG 1.4.1 redundant-signal claim restored).
  */
 @keyframes arrow-shimmer-first-strike {
   0%, 100% { opacity: 0.2; }
@@ -819,6 +841,8 @@ input[type="checkbox"] {
   fill: none;
   mix-blend-mode: screen;
   pointer-events: none;
+  opacity: 0.4;
+  transition: stroke 300ms ease-in-out;
   animation: arrow-shimmer-first-strike 200ms ease-in-out infinite;
 }
 .arrow-shimmer-regular {
@@ -827,7 +851,22 @@ input[type="checkbox"] {
   fill: none;
   mix-blend-mode: screen;
   pointer-events: none;
+  opacity: 0.4;
+  transition: stroke 300ms ease-in-out;
   animation: arrow-shimmer-regular 350ms ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  /*
+   * Slice 6-X.0 — class-specific override. Shimmer paths live inside
+   * <svg data-essential-motion="true"> so the global universal rule's
+   * :not(...) selectors below exempt them. This rule wins by class
+   * specificity and explicitly silences the shimmer keyframes. See
+   * block comment above for the full rationale.
+   */
+  .arrow-shimmer-first-strike,
+  .arrow-shimmer-regular {
+    animation: none !important;
+  }
 }
 
 /*
