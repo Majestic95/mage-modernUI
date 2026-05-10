@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { CinematicLab } from './CinematicLab';
 import { useGameStore } from '../game/store';
@@ -31,7 +31,7 @@ afterEach(() => {
 });
 
 describe('CinematicLab', () => {
-  it('mounts the lab page with all five trigger buttons + status text', () => {
+  it('mounts the lab page with all seven trigger buttons + status text', () => {
     render(<CinematicLab />);
     expect(screen.getByTestId('cinematic-lab')).toBeInTheDocument();
     expect(screen.getByTestId('cinematic-lab-panel')).toBeInTheDocument();
@@ -43,17 +43,26 @@ describe('CinematicLab', () => {
     expect(
       screen.getByTestId('trigger-declare-attackers'),
     ).toBeInTheDocument();
+    expect(screen.getByTestId('trigger-declare-blockers')).toBeInTheDocument();
+    expect(screen.getByTestId('trigger-damage-step')).toBeInTheDocument();
     expect(screen.getByTestId('trigger-reset')).toBeInTheDocument();
     expect(screen.getByTestId('cinematic-lab-status')).toBeInTheDocument();
   });
 
-  it('seeds the store with the combat-active fixture on mount', () => {
+  it('seeds the store with the combat-active fixture on mount (with blockers stripped per slice 6-Y.1)', () => {
     render(<CinematicLab />);
     const view = useGameStore.getState().gameView;
     expect(view).not.toBeNull();
     // combatActive: true — combat[] populated with 3 groups against
     // goat / momur / alloc.
     expect(view!.combat.length).toBeGreaterThanOrEqual(1);
+    // Slice 6-Y.1 — baseline strips blockers from every combat group
+    // so the declare-blockers trigger can demonstrate 6-B's snap-in
+    // in isolation. No group should be blocked at mount.
+    for (const group of view!.combat) {
+      expect(Object.keys(group.blockers)).toHaveLength(0);
+      expect(group.blocked).toBe(false);
+    }
     // Baseline life is 40 on most Commander players, 35 on alloc
     // (the fixture pre-seeds alloc lower for low-life-trigger
     // verification — see devFixtures.ts:365). Either way > 30.
@@ -163,4 +172,66 @@ describe('CinematicLab', () => {
     expect(afterStatus).not.toBe(initialStatus);
     expect(afterStatus.length).toBeGreaterThan(0);
   });
+
+  it('slice 6-Y.1 — declare-blockers button re-attaches blockers to combat group(s)', () => {
+    render(<CinematicLab />);
+    // Baseline has all combat groups unblocked (slice 6-Y.1 strip).
+    const before = useGameStore.getState().gameView!;
+    for (const g of before.combat) {
+      expect(Object.keys(g.blockers)).toHaveLength(0);
+    }
+    fireEvent.click(screen.getByTestId('trigger-declare-blockers'));
+    const after = useGameStore.getState().gameView!;
+    // At least one combat group now has a blocker; that group's
+    // `blocked` flag is true.
+    const blockedGroups = after.combat.filter(
+      (g) => Object.keys(g.blockers).length > 0,
+    );
+    expect(blockedGroups.length).toBeGreaterThan(0);
+    for (const g of blockedGroups) {
+      expect(g.blocked).toBe(true);
+    }
+    expect(
+      screen.getByTestId('cinematic-lab-status').textContent,
+    ).toContain('Declare blockers');
+  });
+
+  it('slice 6-Y.1 — damage-step button sets step to FIRST_COMBAT_DAMAGE synchronously', () => {
+    render(<CinematicLab />);
+    fireEvent.click(screen.getByTestId('trigger-damage-step'));
+    // First setState runs synchronously inside the click handler.
+    expect(useGameStore.getState().gameView!.step).toBe(
+      'FIRST_COMBAT_DAMAGE',
+    );
+    expect(
+      screen.getByTestId('cinematic-lab-status').textContent,
+    ).toContain('Damage step');
+  });
+
+  it('slice 6-Y.1 — damage-step transitions to COMBAT_DAMAGE after the 1500ms hold', () => {
+    vi.useFakeTimers();
+    try {
+      render(<CinematicLab />);
+      fireEvent.click(screen.getByTestId('trigger-damage-step'));
+      expect(useGameStore.getState().gameView!.step).toBe(
+        'FIRST_COMBAT_DAMAGE',
+      );
+      // Advance the setTimeout by exactly the hold duration.
+      act(() => {
+        vi.advanceTimersByTime(1500);
+      });
+      expect(useGameStore.getState().gameView!.step).toBe('COMBAT_DAMAGE');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // The epoch-guard / reset-cancels-in-flight contract is shared with
+  // the lethal trigger and is already covered by the
+  // 'lethal-commander button writes >=21' raf test above. A separate
+  // damage-step cancellation test would be ambiguous because the
+  // baseline step value (`devFixtures.ts:429` returns 'COMBAT_DAMAGE'
+  // when combatActive=true) coincides with the stale-timer's target,
+  // making "guard worked" indistinguishable from "guard failed but
+  // idempotent" by observed state alone.
 });

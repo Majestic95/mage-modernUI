@@ -22,6 +22,8 @@ interface ControlPanelProps {
   onCreatureDies: () => void;
   onLethal: () => void;
   onDeclareAttackers: () => void;
+  onDeclareBlockers: () => void;
+  onDamageStep: () => void;
   onReset: () => void;
 }
 
@@ -31,6 +33,8 @@ export function ControlPanel({
   onCreatureDies,
   onLethal,
   onDeclareAttackers,
+  onDeclareBlockers,
+  onDamageStep,
   onReset,
 }: ControlPanelProps) {
   // Position top-right so it doesn't overlap the action panel
@@ -74,14 +78,28 @@ export function ControlPanel({
           testid="trigger-declare-attackers"
           slices="6-A v2"
           label="Declare attackers"
-          description="Attack arrows ink-overlay pen-stroke draw-in (400ms / arrow)."
+          description="Attack arrows ink-overlay pen-stroke draw-in (400ms / arrow). No blockers in this state."
           onClick={onDeclareAttackers}
+        />
+        <LabButton
+          testid="trigger-declare-blockers"
+          slices="6-B"
+          label="Declare blockers"
+          description="Block arrow snap-in (200ms cubic-bezier overshoot). Click AFTER declare-attackers to see the timing contrast."
+          onClick={onDeclareBlockers}
+        />
+        <LabButton
+          testid="trigger-damage-step"
+          slices="6-C"
+          label="Damage step (cross-dissolve)"
+          description="Shimmer cool (first-strike) → 1500ms hold → warm (regular) via 300ms stroke transition."
+          onClick={onDamageStep}
         />
         <LabButton
           testid="trigger-reset"
           slices="reset"
           label="Reset fixture"
-          description="Restore life=40, undo deaths and lethal."
+          description="Restore life=40, undo deaths/lethal, strip blockers, clear damage step."
           onClick={onReset}
         />
       </div>
