@@ -15,13 +15,12 @@
  * naturally too (TargetingArrow's drawIn prop, latched-on-mount, runs
  * the ink lifecycle the same way a real-game first-paint would).
  *
- * <p><b>File-size note:</b> 461 LOC at slice 6-A's lab-button addition
- * (was 421 at Bundle 5's lab landing). Past CLAUDE.md's 400 soft cap
- * but under the 500 hard cap. Bundle 6 will add 2 more lab buttons
- * (6-B declare-blockers, 6-C step-transition) which will push the
- * file past 500. Split queued: extract `<ControlPanel>` + `<LabButton>`
- * (~100 LOC) to a sibling `CinematicLabPanel.tsx` BEFORE slice 6-B's
- * lab button lands. Trigger callbacks + the helper stay here.
+ * <p><b>File-size note (post slice 6-A.2 split):</b> Panel chrome
+ * extracted to `./CinematicLabPanel.tsx` (2026-05-10) so this file
+ * lands back under the 400 LOC soft cap. Trigger callbacks, the
+ * `applyCommanderDamage` helper, and the page-level chrome wrappers
+ * (LayoutVariantProvider / MotionConfig / LayoutGroup /
+ * MinimalChromeProvider / GameHeader / GameTable mounts) stay here.
  *
  * <p>Why a separate page (not gated inside DemoGame): DemoGame is the
  * canonical layout-iteration fixture; bolting the lab controls onto
@@ -68,6 +67,7 @@ import { LayoutGroup, MotionConfig } from 'framer-motion';
 import { BattlefieldBackground } from '../game/BattlefieldBackground';
 import { GameHeader } from '../game/GameHeader';
 import { MinimalChromeProvider } from '../game/MinimalChromeContext';
+import { ControlPanel } from './CinematicLabPanel';
 import { GameTable } from '../game/GameTable';
 import { buildDemoGameView } from '../game/devFixtures';
 import { useGameStore } from '../game/store';
@@ -354,118 +354,10 @@ export function CinematicLab() {
   );
 }
 
-interface ControlPanelProps {
-  lastAction: string;
-  onCombatDamage: () => void;
-  onCreatureDies: () => void;
-  onLethal: () => void;
-  onDeclareAttackers: () => void;
-  onReset: () => void;
-}
-
-function ControlPanel({
-  lastAction,
-  onCombatDamage,
-  onCreatureDies,
-  onLethal,
-  onDeclareAttackers,
-  onReset,
-}: ControlPanelProps) {
-  // Position top-right so it doesn't overlap the action panel
-  // (bottom-right per tabletop T2). z-50 sits above all other game
-  // chrome including the action panel and dialog overlays.
-  return (
-    <div
-      className="fixed top-20 right-4 w-80 bg-zinc-900/95 border border-zinc-700 rounded-lg shadow-xl p-4 z-50 text-sm"
-      data-testid="cinematic-lab-panel"
-    >
-      <h2 className="text-base font-bold text-zinc-100 mb-2">
-        Cinematic lab
-      </h2>
-      <p className="text-xs text-zinc-400 mb-3">
-        Click a button to trigger a Bundle 5 / Bundle 6 effect.
-        Reset between runs to re-fire.
-      </p>
-      <div className="flex flex-col gap-2">
-        <LabButton
-          testid="trigger-combat-damage"
-          slices="5-A · 5-B · 5-C"
-          label="Combat damage hit"
-          description="Parcels traverse arrow + portrait bloom + viewport freeze-frame."
-          onClick={onCombatDamage}
-        />
-        <LabButton
-          testid="trigger-creature-dies"
-          slices="5-D"
-          label="Creature dies"
-          description="Card desaturates 150ms during fly-to-graveyard glide."
-          onClick={onCreatureDies}
-        />
-        <LabButton
-          testid="trigger-lethal-commander"
-          slices="5-E"
-          label="Lethal commander damage (21)"
-          description="Centered banner + viewport pulse on threshold cross."
-          onClick={onLethal}
-        />
-        <LabButton
-          testid="trigger-declare-attackers"
-          slices="6-A v2"
-          label="Declare attackers"
-          description="Attack arrows ink-overlay pen-stroke draw-in (400ms / arrow)."
-          onClick={onDeclareAttackers}
-        />
-        <LabButton
-          testid="trigger-reset"
-          slices="reset"
-          label="Reset fixture"
-          description="Restore life=40, undo deaths and lethal."
-          onClick={onReset}
-        />
-      </div>
-      <p
-        className="text-xs text-zinc-300 mt-3 border-t border-zinc-800 pt-2 break-words"
-        data-testid="cinematic-lab-status"
-      >
-        {lastAction}
-      </p>
-    </div>
-  );
-}
-
-interface LabButtonProps {
-  testid: string;
-  slices: string;
-  label: string;
-  description: string;
-  onClick: () => void;
-}
-
-function LabButton({
-  testid,
-  slices,
-  label,
-  description,
-  onClick,
-}: LabButtonProps) {
-  return (
-    <button
-      type="button"
-      data-testid={testid}
-      data-cinematic-trigger={slices}
-      onClick={onClick}
-      className="text-left px-3 py-2 bg-zinc-800 hover:bg-zinc-700 active:bg-zinc-600 border border-zinc-600 rounded text-zinc-100 transition-colors"
-    >
-      <div className="flex items-center justify-between mb-0.5">
-        <span className="font-semibold">{label}</span>
-        <span className="text-[10px] text-zinc-400 font-mono">{slices}</span>
-      </div>
-      <span className="text-xs text-zinc-400 block leading-snug">
-        {description}
-      </span>
-    </button>
-  );
-}
+// ControlPanel + LabButton extracted to ./CinematicLabPanel.tsx
+// (slice 6-A.2 mechanical split, 2026-05-10) so this file lands back
+// under the 400 LOC soft cap with headroom for Bundle 6's incoming
+// trigger buttons.
 
 /**
  * Pure helper: returns a new game view with the named player's
