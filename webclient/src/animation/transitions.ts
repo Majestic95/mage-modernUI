@@ -371,6 +371,27 @@ export const LETHAL_AUTHORITY_PAUSE_MS = 80;
 export const LETHAL_AUTHORITY_TOTAL_MS = 640;
 export const LETHAL_AUTHORITY_STAGGER_MS = 300;
 
+// Bundle 6 / Slice 6-A — attack-arrow pen-stroke draw-in.
+// Mechanism: a sibling "ink" <path> is mounted on top of the base
+// dashed arrow (which keeps its '8 6' dasharray unchanged). The ink
+// path's strokeDashoffset animates from L → 0 (where L = path total
+// length) over the kind-specific duration, producing a pen-stroke
+// sweep. After the draw completes, the ink fades to opacity 0 over
+// ARROW_INK_FADEOUT_MS and unmounts; the base path is what remains
+// at-rest. ARROW_INK_HEAD_DELAY_FRACTION sets where in the timeline
+// the arrowhead becomes visible (0.75 = last quarter, ~last 100ms
+// of the 400ms attack draw).
+//
+// v1 dasharray-override approach (slice 6-A take 1, reverted) made
+// the at-rest arrow render solid because the override survived past
+// the animation end. v2's overlay-path approach keeps base + ink as
+// two distinct DOM elements with independent timelines, so removing
+// the ink leaves no visual residue on the base.
+export const ATTACK_ARROW_INK_DRAW_MS = 400;
+export const BLOCK_ARROW_INK_DRAW_MS = 200;
+export const ARROW_INK_FADEOUT_MS = 80;
+export const ARROW_INK_HEAD_DELAY_FRACTION = 0.75;
+
 /* ============================================================
    Slice 70-Z.2 / 70-Z.3 / 70-Z.4 — card animation system timing.
    The seam ships in 70-Z.2 (no visual change); the constants here

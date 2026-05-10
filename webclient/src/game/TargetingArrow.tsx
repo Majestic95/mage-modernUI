@@ -1,5 +1,33 @@
 import { useEffect, useId, useState } from 'react';
 import type { StrokeSpec } from './halo';
+import {
+  ARROW_INK_FADEOUT_MS,
+  ARROW_INK_HEAD_DELAY_FRACTION,
+  ATTACK_ARROW_INK_DRAW_MS,
+  BLOCK_ARROW_INK_DRAW_MS,
+} from '../animation/transitions';
+import { usePrefersReducedMotion } from './usePrefersReducedMotion';
+
+/**
+ * Slice 6-A — discriminated union telling TargetingArrow to mount the
+ * ink-overlay sibling path on top of the base dashed arrow. The
+ * "kind" picks the duration + easing: attack arrows draw 400ms with
+ * smooth easing; block arrows snap-in over 200ms with overshoot
+ * (slice 6-B). The base path's dasharray + transition are completely
+ * untouched — the ink layer is a separate <path> sibling.
+ *
+ * <p>The prop is LATCHED on mount via {@link useState}'s lazy init so
+ * a parent re-render that flips drawIn back to undefined mid-animation
+ * doesn't unmount the ink path; the local state machine runs to
+ * completion. CombatArrows leverages this by marking the arrow
+ * "drawn" immediately on first paint via {@code markArrowDrawn}, so
+ * the very next render passes drawIn=undefined — a re-mount within
+ * the same combat phase (stack push) sees the marked id and passes
+ * undefined too, suppressing replay.
+ */
+export interface DrawInSpec {
+  kind: 'attack' | 'block';
+}
 
 /**
  * Slice 70-F (ADR 0011 D5) — SVG arrow overlay drawn from a source
@@ -98,6 +126,20 @@ interface Props {
    * Default 0 — instant fade alongside the base transition.
    */
   revealDelayMs?: number | undefined;
+  /**
+   * Slice 6-A — when set, mounts a sibling "ink" path on top of the
+   * base dashed arrow that animates {@code stroke-dashoffset} from
+   * 1 → 0 over the kind-specific duration, then fades opacity to 0
+   * over {@link ARROW_INK_FADEOUT_MS} and unmounts. The base path
+   * is untouched. Latched on mount so a re-render with undefined
+   * doesn't interrupt the in-flight animation.
+   *
+   * <p>Reduced-motion: the ink layer never mounts when the user has
+   * {@code prefers-reduced-motion: reduce}; only the base path
+   * renders. Storytelling beats are inherently motion-driven; the
+   * static base path conveys the same information without animation.
+   */
+  drawIn?: DrawInSpec | undefined;
 }
 
 export function TargetingArrow({
@@ -110,6 +152,7 @@ export function TargetingArrow({
   defenderId,
   defenderIndex,
   revealDelayMs,
+  drawIn,
 }: Props) {
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
 
@@ -126,6 +169,67 @@ export function TargetingArrow({
   const uid = reactId.replace(/:/g, '');
   const markerId = `targeting-arrow-head-${uid}`;
   const gradientId = `targeting-arrow-grad-${uid}`;
+  // Slice 6-A — ink layer's marker. Distinct id so the ink arrowhead
+  // can fade independently from the base arrowhead (which doesn't
+  // fade — it's the at-rest visual). The ink marker fill matches the
+  // base marker so the ink visually "extends" the base color rather
+  // than introducing a third hue.
+  const inkMarkerId = `targeting-arrow-ink-head-${uid}`;
+
+  // Slice 6-A — latch the drawIn prop on mount. A parent re-render
+  // that flips drawIn back to undefined (CombatArrows marks the arrow
+  // drawn after the first paint) must NOT interrupt the in-flight
+  // animation; the latch ensures the local state machine runs to
+  // completion regardless of subsequent prop changes.
+  const [latchedDrawIn] = useState<DrawInSpec | undefined>(() => drawIn);
+  const reducedMotion = usePrefersReducedMotion();
+  // Reduced-motion is also evaluated via the latch — toggling
+  // mid-animation is rare and the simpler "evaluated on mount"
+  // semantics avoids snap-to-final-state edge cases.
+  const [latchedReducedMotion] = useState<boolean>(() => reducedMotion);
+  const inkActive = latchedDrawIn !== undefined && !latchedReducedMotion;
+
+  // Slice 6-A — ink layer state machine.
+  //   'mounting' — initial render, strokeDashoffset=1 (path hidden).
+  //   'drawing'  — strokeDashoffset transitions 1 → 0 over drawMs.
+  //   'fading'   — opacity transitions 1 → 0 over ARROW_INK_FADEOUT_MS.
+  //   'done'     — ink path unmounts.
+  type InkPhase = 'mounting' | 'drawing' | 'fading' | 'done';
+  const [inkPhase, setInkPhase] = useState<InkPhase>(
+    inkActive ? 'mounting' : 'done',
+  );
+  const [inkHeadVisible, setInkHeadVisible] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (!inkActive) return;
+    const drawMs =
+      latchedDrawIn?.kind === 'block'
+        ? BLOCK_ARROW_INK_DRAW_MS
+        : ATTACK_ARROW_INK_DRAW_MS;
+    // requestAnimationFrame lets the browser commit the initial
+    // strokeDashoffset=1 paint before we flip to 0; without the
+    // raf, React batches both states into a single commit and the
+    // transition fires from the final value (no animation).
+    const rafId = requestAnimationFrame(() => {
+      setInkPhase('drawing');
+    });
+    const headDelayMs = drawMs * ARROW_INK_HEAD_DELAY_FRACTION;
+    const headTimer = setTimeout(() => {
+      setInkHeadVisible(true);
+    }, headDelayMs);
+    const fadeTimer = setTimeout(() => {
+      setInkPhase('fading');
+    }, drawMs);
+    const doneTimer = setTimeout(() => {
+      setInkPhase('done');
+    }, drawMs + ARROW_INK_FADEOUT_MS);
+    return () => {
+      cancelAnimationFrame(rafId);
+      clearTimeout(headTimer);
+      clearTimeout(fadeTimer);
+      clearTimeout(doneTimer);
+    };
+  }, [inkActive, latchedDrawIn]);
 
   // Track cursor only when the arrow is active AND no static
   // destination is provided. Listener teardown on hide is critical
@@ -198,6 +302,24 @@ export function TargetingArrow({
         >
           <path d="M 0 0 L 10 5 L 0 10 z" fill={markerFill} />
         </marker>
+        {inkActive && inkPhase !== 'done' && (
+          // Slice 6-A — ink-layer marker. Distinct id so its opacity
+          // can be toggled independently of the base marker (which
+          // is always visible at-rest). Same fill as the base marker
+          // so the ink visually extends the base color rather than
+          // introducing a third hue at the arrowhead.
+          <marker
+            id={inkMarkerId}
+            viewBox="0 0 10 10"
+            refX="8"
+            refY="5"
+            markerWidth="6"
+            markerHeight="6"
+            orient="auto-start-reverse"
+          >
+            <path d="M 0 0 L 10 5 L 0 10 z" fill={markerFill} />
+          </marker>
+        )}
         {isGradient && (
           <linearGradient
             id={gradientId}
@@ -221,6 +343,7 @@ export function TargetingArrow({
         )}
       </defs>
       <path
+        data-arrow-layer="base"
         d={`M ${source.x} ${source.y} Q ${midX} ${midY} ${target.x} ${target.y}`}
         stroke={pathStroke}
         strokeWidth="3"
@@ -255,6 +378,48 @@ export function TargetingArrow({
           transitionDelay: revealDelayMs ? `${revealDelayMs}ms` : '0ms',
         }}
       />
+      {inkActive && inkPhase !== 'done' && (
+        // Slice 6-A — ink overlay path. pathLength="1" normalises the
+        // path's stroke math to [0..1] so the dasharray "1 1" + a
+        // dashoffset that animates 1 → 0 produces a smooth pen-stroke
+        // sweep regardless of the curve's actual pixel length. Easing
+        // is symmetric cubic-bezier per the brief default.
+        //
+        // Lifecycle: 'mounting' → strokeDashoffset=1 (path hidden);
+        // requestAnimationFrame → 'drawing' → strokeDashoffset=0 with
+        // transition; setTimeout(drawMs) → 'fading' → opacity=0 with
+        // transition; setTimeout(drawMs + fadeoutMs) → 'done' → unmount.
+        // The arrowhead's opacity is gated separately on inkHeadVisible
+        // so it appears only in the last quarter of the draw.
+        <path
+          data-arrow-layer="ink"
+          data-ink-phase={inkPhase}
+          d={`M ${source.x} ${source.y} Q ${midX} ${midY} ${target.x} ${target.y}`}
+          stroke={pathStroke}
+          strokeWidth="3"
+          fill="none"
+          strokeLinecap="butt"
+          pathLength={1}
+          strokeDasharray="1 1"
+          markerEnd={inkHeadVisible ? `url(#${inkMarkerId})` : undefined}
+          style={{
+            strokeDashoffset: inkPhase === 'mounting' ? 1 : 0,
+            opacity: inkPhase === 'fading' ? 0 : 1,
+            transition: [
+              `stroke-dashoffset ${
+                latchedDrawIn?.kind === 'block'
+                  ? BLOCK_ARROW_INK_DRAW_MS
+                  : ATTACK_ARROW_INK_DRAW_MS
+              }ms ${
+                latchedDrawIn?.kind === 'block'
+                  ? 'cubic-bezier(0.5, 0, 0.4, 1.4)'
+                  : 'cubic-bezier(0.45, 0, 0.55, 1)'
+              }`,
+              `opacity ${ARROW_INK_FADEOUT_MS}ms ease-out`,
+            ].join(', '),
+          }}
+        />
+      )}
     </svg>
   );
 }

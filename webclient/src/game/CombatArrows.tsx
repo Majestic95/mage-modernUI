@@ -11,6 +11,8 @@ import { TargetingArrow } from './TargetingArrow';
 import { useCombatArrowGeometry } from './combatArrowGeometry';
 import {
   getCombatArrowsAlreadyStaggered,
+  hasArrowDrawn,
+  markArrowDrawn,
   markCombatArrowsStaggered,
   useArrowIsolation,
 } from './arrowIsolationStore';
@@ -181,29 +183,91 @@ export function CombatArrows({
           isFirstPaint && !reducedMotion
             ? clampedIndex * ARROW_REVEAL_STEP_MS
             : 0;
+        // Slice 6-A — attack-arrow ink draw-in. Only applied to
+        // attack arrows (attacker→player, where targetId starts
+        // with "player:") that haven't been drawn before this combat
+        // phase. Block arrows (attacker→blocker) are slice 6-B's
+        // territory — they pass through with drawIn=undefined here.
+        // Reduced-motion is gated inside TargetingArrow itself; we
+        // mark the arrow drawn either way so a future un-toggle of
+        // reduced-motion mid-combat doesn't suddenly replay a
+        // missed cinematic.
+        const isAttackArrow = spec.targetId.startsWith('player:');
+        const drawIn =
+          isAttackArrow && !hasArrowDrawn(spec.attackerId)
+            ? ({ kind: 'attack' } as const)
+            : undefined;
         return (
-          <TargetingArrow
+          <ArrowRow
             key={spec.key}
-            source={spec.source}
-            to={spec.target}
-            stroke={spec.stroke}
-            strokeDasharray={spec.dashArray}
+            spec={spec}
             opacity={opacity}
-            defenderId={spec.defenderId}
-            // Slice 1-A — drop -1 sentinel (defender not in players)
-            // at the boundary so the rendered DOM doesn't surface a
-            // confusing `data-defender-index="-1"` to downstream
-            // consumers (slice 1-B's incoming-tag pin-by-defender,
-            // slice 1-D's beams). Pattern lookup already returns ''
-            // for -1 so the visual fallback is unaffected.
-            defenderIndex={
-              spec.defenderIndex >= 0 ? spec.defenderIndex : undefined
-            }
             revealDelayMs={revealDelayMs}
+            drawIn={drawIn}
+            markId={isAttackArrow ? spec.attackerId : null}
           />
         );
       })}
     </div>
+  );
+}
+
+/**
+ * Slice 6-A — per-arrow render row. Extracted so we can mount a
+ * per-arrow useEffect that marks the arrow as "drawn" on first paint.
+ * Inlining the useEffect inside the .map callback would violate
+ * React's rules-of-hooks (hooks must run in stable order across
+ * renders; .map's iteration count varies with combat shape).
+ *
+ * <p>The {@code markId} is the permanent id we want to record as
+ * "drew its ink overlay this combat phase." For attack arrows that's
+ * the attacker id; for block arrows (slice 6-B) it'll be the blocker
+ * id. Slice 6-A only marks attack arrows so we accept null for
+ * block-arrow rows — they pass through without lifecycle tracking.
+ */
+function ArrowRow({
+  spec,
+  opacity,
+  revealDelayMs,
+  drawIn,
+  markId,
+}: {
+  spec: import('./combatArrowGeometry').ArrowSpec;
+  opacity: number;
+  revealDelayMs: number;
+  drawIn: { kind: 'attack' } | { kind: 'block' } | undefined;
+  markId: string | null;
+}) {
+  // Mark the arrow as drawn on first paint so a re-render or stack-
+  // push remount within the same combat phase doesn't replay the ink
+  // animation. The phase watcher in arrowIsolationStore clears the
+  // set on COMBAT exit so the next combat phase replays fresh.
+  useEffect(() => {
+    if (drawIn !== undefined && markId !== null) {
+      markArrowDrawn(markId);
+    }
+  }, [drawIn, markId]);
+
+  return (
+    <TargetingArrow
+      source={spec.source}
+      to={spec.target}
+      stroke={spec.stroke}
+      strokeDasharray={spec.dashArray}
+      opacity={opacity}
+      defenderId={spec.defenderId}
+      // Slice 1-A — drop -1 sentinel (defender not in players)
+      // at the boundary so the rendered DOM doesn't surface a
+      // confusing `data-defender-index="-1"` to downstream
+      // consumers (slice 1-B's incoming-tag pin-by-defender,
+      // slice 1-D's beams). Pattern lookup already returns ''
+      // for -1 so the visual fallback is unaffected.
+      defenderIndex={
+        spec.defenderIndex >= 0 ? spec.defenderIndex : undefined
+      }
+      revealDelayMs={revealDelayMs}
+      drawIn={drawIn}
+    />
   );
 }
 

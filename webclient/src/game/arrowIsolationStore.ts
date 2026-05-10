@@ -122,6 +122,76 @@ export function resetCombatArrowsStaggered(): void {
   arrowsAlreadyStaggered = false;
 }
 
+/* ===================================================================
+ * Slice 6-A — per-arrow ink-overlay draw-tracking set.
+ *
+ * Mirrors slice 1-C's {@link arrowsAlreadyStaggered} pattern but at a
+ * finer grain: the wave-reveal stagger is "play once per combat phase"
+ * (single boolean), the ink-overlay draw-in is "play once per ARROW
+ * per combat phase" (Set keyed by arrow-end permanent id). Different
+ * grain because:
+ *
+ * <ul>
+ *   <li>Stagger is a CinematicArrows-level property (the entire wave
+ *       has played or not); a stack-push remount mid-combat must NOT
+ *       replay it.</li>
+ *   <li>Ink draw-in is a per-arrow property: when a NEW attacker is
+ *       added mid-combat (e.g. a creature ETBs and immediately
+ *       attacks), it should ink-draw fresh while existing arrows that
+ *       already drew don't replay. Same goes for blockers added later
+ *       in slice 6-B.</li>
+ * </ul>
+ *
+ * Key shape: the permanent id of the ARROW END that just appeared —
+ * attacker permanent id for attack arrows (slice 6-A), blocker
+ * permanent id for blocker arrows (slice 6-B). Combat arrows always
+ * originate from an attacker, so the attacker id alone disambiguates
+ * unblocked arrows (one arrow per attacker → defender pairing). For
+ * blocked arrows we key on blocker id since the same attacker can
+ * have multiple blockers, each of which is its own arrow.
+ *
+ * Phase watcher (below) clears the set on COMBAT → non-COMBAT
+ * transitions so the next combat phase gets fresh draw-ins.
+ * =================================================================*/
+
+const arrowsDrawn = new Set<string>();
+
+/**
+ * Slice 6-A — has the ink-overlay draw-in already played for this
+ * arrow's end-id this combat phase? CombatArrows reads this to decide
+ * whether to pass {@code drawIn={{ kind: ... }}} or {@code undefined}
+ * to TargetingArrow on each per-arrow render.
+ *
+ * <p>The "id" is whichever permanent id is stable for this arrow:
+ * attacker id for unblocked arrows, blocker id for blocker arrows.
+ * Set membership is checked against this id.
+ *
+ * @internal Only `CombatArrows` should consume; tests use
+ *           {@link resetArrowsDrawn} for fixture cleanup.
+ */
+export function hasArrowDrawn(id: string): boolean {
+  return arrowsDrawn.has(id);
+}
+
+/**
+ * Slice 6-A — mark an arrow's end-id as having played its ink-overlay
+ * draw-in this combat phase. Called from CombatArrows' useEffect after
+ * the per-arrow render commits. Idempotent — Set semantics deduplicate.
+ *
+ * @internal Only `CombatArrows` should mark.
+ */
+export function markArrowDrawn(id: string): void {
+  arrowsDrawn.add(id);
+}
+
+/**
+ * Slice 6-A — exposed for test setup. Production callers don't need
+ * this; the phase watcher resets the set automatically on COMBAT exit.
+ */
+export function resetArrowsDrawn(): void {
+  arrowsDrawn.clear();
+}
+
 let lastPhase: string = '';
 // Guard against test mocks that stub `useGameStore` without zustand's
 // .subscribe API (vi.mock('./store', ...) in unrelated tests). The
@@ -136,6 +206,9 @@ if (typeof useGameStore.subscribe === 'function') {
       // Slice 1-C — also reset the stagger flag so the NEXT combat
       // phase replays the cinematic from scratch.
       arrowsAlreadyStaggered = false;
+      // Slice 6-A — and reset the per-arrow ink-draw set so each
+      // arrow in the next combat phase gets a fresh draw-in.
+      arrowsDrawn.clear();
     }
     lastPhase = phase;
   });
