@@ -183,6 +183,19 @@ export interface BuildDemoGameViewOptions {
    * an outline of the un-tapped tile.
    */
   tappedAttackers?: boolean;
+  /**
+   * Foundation experiment (Option D — z-layer cohabitation,
+   * 2026-05-10) — when true AND combatActive is true, seed a
+   * Lightning Bolt on the stack so the new cohabit-mode rendering
+   * (CombatArrows + StackFan layered) is visible in the live
+   * fixture. The default `?combat=1` behavior keeps the stack empty
+   * (so arrows render without a stack tile blocking them); set
+   * `?stack=1` alongside to verify the new contract where both
+   * mount simultaneously and the stack tile sits on top via
+   * z-index. Without this knob the cohabit state isn't reachable
+   * from the static fixture.
+   */
+  stackDuringCombat?: boolean;
 }
 
 export function buildDemoGameView(
@@ -438,18 +451,29 @@ export function buildDemoGameView(
       return hand;
     })(),
     // Slice 1-X-smoke — when combatActive, the stack must be empty
-    // so StackZoneRedesigned mounts CombatArrows (its gate is
-    // `stackEmpty && combatActive`). The default fixture seeds a
-    // Lightning Bolt on the stack for stack-zone iteration; that
-    // suppresses arrows when combat is active.
-    stack: opts.combatActive
-      ? ({} as Record<string, ReturnType<typeof makeCard>>)
-      : (() => {
-          const stack: Record<string, ReturnType<typeof makeCard>> = {};
-          const lightning = makeCard('Lightning Bolt', 'CREATURE', 'M21', '162');
-          stack[lightning.id] = lightning;
-          return stack;
-        })(),
+    // so StackZoneRedesigned mounts CombatArrows alone (legacy
+    // mutex behavior: `stackEmpty && combatActive`). The default
+    // fixture seeds a Lightning Bolt on the stack for stack-zone
+    // iteration.
+    //
+    // Foundation Option D (2026-05-10) — `stackDuringCombat=true`
+    // overrides the empty-stack default so BOTH a stack entry and
+    // combat groups are present, surfacing the new cohabit-mode
+    // rendering for live verification.
+    stack:
+      opts.combatActive && !opts.stackDuringCombat
+        ? ({} as Record<string, ReturnType<typeof makeCard>>)
+        : (() => {
+            const stack: Record<string, ReturnType<typeof makeCard>> = {};
+            const lightning = makeCard(
+              'Lightning Bolt',
+              'CREATURE',
+              'M21',
+              '162',
+            );
+            stack[lightning.id] = lightning;
+            return stack;
+          })(),
     combat,
     players: [me, goat, momur, alloc],
   });

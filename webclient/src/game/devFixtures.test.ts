@@ -99,6 +99,23 @@ describe('buildDemoGameView — slice 4-X.1 fixture knobs', () => {
     expect(tappedCount).toBe(0);
   });
 
+  it('stackDuringCombat=true (with combatActive) seeds Lightning Bolt — foundation Option D cohabit smoke', () => {
+    const gv = buildDemoGameView({
+      combatActive: true,
+      stackDuringCombat: true,
+    });
+    expect(gv.combat.length).toBeGreaterThan(0);
+    expect(Object.keys(gv.stack).length).toBeGreaterThan(0);
+    const firstStackEntry = Object.values(gv.stack)[0];
+    expect(firstStackEntry?.name).toBe('Lightning Bolt');
+  });
+
+  it('stackDuringCombat=false (default, ?combat=1) keeps stack empty during combat', () => {
+    const gv = buildDemoGameView({ combatActive: true });
+    expect(gv.combat.length).toBeGreaterThan(0);
+    expect(Object.keys(gv.stack)).toHaveLength(0);
+  });
+
   it('combatPhase=declare without combatActive → falls through to default PRECOMBAT_MAIN', () => {
     // Same gating philosophy as tappedAttackers — combatPhase only
     // takes effect when combat is on.

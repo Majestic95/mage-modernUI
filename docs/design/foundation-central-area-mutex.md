@@ -1,8 +1,8 @@
 # Foundation — Central Area Mutex Resolution
 
-> **Status:** scope-locked, decision pending user ratification
+> **Status:** RATIFIED 2026-05-10 — Option D (z-layer cohabitation) shipped as `feat/foundation-mutex-z-layer` and accepted by user after live-smoke against `?game=fixture&variant=tabletop&combat=1&stack=1`. The brief obscuration of arrow paths by the on-stack tile reads as an acceptable temporal beat ("the parcel had to go around the spell on the stack first") rather than as broken animation. Option C (compact-stack restructure) remains as a documented fallback if a future Bundle-5 critic finds the obscuration breaks the cinematic at scale; the change is reversible (5-LOC mutex restoration).
 > **Source:** "Important snag to decide on first" at [`docs/design/combat-phase-brainstorm-bundles.md`](combat-phase-brainstorm-bundles.md) lines 31-39
-> **Gates:** Bundle 5 (Damage Moment) and Bundle 6 (Arrow Storytelling) both assume arrows stay visible while damage resolves; today they don't.
+> **Gates:** ~~Bundle 5 (Damage Moment) and Bundle 6 (Arrow Storytelling) both assume arrows stay visible while damage resolves; today they don't.~~ **Resolved 2026-05-10** — Option D unblocks both bundles. Arrows now stay mounted continuously during combat; stack tile sits on top via z-index when present.
 
 ## The problem in one sentence
 
