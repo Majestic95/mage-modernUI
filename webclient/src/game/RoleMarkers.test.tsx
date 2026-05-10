@@ -13,9 +13,13 @@
  *     footprint preservation + decorative-overlay accessibility).
  *   - Bracket count is exactly 4 (not 8, not 0) regardless of role.
  */
-import { describe, it, expect } from 'vitest';
-import { render } from '@testing-library/react';
-import { RoleMarkers, RoleOuterHalo } from './RoleMarkers';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { act, render } from '@testing-library/react';
+import {
+  LOD_FALLBACK_WIDTH_PX,
+  RoleMarkers,
+  RoleOuterHalo,
+} from './RoleMarkers';
 import { TabletopCardButton } from './tabletopBucketStacking';
 import {
   webCardViewSchema,
@@ -400,5 +404,346 @@ describe('TabletopCardButton DOM-order invariant (slice 4-B layering)', () => {
       container.querySelector('[data-testid="role-outer-halo"]'),
     ).toBeNull();
     expect(container.querySelector('[data-testid="role-markers"]')).toBeNull();
+  });
+});
+
+/* ===================================================================
+ * Slice 4-D — LOD fallback for crowded boards.
+ *
+ * jsdom doesn't have a real ResizeObserver, so we install a mock
+ * that records constructed instances + lets tests fire callbacks
+ * manually. getBoundingClientRect on the parent button is stubbed
+ * per-test to control the measured width that drives lodMode.
+ * =================================================================*/
+
+class ResizeObserverMock {
+  static instances: ResizeObserverMock[] = [];
+  readonly observed = new Set<Element>();
+  readonly callback: ResizeObserverCallback;
+  // Slice 4-D Tech critic notable T-2 — count disconnect calls so
+  // the cleanup test asserts the production code actually invokes
+  // observer.disconnect() on unmount, not just that the mock's
+  // `observed` set is empty (which it would also be if disconnect
+  // were removed entirely and observe() never fired).
+  disconnectCount = 0;
+  constructor(callback: ResizeObserverCallback) {
+    this.callback = callback;
+    ResizeObserverMock.instances.push(this);
+  }
+  observe = (target: Element) => {
+    this.observed.add(target);
+  };
+  unobserve = (target: Element) => {
+    this.observed.delete(target);
+  };
+  disconnect = () => {
+    this.observed.clear();
+    this.disconnectCount += 1;
+  };
+  fire = () => {
+    this.callback([], this as unknown as ResizeObserver);
+  };
+}
+
+const originalResizeObserver = globalThis.ResizeObserver;
+
+/**
+ * Stub `getBoundingClientRect` on `el` to return the given width
+ * (height clamped to width × 7/5 for plausibility — cards have a
+ * 5:7 aspect ratio).
+ */
+function pinWidth(el: Element, width: number) {
+  Object.defineProperty(el, 'getBoundingClientRect', {
+    configurable: true,
+    value: () =>
+      ({
+        width,
+        height: (width * 7) / 5,
+        x: 0,
+        y: 0,
+        top: 0,
+        right: width,
+        bottom: (width * 7) / 5,
+        left: 0,
+        toJSON: () => ({}),
+      }) as DOMRect,
+  });
+}
+
+describe('RoleMarkers / RoleOuterHalo LOD fallback (slice 4-D)', () => {
+  beforeEach(() => {
+    ResizeObserverMock.instances = [];
+    globalThis.ResizeObserver =
+      ResizeObserverMock as unknown as typeof ResizeObserver;
+  });
+  afterEach(() => {
+    globalThis.ResizeObserver = originalResizeObserver;
+  });
+
+  it('exports LOD_FALLBACK_WIDTH_PX = 72 (slice 4-D UI-critic-tuned threshold)', () => {
+    // 72 px keeps the canonical `--card-size-medium` (80 px) tile
+    // in full LOD; only stack-peek strips and `--card-size-small`
+    // tiles drop to sigil mode.
+    expect(LOD_FALLBACK_WIDTH_PX).toBe(72);
+  });
+
+  it('full LOD at 200 px tile width: 4 brackets + inner ring + no sigil', () => {
+    const { container } = render(
+      <TabletopCardButton
+        perm={makePerm()}
+        clickable={false}
+        onObjectClick={undefined}
+        isEligibleTarget={false}
+        isEligibleCombat={false}
+        combatRole="attacker"
+        controllerColorIdentity={['G']}
+      />,
+    );
+    const button = container.querySelector('button')!;
+    pinWidth(button, 200);
+    // Fire the observer's callback so the hook re-measures with the
+    // pinned width.
+    act(() => {
+      for (const obs of ResizeObserverMock.instances) obs.fire();
+    });
+    const markers = container.querySelector('[data-testid="role-markers"]')!;
+    expect(markers.getAttribute('data-lod-mode')).toBe('full');
+    expect(markers.querySelectorAll('[data-corner]')).toHaveLength(4);
+    expect(
+      container.querySelector('[data-testid="role-inner-ring"]'),
+    ).not.toBeNull();
+    expect(container.querySelector('[data-testid="role-sigil"]')).toBeNull();
+    // Outer halo also stays in full mode.
+    expect(
+      container.querySelector('[data-testid="role-outer-halo"]'),
+    ).not.toBeNull();
+  });
+
+  it('sigil LOD at 60 px tile width: 0 brackets + 0 inner ring + 1 sigil + outer halo PERSISTS', () => {
+    const { container } = render(
+      <TabletopCardButton
+        perm={makePerm()}
+        clickable={false}
+        onObjectClick={undefined}
+        isEligibleTarget={false}
+        isEligibleCombat={false}
+        combatRole="attacker"
+        controllerColorIdentity={['G']}
+      />,
+    );
+    const button = container.querySelector('button')!;
+    pinWidth(button, 60);
+    act(() => {
+      for (const obs of ResizeObserverMock.instances) obs.fire();
+    });
+    const markers = container.querySelector('[data-testid="role-markers"]')!;
+    expect(markers.getAttribute('data-lod-mode')).toBe('sigil');
+    expect(markers.querySelectorAll('[data-corner]')).toHaveLength(0);
+    expect(
+      container.querySelector('[data-testid="role-inner-ring"]'),
+    ).toBeNull();
+    expect(
+      container.querySelector('[data-testid="role-sigil"]'),
+    ).not.toBeNull();
+    // Slice 4-D UI critic ratification: outer halo PERSISTS at
+    // sigil mode — controller-color cue is preserved at small sizes,
+    // only the bracket+inner-ring chrome collapses.
+    expect(
+      container.querySelector('[data-testid="role-outer-halo"]'),
+    ).not.toBeNull();
+  });
+
+  it('strict less-than threshold: 71 px → sigil; 72 px → full', () => {
+    const { container, rerender } = render(
+      <TabletopCardButton
+        perm={makePerm()}
+        clickable={false}
+        onObjectClick={undefined}
+        isEligibleTarget={false}
+        isEligibleCombat={false}
+        combatRole="attacker"
+        controllerColorIdentity={['G']}
+      />,
+    );
+    const button = container.querySelector('button')!;
+    pinWidth(button, 71);
+    act(() => {
+      for (const obs of ResizeObserverMock.instances) obs.fire();
+    });
+    expect(
+      container
+        .querySelector('[data-testid="role-markers"]')
+        ?.getAttribute('data-lod-mode'),
+    ).toBe('sigil');
+    pinWidth(button, 72);
+    rerender(
+      <TabletopCardButton
+        perm={makePerm()}
+        clickable={false}
+        onObjectClick={undefined}
+        isEligibleTarget={false}
+        isEligibleCombat={false}
+        combatRole="attacker"
+        controllerColorIdentity={['G']}
+      />,
+    );
+    act(() => {
+      for (const obs of ResizeObserverMock.instances) obs.fire();
+    });
+    expect(
+      container
+        .querySelector('[data-testid="role-markers"]')
+        ?.getAttribute('data-lod-mode'),
+    ).toBe('full');
+  });
+
+  it('canonical --card-size-medium (80 px) stays in full LOD (UI-2 regression guard)', () => {
+    // Slice 4-D UI critic blocker UI-2 — original threshold of 88
+    // would have silently collapsed every 80 px battlefield tile to
+    // sigil mode, regressing slices 4-A + 4-B output. Pin the
+    // 80 px → full guarantee so a future threshold tuning can't
+    // re-introduce the regression without flipping this test.
+    const { container } = render(
+      <TabletopCardButton
+        perm={makePerm()}
+        clickable={false}
+        onObjectClick={undefined}
+        isEligibleTarget={false}
+        isEligibleCombat={false}
+        combatRole="attacker"
+        controllerColorIdentity={['G']}
+      />,
+    );
+    const button = container.querySelector('button')!;
+    pinWidth(button, 80);
+    act(() => {
+      for (const obs of ResizeObserverMock.instances) obs.fire();
+    });
+    expect(
+      container
+        .querySelector('[data-testid="role-markers"]')
+        ?.getAttribute('data-lod-mode'),
+    ).toBe('full');
+  });
+
+  it('attacker sigil uses --color-attacker bg + letter A', () => {
+    const { container } = render(
+      <TabletopCardButton
+        perm={makePerm()}
+        clickable={false}
+        onObjectClick={undefined}
+        isEligibleTarget={false}
+        isEligibleCombat={false}
+        combatRole="attacker"
+        controllerColorIdentity={['G']}
+      />,
+    );
+    const button = container.querySelector('button')!;
+    pinWidth(button, 60);
+    act(() => {
+      for (const obs of ResizeObserverMock.instances) obs.fire();
+    });
+    const sigil = container.querySelector(
+      '[data-testid="role-sigil"]',
+    ) as HTMLElement;
+    expect(sigil.getAttribute('data-role')).toBe('attacker');
+    expect(sigil.style.background).toContain('var(--color-attacker)');
+    expect(sigil.textContent).toBe('A');
+  });
+
+  it('blocker sigil uses --color-blocker bg + letter B', () => {
+    const { container } = render(
+      <TabletopCardButton
+        perm={makePerm()}
+        clickable={false}
+        onObjectClick={undefined}
+        isEligibleTarget={false}
+        isEligibleCombat={false}
+        combatRole="blocker"
+        controllerColorIdentity={['G']}
+      />,
+    );
+    const button = container.querySelector('button')!;
+    pinWidth(button, 60);
+    act(() => {
+      for (const obs of ResizeObserverMock.instances) obs.fire();
+    });
+    const sigil = container.querySelector(
+      '[data-testid="role-sigil"]',
+    ) as HTMLElement;
+    expect(sigil.getAttribute('data-role')).toBe('blocker');
+    expect(sigil.style.background).toContain('var(--color-blocker)');
+    expect(sigil.textContent).toBe('B');
+  });
+
+  it('sigil is pointer-events:none and aria-hidden (T1 + decorative)', () => {
+    const { container } = render(
+      <TabletopCardButton
+        perm={makePerm()}
+        clickable={false}
+        onObjectClick={undefined}
+        isEligibleTarget={false}
+        isEligibleCombat={false}
+        combatRole="attacker"
+        controllerColorIdentity={['G']}
+      />,
+    );
+    const button = container.querySelector('button')!;
+    pinWidth(button, 60);
+    act(() => {
+      for (const obs of ResizeObserverMock.instances) obs.fire();
+    });
+    const sigil = container.querySelector(
+      '[data-testid="role-sigil"]',
+    ) as HTMLElement;
+    expect(sigil.style.pointerEvents).toBe('none');
+    expect(sigil.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('exactly 2 observers per combat creature (one in RoleOuterHalo, one in RoleMarkers); disconnect spy fires on unmount', () => {
+    const { unmount } = render(
+      <TabletopCardButton
+        perm={makePerm()}
+        clickable={false}
+        onObjectClick={undefined}
+        isEligibleTarget={false}
+        isEligibleCombat={false}
+        combatRole="attacker"
+        controllerColorIdentity={['G']}
+      />,
+    );
+    // Tech critic notable T-3 — pin exact count rather than the
+    // looser >= 2 floor. RoleMarkers' useTileLodMode + RoleOuterHalo's
+    // useTileLodMode each instantiate one observer.
+    expect(ResizeObserverMock.instances).toHaveLength(2);
+    unmount();
+    // Tech critic notable T-2 — assert disconnect was actually
+    // called (not just that the mock's `observed` set ended up
+    // empty, which would also pass if disconnect were removed).
+    for (const obs of ResizeObserverMock.instances) {
+      expect(obs.disconnectCount).toBe(1);
+      expect(obs.observed.size).toBe(0);
+    }
+  });
+
+  it('graceful fallback to full LOD when ResizeObserver is undefined', () => {
+    globalThis.ResizeObserver =
+      undefined as unknown as typeof ResizeObserver;
+    const { container } = render(
+      <TabletopCardButton
+        perm={makePerm()}
+        clickable={false}
+        onObjectClick={undefined}
+        isEligibleTarget={false}
+        isEligibleCombat={false}
+        combatRole="attacker"
+        controllerColorIdentity={['G']}
+      />,
+    );
+    // Without ResizeObserver, the hook still runs the initial
+    // measure() — jsdom returns 0×0, and the `w > 0` guard means
+    // we default to 'full'.
+    const markers = container.querySelector('[data-testid="role-markers"]');
+    expect(markers?.getAttribute('data-lod-mode')).toBe('full');
   });
 });

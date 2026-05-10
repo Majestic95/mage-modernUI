@@ -55,6 +55,8 @@
  * sub-{@code LOD_FALLBACK_WIDTH_PX} tile widths.
  */
 
+import { useLayoutEffect, useRef, useState } from 'react';
+import type { RefObject } from 'react';
 import { controllerOuterRingBackground } from './halo';
 
 const BRACKET_LEN = 10;
@@ -84,6 +86,26 @@ const INNER_RING_THICKNESS = 1.5;
 // `--radius-md` token. Hard-coded as a CSS variable reference so a
 // future retune of CardFace's radius is one edit away.
 const CARDART_RADIUS = 'var(--radius-md, 8px)';
+// Slice 4-D — LOD threshold. At parent button widths below this,
+// the per-corner brackets + per-edge inner ring collapse into a
+// single A/B sigil overlay so the marker chrome doesn't visually
+// swamp small tiles. Outer halo (RoleOuterHalo) PERSISTS at sigil
+// mode — it's the controller-color cue, not noisy at small sizes
+// (a 2.5 px frame on a 60 px tile = ~4% of width, proportional to
+// a 14 px bracket on a 200 px tile).
+//
+// Threshold = 72 px is intentional: tabletop's canonical
+// `--card-size-medium` is 80 px, so the standard battlefield tile
+// stays in full LOD. Triggers below 72: stack-peek strips
+// (~16 px), `--card-size-small` (72 px) opponent tiles, and any
+// runtime shrink past the medium baseline. Tuned in slice 4-D's
+// UI critic pass after a sub-88 default would have silently
+// collapsed every 80 px tile to sigil mode.
+export const LOD_FALLBACK_WIDTH_PX = 72;
+// Sigil dimensions (px). Sized for legibility at 60-px tile widths
+// without crowding the cardart's top-right corner.
+const SIGIL_SIZE = 16;
+const SIGIL_OFFSET = 4;
 
 type CombatRole = 'attacker' | 'blocker';
 
@@ -108,6 +130,117 @@ interface RoleOuterHaloProps extends RoleMarkersProps {
    * silver-grey neutral.
    */
   controllerColorIdentity: readonly string[] | undefined;
+}
+
+type LodMode = 'full' | 'sigil';
+
+/**
+ * Slice 4-D — measures the parent button's width via ResizeObserver
+ * and returns the appropriate LOD mode. Defaults to {@code 'full'}
+ * for unmeasured / zero-sized elements (jsdom fallback + initial
+ * render before the first observer callback) so existing tests
+ * targeting the slice 4-A / 4-B render paths don't need updates.
+ *
+ * <p>Cleanup is automatic on unmount via {@code observer.disconnect()}.
+ * Graceful degradation when {@code ResizeObserver} is undefined
+ * (older browsers / tests without the polyfill) — measurement runs
+ * once at mount and the LOD mode never updates, which is acceptable
+ * because tabletop's BucketCardsRow geometry is static at runtime
+ * (cards adapt by stack/scroll, T1, NOT by tile-width animation).
+ *
+ * <p>Each marker component (RoleMarkers, RoleOuterHalo) measures
+ * the SAME parent independently — two ResizeObserver instances per
+ * combat creature. Acceptable cost (~12 observers on a typical 4p
+ * board with 6 active combat creatures) given the simpler API
+ * vs. lifting the measurement to TabletopCardButton + drilling
+ * lodMode through both children's prop chains.
+ */
+function useTileLodMode(
+  wrapperRef: RefObject<HTMLDivElement | null>,
+): LodMode {
+  const [mode, setMode] = useState<LodMode>('full');
+  // useLayoutEffect (not useEffect) — synchronously runs after DOM
+  // mutation but before browser paint. For sub-threshold tiles this
+  // means the first paint already reflects 'sigil' mode, killing
+  // the one-frame flicker where brackets+ring would briefly
+  // render before collapsing (slice 4-D Tech critic notable T-4).
+  useLayoutEffect(() => {
+    // wrapperRef is stable across renders (created once via useRef);
+    // the empty dep array is intentional — the effect runs once at
+    // mount and the observer keeps firing on subsequent resizes.
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return;
+    const button = wrapper.parentElement;
+    if (!button) return;
+    const measure = () => {
+      const w = button.getBoundingClientRect().width;
+      // jsdom + zero-sized initial render → 'full' (preserves
+      // existing test behavior). The `w > 0` guard is NOT a width
+      // threshold — it's an unmeasured-element fallback. Real
+      // width below threshold → sigil.
+      setMode(w > 0 && w < LOD_FALLBACK_WIDTH_PX ? 'sigil' : 'full');
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(button);
+    return () => observer.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return mode;
+}
+
+/**
+ * Slice 4-D — small role-keyed sigil that replaces the brackets +
+ * inner ring at sub-{@link LOD_FALLBACK_WIDTH_PX} tile widths.
+ * Bold serif A/B inside a filled circle, top-right corner of the
+ * marker wrapper. Foreground is the dark base color so the role's
+ * full-saturation token reads at WCAG 1.4.3 against the sigil
+ * background (~7.9:1 attacker, ~5.9:1 blocker — verified in slice
+ * 4-A's UI critic pass against the same hex tokens).
+ */
+function RoleSigil({ role }: { role: CombatRole }) {
+  const bg =
+    role === 'attacker' ? 'var(--color-attacker)' : 'var(--color-blocker)';
+  const letter = role === 'attacker' ? 'A' : 'B';
+  return (
+    <div
+      data-testid="role-sigil"
+      data-role={role}
+      aria-hidden="true"
+      style={{
+        position: 'absolute',
+        // Bottom-LEFT corner — chosen in slice 4-D's UI critic pass
+        // to avoid colliding with CardFace's existing battlefield
+        // chrome: top-LEFT carries ATK/BLK + targetable badges,
+        // top-RIGHT carries the mana-cost badge, bottom-RIGHT carries
+        // P/T. Bottom-LEFT only has the damage badge (when damage>0)
+        // — and the dual-shadow outline below provides separation
+        // even on rare overlap.
+        bottom: SIGIL_OFFSET,
+        left: SIGIL_OFFSET,
+        width: SIGIL_SIZE,
+        height: SIGIL_SIZE,
+        borderRadius: '50%',
+        background: bg,
+        color: 'var(--color-bg-base)',
+        fontFamily: 'serif',
+        fontWeight: 'bold',
+        fontSize: 11,
+        lineHeight: `${SIGIL_SIZE}px`,
+        textAlign: 'center',
+        // Dual shadow: 1 px dark outline ensures separation from
+        // warm-toned cardart corners (UI critic pass — drop shadow
+        // alone failed against red rares with warm-toned borders);
+        // 0 1px 2px drop shadow lifts the sigil off the surface.
+        boxShadow:
+          '0 0 0 1px rgb(0 0 0 / 0.4), 0 1px 2px rgb(0 0 0 / 0.45)',
+        pointerEvents: 'none',
+      }}
+    >
+      {letter}
+    </div>
+  );
 }
 
 /**
@@ -208,14 +341,28 @@ export function RoleOuterHalo({
   combatRole,
   controllerColorIdentity,
 }: RoleOuterHaloProps) {
+  // Hooks must run unconditionally per rules-of-hooks; ref + LOD
+  // measurement happen even when combatRole is null (zero-cost since
+  // wrapper isn't mounted, observer never attaches).
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const lodMode = useTileLodMode(wrapperRef);
   if (combatRole == null) return null;
+  // Slice 4-D — outer halo PERSISTS at sigil mode. The brief's
+  // "brackets and rings collapse to a sigil" applies to the bracket
+  // chrome + inner ring, not the outer halo: at small sizes the
+  // halo's controller-color cue is the sole "whose creature is
+  // this" signal, and a 2.5 px frame on a 60 px tile (~4% width)
+  // is proportional to a 14 px bracket on a 200 px tile — not
+  // visually loud. UI critic pass slice 4-D ratified persistence.
   const background = controllerOuterRingBackground(
     controllerColorIdentity ?? [],
   );
   return (
     <div
+      ref={wrapperRef}
       data-testid="role-outer-halo"
       data-role={combatRole}
+      data-lod-mode={lodMode}
       aria-hidden="true"
       style={{
         position: 'absolute',
@@ -237,6 +384,11 @@ export function RoleOuterHalo({
  * cardart. Renders {@code null} for non-combat creatures.
  */
 export function RoleMarkers({ combatRole }: RoleMarkersProps) {
+  // Hooks must run unconditionally per rules-of-hooks; ref + LOD
+  // measurement happen even when combatRole is null (zero-cost since
+  // the wrapper isn't mounted, observer never attaches).
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const lodMode = useTileLodMode(wrapperRef);
   if (combatRole == null) return null;
   const innerRingColor =
     combatRole === 'attacker'
@@ -244,8 +396,10 @@ export function RoleMarkers({ combatRole }: RoleMarkersProps) {
       : 'var(--color-blocker)';
   return (
     <div
+      ref={wrapperRef}
       data-testid="role-markers"
       data-role={combatRole}
+      data-lod-mode={lodMode}
       aria-hidden="true"
       style={{
         position: 'absolute',
@@ -256,42 +410,54 @@ export function RoleMarkers({ combatRole }: RoleMarkersProps) {
         // top of it. T3 — no Scryfall art pixels are occluded.
       }}
     >
-      {/* Slice 4-B inner ring — sits exactly on the cardart bounds
-          (inset: BRACKET_OUTSET cancels the wrapper's negative
-          inset). Box-shadow paints a 1.5 px stroke INSIDE the
-          cardart's edge — frame-of-painting depth, no pixels of the
-          underlying Scryfall art are occluded. */}
-      <div
-        data-testid="role-inner-ring"
-        data-role={combatRole}
-        aria-hidden="true"
-        style={{
-          position: 'absolute',
-          inset: BRACKET_OUTSET,
-          pointerEvents: 'none',
-          boxShadow: `inset 0 0 0 ${INNER_RING_THICKNESS}px ${innerRingColor}`,
-          borderRadius: CARDART_RADIUS,
-        }}
-      />
-      {CORNER_PLACEMENTS.map(({ key, position, rotateDeg }) => (
-        <span
-          key={key}
-          data-corner={key}
-          style={{
-            position: 'absolute',
-            ...position,
-            transform: `rotate(${rotateDeg}deg)`,
-            transformOrigin: 'center',
-            // SVG-sized container; transform pivots around its center
-            // so the bracket vertex relocates to the parent's matching
-            // outer corner regardless of rotation.
-            width: SVG_SIZE,
-            height: SVG_SIZE,
-          }}
-        >
-          <CornerBracket role={combatRole} />
-        </span>
-      ))}
+      {lodMode === 'sigil' ? (
+        // Slice 4-D — at sub-LOD_FALLBACK_WIDTH_PX widths the
+        // 4 brackets + inner ring would visually swamp the cardart.
+        // Single A/B sigil in the top-right corner replaces them
+        // while the existing in-CardFace ATK/BLK text badge in the
+        // top-left keeps the screen-reader-readable signal alive.
+        <RoleSigil role={combatRole} />
+      ) : (
+        <>
+          {/* Slice 4-B inner ring — sits exactly on the cardart bounds
+              (inset: BRACKET_OUTSET cancels the wrapper's negative
+              inset). Box-shadow paints a 1.5 px stroke INSIDE the
+              cardart's edge — frame-of-painting depth, no pixels of the
+              underlying Scryfall art are occluded. */}
+          <div
+            data-testid="role-inner-ring"
+            data-role={combatRole}
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              inset: BRACKET_OUTSET,
+              pointerEvents: 'none',
+              boxShadow: `inset 0 0 0 ${INNER_RING_THICKNESS}px ${innerRingColor}`,
+              borderRadius: CARDART_RADIUS,
+            }}
+          />
+          {CORNER_PLACEMENTS.map(({ key, position, rotateDeg }) => (
+            <span
+              key={key}
+              data-corner={key}
+              style={{
+                position: 'absolute',
+                ...position,
+                transform: `rotate(${rotateDeg}deg)`,
+                transformOrigin: 'center',
+                // SVG-sized container; transform pivots around its
+                // center so the bracket vertex relocates to the
+                // parent's matching outer corner regardless of
+                // rotation.
+                width: SVG_SIZE,
+                height: SVG_SIZE,
+              }}
+            >
+              <CornerBracket role={combatRole} />
+            </span>
+          ))}
+        </>
+      )}
     </div>
   );
 }
