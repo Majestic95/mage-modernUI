@@ -720,6 +720,56 @@ input[type="checkbox"] {
   transition: filter 50ms ease-in;
 }
 
+/*
+ * Bundle 5 / Slice 5-E — lethal-21 commander damage authority
+ * sequence. Two keyframes:
+ *
+ *  - `commander-lethal-pulse` paints the viewport-edge red bloom
+ *    matching the freeze-frame's family but deeper alpha (lethal
+ *    is the loudest beat in Bundle 5's cinematic grammar).
+ *
+ *  - `commander-lethal-banner` scales + fades a centered banner
+ *    in after the 80ms authority pause. Banner ramps up 240ms,
+ *    holds 240ms, fades 160ms. Total = 80 + 240 + 240 + 160 =
+ *    720ms — matches `LETHAL_AUTHORITY_TOTAL_MS` (640ms = pause
+ *    + ramp + hold; the fade overlaps with the pulse fade-out).
+ *
+ * Reduced-motion: project-wide global rule kills the keyframes.
+ * The lethal moment is purely cinematic punctuation; the engine's
+ * actual loss enforcement (CR 704.5b state-based action) plays
+ * out independently via the existing player-eliminated overlay.
+ */
+@keyframes commander-lethal-pulse {
+  0%   { background: rgba(80, 0, 0, 0.0); }
+  20%  { background: rgba(80, 0, 0, 0.45); }
+  60%  { background: rgba(80, 0, 0, 0.45); }
+  100% { background: rgba(80, 0, 0, 0.0); }
+}
+.animate-commander-lethal-pulse {
+  background: radial-gradient(
+    ellipse at center,
+    transparent 30%,
+    rgba(120, 0, 0, 0.55) 100%
+  );
+  animation: commander-lethal-pulse 640ms cubic-bezier(0.4, 0, 0.6, 1) 1;
+}
+
+@keyframes commander-lethal-banner {
+  0%   { opacity: 0; transform: scale(0.6); }
+  35%  { opacity: 1; transform: scale(1.05); }
+  50%  { opacity: 1; transform: scale(1); }
+  85%  { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.05); }
+}
+.animate-commander-lethal-banner {
+  /* Initial state — invisible until the keyframe ramps in after
+     the configured animation-delay (set inline by the React
+     component to LETHAL_AUTHORITY_PAUSE_MS). */
+  opacity: 0;
+  animation: commander-lethal-banner 560ms cubic-bezier(0.25, 0.1, 0.25, 1) 1
+             forwards;
+}
+
 .animate-lane-active-glow {
   /* Same 1900ms period as `animate-player-active-halo` so the lane
    * border breathes in sync with the portrait halo. */

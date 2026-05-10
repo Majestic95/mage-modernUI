@@ -330,6 +330,15 @@ export const DAMAGE_FREEZE_FRAME_MS = 400;
 // card visibly desaturates AS it leaves the battlefield.
 export const CREATURE_DEATH_DESATURATE_MS = 150;
 
+// Bundle 5 / Slice 5-E — lethal-21 commander damage authority
+// sequence. Brief 80ms "everything pauses" beat, then a banner
+// flares in (240ms ramp), holds (240ms), and fades (160ms).
+// Total ~640ms per sequence; multi-lethal events stagger 300ms
+// apart so each lethal moment reads as a distinct beat.
+export const LETHAL_AUTHORITY_PAUSE_MS = 80;
+export const LETHAL_AUTHORITY_TOTAL_MS = 640;
+export const LETHAL_AUTHORITY_STAGGER_MS = 300;
+
 /* ============================================================
    Slice 70-Z.2 / 70-Z.3 / 70-Z.4 — card animation system timing.
    The seam ships in 70-Z.2 (no visual change); the constants here

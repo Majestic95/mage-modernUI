@@ -34,6 +34,7 @@ import { TurnEdgeGlow } from './TurnEdgeGlow';
 import { DamageParcelOverlay } from './DamageParcelOverlay';
 import { DamageFreezeFrame } from './DamageFreezeFrame';
 import { CardDeathSequence } from './CardDeathSequence';
+import { CommanderLethalSequence } from './CommanderLethalSequence';
 import { useTurnTabTitle } from './useTurnTabTitle';
 import { useStopOnCombatSteps } from './useStopOnCombatSteps';
 
@@ -368,6 +369,15 @@ export function GameTable({ gameId, gameView, stream }: Props) {
           grayscale CSS class to the dying card's existing button
           via DOM query. Renders nothing visible. */}
       <CardDeathSequence />
+
+      {/* Bundle 5 / Slice 5-E — lethal-21 commander damage
+          authority sequence. Reads schema 1.35's
+          WebPlayerView.commanderDamageReceived (slice 5-F's wire
+          field) for threshold-crossing detection. On a lethal
+          event, plays a brief authority sequence: viewport-edge
+          deeper red pulse + centered banner. z=29, the loudest
+          beat in Bundle 5's cinematic grammar. */}
+      <CommanderLethalSequence />
 
       {/* Slice 70-O — REDESIGN drops the in-grid header slot. The
           actual GameHeader is rendered as a sibling of GameTable
