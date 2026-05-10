@@ -86,8 +86,19 @@ let arrowsAlreadyStaggered = false;
  * current combat phase? CombatArrows reads this to decide whether
  * the next non-empty render is a "first paint" eligible for the
  * cinematic stagger. The phase watcher resets this on COMBAT exit.
+ *
+ * <p>Slice 1-X.3 critic-pass (BH-2) — renamed from
+ * `getArrowsAlreadyStaggered` to `getCombatArrowsAlreadyStaggered`
+ * so the caller-domain (CombatArrows specifically — NOT
+ * DefenderBeams or IncomingTag) is visible at the import site. A
+ * future slice that imports a `markArrowsStaggered` and calls it
+ * from any defender-related component would silently suppress the
+ * cinematic without a naming hint blocking the misuse.
+ *
+ * @internal Only `CombatArrows` should consume these; tests use
+ *           {@link resetCombatArrowsStaggered} for fixture cleanup.
  */
-export function getArrowsAlreadyStaggered(): boolean {
+export function getCombatArrowsAlreadyStaggered(): boolean {
   return arrowsAlreadyStaggered;
 }
 
@@ -95,8 +106,10 @@ export function getArrowsAlreadyStaggered(): boolean {
  * Slice 1-C — set after a non-empty CombatArrows render commits, so
  * subsequent unmount → remount cycles within the same combat phase
  * (every stack push in combat) don't replay the stagger.
+ *
+ * @internal Only `CombatArrows` should mark.
  */
-export function markArrowsStaggered(): void {
+export function markCombatArrowsStaggered(): void {
   arrowsAlreadyStaggered = true;
 }
 
@@ -105,7 +118,7 @@ export function markArrowsStaggered(): void {
  * honest across the test suite. Production callers don't need this;
  * the phase watcher resets the flag automatically.
  */
-export function resetArrowsStaggered(): void {
+export function resetCombatArrowsStaggered(): void {
   arrowsAlreadyStaggered = false;
 }
 

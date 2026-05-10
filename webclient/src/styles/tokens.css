@@ -360,6 +360,7 @@
      ============================================================ */
 
   --z-battlefield: 0;       /* base layer, permanents */
+  --z-defender-beams: 5;    /* slice 1-D ambient pressure wash, behind stack/chrome */
   --z-stack: 10;            /* central focal zone, above battlefield */
   --z-targeting: 20;        /* targeting arrows overlay */
   --z-ui-chrome: 30;        /* side panel, action button, hand */

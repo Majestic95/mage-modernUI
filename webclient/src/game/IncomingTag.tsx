@@ -71,10 +71,39 @@ export function IncomingTag({ playerId }: { playerId: string }) {
       data-testid={`incoming-tag-${playerId}`}
       data-pinned={pinned || undefined}
       aria-pressed={pinned}
-      aria-label={`${incoming} attackers incoming, ${unblocked} unblocked. Click to ${
-        pinned ? 'unpin' : 'pin'
-      } this defender's combat arrows.`}
-      onClick={() => togglePin(playerId)}
+      // Slice 1-X.3 critic-pass (Bundle-1 UX-2) — extended copy
+      // surfaces the Escape affordance for SR users when pinned.
+      // Native `title` does the same for sighted users via the
+      // browser's tooltip (covers both unpinned-discoverability
+      // and pinned-Escape-discoverability without adding a custom
+      // tooltip surface).
+      aria-label={
+        pinned
+          ? `Pinned. ${incoming} attackers incoming, ${unblocked} unblocked. Click to unpin, or press Escape.`
+          : `${incoming} attackers incoming, ${unblocked} unblocked. Click to pin this defender's combat arrows.`
+      }
+      title={
+        pinned
+          ? "Click to unpin, or press Escape."
+          : "Click to focus this defender's combat arrows. Press Escape to unpin."
+      }
+      // Slice 1-X.3 critic-pass (Bundle-1 UX-1) — `stopPropagation`
+      // prevents the click from bubbling into PlayerFrameRedesigned's
+      // `<button aria-label="Target alice">` ancestor when the
+      // opponent is BOTH targetable AND an active defender. Without
+      // this guard, a click on the tag fires both `togglePin` AND
+      // a target-dispatch — a real game-state mis-fire surface.
+      // Keyboard activation (Enter/Space) follows the same
+      // bubble-blocking pattern.
+      onClick={(ev) => {
+        ev.stopPropagation();
+        togglePin(playerId);
+      }}
+      onKeyDown={(ev) => {
+        if (ev.key === 'Enter' || ev.key === ' ') {
+          ev.stopPropagation();
+        }
+      }}
       className={
         // Position inside PlayerPortrait's `position: relative`
         // wrapper. Anchored top-right of the portrait. Slice 1-B
@@ -94,15 +123,26 @@ export function IncomingTag({ playerId }: { playerId: string }) {
         'font-semibold whitespace-nowrap select-none ' +
         'border shadow-sm transition-colors duration-100 ' +
         // Slice 1-B critic-pass: WCAG 2.4.7 (Focus Visible) —
-        // keyboard-focused badge gets an amber ring matching the
-        // pinned-state amber so focus + pin reinforce each other
-        // rather than competing visuals. Browsers with
-        // focus-visible support skip the ring on mouse click.
+        // keyboard-focused badge gets an amber ring. Slice 1-X.3
+        // critic-pass (Bundle-1 UI-3): focus ring stays amber even
+        // though the pinned-state fill flipped from amber to violet,
+        // so focus-while-pinned reads as amber-ring + violet-bg —
+        // both signals visible without competing.
         'focus-visible:outline-none focus-visible:ring-2 ' +
         'focus-visible:ring-amber-300 focus-visible:ring-offset-1 ' +
         'focus-visible:ring-offset-zinc-950 ' +
+        // Slice 1-X.3 critic-pass (Bundle-1 UI-3): pinned-state fill
+        // moved from amber to violet (`--color-accent-primary` family
+        // = `bg-violet-500`) to break the 3-way amber semantic
+        // collision. Bundle 3's combat-banner Done button = amber,
+        // active-priority halo = amber-700/0.7, pin tag pre-fix =
+        // amber. Three "amber means..." things on screen at once
+        // confused the meaning. Violet is the project's existing
+        // selection / target accent (see `--color-card-frame-targeted`
+        // and `--color-focus-ring`); a pinned tag conceptually IS
+        // "I have selected this defender's lane for isolation."
         (pinned
-          ? 'bg-amber-500 text-zinc-950 border-amber-300 '
+          ? 'bg-violet-500 text-zinc-50 border-violet-300 '
           : 'bg-zinc-900/85 text-zinc-100 border-zinc-700 hover:bg-zinc-800/90 ')
       }
     >

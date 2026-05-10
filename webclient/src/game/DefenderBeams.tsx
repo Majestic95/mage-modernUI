@@ -119,12 +119,17 @@ export function DefenderBeams() {
  * ===================================================================*/
 
 /**
- * z-index for the beam overlay container. Sits one tier below
- * combat arrows ({@code z-40}) so arrows always paint over beams,
- * and below dialogs / hover popovers. {@code pointer-events: none}
- * means clicks pass through regardless of stacking.
+ * z-index for the beam overlay container. Slice 1-X.3 critic-pass
+ * fix (UI-N4): dropped from 30 to 5 so beams sit BEHIND
+ * `--z-ui-chrome` (30) — the user's hand fan, the floating
+ * ActionButton, and the side panel were getting tinted in
+ * opponents' commander colors when this was at z-30. Arrows
+ * (z-40), chrome (z-30), and stack (z-10) all paint over beams now.
+ * Source of truth: `--z-defender-beams: 5` in `tokens.css`.
+ * {@code pointer-events: none} keeps clicks passing through
+ * regardless of stacking.
  */
-const BEAM_Z_INDEX = 30;
+const BEAM_Z_INDEX = 5;
 
 /**
  * Radial-gradient fade radius as a percentage of the viewport's
@@ -282,8 +287,7 @@ function useDefenderBeamFingerprint(
  * First-color-of-identity → mana-glow-token CSS reference. Multicolor
  * commanders use only their first color for the beam wash; the
  * full identity encoding lives on the per-arrow stroke from slice
- * 1-A. Empty identity (colorless) → neutral targeting-arrow color
- * for graceful fallback (matches the slice 1-A neutral path).
+ * 1-A.
  *
  * <p>Slice 1-D critic-pass (UC-N1) — uses the alpha-reduced `*-glow`
  * tokens (rgba 0.5 internally) instead of full-saturation tokens to
@@ -291,10 +295,20 @@ function useDefenderBeamFingerprint(
  * backgrounds. Effective per-beam alpha: 0.18 × 0.5 = 0.09;
  * 3-beam-stack worst case at viewport center: 0.27 instead of 0.54
  * — keeps the focal card readable.
+ *
+ * <p>Slice 1-X.3 critic-pass (Bundle-1 UI-2) — empty identity
+ * (colorless commander) now uses `--color-mana-colorless-glow`
+ * (silver-grey rgba 0.45) instead of `--color-targeting-arrow`
+ * (cream/teal). The targeting-arrow neutral compounded against
+ * tabletop's `--tabletop-zone-colorless` ivory+gold zone tint —
+ * the same family of saturation collision UC-N1 was meant to
+ * prevent for colored commanders. The colorless-glow token is
+ * the actual `*-glow` sibling for the colorless lane and stays
+ * consistent with the alpha-reduced family.
  */
 function beamColorFor(colorIdentity: readonly string[]): string {
   if (colorIdentity.length === 0) {
-    return 'var(--color-targeting-arrow)';
+    return 'var(--color-mana-colorless-glow)';
   }
   return manaGlowTokenForCode(colorIdentity[0]!);
 }

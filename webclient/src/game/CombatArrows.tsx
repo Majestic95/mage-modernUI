@@ -10,8 +10,8 @@ import {
 import { TargetingArrow } from './TargetingArrow';
 import { useCombatArrowGeometry } from './combatArrowGeometry';
 import {
-  getArrowsAlreadyStaggered,
-  markArrowsStaggered,
+  getCombatArrowsAlreadyStaggered,
+  markCombatArrowsStaggered,
   useArrowIsolation,
 } from './arrowIsolationStore';
 import { usePrefersReducedMotion } from './usePrefersReducedMotion';
@@ -85,10 +85,10 @@ export function CombatArrows({
   // the flag on COMBAT → non-COMBAT transitions, so a fresh combat
   // re-staggers from scratch.
   const reducedMotion = usePrefersReducedMotion();
-  const isFirstPaint = !getArrowsAlreadyStaggered() && arrows.length > 0;
+  const isFirstPaint = !getCombatArrowsAlreadyStaggered() && arrows.length > 0;
   useEffect(() => {
     if (arrows.length > 0) {
-      markArrowsStaggered();
+      markCombatArrowsStaggered();
     }
   }, [arrows.length]);
 

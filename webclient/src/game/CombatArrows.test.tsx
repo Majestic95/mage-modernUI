@@ -21,7 +21,7 @@ import {
 } from '../api/schemas';
 import { CombatArrows } from './CombatArrows';
 import {
-  resetArrowsStaggered,
+  resetCombatArrowsStaggered,
   useArrowIsolation,
 } from './arrowIsolationStore';
 
@@ -194,7 +194,7 @@ beforeEach(() => {
   // Slice 1-C — reset the module-level stagger flag so each test
   // starts in "first-paint eligible" state. Production callers get
   // this for free via the phase watcher; tests need it explicit.
-  resetArrowsStaggered();
+  resetCombatArrowsStaggered();
 });
 
 afterEach(() => {
@@ -204,7 +204,7 @@ afterEach(() => {
   // Slice 1-B — extra safety: clear pin after each test so a
   // failure that didn't unmount cleanly doesn't poison the next.
   useArrowIsolation.getState().clearPin();
-  resetArrowsStaggered();
+  resetCombatArrowsStaggered();
 });
 
 // --- Endpoint fan ----------------------------------------------------

@@ -278,6 +278,96 @@ describe('IncomingTag — accessibility', () => {
     expect(tag.getAttribute('aria-label')).toMatch(/2 attackers incoming/);
     expect(tag.getAttribute('aria-label')).toMatch(/Click to pin/);
   });
+
+  it('pinned aria-label surfaces the Escape affordance (slice 1-X.3 UX-2 fix)', () => {
+    setGameView({
+      phase: 'COMBAT',
+      combat: [{ defenderId: OPP1_ID, attackerIds: ['a-1'] }],
+    });
+    render(<IncomingTag playerId={OPP1_ID} />);
+    const tag = screen.getByTestId(`incoming-tag-${OPP1_ID}`);
+    fireEvent.click(tag);
+    const tagAfter = screen.getByTestId(`incoming-tag-${OPP1_ID}`);
+    const label = tagAfter.getAttribute('aria-label') ?? '';
+    expect(label).toMatch(/Pinned\./);
+    expect(label).toMatch(/Click to unpin, or press Escape/);
+  });
+
+  it('title attribute surfaces the pin + Escape contract for sighted users (slice 1-X.3 UX-2)', () => {
+    setGameView({
+      phase: 'COMBAT',
+      combat: [{ defenderId: OPP1_ID, attackerIds: ['a-1'] }],
+    });
+    render(<IncomingTag playerId={OPP1_ID} />);
+    const tag = screen.getByTestId(`incoming-tag-${OPP1_ID}`);
+    // Unpinned state — title invites a click and pre-discloses Escape.
+    expect(tag.getAttribute('title')).toMatch(/Click to focus/);
+    expect(tag.getAttribute('title')).toMatch(/Press Escape to unpin/);
+    fireEvent.click(tag);
+    // Pinned state — title focuses the unpin/escape affordance.
+    expect(
+      screen.getByTestId(`incoming-tag-${OPP1_ID}`).getAttribute('title'),
+    ).toMatch(/Click to unpin, or press Escape/);
+  });
+});
+
+describe('IncomingTag — slice 1-X.3 critic-pass fixes', () => {
+  it('click stopPropagation prevents bubble into parent target button (UX-1 mis-fire fix)', () => {
+    // Reproduces the UX critic's blocker: when an opponent is BOTH
+    // targetable AND an active defender, PlayerFrameRedesigned wraps
+    // the portrait in a `<button onClick={target}>`. Clicking the
+    // tag inside used to fire BOTH togglePin AND the parent's target
+    // dispatch — a real game-state mis-fire surface. The fix is
+    // `e.stopPropagation()` on the tag's onClick.
+    const parentClick = vi.fn();
+    setGameView({
+      phase: 'COMBAT',
+      combat: [{ defenderId: OPP1_ID, attackerIds: ['a-1'] }],
+    });
+    render(
+      <button type="button" onClick={parentClick}>
+        <IncomingTag playerId={OPP1_ID} />
+      </button>,
+    );
+    fireEvent.click(screen.getByTestId(`incoming-tag-${OPP1_ID}`));
+    // Pin set on the tag's own store...
+    expect(useArrowIsolation.getState().pinnedDefenderId).toBe(OPP1_ID);
+    // ...but the parent button did NOT receive the click.
+    expect(parentClick).not.toHaveBeenCalled();
+  });
+
+  it('Enter/Space keydown does not bubble into parent target button (UX-1 mis-fire fix, keyboard)', () => {
+    const parentKeyDown = vi.fn();
+    setGameView({
+      phase: 'COMBAT',
+      combat: [{ defenderId: OPP1_ID, attackerIds: ['a-1'] }],
+    });
+    render(
+      <button type="button" onKeyDown={parentKeyDown}>
+        <IncomingTag playerId={OPP1_ID} />
+      </button>,
+    );
+    const tag = screen.getByTestId(`incoming-tag-${OPP1_ID}`);
+    fireEvent.keyDown(tag, { key: 'Enter' });
+    fireEvent.keyDown(tag, { key: ' ' });
+    expect(parentKeyDown).not.toHaveBeenCalled();
+  });
+
+  it('pinned-state fill is the violet accent, NOT amber (UI-3 semantic-collision fix)', () => {
+    // Bundle-1 UI critic flagged that amber was being asked to mean
+    // three different things (Bundle 3 Done button + active-priority
+    // halo + this pin). Pin moved to the project's existing selection
+    // accent (--color-accent-primary purple → bg-violet-500).
+    setGameView({
+      phase: 'COMBAT',
+      combat: [{ defenderId: OPP1_ID, attackerIds: ['a-1'] }],
+    });
+    render(<IncomingTag playerId={OPP1_ID} />);
+    fireEvent.click(screen.getByTestId(`incoming-tag-${OPP1_ID}`));
+    const tag = screen.getByTestId(`incoming-tag-${OPP1_ID}`);
+    expect(tag.className).toContain('bg-violet-500');
+    expect(tag.className).not.toContain('bg-amber-500');
+  });
 });
 
 describe('IncomingTag — click pins / unpins / swaps', () => {

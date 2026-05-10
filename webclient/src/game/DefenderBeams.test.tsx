@@ -40,6 +40,14 @@ class ResizeObserverMock {
 }
 
 const originalResizeObserver = globalThis.ResizeObserver;
+// Slice 1-X.3 critic-pass (BH-1) — capture the original viewport
+// dimensions so afterEach can restore them. Without this, the
+// 2560x1440 pin we set in beforeEach leaks into any subsequent
+// test in the same Vitest worker if the project ever flips
+// `pool.threads.isolate` to false. Defensive symmetry with the
+// existing `originalResizeObserver` capture.
+const originalInnerWidth = window.innerWidth;
+const originalInnerHeight = window.innerHeight;
 
 function makeCard(id: string): WebCardView {
   return webCardViewSchema.parse({
@@ -202,6 +210,13 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   globalThis.ResizeObserver = originalResizeObserver;
+  // Slice 1-X.3 critic-pass (BH-1) — restore the original viewport.
+  Object.defineProperty(window, 'innerWidth', {
+    value: originalInnerWidth, configurable: true, writable: true,
+  });
+  Object.defineProperty(window, 'innerHeight', {
+    value: originalInnerHeight, configurable: true, writable: true,
+  });
   document.body.innerHTML = '';
   useGameStore.getState().reset();
 });
@@ -309,12 +324,15 @@ describe('DefenderBeams — beam geometry + color', () => {
     );
   });
 
-  it('colorless commander → neutral targeting-arrow color fallback', () => {
-    // Brief: colorless commanders (Karn, Kozilek) get the neutral
-    // var(--color-targeting-arrow) wash, matching slice 1-A's empty-
-    // identity arrow stroke fallback. Critic coverage gap — adds
-    // explicit pin so a future refactor can't quietly drop the
-    // colorless path.
+  it('colorless commander → --color-mana-colorless-glow (silver-grey) fallback', () => {
+    // Brief: colorless commanders (Karn, Kozilek) get a wash. Slice
+    // 1-X.3 critic-pass (Bundle-1 UI-2): switched from
+    // var(--color-targeting-arrow) (cream/teal) to
+    // var(--color-mana-colorless-glow) (silver-grey, alpha 0.45)
+    // because the cream wash compounded against tabletop's
+    // --tabletop-zone-colorless ivory+gold zone tint — the same
+    // family of saturation collision UC-N1 was meant to prevent
+    // for colored commanders.
     const colorlessOpp = OPP1_ID;
     mountPortrait(colorlessOpp, { x: 2400, y: 600, w: 60, h: 60 });
     setGameView({
@@ -330,7 +348,7 @@ describe('DefenderBeams — beam geometry + color', () => {
       `[data-testid="defender-beam-${colorlessOpp}"]`,
     );
     expect(beam?.getAttribute('style') ?? '').toContain(
-      'var(--color-targeting-arrow)',
+      'var(--color-mana-colorless-glow)',
     );
   });
 
