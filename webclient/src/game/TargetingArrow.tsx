@@ -1,11 +1,5 @@
 import { useEffect, useId, useState } from 'react';
 import type { StrokeSpec } from './halo';
-import {
-  ATTACK_ARROW_DRAW_MS,
-  ATTACK_ARROW_EASE,
-  ATTACK_ARROW_HEAD_DELAY_FRACTION,
-} from '../animation/transitions';
-import { usePrefersReducedMotion } from './usePrefersReducedMotion';
 
 /**
  * Slice 70-F (ADR 0011 D5) — SVG arrow overlay drawn from a source
@@ -104,33 +98,6 @@ interface Props {
    * Default 0 — instant fade alongside the base transition.
    */
   revealDelayMs?: number | undefined;
-  /**
-   * Bundle 6 / Slice 6-A — pen-stroke draw-in for combat arrows.
-   * <ul>
-   *   <li>{@code true}: animate the stroke from invisible to fully
-   *       drawn over {@link ATTACK_ARROW_DRAW_MS} ms via SVG
-   *       {@code stroke-dashoffset}. Arrowhead fades in over the
-   *       last 25% of the timeline (delay 75%, ease-out).</li>
-   *   <li>{@code false}: render in the post-drawn state (solid stroke
-   *       fully visible, no animation). Used after the first paint
-   *       and on remount within the same combat phase.</li>
-   *   <li>{@code undefined}: legacy behavior — the {@code
-   *       strokeDasharray} prop is honored verbatim and no draw-in
-   *       fires. Cursor-tracking targeting call sites omit this prop
-   *       so their dashed appearance is unchanged.</li>
-   * </ul>
-   *
-   * <p>CombatArrows owns the per-attacker first-paint detection via
-   * {@link arrowIsolationStore.drawnAttackerIds}. The Set survives
-   * stack-push remounts (which unmount CombatArrows) and the existing
-   * COMBAT → non-COMBAT phase watcher clears it so the next combat
-   * re-strokes each attacker.
-   *
-   * <p>Reduced-motion: when {@code drawIn === true} and the user has
-   * opted into {@code prefers-reduced-motion: reduce}, the component
-   * renders the post-drawn state directly with no transition.
-   */
-  drawIn?: boolean;
 }
 
 export function TargetingArrow({
@@ -143,43 +110,8 @@ export function TargetingArrow({
   defenderId,
   defenderIndex,
   revealDelayMs,
-  drawIn,
 }: Props) {
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
-  const reducedMotion = usePrefersReducedMotion();
-  // Slice 6-A — three render modes:
-  //   `animate` — drawIn=true + motion allowed: render at the initial
-  //               invisible state on first commit, then transition to
-  //               the drawn state on the next animation frame.
-  //   `static`  — drawIn=false OR (drawIn=true + reduced motion):
-  //               render the post-drawn state directly, no animation.
-  //   `legacy`  — drawIn omitted: cursor-tracking targeting behavior
-  //               with the original strokeDasharray prop respected.
-  const animateDrawIn = drawIn === true && !reducedMotion;
-  const renderAsDrawn = drawIn !== undefined;
-  // Two-render pattern: when animating, paint the initial offset=1
-  // state (path invisible) on commit, then flip to offset=0 next
-  // frame so the browser detects the property change and runs the
-  // CSS transition. When NOT animating, start at the final state.
-  // <p>Invariant — the in-practice flip path from animating to not-
-  // animating goes through unmount, NOT through a re-render with
-  // drawIn flipped from true → false. CombatArrows only flips
-  // drawIn for an attacker AFTER its post-paint useEffect calls
-  // markAttackerDrawn (which fires after this component's own raf
-  // has scheduled), so a render with `animateDrawIn=false` and
-  // `drawProgress='initial'` is unreachable in production. We
-  // deliberately do not sync drawProgress back when animateDrawIn
-  // changes mid-mount — the only way to reach the static-drawn
-  // state is to remount with drawIn=false (where the lazy
-  // initializer sets drawProgress='complete' immediately).
-  const [drawProgress, setDrawProgress] = useState<'initial' | 'complete'>(
-    () => (animateDrawIn ? 'initial' : 'complete'),
-  );
-  useEffect(() => {
-    if (!animateDrawIn) return;
-    const raf = requestAnimationFrame(() => setDrawProgress('complete'));
-    return () => cancelAnimationFrame(raf);
-  }, [animateDrawIn]);
 
   // Slice 1-A — per-instance unique id prefix so simultaneously-
   // mounted TargetingArrow components don't share marker / gradient
@@ -245,36 +177,6 @@ export function TargetingArrow({
       'var(--color-targeting-arrow)'
     : resolvedStroke.color;
 
-  // Slice 6-A — pen-stroke draw-in geometry.
-  // When drawIn is defined we override the dasharray to a single
-  // path-length-spanning dash so dashoffset can sweep cleanly
-  // (the legacy '8 6' tiled pattern shimmers under dashoffset on
-  // short strokes — recon flag in the bundle 6 brief). pathLength=1
-  // normalizes the path so a "1 1" dasharray equals one full path
-  // dash followed by an equal gap; offset 1 hides the stroke, offset
-  // 0 reveals it.
-  const effectiveDasharray = renderAsDrawn
-    ? '1 1'
-    : strokeDasharray || undefined;
-  const dashOffsetValue = renderAsDrawn
-    ? drawProgress === 'initial'
-      ? 1
-      : 0
-    : undefined;
-  const headOpacity = renderAsDrawn
-    ? drawProgress === 'initial'
-      ? 0
-      : 1
-    : undefined;
-  const headDelayMs = ATTACK_ARROW_DRAW_MS * ATTACK_ARROW_HEAD_DELAY_FRACTION;
-  const headFadeMs = ATTACK_ARROW_DRAW_MS - headDelayMs;
-  const pathTransition = animateDrawIn
-    ? `opacity 120ms ease-out, stroke-dashoffset ${ATTACK_ARROW_DRAW_MS}ms ${ATTACK_ARROW_EASE}`
-    : 'opacity 120ms ease-out';
-  const headTransition = animateDrawIn
-    ? `opacity ${headFadeMs}ms ease-out ${headDelayMs}ms`
-    : 'none';
-
   return (
     <svg
       data-testid="targeting-arrow"
@@ -294,25 +196,7 @@ export function TargetingArrow({
           markerHeight="6"
           orient="auto-start-reverse"
         >
-          <path
-            d="M 0 0 L 10 5 L 0 10 z"
-            fill={markerFill}
-            // Slice 6-A — when drawIn is defined, the arrowhead's
-            // opacity is pinned to drawProgress so it can fade in
-            // alongside the last quarter of the stroke draw-in. When
-            // drawIn is omitted (legacy / cursor-tracking targeting)
-            // headOpacity is undefined and the inline style is
-            // skipped so the marker keeps its default fully-opaque
-            // appearance.
-            {...(headOpacity !== undefined
-              ? {
-                  style: {
-                    opacity: headOpacity,
-                    transition: headTransition,
-                  },
-                }
-              : {})}
-          />
+          <path d="M 0 0 L 10 5 L 0 10 z" fill={markerFill} />
         </marker>
         {isGradient && (
           <linearGradient
@@ -346,23 +230,10 @@ export function TargetingArrow({
         // add stroke-width/2 to each dash on both sides, which at
         // 3px stroke turned `'2 5'` (dotted) into 5px-rounded-pills
         // with 2px gaps — visually equivalent to `'8 6'` (dashed).
-        // Slice 1-X-tunings round 7 (2026-05-09) dropped per-defender
-        // dash variation; slice 6-A (2026-05-10) further replaces the
-        // uniform `'8 6'` with a `'1 1'` path-length-spanning dash for
-        // combat arrows so dashoffset can sweep cleanly. Butt caps
-        // remain because cursor-tracking targeting STILL passes a
-        // legacy strokeDasharray (no `drawIn`), and butt caps keep
-        // those dashes at nominal width. Color is the sole defender
-        // signal for combat arrows now — see `halo.ts:303` for the
-        // narrowed WCAG 1.4.1 claim and audit-followup note.
+        // Butt caps preserve the per-defender dash distinction the
+        // WCAG 1.4.1 redundancy claim depends on.
         strokeLinecap="butt"
-        strokeDasharray={effectiveDasharray}
-        // Slice 6-A — normalize the path's measured length to 1 when
-        // drawIn is defined so `strokeDasharray="1 1"` equals one
-        // full-path dash + one full-path gap. Omitted when drawIn
-        // is undefined so cursor-tracking targeting renders with
-        // the default per-pixel dash semantics.
-        {...(renderAsDrawn ? { pathLength: 1 } : {})}
+        strokeDasharray={strokeDasharray || undefined}
         markerEnd={`url(#${markerId})`}
         opacity={opacity ?? 1}
         data-arrow-stroke-kind={resolvedStroke.kind}
@@ -379,17 +250,9 @@ export function TargetingArrow({
         // Caller zeroes the delay under prefers-reduced-motion or
         // on subsequent renders, so the inline transitionDelay falls
         // back to 0ms naturally without a separate code path here.
-        // Slice 6-A — when animating the pen-stroke draw-in, append
-        // a stroke-dashoffset transition to the existing opacity one
-        // (separable CSS properties — both run independently); the
-        // strokeDashoffset value flips from 1 to 0 on the next
-        // animation frame so the transition fires.
         style={{
-          transition: pathTransition,
+          transition: 'opacity 120ms ease-out',
           transitionDelay: revealDelayMs ? `${revealDelayMs}ms` : '0ms',
-          ...(dashOffsetValue !== undefined
-            ? { strokeDashoffset: dashOffsetValue }
-            : {}),
         }}
       />
     </svg>

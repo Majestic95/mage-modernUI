@@ -565,16 +565,13 @@ describe('CombatArrows — defender color + dash (slice 1-A)', () => {
     expect(stops?.length).toBe(6);
   });
 
-  it('all combat arrows share the path-length dash so 6-A draw-in can sweep cleanly', () => {
-    // Slice 1-X-tunings round 7 (2026-05-09) shipped a uniform `'8 6'`
-    // tile pattern across all combat arrows; bundle 6 / slice 6-A
-    // (2026-05-10) replaces that with a single `'1 1'` dash on a
-    // pathLength=1 normalized path so `stroke-dashoffset` can sweep
-    // from 1 → 0 cleanly during the pen-stroke draw-in. The legacy
-    // `'8 6'` tile shimmered under dashoffset on short strokes; this
-    // is documented as a Bundle 1 visual change in the slice 6-A
-    // commit message. The cursor-tracking targeting arrow keeps the
-    // legacy dashing because it doesn't pass `drawIn`.
+  it('all arrows use the same uniform dash pattern (slice 1-X-tunings round 7)', () => {
+    // Slice 1-X-tunings round 7 (live-test verdict 2026-05-09):
+    // dropped per-defender dash variation. All combat arrows now
+    // share `'8 6'` (medium dashed); color is the sole defender
+    // differentiator. WCAG 1.4.1 redundant-signal claim narrowed
+    // accordingly — re-introduce per-defender dashes in a future
+    // slice if a11y audit insists.
     const defA = '00000000-0000-0000-0000-0000000000aa';
     const defB = '00000000-0000-0000-0000-0000000000bb';
     const defC = '00000000-0000-0000-0000-0000000000cc';
@@ -614,14 +611,11 @@ describe('CombatArrows — defender color + dash (slice 1-A)', () => {
       <CombatArrows combat={groups} players={players} />,
     );
 
-    // Every arrow shares the path-length-spanning '1 1' dash and
-    // `pathLength="1"` so the slice 6-A pen-stroke draw-in sweeps a
-    // single dash across the normalized path length.
+    // Every arrow shares the same '8 6' dash pattern.
     const arrows = container.querySelectorAll('path[data-arrow-defender-id]');
     expect(arrows.length).toBe(3);
     for (const arrow of arrows) {
-      expect(arrow.getAttribute('stroke-dasharray')).toBe('1 1');
-      expect(arrow.getAttribute('pathLength')).toBe('1');
+      expect(arrow.getAttribute('stroke-dasharray')).toBe('8 6');
     }
   });
 
@@ -742,11 +736,10 @@ describe('CombatArrows — defender color + dash (slice 1-A)', () => {
     const slArrow = container.querySelector(
       `path[data-arrow-defender-id="${selesnyaDef}"]`,
     );
-    // Both arrows share the slice-6-A path-length dash; differentiation
-    // comes from the stroke-kind axis (mono-color = solid, multi-color
-    // = gradient).
-    expect(mgArrow?.getAttribute('stroke-dasharray')).toBe('1 1');
-    expect(slArrow?.getAttribute('stroke-dasharray')).toBe('1 1');
+    // Both arrows share the uniform dash pattern.
+    expect(mgArrow?.getAttribute('stroke-dasharray')).toBe('8 6');
+    expect(slArrow?.getAttribute('stroke-dasharray')).toBe('8 6');
+    // But the stroke-kind axis still distinguishes them.
     expect(mgArrow?.getAttribute('data-arrow-stroke-kind')).toBe('solid');
     expect(slArrow?.getAttribute('data-arrow-stroke-kind')).toBe('gradient');
   });

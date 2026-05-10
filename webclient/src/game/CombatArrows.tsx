@@ -10,9 +10,7 @@ import {
 import { TargetingArrow } from './TargetingArrow';
 import { useCombatArrowGeometry } from './combatArrowGeometry';
 import {
-  getAttackerDrawn,
   getCombatArrowsAlreadyStaggered,
-  markAttackerDrawn,
   markCombatArrowsStaggered,
   useArrowIsolation,
 } from './arrowIsolationStore';
@@ -91,27 +89,6 @@ export function CombatArrows({
       markCombatArrowsStaggered();
     }
   }, [arrows.length]);
-
-  // Slice 6-A — per-attacker pen-stroke draw-in tracking. Snapshot
-  // the "is this attacker drawn yet?" decision at render time so the
-  // arrow can pass the right `drawIn` value to TargetingArrow; the
-  // post-paint effect below then marks each attacker as drawn so
-  // subsequent re-renders within the same combat phase pass `false`.
-  // The Set lifetime is owned by arrowIsolationStore (cleared by the
-  // COMBAT → non-COMBAT phase watcher there) so a stack push during
-  // combat — which unmounts CombatArrows entirely — doesn't replay
-  // the cinematic when the stack resolves and arrows remount.
-  const drawInByAttacker = new Map<string, boolean>();
-  for (const spec of arrows) {
-    if (!drawInByAttacker.has(spec.attackerId)) {
-      drawInByAttacker.set(spec.attackerId, !getAttackerDrawn(spec.attackerId));
-    }
-  }
-  useEffect(() => {
-    for (const spec of arrows) {
-      markAttackerDrawn(spec.attackerId);
-    }
-  }, [arrows]);
 
   // Slice 1-C — defender-order index for the stagger cadence.
   // Brief: `defenderOrder.indexOf(arrow.defenderId) * 90` (the
@@ -204,13 +181,6 @@ export function CombatArrows({
           isFirstPaint && !reducedMotion
             ? clampedIndex * ARROW_REVEAL_STEP_MS
             : 0;
-        // Slice 6-A — true on this attacker's first paint within the
-        // current combat phase, false on every subsequent render
-        // (and after stack-push remounts within the same combat).
-        // The map is built once per render above so all arrows from
-        // the same attacker (e.g. attacker → multi-blocker) share
-        // the same draw-in decision.
-        const drawIn = drawInByAttacker.get(spec.attackerId) ?? false;
         return (
           <TargetingArrow
             key={spec.key}
@@ -230,7 +200,6 @@ export function CombatArrows({
               spec.defenderIndex >= 0 ? spec.defenderIndex : undefined
             }
             revealDelayMs={revealDelayMs}
-            drawIn={drawIn}
           />
         );
       })}

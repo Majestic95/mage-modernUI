@@ -117,21 +117,6 @@ export const UNTAP_STAGGER_DELAY_MS = 50;
 export const ARROW_REVEAL_STEP_MS = 90;
 export const ARROW_REVEAL_MAX_INDEX = 5;
 
-// Bundle 6 / Slice 6-A — attack-arrow pen-stroke draw-in. The stroke
-// strokes itself in via SVG `stroke-dashoffset` over
-// {@link ATTACK_ARROW_DRAW_MS} ms; the arrowhead fades in over the
-// last {@code 1 - ATTACK_ARROW_HEAD_DELAY_FRACTION} of the timeline
-// (default: 25% × 400ms = 100ms after a 300ms delay), so the head
-// arrives just as the stroke completes. Easing chosen for a calm
-// "drawing it out" feel — symmetric in/out so the stroke neither
-// snaps in nor drifts out.
-//
-// Reduced-motion: the consumer (TargetingArrow) skips the transition
-// entirely and renders the post-drawn state immediately.
-export const ATTACK_ARROW_DRAW_MS = 400;
-export const ATTACK_ARROW_HEAD_DELAY_FRACTION = 0.75;
-export const ATTACK_ARROW_EASE = 'cubic-bezier(0.45, 0, 0.55, 1)';
-
 // Bundle 4 / Slice 4-C — combat-eligibility shimmer. Slow sine-wave
 // alpha pulse on creatures the engine considers legal during
 // DECLARE_ATTACKERS / DECLARE_BLOCKERS. 1500ms ≈ slow breathing —
