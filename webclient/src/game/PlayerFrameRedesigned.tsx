@@ -11,6 +11,7 @@ import { slow } from '../animation/debug';
 import { ELIMINATION_SLASH } from '../animation/transitions';
 import { formatColorIdentity } from './PlayerFrame.helpers';
 import { useGameStore } from './store';
+import { usePendingLifeTicks } from '../animation/lifeDisplayStore';
 
 /**
  * Slice 70-Z (P2 audit) — extracted from PlayerFrame.tsx so the
@@ -89,11 +90,19 @@ export function PlayerFrameRedesigned({
       ? player.colorIdentity
       : (colorIdentitySnapshot ?? player.colorIdentity ?? []);
 
+  // Slice 5-A.2 — displayed-life lag (parcel-stream cinematic). The
+  // wire `player.life` is the post-damage value; `pendingLifeTicks`
+  // holds the count of in-flight parcels still to land. Each parcel
+  // landing decrements pendingLifeTicks, ticking the displayed value
+  // down 1 at a time. Default 0 = identical to wire-life behavior.
+  const pendingLifeTicks = usePendingLifeTicks(player.playerId);
+  const displayedLife = Math.max(0, player.life + pendingLifeTicks);
+
   // Aria-label preserved verbatim from the legacy branch — same
   // composition rules per slice 70-D + 70-H critic UX-I3 / I1.
   const ariaLabel = [
     player.name || 'Unknown player',
-    `${player.life} life`,
+    `${displayedLife} life`,
     perspective === 'self' ? 'your seat' : null,
     player.isActive ? 'active turn' : null,
     player.hasPriority ? 'has priority' : null,
@@ -215,7 +224,7 @@ export function PlayerFrameRedesigned({
               : 'h-8 w-8 -bottom-4 text-sm')
           }
         >
-          {player.life}
+          {displayedLife}
         </div>
         {/* Priority tag floats above the portrait so it doesn't
             obscure the commander art or compete with the life

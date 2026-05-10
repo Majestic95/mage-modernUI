@@ -41,9 +41,10 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   DAMAGE_PARCEL_STAGGER_MS,
-  damageParcelTravelMs,
+  parcelSchedule,
 } from '../animation/transitions';
 import { useDamageEvents, type DamageEvent } from '../animation/useDamageEvents';
+import { useLifeDisplayStore } from '../animation/lifeDisplayStore';
 
 /**
  * One in-flight parcel. {@code progress} is 0..1 of the path's
@@ -129,21 +130,49 @@ export function DamageParcelOverlay() {
 
   useDamageEvents((events) => {
     if (reducedMotionEnabled()) return;
-    events.forEach((event, idx) => {
-      const delayMs = idx * DAMAGE_PARCEL_STAGGER_MS;
-      const timeoutHandle = setTimeout(() => {
-        pendingTimeoutsRef.current.delete(timeoutHandle);
-        startParcel(event);
-      }, delayMs);
-      pendingTimeoutsRef.current.add(timeoutHandle);
+    events.forEach((event, eventIdx) => {
+      // Slice 5-A.2 — fire N parcels per event (one per damage point).
+      // Each parcel landing decrements the defender's displayed life
+      // by 1 via lifeDisplayStore. The full N-parcel stream fits
+      // inside the tier budget (1000/2000/3000ms) so a 20-damage swing
+      // still resolves in 3 seconds.
+      const schedule = parcelSchedule(event.amount);
+      const eventDelayMs = eventIdx * DAMAGE_PARCEL_STAGGER_MS;
+      // Enqueue all ticks UPFRONT so the displayed life immediately
+      // reflects the pending lag (wireLife + N) before the first
+      // parcel lands. Each tickLand call decrements one. If a parcel's
+      // arrow path can't be resolved at fire-time, startParcel
+      // tick-lands immediately to keep the displayed life converging.
+      useLifeDisplayStore
+        .getState()
+        .enqueueTicks(event.defenderId, schedule.count);
+      for (let i = 0; i < schedule.count; i++) {
+        const fireDelayMs = eventDelayMs + i * schedule.staggerMs;
+        const timeoutHandle = setTimeout(() => {
+          pendingTimeoutsRef.current.delete(timeoutHandle);
+          startParcel(event, schedule.travelMs);
+        }, fireDelayMs);
+        pendingTimeoutsRef.current.add(timeoutHandle);
+      }
     });
   });
 
-  function startParcel(event: DamageEvent) {
+  function startParcel(event: DamageEvent, travelMs: number) {
     const pathEl = findArrowPath(event.defenderId);
-    if (pathEl == null) return; // Graceful skip — arrow not yet rendered.
+    if (pathEl == null) {
+      // Graceful skip — arrow path isn't in the DOM (e.g., focal cell
+      // remounting). Tick-land immediately so the displayed life keeps
+      // converging to the wire value even though we lost this parcel's
+      // visual.
+      useLifeDisplayStore.getState().tickLand(event.defenderId);
+      return;
+    }
     const totalLength = pathEl.getTotalLength();
-    if (!isFinite(totalLength) || totalLength <= 0) return;
+    if (!isFinite(totalLength) || totalLength <= 0) {
+      // Same defensive tick-land for the geometry-degenerate case.
+      useLifeDisplayStore.getState().tickLand(event.defenderId);
+      return;
+    }
     const id = nextIdRef.current++;
     const startPoint = pathEl.getPointAtLength(0);
     setParcels((prev) => {
@@ -160,11 +189,6 @@ export function DamageParcelOverlay() {
       return next;
     });
     const startTime = performance.now();
-    // Tuning slice (2026-05-10) — travel duration is now a function
-    // of the event's amount (frame total life delta). Captured in
-    // closure so the running parcel's pacing is fixed at start
-    // even if the global tier function evolves later.
-    const travelMs = damageParcelTravelMs(event.amount);
     // Slice 5-X.0 Tech-1 — track this parcel's CURRENT raf handle
     // in a closure so each tick's new handle replaces the previous
     // one in `activeRafsRef`. Previously the Set just grew unbounded
@@ -189,8 +213,10 @@ export function DamageParcelOverlay() {
         currentRaf = requestAnimationFrame(stepRafFn);
         activeRafsRef.current.add(currentRaf);
       } else {
-        // Travel complete — remove the parcel state entirely. No new
-        // RAF queued so currentRaf stays as the just-deleted handle.
+        // Travel complete — remove the parcel state entirely AND tick
+        // the defender's displayed life down by 1. No new RAF queued
+        // so currentRaf stays as the just-deleted handle.
+        useLifeDisplayStore.getState().tickLand(event.defenderId);
         setParcels((prev) => {
           if (!prev.has(id)) return prev;
           const next = new Map(prev);
@@ -213,6 +239,10 @@ export function DamageParcelOverlay() {
       const rafs = activeRafsRef.current;
       for (const handle of rafs) cancelAnimationFrame(handle);
       rafs.clear();
+      // Reset the displayed-life lag so a fresh game starts with
+      // displayed = wire (no stuck pending ticks from a stream that
+      // got cancelled mid-flight by the unmount).
+      useLifeDisplayStore.getState().reset();
     };
   }, []);
 

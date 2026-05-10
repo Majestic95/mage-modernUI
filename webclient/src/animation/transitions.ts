@@ -304,34 +304,45 @@ export const PARTICLE_DRIFT_PERIOD_MS = 60_000;
 
 // Bundle 5 / Slice 5-A — damage parcel cinematic.
 //
-// Tuning slice (2026-05-10) — replaced the single 350ms travel
-// duration with a 3-tier amount-based mapping per user direction:
-// small hits resolve quickly, big swings linger as a cinematic
-// beat the user can read. The `amount` field on a `DamageEvent`
-// is the FRAME total life delta on the defender (not per-attacker),
-// so a 3-attacker swing for 3 total damage uses the medium tier
-// for all 3 parcels — the cinematic weight reflects the combined
-// combat-damage moment.
+// Tuning slice 5-A.2 (2026-05-10 evening) — the per-creature tier
+// (LIGHT / MEDIUM / HEAVY) now sets the TOTAL CINEMATIC BUDGET for
+// an attacker's stream, not the per-parcel travel time. Each
+// attacker fires `amount` parcels (one per damage point). Each
+// parcel landing decrements the defender's displayed life by 1 via
+// the lifeDisplayStore. The whole stream — fires + flights +
+// landings of all N parcels — completes within the tier budget,
+// so a 20/20 fits inside 3 seconds just as a 5/5 does.
 //
-// STAGGER_MS spaces multi-event frames so the user can count
-// individual hits ("three parcels arrived in sequence") instead
-// of seeing a single muddled flash.
+// Scheduling math lives in `parcelSchedule(amount)` below: each
+// parcel travels for {@link MIN_PARCEL_TRAVEL_MS} or 1/N of the
+// budget (whichever is larger, so high-N parcels stay visible), and
+// the inner stagger fills the rest so the last parcel lands exactly
+// at the tier-budget boundary.
+//
+// STAGGER_MS still spaces MULTI-EVENT frames (e.g. 3-attacker swing
+// kicks off three independent streams 50ms apart) so the user reads
+// distinct attackers, not one muddled flash.
 export const DAMAGE_PARCEL_TRAVEL_MS_LIGHT = 1000;
 export const DAMAGE_PARCEL_TRAVEL_MS_MEDIUM = 2000;
 export const DAMAGE_PARCEL_TRAVEL_MS_HEAVY = 3000;
 export const DAMAGE_PARCEL_STAGGER_MS = 50;
 
 /**
- * Damage-tiered travel duration. Tiers per user direction
- * (2026-05-10):
+ * Floor for per-parcel travel duration. Even at high amounts (e.g.
+ * a 20/20 firing 20 parcels in a 3000ms HEAVY budget), each parcel
+ * travels at least this long so it doesn't flicker invisibly.
+ */
+export const MIN_PARCEL_TRAVEL_MS = 300;
+
+/**
+ * Damage-tiered cinematic-budget duration. Tiers per user direction:
  *
  * <ul>
- *   <li>{@code amount <= 1} — light tier (1000ms). Single-damage
- *       hits get the longest VISIBILITY-relative pacing so the
- *       parcel is unmistakable at 1440p.</li>
- *   <li>{@code amount in [2, 4]} — medium tier (2000ms).</li>
- *   <li>{@code amount >= 5} — heavy tier (3000ms). Big-damage
- *       moments register as a punctuation beat.</li>
+ *   <li>{@code amount <= 1} — LIGHT (1000ms). Single-damage hits
+ *       resolve in 1 second.</li>
+ *   <li>{@code amount in [2, 4]} — MEDIUM (2000ms).</li>
+ *   <li>{@code amount >= 5} — HEAVY (3000ms cap). Big swings stream
+ *       in but never exceed 3 seconds total.</li>
  * </ul>
  *
  * <p>The {@code <= 1} branch covers the no-damage edge defensively;
@@ -342,6 +353,39 @@ export function damageParcelTravelMs(amount: number): number {
   if (amount <= 1) return DAMAGE_PARCEL_TRAVEL_MS_LIGHT;
   if (amount <= 4) return DAMAGE_PARCEL_TRAVEL_MS_MEDIUM;
   return DAMAGE_PARCEL_TRAVEL_MS_HEAVY;
+}
+
+/**
+ * Parcel-stream schedule. Given an attacker's damage amount, returns
+ * the parcel count, per-parcel travel duration, and inner stagger so
+ * that the last parcel lands EXACTLY at the tier-budget boundary
+ * (1000 / 2000 / 3000ms after the first parcel fires) and individual
+ * parcels stay visible for at least {@link MIN_PARCEL_TRAVEL_MS}.
+ *
+ * <p>For {@code count === 1} the parcel travels for the full budget
+ * (no stagger needed).
+ */
+export interface ParcelSchedule {
+  /** Number of parcels to fire (one per damage point). */
+  count: number;
+  /** Each parcel's travel duration in ms. */
+  travelMs: number;
+  /** Gap between successive parcel FIRES in ms. */
+  staggerMs: number;
+  /** Convenience: total cinematic length = (count-1)*staggerMs + travelMs. */
+  totalMs: number;
+}
+
+export function parcelSchedule(amount: number): ParcelSchedule {
+  const count = Math.max(1, Math.floor(amount));
+  const totalMs = damageParcelTravelMs(amount);
+  if (count === 1) {
+    return { count, travelMs: totalMs, staggerMs: 0, totalMs };
+  }
+  const evenSlice = totalMs / count;
+  const travelMs = Math.max(MIN_PARCEL_TRAVEL_MS, Math.floor(evenSlice));
+  const staggerMs = Math.floor((totalMs - travelMs) / (count - 1));
+  return { count, travelMs, staggerMs, totalMs };
 }
 
 // Bundle 5 / Slice 5-B — portrait halo bloom on life-loss. Total

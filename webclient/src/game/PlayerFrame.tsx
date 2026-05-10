@@ -5,6 +5,7 @@ import { REDESIGN } from '../featureFlags';
 import { useLayoutVariant } from '../layoutVariants';
 import { computeHaloBackground } from './halo';
 import { LifeCounter } from './LifeCounter';
+import { usePendingLifeTicks } from '../animation/lifeDisplayStore';
 import { ManaPool } from './ManaPool';
 import { PriorityTag } from './PriorityTag';
 import { ZoneIcon } from './ZoneIcon';
@@ -124,6 +125,14 @@ export function PlayerFrame({
   const colorIdentitySnapshot = useGameStore(
     (s) => s.colorIdentitySnapshots?.[player.playerId],
   );
+  // Slice 5-A.2 — displayed-life lag for the parcel cinematic.
+  // Wire `player.life` is the post-damage value the moment the frame
+  // arrived; pendingLifeTicks holds the count of in-flight parcels
+  // about to land on this player. Each parcel landing decrements the
+  // pending count, so the LifeCounter sees the value tick down 1 at a
+  // time. Default 0 when no parcels are in flight (= identical to the
+  // pre-slice-5-A.2 behavior).
+  const pendingLifeTicks = usePendingLifeTicks(player.playerId);
   const resolvedColorIdentity =
     player.colorIdentity && player.colorIdentity.length > 0
       ? player.colorIdentity
@@ -274,7 +283,7 @@ export function PlayerFrame({
         </div>
         <div className="flex items-baseline gap-4 text-sm text-zinc-400">
           <LifeCounter
-            value={player.life}
+            value={Math.max(0, player.life + pendingLifeTicks)}
             testId={`life-counter-value-${perspective}`}
           />
           <ZoneIcon
