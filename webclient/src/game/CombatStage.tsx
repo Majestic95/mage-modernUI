@@ -57,25 +57,9 @@ export function CombatStage() {
             aria-hidden="true"
             className="combat-stage-frame pointer-events-none absolute"
           />
-          {/* Slice 2-B — slate-clap pulse, keyed on counter for
-              keyframe restart-by-remount. */}
-          <div
-            key={slatePulseCounter}
-            data-testid="combat-stage-slate-pulse"
-            data-pulse-counter={slatePulseCounter}
-            aria-hidden="true"
-            className="combat-stage-slate-pulse pointer-events-none absolute"
-          />
           {/* Slice 2-C — sub-step cross-fade tint. The {@code data-
               substep} attribute drives the per-sub-step background-
-              color rule in CSS; the {@code transition: background-
-              color 250ms ease-out} on .combat-stage-substep-tint
-              interpolates smoothly between the warm declare-* /
-              cool damage-* / neutral begin-end palettes. The store's
-              150ms perceived-gap mechanism (slice 2-C) means
-              currentSubStep flips through null between two non-null
-              sub-steps, so the tint cross-fades to neutral mid-gap
-              before re-saturating into the new sub-step's palette. */}
+              color rule in CSS. */}
           <div
             data-testid="combat-stage-substep-tint"
             data-substep={currentSubStep ?? 'none'}
@@ -83,6 +67,36 @@ export function CombatStage() {
             className="combat-stage-substep-tint pointer-events-none absolute"
           />
         </>
+      )}
+      {/*
+       * Slice 2-X.0 F-U-B2 + F-U-N3 fix — slate-clap pulse lives
+       * OUTSIDE the stageActive gate, mounted only when counter > 0:
+       *
+       *   1. Prevents spurious pulse on lab first-mount + every reset.
+       *      The CSS keyframe runs on every mount of this element;
+       *      gating on `counter > 0` means it doesn't mount until at
+       *      least one COMBAT entry/exit transition has happened.
+       *   2. Lets the EXIT pulse actually play. The previous gate
+       *      (`stageActive && ...`) unmounted the slate-pulse the
+       *      instant phase exited COMBAT — the keyframe ran for at
+       *      most one frame before disappearing. Mounting outside the
+       *      gate lets the keyframe play out its full 800ms regardless
+       *      of whether stageActive is currently true or false. The
+       *      visual "slate clap" still reads as the scene's ending
+       *      beat even after the frame/vignette have unmounted.
+       *
+       * Keyed on slatePulseCounter so each counter increment unmounts
+       * the previous element and mounts a fresh one — restart-by-
+       * remount restarts the keyframe from t=0.
+       */}
+      {slatePulseCounter > 0 && (
+        <div
+          key={slatePulseCounter}
+          data-testid="combat-stage-slate-pulse"
+          data-pulse-counter={slatePulseCounter}
+          aria-hidden="true"
+          className="combat-stage-slate-pulse pointer-events-none absolute"
+        />
       )}
     </>
   );

@@ -940,15 +940,26 @@ input[type="checkbox"] {
  * vignette to communicate "the action is here now."
  */
 .combat-stage-frame {
+  /*
+   * Geometry: matches the central focal cell of the tabletop 4-pod
+   * grid (20% / 60% / 20% template rows + cols per Battlefield.tsx:
+   * 338-354), so the gold edge traces the actual central cell
+   * perimeter — not floating inside it. Slice 2-X.0 F-U-B1 fix bumped
+   * from 35% (the brief's initial estimate) to 60% after live verify.
+   *
+   * Edge thickness: 2px gold edge (slice 2-X.0 F-U-N5 bump from 1px —
+   * 1px was below the readable threshold at 1440p on the inset
+   * rectangle inside a darkened battlefield).
+   */
   z-index: 5;
   top: 50%;
   left: 50%;
-  width: 35%;
-  height: 35%;
+  width: 60%;
+  height: 60%;
   transform: translate(-50%, -50%);
   border-radius: 6px;
   box-shadow:
-    inset 0 0 0 1px rgba(255, 210, 120, 0.6),
+    inset 0 0 0 2px rgba(255, 210, 120, 0.6),
     inset 0 0 28px rgba(0, 0, 0, 0.45);
 }
 
@@ -973,34 +984,43 @@ input[type="checkbox"] {
  * the gold frame underneath persists static so combat-entry still
  * reads as a state change (just without the cinematic flare).
  */
+/*
+ * Slice 2-X.0 F-G-B1 fix — rewrote the keyframe to remove the
+ * 25%→50% dead-flat hold (which broke the "clap" rhythm — `ease-in-
+ * out` interpolated literally flat for 200ms because the two stops
+ * carried identical opacity + box-shadow values). New curve is
+ * asymmetric: fast ramp-in to peak at 30%, brief hold to 40%, then
+ * slower decay back to 0 by 100%. Reads as a confident slate clap
+ * rather than a spike + plateau + drift.
+ */
 @keyframes combat-stage-slate-pulse {
   0% {
     opacity: 0;
-    box-shadow: inset 0 0 0 1px rgba(255, 220, 140, 0.6);
+    box-shadow: inset 0 0 0 2px rgba(255, 220, 140, 0.4);
   }
-  25% {
+  30% {
     opacity: 1;
-    box-shadow: inset 0 0 0 2px rgba(255, 230, 160, 1);
+    box-shadow: inset 0 0 0 3px rgba(255, 230, 160, 1);
   }
-  50% {
-    opacity: 1;
-    box-shadow: inset 0 0 0 2px rgba(255, 230, 160, 1);
+  40% {
+    opacity: 0.95;
+    box-shadow: inset 0 0 0 3px rgba(255, 230, 160, 0.95);
   }
   100% {
     opacity: 0;
-    box-shadow: inset 0 0 0 1px rgba(255, 220, 140, 0.6);
+    box-shadow: inset 0 0 0 2px rgba(255, 220, 140, 0.4);
   }
 }
 .combat-stage-slate-pulse {
   z-index: 5;
   top: 50%;
   left: 50%;
-  width: 35%;
-  height: 35%;
+  width: 60%;
+  height: 60%;
   transform: translate(-50%, -50%);
   border-radius: 6px;
   opacity: 0;
-  animation: combat-stage-slate-pulse 800ms ease-in-out 1 forwards;
+  animation: combat-stage-slate-pulse 800ms ease-out 1 forwards;
 }
 @media (prefers-reduced-motion: reduce) {
   .combat-stage-slate-pulse {
@@ -1038,11 +1058,19 @@ input[type="checkbox"] {
  * just snap instead of fading.
  */
 .combat-stage-substep-tint {
+  /*
+   * Geometry matches the frame (60% × 60% per F-U-B1) so the tint
+   * fills the entire central focal cell — not just the inset
+   * estimate. Alphas bumped from 0.06-0.08 to 0.06 (neutral) / 0.14
+   * (declare-* and damage-*) per slice 2-X.0 F-U-N4 + F-G-N5 —
+   * 0.08 was below the JND threshold for warm-vs-cool perception
+   * over the battlefield substrate at 1440p.
+   */
   z-index: 5;
   top: 50%;
   left: 50%;
-  width: 35%;
-  height: 35%;
+  width: 60%;
+  height: 60%;
   transform: translate(-50%, -50%);
   border-radius: 6px;
   background-color: rgba(180, 180, 180, 0.06);
@@ -1050,11 +1078,11 @@ input[type="checkbox"] {
 }
 .combat-stage-substep-tint[data-substep='DECLARE_ATTACKERS'],
 .combat-stage-substep-tint[data-substep='DECLARE_BLOCKERS'] {
-  background-color: rgba(220, 160, 80, 0.08);
+  background-color: rgba(220, 160, 80, 0.14);
 }
 .combat-stage-substep-tint[data-substep='FIRST_COMBAT_DAMAGE'],
 .combat-stage-substep-tint[data-substep='COMBAT_DAMAGE'] {
-  background-color: rgba(120, 180, 220, 0.08);
+  background-color: rgba(120, 180, 220, 0.14);
 }
 .combat-stage-substep-tint[data-substep='BEGIN_COMBAT'],
 .combat-stage-substep-tint[data-substep='END_COMBAT'],

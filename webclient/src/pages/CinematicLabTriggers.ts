@@ -322,23 +322,27 @@ export function useCinematicLabTriggers(
 
   const triggerExitCombat = useCallback(() => {
     // Bundle 2 / Slice 2-A — combat-stage exit demo. Sets phase to
-    // COMBAT first (if not already), then to POSTCOMBAT_MAIN. The
-    // transition emits a slate-pulse + ramps the vignette out over
-    // 250ms.
+    // POSTCOMBAT_MAIN, firing the COMBAT → POSTCOMBAT_MAIN transition
+    // that emits a slate-pulse + ramps the vignette out over 250ms.
+    //
+    // Slice 2-X.0 F-T-N1 fix — early-return when the lab is not in
+    // COMBAT phase. The prior implementation snapped to COMBAT first
+    // (via flushSync) then to POSTCOMBAT_MAIN, firing TWO slate-pulses
+    // back-to-back when the user had clicked Exit from a non-combat
+    // state — read as a confusing in-then-out flicker rather than a
+    // clean exit. Now: when the lab isn't in combat, the button is
+    // a no-op with an announce explaining what happened.
     const current = useGameStore.getState().gameView;
     if (!current) return;
     if (current.phase !== 'COMBAT') {
-      flushSync(() => {
-        useGameStore.setState({
-          gameView: { ...current, phase: 'COMBAT', step: 'COMBAT_DAMAGE' },
-        });
-      });
+      announce(
+        'Exit combat — already outside combat. Click Enter combat first to fire the entry cinematic.',
+      );
+      return;
     }
-    const live = useGameStore.getState().gameView;
-    if (!live) return;
     useGameStore.setState({
       gameView: {
-        ...live,
+        ...current,
         phase: 'POSTCOMBAT_MAIN',
         step: 'POSTCOMBAT_MAIN',
       },

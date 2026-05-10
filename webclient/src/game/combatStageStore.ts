@@ -31,6 +31,7 @@
  * <p>Bundle 2 brief: {@code docs/design/combat-bundle-2-combat-stage.md}.
  */
 import { create } from 'zustand';
+import { COMBAT_STAGE_SUBSTEP_GAP_MS } from '../animation/transitions';
 import { useGameStore } from './store';
 
 /**
@@ -90,8 +91,36 @@ let lastPhase = '';
  * <p>Skipped on null → value (combat entry — no out-phase to wait
  * for) and value → null (combat exit — coordinated by stage-active
  * flip already).
+ *
+ * <p>Slice 2-X.0 F-G-N4 fix — value now sourced from the motion
+ * registry ({@link COMBAT_STAGE_SUBSTEP_GAP_MS} in transitions.ts)
+ * for single-source-of-truth consistency with the other Bundle 2
+ * timings. The legacy {@code SUB_STEP_GAP_MS} export is preserved
+ * for the existing test imports.
  */
-export const SUB_STEP_GAP_MS = 150;
+export const SUB_STEP_GAP_MS = COMBAT_STAGE_SUBSTEP_GAP_MS;
+
+/**
+ * Slice 2-X.0 F-G-N3 fix — detect reduced-motion at subscriber-time
+ * so the 150ms sub-step gap can be SKIPPED under
+ * {@code prefers-reduced-motion: reduce}. Without this, the gap
+ * mechanism produced a 150ms neutral flicker between sub-steps even
+ * with the CSS transition silenced — two snaps + a gray flash, more
+ * visually disruptive than no animation at all. Now: under reduced-
+ * motion, sub-step transitions write the new value directly without
+ * the null intermediate.
+ *
+ * <p>The check uses {@code matchMedia} at call time (not cached) so
+ * the user toggling the OS preference mid-session is honored. In
+ * test (jsdom) environments without matchMedia, defaults to
+ * not-reduced.
+ */
+function prefersReducedMotion(): boolean {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+    return false;
+  }
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
 
 /**
  * Slice 2-C — pending-timer tracker for the cross-fade gap. Each new
@@ -152,9 +181,18 @@ if (typeof useGameStore.subscribe === 'function') {
       // Slice 2-C — sub-step transition while staying inside combat.
       // Apply the 150ms perceived-gap mechanism ONLY when both the old
       // and new sub-steps are non-null (i.e. we're transitioning
-      // between two real combat sub-steps). null→value or value→null
+      // between two real combat sub-steps) AND the user hasn't
+      // requested reduced motion. Under reduced-motion (slice 2-X.0
+      // F-G-N3 fix), skip the gap entirely — write the new value
+      // directly so the user doesn't see a 150ms neutral flicker
+      // between sub-steps (which reads as MORE visually disruptive
+      // than no animation at all). null→value or value→null also
       // gets applied directly (no gap to interpose).
-      if (current.currentSubStep !== null && newSubStep !== null) {
+      const wantsGap =
+        current.currentSubStep !== null &&
+        newSubStep !== null &&
+        !prefersReducedMotion();
+      if (wantsGap) {
         clearPendingSubStepTimer();
         useCombatStageStore.setState({ currentSubStep: null });
         pendingSubStepTimer = setTimeout(() => {

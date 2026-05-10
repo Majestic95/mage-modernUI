@@ -255,6 +255,21 @@ describe('CinematicLab', () => {
     ).toContain('Exit combat');
   });
 
+  it('slice 2-X.0 F-T-N1 — exit-combat is a no-op (with explanatory announce) when phase is not COMBAT', () => {
+    render(<CinematicLab />);
+    // Click Exit combat once to get into POSTCOMBAT_MAIN.
+    fireEvent.click(screen.getByTestId('trigger-exit-combat'));
+    expect(useGameStore.getState().gameView!.phase).toBe('POSTCOMBAT_MAIN');
+    // Click Exit combat again — should be a no-op now (the prior
+    // implementation snapped to COMBAT then to POSTCOMBAT_MAIN,
+    // double-firing the slate-pulse with a confusing in-then-out flicker).
+    fireEvent.click(screen.getByTestId('trigger-exit-combat'));
+    expect(useGameStore.getState().gameView!.phase).toBe('POSTCOMBAT_MAIN');
+    expect(
+      screen.getByTestId('cinematic-lab-status').textContent,
+    ).toContain('already outside combat');
+  });
+
   it('slice 2-A — cycle-substeps button walks step through six values over 7500ms', () => {
     vi.useFakeTimers();
     try {

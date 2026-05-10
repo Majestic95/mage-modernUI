@@ -462,6 +462,23 @@ export const BLOCK_ARROW_INK_DRAW_MS = 200;
 export const ARROW_INK_FADEOUT_MS = 80;
 export const ARROW_INK_HEAD_DELAY_FRACTION = 0.75;
 
+/*
+ * Bundle 2 — Combat Stage timing registry (slice 2-X.0 F-G-N4 fix
+ * — values were initially hardcoded in combatStageStore.ts +
+ * index.css; centralized here per the motion-vocabulary convention
+ * at the top of this file so future retunes happen in one place).
+ *
+ * Raw values still live in index.css keyframes (CSS doesn't import
+ * TS constants); these exports document the canonical timing for
+ * future authors + give the JS side a single source of truth for
+ * coordinator-level delays (the 150ms perceived gap).
+ */
+export const COMBAT_STAGE_VIGNETTE_ENTRY_MS = 350;
+export const COMBAT_STAGE_VIGNETTE_EXIT_MS = 250;
+export const COMBAT_STAGE_SLATE_PULSE_MS = 800;
+export const COMBAT_STAGE_SUBSTEP_TINT_MS = 250;
+export const COMBAT_STAGE_SUBSTEP_GAP_MS = 150;
+
 /* ============================================================
    Slice 70-Z.2 / 70-Z.3 / 70-Z.4 — card animation system timing.
    The seam ships in 70-Z.2 (no visual change); the constants here

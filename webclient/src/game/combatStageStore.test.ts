@@ -206,6 +206,39 @@ describe('combatStageStore', () => {
     }
   });
 
+  it('slice 2-X.0 F-G-N3 — reduced-motion users skip the 150ms gap (sub-step writes directly)', () => {
+    // Mock matchMedia to report prefers-reduced-motion: reduce. The
+    // subscriber's gap branch checks this at call time + writes the
+    // new sub-step directly without the null intermediate, sparing the
+    // user the 150ms neutral flicker that the CSS transition silencing
+    // alone couldn't prevent.
+    const originalMatchMedia = window.matchMedia;
+    window.matchMedia = ((query: string) => ({
+      matches: query === '(prefers-reduced-motion: reduce)',
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => true,
+    })) as unknown as typeof window.matchMedia;
+    try {
+      setPhaseAndStep('COMBAT', 'DECLARE_ATTACKERS');
+      expect(useCombatStageStore.getState().currentSubStep).toBe(
+        'DECLARE_ATTACKERS',
+      );
+      // Sub-step transition under reduced-motion — should write the
+      // new value directly with NO intermediate null state.
+      setPhaseAndStep('COMBAT', 'DECLARE_BLOCKERS');
+      expect(useCombatStageStore.getState().currentSubStep).toBe(
+        'DECLARE_BLOCKERS',
+      );
+    } finally {
+      window.matchMedia = originalMatchMedia;
+    }
+  });
+
   it('slice 2-C — combat exit during the gap window cancels the pending timer', () => {
     vi.useFakeTimers();
     try {

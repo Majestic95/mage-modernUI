@@ -146,11 +146,45 @@ describe('CombatStage (slice 2-A)', () => {
     expect(queryByTestId('combat-stage-frame')).toBeNull();
   });
 
-  it('slice 2-B — slate-pulse element mounts only when stageActive=true', () => {
+  it('slice 2-X.0 F-U-B2 — slate-pulse does NOT mount when counter === 0, even if stageActive=true', () => {
+    // Lab first-mount scenario: baseline gameView has phase=COMBAT
+    // already; stageActive flips true on first subscriber observation
+    // but the counter stays at 0 (no transition occurred — first
+    // observation is a baseline seed, not a director's-slate moment).
+    // The slate-pulse element must NOT mount in this case; otherwise
+    // it fires a spurious cinematic before the user clicked anything.
     const { queryByTestId, rerender } = render(<CombatStage />);
-    expect(queryByTestId('combat-stage-slate-pulse')).toBeNull();
     setPhaseAndStep('COMBAT', 'BEGIN_COMBAT');
     rerender(<CombatStage />);
+    expect(useCombatStageStore.getState().stageActive).toBe(true);
+    expect(useCombatStageStore.getState().slatePulseCounter).toBe(0);
+    expect(queryByTestId('combat-stage-slate-pulse')).toBeNull();
+  });
+
+  it('slice 2-B — slate-pulse element mounts when counter > 0', () => {
+    const { queryByTestId, rerender } = render(<CombatStage />);
+    expect(queryByTestId('combat-stage-slate-pulse')).toBeNull();
+    setPhaseAndStep('PRECOMBAT_MAIN', 'PRECOMBAT_MAIN');
+    setPhaseAndStep('COMBAT', 'BEGIN_COMBAT');
+    rerender(<CombatStage />);
+    expect(queryByTestId('combat-stage-slate-pulse')).not.toBeNull();
+  });
+
+  it('slice 2-X.0 F-U-N3 — slate-pulse remains mounted after combat exit so the exit keyframe plays out', () => {
+    const { queryByTestId, rerender } = render(<CombatStage />);
+    setPhaseAndStep('PRECOMBAT_MAIN', 'PRECOMBAT_MAIN');
+    setPhaseAndStep('COMBAT', 'BEGIN_COMBAT');
+    rerender(<CombatStage />);
+    expect(queryByTestId('combat-stage-slate-pulse')).not.toBeNull();
+    // Exit COMBAT. Counter increments to 2; stageActive flips false.
+    // The slate-pulse element stays mounted (gated on counter > 0,
+    // independent of stageActive) so the exit-pulse keyframe plays
+    // out its full 800ms — the brief's "scene ends, slate marks the
+    // ending" symmetric framing.
+    setPhaseAndStep('POSTCOMBAT_MAIN', 'POSTCOMBAT_MAIN');
+    rerender(<CombatStage />);
+    expect(useCombatStageStore.getState().stageActive).toBe(false);
+    expect(useCombatStageStore.getState().slatePulseCounter).toBe(2);
     expect(queryByTestId('combat-stage-slate-pulse')).not.toBeNull();
   });
 
@@ -209,6 +243,8 @@ describe('CombatStage (slice 2-A)', () => {
 
   it('slice 2-B — frame + slate-pulse are aria-hidden + pointer-events-none', () => {
     const { getByTestId, rerender } = render(<CombatStage />);
+    // Need an actual transition to mount the slate-pulse (counter > 0).
+    setPhaseAndStep('PRECOMBAT_MAIN', 'PRECOMBAT_MAIN');
     setPhaseAndStep('COMBAT', 'BEGIN_COMBAT');
     rerender(<CombatStage />);
     const frame = getByTestId('combat-stage-frame');
