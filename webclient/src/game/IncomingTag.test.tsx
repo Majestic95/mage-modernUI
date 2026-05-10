@@ -353,6 +353,69 @@ describe('IncomingTag — slice 1-X.3 critic-pass fixes', () => {
     expect(parentKeyDown).not.toHaveBeenCalled();
   });
 
+  it('left/right pod renders two-line stack with no separator', () => {
+    // Slice 1-X-tunings round 4: when the IncomingTag's nearest
+    // ancestor with `data-position` reads 'left' or 'right', the
+    // badge stacks "incoming N" / "unblocked M" on two lines (no
+    // em-dash). The vertical pod has space for the stack; a
+    // hyphen-separated single line was unnecessary for those
+    // positions.
+    setGameView({
+      phase: 'COMBAT',
+      combat: [{ defenderId: OPP1_ID, attackerIds: ['a-1', 'a-2'] }],
+    });
+    render(
+      <div data-position="left">
+        <IncomingTag playerId={OPP1_ID} />
+      </div>,
+    );
+    const tag = screen.getByTestId(`incoming-tag-${OPP1_ID}`);
+    expect(tag.getAttribute('data-pod-position')).toBe('left');
+    // Two-line stack — no em-dash separator.
+    expect(tag.textContent).toBe('incoming 2unblocked 2');
+    expect(tag.textContent).not.toContain('—');
+    // Each line lives in its own wrapper.
+    expect(tag.querySelectorAll('div').length).toBe(2);
+  });
+
+  it('top pod overlaps portrait via translate-y-2 (avoids phase-ladder clip)', () => {
+    // Slice 1-X-tunings round 4: top opponent pod is clipped from
+    // above by the GameHeader phase ladder. Badge slides DOWN ~8px
+    // to overlap the portrait's top edge by ~10% rather than
+    // floating in the gap where the phase ladder lives.
+    setGameView({
+      phase: 'COMBAT',
+      combat: [{ defenderId: OPP1_ID, attackerIds: ['a-1'] }],
+    });
+    render(
+      <div data-position="top">
+        <IncomingTag playerId={OPP1_ID} />
+      </div>,
+    );
+    const tag = screen.getByTestId(`incoming-tag-${OPP1_ID}`);
+    expect(tag.getAttribute('data-pod-position')).toBe('top');
+    // Top pod uses single-line form (with em-dash) so the wider
+    // text reads across the badge's width.
+    expect(tag.textContent).toBe('incoming 1 — 1 unblocked');
+    // Layout class signals the overlap via translate-y-2.
+    expect(tag.className).toContain('translate-y-2');
+    expect(tag.className).not.toContain('mb-1.5');
+  });
+
+  it('default (no data-position ancestor) keeps the single-line above-portrait layout', () => {
+    setGameView({
+      phase: 'COMBAT',
+      combat: [{ defenderId: OPP1_ID, attackerIds: ['a-1'] }],
+    });
+    render(<IncomingTag playerId={OPP1_ID} />);
+    const tag = screen.getByTestId(`incoming-tag-${OPP1_ID}`);
+    // No data-position ancestor → falls through to default.
+    expect(tag.hasAttribute('data-pod-position')).toBe(false);
+    expect(tag.className).toContain('mb-1.5');
+    expect(tag.className).not.toContain('translate-y-2');
+    expect(tag.className).toContain('whitespace-nowrap');
+  });
+
   it('pinned-state fill is the violet accent, NOT amber (UI-3 semantic-collision fix)', () => {
     // Bundle-1 UI critic flagged that amber was being asked to mean
     // three different things (Bundle 3 Done button + active-priority

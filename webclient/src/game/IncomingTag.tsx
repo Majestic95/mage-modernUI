@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { WebCombatGroupView } from '../api/schemas';
 import { useGameStore } from './store';
 import { useArrowIsolation } from './arrowIsolationStore';
@@ -56,6 +56,26 @@ export function IncomingTag({ playerId }: { playerId: string }) {
     [combat, playerId],
   );
 
+  // Slice 1-X-tunings round 4 (live-test verdict 2026-05-09) — detect
+  // the pod position via the nearest ancestor's `data-position`
+  // attribute (PlayerFrameRedesigned emits it; PlayerArea threads
+  // 'top' | 'left' | 'right' | 'bottom' through the layout). Layout
+  // varies per position:
+  //   - left/right pods: enough vertical space for two-line stack
+  //     ("incoming N" / "unblocked M"). No em-dash separator.
+  //   - top pod: phase ladder above clips a tag that floats above
+  //     the portrait, so the badge slides DOWN to overlap the
+  //     portrait by ~10% of badge height. Single-line text reads
+  //     across the badge's width.
+  //   - bottom / unknown: falls back to single-line above (current
+  //     default; preserves existing test fixtures' rendering).
+  const ref = useRef<HTMLButtonElement>(null);
+  const [podPosition, setPodPosition] = useState<string | null>(null);
+  useLayoutEffect(() => {
+    const ancestor = ref.current?.closest('[data-position]');
+    setPodPosition(ancestor?.getAttribute('data-position') ?? null);
+  }, []);
+
   // Render gates. None of these mid-render reads should change
   // referentially without a real game-state change, so memoising
   // separately would just add noise.
@@ -64,12 +84,16 @@ export function IncomingTag({ playerId }: { playerId: string }) {
   if (incoming === 0) return null;
 
   const pinned = pinnedDefenderId === playerId;
+  const isLeftRight = podPosition === 'left' || podPosition === 'right';
+  const isTop = podPosition === 'top';
 
   return (
     <button
+      ref={ref}
       type="button"
       data-testid={`incoming-tag-${playerId}`}
       data-pinned={pinned || undefined}
+      data-pod-position={podPosition ?? undefined}
       aria-pressed={pinned}
       // Slice 1-X.3 critic-pass (Bundle-1 UX-2) — extended copy
       // surfaces the Escape affordance for SR users when pinned.
@@ -106,24 +130,27 @@ export function IncomingTag({ playerId }: { playerId: string }) {
       }}
       className={
         // Position inside PlayerPortrait's `position: relative`
-        // wrapper. Anchored centered ABOVE the portrait. Slice
-        // 1-X-tunings round-2 (live-test verdict 2026-05-09):
-        // wrapping looked bad on the top pod (badge collided with
-        // the GameHeader); single-line text hovering above the
-        // portrait reads as a clean label. `bottom-full` anchors
-        // the badge's bottom edge at the portrait's top edge;
-        // `mb-1.5` adds breathing space (6px gap); `left-1/2 +
-        // -translate-x-1/2` centers horizontally; `whitespace-
-        // nowrap` keeps the badge to one line so the text doesn't
-        // re-wrap. T1: still `position: absolute` — no change to
-        // portrait box footprint.
-        'pointer-events-auto absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 z-10 ' +
+        // wrapper. Slice 1-X-tunings round 4 (2026-05-09) —
+        // per-pod-position layout. Top pod overlaps portrait by
+        // ~8px (≈10% of medium portrait height) to avoid the phase
+        // ladder above. Left/right + default float above with 6px
+        // breathing gap. T1: still `position: absolute` — no
+        // change to portrait box footprint regardless of branch.
+        'pointer-events-auto absolute left-1/2 -translate-x-1/2 z-10 ' +
+        (isTop
+          ? 'bottom-full translate-y-2 '
+          : 'bottom-full mb-1.5 ') +
         // Slice 1-B critic-pass: bumped text from text-[10px] to
         // text-[11px] for readability (10px is below Material 12px
-        // floor and iOS HIG 11pt minimum). Dropped tracking-wide so
-        // the wider letters fit within the 120px footprint cap.
+        // floor and iOS HIG 11pt minimum).
         'px-1.5 py-0.5 rounded text-[11px] uppercase ' +
-        'font-semibold whitespace-nowrap select-none ' +
+        // Left/right pods get two-line stack via leading-tight +
+        // text-center; top pod + default keep the single-line
+        // hyphen-separated form via whitespace-nowrap.
+        (isLeftRight
+          ? 'leading-tight text-center select-none '
+          : 'whitespace-nowrap select-none ') +
+        'font-semibold ' +
         'border shadow-sm transition-colors duration-100 ' +
         // Slice 1-B critic-pass: WCAG 2.4.7 (Focus Visible) —
         // keyboard-focused badge gets an amber ring. Slice 1-X.3
@@ -149,8 +176,17 @@ export function IncomingTag({ playerId }: { playerId: string }) {
           : 'bg-zinc-900/85 text-zinc-100 border-zinc-700 hover:bg-zinc-800/90 ')
       }
     >
-      incoming {incoming}
-      {unblocked > 0 ? <> &mdash; {unblocked} unblocked</> : null}
+      {isLeftRight ? (
+        <>
+          <div>incoming {incoming}</div>
+          {unblocked > 0 ? <div>unblocked {unblocked}</div> : null}
+        </>
+      ) : (
+        <>
+          incoming {incoming}
+          {unblocked > 0 ? <> &mdash; {unblocked} unblocked</> : null}
+        </>
+      )}
     </button>
   );
 }
