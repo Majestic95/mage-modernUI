@@ -152,11 +152,17 @@ export function IncomingTag({
         // text-[11px] for readability (10px is below Material 12px
         // floor and iOS HIG 11pt minimum).
         'px-1.5 py-0.5 rounded text-[11px] uppercase ' +
-        // Left/right pods get two-line stack via leading-tight +
-        // text-center; top pod + default keep the single-line
-        // hyphen-separated form via whitespace-nowrap.
+        // Left/right pods get two-line stack via two block-level
+        // <div> children + leading-tight + text-center; top pod +
+        // default render single-line. `whitespace-nowrap` is
+        // applied in BOTH branches so the per-line text doesn't
+        // re-wrap under width pressure (slice 1-X-tunings round 6
+        // 2026-05-09: without nowrap on left/right, the badge
+        // shrunk to the portrait's 80px and "incoming 1" itself
+        // wrapped within its <div>, producing 4 lines instead of
+        // the intended 2).
         (isLeftRight
-          ? 'leading-tight text-center select-none '
+          ? 'leading-tight text-center whitespace-nowrap select-none '
           : 'whitespace-nowrap select-none ') +
         'font-semibold ' +
         'border shadow-sm transition-colors duration-100 ' +
