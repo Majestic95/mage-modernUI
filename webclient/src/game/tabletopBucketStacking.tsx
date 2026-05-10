@@ -33,7 +33,7 @@ import type { ReactNode } from 'react';
 import type { WebPermanentView } from '../api/schemas';
 import { CardFace } from './CardFace';
 import { HoverCardDetail } from './HoverCardDetail';
-import { RoleMarkers } from './RoleMarkers';
+import { RoleMarkers, RoleOuterHalo } from './RoleMarkers';
 
 export type BucketKind = 'lands' | 'creatures' | 'artifactsEnchantments';
 
@@ -80,6 +80,14 @@ interface CardButtonProps {
   isEligibleTarget: boolean;
   isEligibleCombat: boolean;
   combatRole: 'attacker' | 'blocker' | null;
+  /**
+   * Slice 4-B — controller's commander color identity for the outer
+   * halo overlay. {@code undefined} when the legacy `current`
+   * variant doesn't thread the lookup map (outer halo gracefully
+   * degrades to neutral grey). Optional so existing tests + the
+   * legacy variant don't break.
+   */
+  controllerColorIdentity?: readonly string[] | undefined;
 }
 
 /**
@@ -97,6 +105,7 @@ export function TabletopCardButton({
   isEligibleTarget,
   isEligibleCombat,
   combatRole,
+  controllerColorIdentity,
 }: CardButtonProps) {
   return (
     <HoverCardDetail card={perm.card}>
@@ -119,6 +128,13 @@ export function TabletopCardButton({
         }
         aria-label={perm.card.name}
       >
+        {/* Slice 4-B outer halo — paints BEHIND the cardart so the
+            cardart covers the center and only the 2.5 px frame
+            remains visible. MUST stay before <CardFace>. */}
+        <RoleOuterHalo
+          combatRole={combatRole}
+          controllerColorIdentity={controllerColorIdentity}
+        />
         <CardFace
           card={perm.card}
           size="battlefield"
@@ -128,6 +144,9 @@ export function TabletopCardButton({
           combatRole={combatRole}
           targetableForDialog={isEligibleTarget}
         />
+        {/* Slices 4-A + 4-B inner ring + corner brackets — paint ON
+            TOP of the cardart so their stroke isn't occluded. MUST
+            stay after <CardFace>. */}
         <RoleMarkers combatRole={combatRole} />
       </button>
     </HoverCardDetail>
@@ -151,6 +170,15 @@ interface DuplicateStackProps {
   eligibleTargetIds: ReadonlySet<string> | undefined;
   eligibleCombatIds: ReadonlySet<string> | undefined;
   combatRoles: ReadonlyMap<string, 'attacker' | 'blocker'> | undefined;
+  /**
+   * Slice 4-B — controller-id → commander color identity lookup,
+   * threaded from {@code Battlefield.tsx} for the outer halo.
+   * Optional so existing callers don't break; resolved per-card via
+   * {@code perm.controllerId} so duplicates with different
+   * controllers (engine-impossible today but future-proofing) get
+   * their own halo.
+   */
+  colorIdentityByPlayerName?: ReadonlyMap<string, readonly string[]> | undefined;
 }
 
 /**
@@ -176,6 +204,7 @@ export function DuplicateStackContainer({
   eligibleTargetIds,
   eligibleCombatIds,
   combatRoles,
+  colorIdentityByPlayerName,
 }: DuplicateStackProps) {
   const baseW = 'var(--card-size-medium, 80px)';
   const heightCalc = 'calc(var(--card-size-medium, 80px) * 7 / 5)';
@@ -236,6 +265,9 @@ export function DuplicateStackContainer({
               isEligibleTarget={eligibleTarget}
               isEligibleCombat={eligibleCombat}
               combatRole={role}
+              controllerColorIdentity={colorIdentityByPlayerName?.get(
+                dup.controllerName,
+              )}
             />
           </div>
         );
@@ -264,6 +296,9 @@ export function DuplicateStackContainer({
           isEligibleTarget={eligibleTargetIds?.has(host.card.id) ?? false}
           isEligibleCombat={eligibleCombatIds?.has(host.card.id) ?? false}
           combatRole={combatRoles?.get(host.card.id) ?? null}
+          controllerColorIdentity={colorIdentityByPlayerName?.get(
+            host.controllerName,
+          )}
         />
       </div>
     </motion.div>

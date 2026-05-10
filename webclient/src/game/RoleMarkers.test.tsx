@@ -15,7 +15,54 @@
  */
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
-import { RoleMarkers } from './RoleMarkers';
+import { RoleMarkers, RoleOuterHalo } from './RoleMarkers';
+import { TabletopCardButton } from './tabletopBucketStacking';
+import {
+  webCardViewSchema,
+  webPermanentViewSchema,
+  type WebPermanentView,
+} from '../api/schemas';
+
+/** Minimal battlefield perm fixture for DOM-order regression test. */
+function makePerm(): WebPermanentView {
+  return webPermanentViewSchema.parse({
+    card: webCardViewSchema.parse({
+      id: '00000000-0000-0000-0000-00000000aaaa',
+      cardId: '00000000-0000-0000-0000-00000000aaaa',
+      name: 'Llanowar Elves',
+      displayName: 'Llanowar Elves',
+      expansionSetCode: 'TST',
+      cardNumber: '001',
+      manaCost: '{G}',
+      manaValue: 1,
+      typeLine: 'CREATURE',
+      supertypes: [],
+      types: ['CREATURE'],
+      subtypes: ['ELF', 'DRUID'],
+      colors: ['G'],
+      rarity: 'COMMON',
+      power: '1',
+      toughness: '1',
+      startingLoyalty: '',
+      rules: [],
+      faceDown: false,
+      counters: {},
+      transformable: false,
+      transformed: false,
+      secondCardFace: null,
+    }),
+    controllerName: 'alice',
+    tapped: false,
+    flipped: false,
+    transformed: false,
+    phasedIn: true,
+    summoningSickness: false,
+    damage: 0,
+    attachments: [],
+    attachedTo: '',
+    attachedToPermanent: false,
+  });
+}
 
 describe('RoleMarkers', () => {
   it('renders null when combatRole is undefined', () => {
@@ -149,5 +196,209 @@ describe('RoleMarkers', () => {
     expect(tr.style.transform).toBe('rotate(90deg)');
     expect(br.style.transform).toBe('rotate(180deg)');
     expect(bl.style.transform).toBe('rotate(270deg)');
+  });
+});
+
+/* ===================================================================
+ * Slice 4-B — inner ring tests (rendered inside <RoleMarkers>) +
+ * <RoleOuterHalo> tests (separate sibling component).
+ * =================================================================*/
+
+describe('RoleMarkers (slice 4-B inner ring)', () => {
+  it('renders inner ring sibling when role is defined', () => {
+    const { getByTestId } = render(<RoleMarkers combatRole="attacker" />);
+    expect(getByTestId('role-inner-ring')).toBeTruthy();
+  });
+
+  it('does NOT render inner ring when role is null/undefined', () => {
+    const { queryByTestId: q1 } = render(<RoleMarkers combatRole={null} />);
+    expect(q1('role-inner-ring')).toBeNull();
+    const { queryByTestId: q2 } = render(<RoleMarkers combatRole={undefined} />);
+    expect(q2('role-inner-ring')).toBeNull();
+  });
+
+  it('attacker inner ring uses var(--color-attacker) inset shadow', () => {
+    const { getByTestId } = render(<RoleMarkers combatRole="attacker" />);
+    const ring = getByTestId('role-inner-ring');
+    expect(ring.style.boxShadow).toContain('var(--color-attacker)');
+    expect(ring.style.boxShadow).toContain('inset');
+  });
+
+  it('blocker inner ring uses var(--color-blocker) inset shadow', () => {
+    const { getByTestId } = render(<RoleMarkers combatRole="blocker" />);
+    const ring = getByTestId('role-inner-ring');
+    expect(ring.style.boxShadow).toContain('var(--color-blocker)');
+    expect(ring.style.boxShadow).toContain('inset');
+  });
+
+  it('inner ring is pointer-events:none and aria-hidden (decorative on cardart)', () => {
+    const { getByTestId } = render(<RoleMarkers combatRole="attacker" />);
+    const ring = getByTestId('role-inner-ring');
+    expect(ring.style.pointerEvents).toBe('none');
+    expect(ring.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('inner ring sits exactly on cardart bounds (inset: BRACKET_OUTSET cancels wrapper)', () => {
+    const { getByTestId } = render(<RoleMarkers combatRole="attacker" />);
+    const ring = getByTestId('role-inner-ring');
+    // Wrapper is at inset: -2; inner ring is at inset: 2. Net offset
+    // from cardart bounds = 0 → ring sits exactly on the cardart.
+    expect(ring.style.inset).toBe('2px');
+  });
+
+  it('inner ring inherits CardFace radius via var(--radius-md)', () => {
+    const { getByTestId } = render(<RoleMarkers combatRole="attacker" />);
+    const ring = getByTestId('role-inner-ring');
+    expect(ring.style.borderRadius).toContain('var(--radius-md');
+  });
+});
+
+describe('RoleOuterHalo', () => {
+  it('renders null when combatRole is undefined', () => {
+    const { queryByTestId } = render(
+      <RoleOuterHalo combatRole={undefined} controllerColorIdentity={[]} />,
+    );
+    expect(queryByTestId('role-outer-halo')).toBeNull();
+  });
+
+  it('renders null when combatRole is null (suppressed for non-combat creatures)', () => {
+    const { queryByTestId } = render(
+      <RoleOuterHalo combatRole={null} controllerColorIdentity={['G']} />,
+    );
+    expect(queryByTestId('role-outer-halo')).toBeNull();
+  });
+
+  it('renders the wrapper with data-role when role is set', () => {
+    const { getByTestId } = render(
+      <RoleOuterHalo combatRole="attacker" controllerColorIdentity={['G']} />,
+    );
+    const halo = getByTestId('role-outer-halo');
+    expect(halo.getAttribute('data-role')).toBe('attacker');
+  });
+
+  it('mono-G controller paints var(--color-mana-green-glow) background', () => {
+    const { getByTestId } = render(
+      <RoleOuterHalo combatRole="attacker" controllerColorIdentity={['G']} />,
+    );
+    const halo = getByTestId('role-outer-halo');
+    expect(halo.style.background).toContain('var(--color-mana-green-glow)');
+  });
+
+  it('multicolor BR controller paints a 2-arc conic gradient', () => {
+    const { getByTestId } = render(
+      <RoleOuterHalo
+        combatRole="attacker"
+        controllerColorIdentity={['B', 'R']}
+      />,
+    );
+    const halo = getByTestId('role-outer-halo');
+    // jsdom collapses to lowercase. Match the constructed gradient
+    // shape directly via the function name.
+    expect(halo.style.background).toContain('conic-gradient');
+    expect(halo.style.background).toContain('var(--color-mana-black-glow)');
+    expect(halo.style.background).toContain('var(--color-mana-red-glow)');
+  });
+
+  it('colorless controller (empty identity) paints the silver-grey neutral', () => {
+    const { getByTestId } = render(
+      <RoleOuterHalo combatRole="attacker" controllerColorIdentity={[]} />,
+    );
+    const halo = getByTestId('role-outer-halo');
+    expect(halo.style.background).toContain('var(--color-team-neutral)');
+  });
+
+  it('undefined controllerColorIdentity falls back to neutral (legacy variant safety net)', () => {
+    const { getByTestId } = render(
+      <RoleOuterHalo combatRole="attacker" controllerColorIdentity={undefined} />,
+    );
+    const halo = getByTestId('role-outer-halo');
+    expect(halo.style.background).toContain('var(--color-team-neutral)');
+  });
+
+  it('halo is pointer-events:none and aria-hidden (T1 + decorative)', () => {
+    const { getByTestId } = render(
+      <RoleOuterHalo combatRole="attacker" controllerColorIdentity={['G']} />,
+    );
+    const halo = getByTestId('role-outer-halo');
+    expect(halo.style.pointerEvents).toBe('none');
+    expect(halo.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('halo sits at -2.5px inset (frame around cardart, T3-safe — cardart paints over center)', () => {
+    const { getByTestId } = render(
+      <RoleOuterHalo combatRole="attacker" controllerColorIdentity={['G']} />,
+    );
+    const halo = getByTestId('role-outer-halo');
+    expect(halo.style.inset).toBe('-2.5px');
+  });
+
+  it('halo border-radius is calc(--radius-md + 2.5px) — uniform-thickness frame at corners', () => {
+    const { getByTestId } = render(
+      <RoleOuterHalo combatRole="attacker" controllerColorIdentity={['G']} />,
+    );
+    const halo = getByTestId('role-outer-halo');
+    expect(halo.style.borderRadius).toContain('calc(');
+    expect(halo.style.borderRadius).toContain('var(--radius-md');
+  });
+});
+
+/* ===================================================================
+ * Slice 4-B — DOM-order invariant inside TabletopCardButton.
+ *
+ * Pinned because the design relies on RoleOuterHalo painting BEFORE
+ * <CardFace> (so cardart covers the center and only the halo frame
+ * remains visible) and RoleMarkers painting AFTER <CardFace> (so the
+ * inner ring + brackets aren't occluded by cardart pixels). A future
+ * refactor that reorders TabletopCardButton's children would silently
+ * break the visual without this regression test.
+ * =================================================================*/
+
+describe('TabletopCardButton DOM-order invariant (slice 4-B layering)', () => {
+  it('outer halo paints BEFORE card face, markers paint AFTER (combat creature)', () => {
+    const { container } = render(
+      <TabletopCardButton
+        perm={makePerm()}
+        clickable={false}
+        onObjectClick={undefined}
+        isEligibleTarget={false}
+        isEligibleCombat={false}
+        combatRole="attacker"
+        controllerColorIdentity={['G']}
+      />,
+    );
+    const button = container.querySelector('button');
+    expect(button).not.toBeNull();
+    const children = Array.from(button!.children);
+    const haloIdx = children.findIndex(
+      (c) => c.querySelector('[data-testid="role-outer-halo"]') !== null
+        || c.getAttribute('data-testid') === 'role-outer-halo',
+    );
+    const markersIdx = children.findIndex(
+      (c) => c.querySelector('[data-testid="role-markers"]') !== null
+        || c.getAttribute('data-testid') === 'role-markers',
+    );
+    expect(haloIdx).toBeGreaterThanOrEqual(0);
+    expect(markersIdx).toBeGreaterThanOrEqual(0);
+    // Halo MUST come before markers in DOM order (paints behind
+    // cardart; markers paint on top).
+    expect(haloIdx).toBeLessThan(markersIdx);
+  });
+
+  it('non-combat creature has neither halo nor markers in the DOM', () => {
+    const { container } = render(
+      <TabletopCardButton
+        perm={makePerm()}
+        clickable={false}
+        onObjectClick={undefined}
+        isEligibleTarget={false}
+        isEligibleCombat={false}
+        combatRole={null}
+        controllerColorIdentity={['G']}
+      />,
+    );
+    expect(
+      container.querySelector('[data-testid="role-outer-halo"]'),
+    ).toBeNull();
+    expect(container.querySelector('[data-testid="role-markers"]')).toBeNull();
   });
 });

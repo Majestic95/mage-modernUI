@@ -96,6 +96,23 @@ export function Battlefield({
     }
     return roles;
   }, [gv.combat]);
+  // Slice 4-B — player display name → commander color identity for
+  // per-creature outer halos. Threaded down through PlayerArea →
+  // TabletopBuckets → tabletopBucketStacking, where each
+  // TabletopCardButton resolves its `perm.controllerName` via this
+  // map and passes the result to RoleOuterHalo. Keyed by name (not
+  // UUID) because WebPermanentView only carries `controllerName` on
+  // the wire — names are server-enforced unique within a game so
+  // collisions aren't a concern.
+  const colorIdentityByPlayerName = useMemo<
+    Map<string, readonly string[]>
+  >(() => {
+    const m = new Map<string, readonly string[]>();
+    for (const p of gv.players) {
+      m.set(p.name, p.colorIdentity ?? []);
+    }
+    return m;
+  }, [gv.players]);
 
   // Slice 70-F — floating drag preview moved to GameTable. With the
   // hand region now a sibling of the battlefield region, the
@@ -408,6 +425,7 @@ export function Battlefield({
                 eligibleTargetIds={eligibleTargetIds}
                 eligibleCombatIds={eligibleCombatIds}
                 combatRoles={combatRoles}
+                colorIdentityByPlayerName={colorIdentityByPlayerName}
                 isDropTarget={drag != null}
                 onBoardDrop={onBoardDrop}
                 // Slice 69b (D13) — clockwise tab order preserved.
@@ -542,6 +560,7 @@ export function Battlefield({
               eligibleTargetIds={eligibleTargetIds}
               eligibleCombatIds={eligibleCombatIds}
               combatRoles={combatRoles}
+              colorIdentityByPlayerName={colorIdentityByPlayerName}
               isDropTarget={drag != null}
               onBoardDrop={onBoardDrop}
               tabIndex={9}
@@ -598,6 +617,7 @@ export function Battlefield({
             eligibleTargetIds={eligibleTargetIds}
             eligibleCombatIds={eligibleCombatIds}
             combatRoles={combatRoles}
+            colorIdentityByPlayerName={colorIdentityByPlayerName}
             isDropTarget={false}
             onBoardDrop={onBoardDrop}
             tabIndex={9}

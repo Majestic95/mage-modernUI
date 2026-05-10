@@ -89,6 +89,7 @@ export function TabletopBuckets({
   eligibleTargetIds,
   eligibleCombatIds,
   combatRoles,
+  colorIdentityByPlayerName,
 }: {
   buckets: TabletopBucketsData;
   position: PlayerAreaPosition;
@@ -102,6 +103,13 @@ export function TabletopBuckets({
   eligibleTargetIds?: ReadonlySet<string>;
   eligibleCombatIds?: ReadonlySet<string>;
   combatRoles?: ReadonlyMap<string, 'attacker' | 'blocker'>;
+  // Slice 4-B — controller-name → commander color identity lookup
+  // for the per-creature outer halo. Threaded from Battlefield.tsx
+  // through PlayerArea. Optional to preserve existing test renders.
+  // `| undefined` widens for `exactOptionalPropertyTypes:true` —
+  // PlayerArea always passes the prop (which itself may be
+  // undefined) rather than conditionally omitting it.
+  colorIdentityByPlayerName?: ReadonlyMap<string, readonly string[]> | undefined;
 }) {
   const tint = tintForIdentity(colorIdentity);
   // Buckets stack along the pod's LONG axis. Top/bottom pods are
@@ -137,6 +145,7 @@ export function TabletopBuckets({
         eligibleTargetIds={eligibleTargetIds}
         eligibleCombatIds={eligibleCombatIds}
         combatRoles={combatRoles}
+        colorIdentityByPlayerName={colorIdentityByPlayerName}
       />
       <BucketBox
         kind="creatures"
@@ -150,6 +159,7 @@ export function TabletopBuckets({
         eligibleTargetIds={eligibleTargetIds}
         eligibleCombatIds={eligibleCombatIds}
         combatRoles={combatRoles}
+        colorIdentityByPlayerName={colorIdentityByPlayerName}
       />
       <BucketBox
         kind="artifactsEnchantments"
@@ -163,6 +173,7 @@ export function TabletopBuckets({
         eligibleTargetIds={eligibleTargetIds}
         eligibleCombatIds={eligibleCombatIds}
         combatRoles={combatRoles}
+        colorIdentityByPlayerName={colorIdentityByPlayerName}
       />
       {openKind !== null && (
         <ZoneBrowser
@@ -199,6 +210,7 @@ function BucketBox({
   eligibleTargetIds,
   eligibleCombatIds,
   combatRoles,
+  colorIdentityByPlayerName,
 }: {
   kind: BucketKind;
   label: string;
@@ -211,6 +223,7 @@ function BucketBox({
   eligibleTargetIds: ReadonlySet<string> | undefined;
   eligibleCombatIds: ReadonlySet<string> | undefined;
   combatRoles: ReadonlyMap<string, 'attacker' | 'blocker'> | undefined;
+  colorIdentityByPlayerName: ReadonlyMap<string, readonly string[]> | undefined;
 }) {
   // Fixed flex-basis pinned to the percentage; flex-grow:0 +
   // flex-shrink:0 lock the bucket to that height regardless of
@@ -318,6 +331,7 @@ function BucketBox({
                   eligibleTargetIds={eligibleTargetIds}
                   eligibleCombatIds={eligibleCombatIds}
                   combatRoles={combatRoles}
+                  colorIdentityByPlayerName={colorIdentityByPlayerName}
                 />
               );
             }
@@ -372,6 +386,9 @@ function BucketBox({
                     isEligibleTarget={isEligibleTarget}
                     isEligibleCombat={isEligibleCombat}
                     combatRole={combatRole}
+                    controllerColorIdentity={colorIdentityByPlayerName?.get(
+                      p.controllerName,
+                    )}
                   />
                 </div>
                 {group.attachments.map((att, idx) => {
@@ -403,6 +420,9 @@ function BucketBox({
                         isEligibleTarget={attEligibleTarget}
                         isEligibleCombat={attEligibleCombat}
                         combatRole={null}
+                        controllerColorIdentity={colorIdentityByPlayerName?.get(
+                          att.controllerName,
+                        )}
                       />
                     </div>
                   );

@@ -17,6 +17,7 @@ import { describe, it, expect } from 'vitest';
 import {
   arrowStrokeForColorIdentity,
   computeTabletopZoneBackground,
+  controllerOuterRingBackground,
   defenderColorIdentity,
 } from './halo';
 
@@ -233,3 +234,70 @@ describe('arrowStrokeForColorIdentity', () => {
   });
 });
 
+/* ===================================================================
+ * Bundle 4 / Slice 4-B — controllerOuterRingBackground tests.
+ * =================================================================*/
+
+describe('controllerOuterRingBackground', () => {
+  it('empty colorIdentity → silver-grey neutral (matches Bundle 1 colorless beam)', () => {
+    expect(controllerOuterRingBackground([])).toBe('var(--color-team-neutral)');
+  });
+
+  it.each([
+    ['W', 'white'],
+    ['U', 'blue'],
+    ['B', 'black'],
+    ['R', 'red'],
+    ['G', 'green'],
+  ])('mono-%s → --color-mana-%s-glow (alpha-reduced family)', (code, name) => {
+    expect(controllerOuterRingBackground([code])).toBe(
+      `var(--color-mana-${name}-glow)`,
+    );
+  });
+
+  it('two colors → conic-gradient with 2 arcs at 180° each (W/U)', () => {
+    const bg = controllerOuterRingBackground(['W', 'U']);
+    expect(bg).toMatch(/^conic-gradient\(from var\(--halo-angle, 0deg\),/);
+    expect(bg).toContain('var(--color-mana-white-glow) 0deg 180deg');
+    expect(bg).toContain('var(--color-mana-blue-glow) 180deg 360deg');
+  });
+
+  it('five colors WUBRG → 5 arcs at 72°', () => {
+    const bg = controllerOuterRingBackground(['W', 'U', 'B', 'R', 'G']);
+    expect(bg).toContain('var(--color-mana-white-glow) 0deg 72deg');
+    expect(bg).toContain('var(--color-mana-blue-glow) 72deg 144deg');
+    expect(bg).toContain('var(--color-mana-black-glow) 144deg 216deg');
+    expect(bg).toContain('var(--color-mana-red-glow) 216deg 288deg');
+    expect(bg).toContain('var(--color-mana-green-glow) 288deg 360deg');
+  });
+
+  it('unknown color code falls back to --color-team-neutral inside the gradient', () => {
+    // Defends against a future engine upgrade with a sixth color
+    // (e.g. hypothetical 'X'). The fallback prevents a transparent
+    // band from appearing in the gradient, matching the precaution
+    // already in computeTabletopZoneBackground.
+    const bg = controllerOuterRingBackground(['W', 'X']);
+    expect(bg).toContain('var(--color-mana-white-glow) 0deg 180deg');
+    expect(bg).toContain('var(--color-team-neutral) 180deg 360deg');
+  });
+
+  it('returns the solid token (not a gradient) for one-color identity', () => {
+    // Sanity-check the 1-color short-circuit — no point wrapping a
+    // single solid color in a conic-gradient.
+    const bg = controllerOuterRingBackground(['G']);
+    expect(bg).not.toMatch(/conic-gradient/);
+    expect(bg).toBe('var(--color-mana-green-glow)');
+  });
+
+  it('colorless empty identity returns neutral grey (NOT the warm ivory zone background)', () => {
+    // Distinct from `computeTabletopZoneBackground([], false)` which
+    // returns `var(--tabletop-zone-colorless)` (warm ivory + gold).
+    // The outer ring stays in the silver-grey neutral family for
+    // colorless commanders so it doesn't clash with the rest of
+    // Bundle 4's visual vocabulary.
+    expect(controllerOuterRingBackground([])).toBe('var(--color-team-neutral)');
+    expect(controllerOuterRingBackground([])).not.toBe(
+      'var(--tabletop-zone-colorless)',
+    );
+  });
+});

@@ -308,3 +308,57 @@ export function arrowStrokeForColorIdentity(
 // `combatArrowGeometry.ts` (the only consumer). WCAG 1.4.1 redundant-
 // signal claim narrowed — color is now the sole differentiator;
 // re-introduce dash variation if a future a11y audit insists.
+
+/* ===================================================================
+ * Bundle 4 / Slice 4-B — combat-role outer halo for battlefield
+ * creatures. Maps a creature's controller's commander color
+ * identity to a CSS background expression (token reference for
+ * mono-color, conic-gradient for multi-color, neutral for
+ * colorless/unknown).
+ *
+ * Parallel shape to {@link computeTabletopZoneBackground} (same
+ * mechanism, same alpha-reduced glow tokens) but with two
+ * differences:
+ *   1. No `eliminated` parameter — creature halos are gated by the
+ *      caller's combat-role check, not by player-state.
+ *   2. Empty colorIdentity returns the silver-grey neutral
+ *      (`--color-team-neutral`) rather than zone-background's warm
+ *      ivory `--tabletop-zone-colorless`. The neutral matches
+ *      Bundle 1's defender-beam colorless fallback so colorless-
+ *      commander creatures don't suddenly read as "warm wood frame"
+ *      when the rest of the visual vocabulary is silver-grey.
+ * =================================================================*/
+
+/**
+ * Maps a creature's controller's commander color identity to a CSS
+ * background expression for slice 4-B's outer halo. Same alpha-
+ * reduced glow tokens as Bundle 1's defender beams so three creature
+ * halos at the central focal cell don't compound to a saturation
+ * spike against the tabletop pod's already-tinted zone background.
+ *
+ * <ul>
+ *   <li>Empty / unknown identity → {@code var(--color-team-neutral)}
+ *       (silver-grey neutral, matches Bundle 1 colorless beam).
+ *   <li>Single color → {@link manaGlowTokenForCode} CSS variable
+ *       reference.
+ *   <li>Multi color → conic-gradient with N equal arcs (360/N each).
+ * </ul>
+ */
+export function controllerOuterRingBackground(
+  colorIdentity: readonly string[],
+): string {
+  if (colorIdentity.length === 0) {
+    return 'var(--color-team-neutral)';
+  }
+  if (colorIdentity.length === 1) {
+    return manaGlowTokenForCode(colorIdentity[0]!);
+  }
+  const stops = colorIdentity
+    .map((code, i) => {
+      const start = (i * 360) / colorIdentity.length;
+      const end = ((i + 1) * 360) / colorIdentity.length;
+      return `${manaGlowTokenForCode(code)} ${start}deg ${end}deg`;
+    })
+    .join(', ');
+  return `conic-gradient(from var(--halo-angle, 0deg), ${stops})`;
+}

@@ -33,6 +33,7 @@ export function PlayerArea({
   eligibleTargetIds = EMPTY_ID_SET,
   eligibleCombatIds,
   combatRoles,
+  colorIdentityByPlayerName,
   isDropTarget,
   onBoardDrop,
   tabIndex,
@@ -79,6 +80,15 @@ export function PlayerArea({
    * their role. Drives the ATK / BLK badge on each chip.
    */
   combatRoles: Map<string, 'attacker' | 'blocker'>;
+  /**
+   * Slice 4-B — controller-name → commander color identity lookup
+   * for per-creature outer halos. Threaded from Battlefield.tsx.
+   * Optional so legacy callers + non-tabletop variants don't break.
+   * `| undefined` widens for `exactOptionalPropertyTypes:true` —
+   * keeps the prop's two type sites (here + TabletopBuckets)
+   * structurally identical.
+   */
+  colorIdentityByPlayerName?: ReadonlyMap<string, readonly string[]> | undefined;
   /**
    * Slice 36 â€” true while a hand-card drag is in progress. Adds a
    * dashed ring around the area so the user can see where releasing
@@ -491,6 +501,7 @@ export function PlayerArea({
             eligibleTargetIds={eligibleTargetIds}
             eligibleCombatIds={eligibleCombatIds}
             combatRoles={combatRoles}
+            colorIdentityByPlayerName={colorIdentityByPlayerName}
           />
         ) : allEmpty ? (
           <div className="flex flex-col gap-1.5">
