@@ -117,6 +117,15 @@ export const UNTAP_STAGGER_DELAY_MS = 50;
 export const ARROW_REVEAL_STEP_MS = 90;
 export const ARROW_REVEAL_MAX_INDEX = 5;
 
+// Bundle 4 / Slice 4-C — combat-eligibility shimmer. Slow sine-wave
+// alpha pulse on creatures the engine considers legal during
+// DECLARE_ATTACKERS / DECLARE_BLOCKERS. 1500ms ≈ slow breathing —
+// reads as ambient "you can click these" wayfinding rather than
+// urgent flashing. Wrapped in `@media (prefers-reduced-motion:
+// no-preference)` in tokens.css so reduced-motion users see only
+// the existing static ring (the source-of-truth fallback).
+export const COMBAT_ELIGIBILITY_PULSE_MS = 1500;
+
 // CSS transition-duration values in milliseconds.
 export const STACK_ZONE_COLLAPSE_MS = 200;
 export const LIFE_TOTAL_COLOR_MS = 300;

@@ -157,6 +157,28 @@ input[type="checkbox"] {
 }
 
 /*
+ * Bundle 4 / Slice 4-C — combat-eligibility shimmer.
+ *
+ * Slow 1500ms sine-wave alpha pulse on the existing static
+ * `ring-2 ring-amber-400/60` eligibility ring (CardFace.tsx:319).
+ * Layered on as an additive box-shadow so the static ring stays as
+ * the source-of-truth visual cue; under `prefers-reduced-motion:
+ * reduce` the global rule at the bottom of this file kills the
+ * keyframe but the static ring keeps painting (additive enhancement,
+ * never subtractive).
+ *
+ * `rgb(251 191 36)` = Tailwind amber-400 — same hue as the static
+ * ring so the pulse reads as breathing, not as a separate signal.
+ * 1500ms cadence sits between the 1000ms targeted-pulse (urgent)
+ * and the 1900ms player-active-halo (ambient) — registers as
+ * "you can click these" wayfinding without competing for attention.
+ */
+@keyframes combat-eligibility-pulse {
+  0%, 100% { box-shadow: 0 0 6px 1px rgb(251 191 36 / 0.30); }
+  50%      { box-shadow: 0 0 6px 1px rgb(251 191 36 / 0.65); }
+}
+
+/*
  * 2026-05-03 — active-player lane glow. Mirrors the portrait
  * halo's breathing rhythm but expressed as a box-shadow pulse on
  * the lane wrapper (asymmetric T layout). At rest the lane carries
@@ -610,6 +632,14 @@ input[type="checkbox"] {
 
 .animate-card-targeted-pulse {
   animation: card-targeted-pulse 1000ms cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+/* Bundle 4 / Slice 4-C — combat-eligibility shimmer. Duration
+ * mirrors `COMBAT_ELIGIBILITY_PULSE_MS` in
+ * webclient/src/animation/transitions.ts (motion-vocabulary
+ * registry — single source of truth for the cadence). */
+.animate-combat-eligibility-pulse {
+  animation: combat-eligibility-pulse 1500ms cubic-bezier(0.45, 0, 0.55, 1) infinite;
 }
 
 .animate-lane-active-glow {

@@ -346,3 +346,70 @@ describe('CardFace damaged toughness display (CR 121.3)', () => {
     expect(tough.getAttribute('data-damaged')).toBeNull();
   });
 });
+
+/* ===================================================================
+ * Bundle 4 / Slice 4-C — combat-eligibility shimmer.
+ *
+ * Coverage matrix:
+ *   - isEligibleCombat=true → element carries both the static ring
+ *     class AND the new pulse class.
+ *   - isEligibleCombat=false → neither class present (creature is
+ *     not legal during the current declare-step).
+ *   - Reduced-motion is handled by the global rule at index.css:644
+ *     and is not a CardFace.tsx concern — pulse class still applied,
+ *     keyframe is suppressed by the media query. We test the class
+ *     application here; the suppression behavior is a CSS contract
+ *     covered by the project-wide reduced-motion machinery.
+ * =================================================================*/
+
+describe('CardFace combat eligibility shimmer (slice 4-C)', () => {
+  it('isEligibleCombat=true adds both the static ring and the pulse class', () => {
+    const { container } = render(
+      <CardFace
+        card={BASE_CARD}
+        size="battlefield"
+        perm={buildPerm(BASE_CARD, 0)}
+        isEligibleCombat={true}
+      />,
+    );
+    // Find the element carrying the eligibility ring — the
+    // composed className includes both `ring-2 ring-amber-400/60`
+    // (static) and `animate-combat-eligibility-pulse` (animated).
+    const ringEl = container.querySelector(
+      '.animate-combat-eligibility-pulse',
+    );
+    expect(ringEl).not.toBeNull();
+    expect(ringEl?.className).toContain('ring-2');
+    expect(ringEl?.className).toContain('ring-amber-400/60');
+  });
+
+  it('isEligibleCombat=false has neither the static ring nor the pulse class', () => {
+    const { container } = render(
+      <CardFace
+        card={BASE_CARD}
+        size="battlefield"
+        perm={buildPerm(BASE_CARD, 0)}
+        isEligibleCombat={false}
+      />,
+    );
+    expect(
+      container.querySelector('.animate-combat-eligibility-pulse'),
+    ).toBeNull();
+    expect(container.querySelector('.ring-amber-400\\/60')).toBeNull();
+  });
+
+  it('omitted isEligibleCombat (default false) has no pulse class', () => {
+    // Default behavior — slice 4-C must not regress non-combat
+    // creatures into showing the pulse.
+    const { container } = render(
+      <CardFace
+        card={BASE_CARD}
+        size="battlefield"
+        perm={buildPerm(BASE_CARD, 0)}
+      />,
+    );
+    expect(
+      container.querySelector('.animate-combat-eligibility-pulse'),
+    ).toBeNull();
+  });
+});

@@ -315,8 +315,14 @@ export function CardFace(props: CardFaceProps): JSX.Element {
   // Battlefield-specific border + ring + tap transform.
   const sickBorder =
     isBattlefield && sick ? 'border-zinc-500/70 border-dashed' : spec.border;
+  // Slice 4-C — pulse class layers an additive box-shadow on top of
+  // the static ring. Under `prefers-reduced-motion: reduce` the
+  // global rule at index.css:644 kills the keyframe but the static
+  // ring keeps painting — additive enhancement, never subtractive.
   const combatRing =
-    isBattlefield && isEligibleCombat ? 'ring-2 ring-amber-400/60' : '';
+    isBattlefield && isEligibleCombat
+      ? 'ring-2 ring-amber-400/60 animate-combat-eligibility-pulse'
+      : '';
   const tapClass = isBattlefield && tapped ? 'opacity-60' : '';
   // Slice 70-Y.1 — purple pulse for "engine is asking you to click
   // this card." Same color as combat targeting per picture-catalog
