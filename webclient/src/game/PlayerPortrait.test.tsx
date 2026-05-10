@@ -9,7 +9,7 @@
  * a small commander factory for the commandList[] entries.
  */
 import { describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { PlayerPortrait } from './PlayerPortrait';
 import {
   webPlayerViewSchema,
@@ -486,19 +486,25 @@ describe('PlayerPortrait — state composition', () => {
 });
 
 describe('PlayerPortrait — accessibility', () => {
-  it('has role="img" with derived aria-label (commander present)', () => {
+  // Slice 1-X.2 — image semantics moved from the outer wrapper onto
+  // the inner image surface so the IncomingTag <button> sibling
+  // (slice 1-B) is no longer a descendant of role="img" (ARIA 1.2
+  // leaf-role rule).
+  it('inner <img> carries the load-bearing aria-name via alt={label}', () => {
     render(<PlayerPortrait player={makePlayer()} />);
-    const portrait = screen.getByTestId('player-portrait');
-    expect(portrait).toHaveAttribute('role', 'img');
-    expect(portrait).toHaveAccessibleName(
-      /alice portrait, commander Atraxa/,
-    );
+    const img = screen.getByTestId('player-portrait-image');
+    // <img> has implicit role="img"; the alt text is the canonical
+    // SR-announced accessible name.
+    expect(img).toHaveAccessibleName(/alice portrait, commander Atraxa/);
   });
 
   it('aria-label falls back to player-only when no commander', () => {
+    // No commander art → FallbackInitial path (not <img>). The
+    // accessible name lives on the fallback's role="img"+aria-label
+    // pair after slice 1-X.2's ARIA restructure.
     render(<PlayerPortrait player={makePlayer({ commandList: [] })} />);
-    const portrait = screen.getByTestId('player-portrait');
-    expect(portrait).toHaveAccessibleName('alice portrait');
+    const fallback = screen.getByTestId('player-portrait-fallback');
+    expect(fallback).toHaveAccessibleName('alice portrait');
   });
 
   it('caller can override via ariaLabel prop', () => {
@@ -509,17 +515,60 @@ describe('PlayerPortrait — accessibility', () => {
       />,
     );
     expect(
-      screen.getByTestId('player-portrait'),
+      screen.getByTestId('player-portrait-image'),
     ).toHaveAccessibleName('Compact game-log avatar for alice');
   });
 
-  it('the inner image is aria-hidden via empty alt (decoration)', () => {
-    // The role="img" + aria-label on the wrapper is the SR
-    // announcement surface; the inner <img> is decoration. Empty
-    // alt="" is the canonical pattern for decorative images.
+  it('outer portrait wrapper does NOT carry role="img" (slice 1-X.2 — leaf-role nesting fix)', () => {
+    // Image semantics now live on the inner <img>/FallbackInitial.
+    // The wrapper is a plain positioned container so its IncomingTag
+    // child renders as a button in the accessibility tree, not as a
+    // descendant of an ARIA leaf role.
     render(<PlayerPortrait player={makePlayer()} />);
+    const portrait = screen.getByTestId('player-portrait');
+    expect(portrait).not.toHaveAttribute('role');
+    expect(portrait).not.toHaveAttribute('aria-label');
+  });
+
+  it('FallbackInitial carries role="img" + aria-label when commander art is unavailable', () => {
+    render(
+      <PlayerPortrait
+        player={makePlayer({ commandList: [] })}
+      />,
+    );
+    const fallback = screen.getByTestId('player-portrait-fallback');
+    expect(fallback).toHaveAttribute('role', 'img');
+    expect(fallback).toHaveAccessibleName('alice portrait');
+  });
+
+  it('img runtime error swaps to FallbackInitial (no broken-image alt-text leak)', () => {
+    // UX critic notable on slice 1-X.2 — `alt={label}` is the load-
+    // bearing accessible name now, but a 404 Scryfall URL would
+    // paint the alt text as visible content inside the empty
+    // portrait circle. The onError handler swaps to FallbackInitial
+    // (which is silent visually) when the underlying image fails.
+    const { rerender } = render(
+      <PlayerPortrait player={makePlayer()} />,
+    );
     const img = screen.getByTestId('player-portrait-image');
-    expect(img).toHaveAttribute('alt', '');
+    // Pre-error: img path renders.
+    expect(screen.queryByTestId('player-portrait-fallback')).toBeNull();
+
+    fireEvent.error(img);
+
+    // Post-error: fallback path renders, img unmounted.
+    expect(screen.queryByTestId('player-portrait-image')).toBeNull();
+    expect(screen.getByTestId('player-portrait-fallback')).toBeTruthy();
+    // Accessible name preserved on the fallback.
+    expect(
+      screen.getByTestId('player-portrait-fallback'),
+    ).toHaveAccessibleName(/alice portrait, commander Atraxa/);
+
+    // Re-render with the same player — error state persists for
+    // this URL (no spurious retry loop on re-render).
+    rerender(<PlayerPortrait player={makePlayer()} />);
+    expect(screen.queryByTestId('player-portrait-image')).toBeNull();
+    expect(screen.getByTestId('player-portrait-fallback')).toBeTruthy();
   });
 
   it('halo stack is aria-hidden (decoration; color-identity SR signal lives on the parent PlayerFrame)', () => {
