@@ -365,11 +365,11 @@ describe('DefenderBeams — beam geometry + color', () => {
     const beam = container.querySelector(
       `[data-testid="defender-beam-${OPP1_ID}"]`,
     );
-    // Slice 1-X-tunings (live-test verdict 2026-05-09): bumped
-    // BEAM_OPACITY from 0.18 to 0.234 (30% stronger) so the wash
-    // reads as ambient pressure under the post-1-X.3 alpha-reduced
-    // glow tokens + tighter cone aperture.
-    expect(beam?.getAttribute('style') ?? '').toContain('opacity: 0.234');
+    // Slice 1-X-tunings round 2 (live-test verdict 2026-05-09):
+    // bumped BEAM_OPACITY 0.234 → 0.468 (doubled) because the
+    // tighter π/24 cone covers less area and the colored beam
+    // needed to register against the dark battlefield + glow zones.
+    expect(beam?.getAttribute('style') ?? '').toContain('opacity: 0.468');
   });
 
   it('clip-path geometry aims the cone toward the defender (right-side opp → positive aim X)', () => {

@@ -106,28 +106,24 @@ export function IncomingTag({ playerId }: { playerId: string }) {
       }}
       className={
         // Position inside PlayerPortrait's `position: relative`
-        // wrapper. Anchored top-right of the portrait. Slice 1-B
-        // critic-pass: pushed from -top-1/-right-1 (4px) to
-        // -top-2/-right-2 (8px) to clear the active-player halo
-        // bloom radius (slice 70-Z bloom extends ~4-11px outside
-        // the portrait box and pulses opacity, which would have
-        // shown through the badge's 85% bg as a flickering corner).
-        // T1: still doesn't enlarge the portrait footprint — the
-        // badge is absolute, not part of the portrait's box.
-        'pointer-events-auto absolute -top-2 -right-2 z-10 ' +
+        // wrapper. Anchored centered ABOVE the portrait. Slice
+        // 1-X-tunings round-2 (live-test verdict 2026-05-09):
+        // wrapping looked bad on the top pod (badge collided with
+        // the GameHeader); single-line text hovering above the
+        // portrait reads as a clean label. `bottom-full` anchors
+        // the badge's bottom edge at the portrait's top edge;
+        // `mb-1.5` adds breathing space (6px gap); `left-1/2 +
+        // -translate-x-1/2` centers horizontally; `whitespace-
+        // nowrap` keeps the badge to one line so the text doesn't
+        // re-wrap. T1: still `position: absolute` — no change to
+        // portrait box footprint.
+        'pointer-events-auto absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 z-10 ' +
         // Slice 1-B critic-pass: bumped text from text-[10px] to
         // text-[11px] for readability (10px is below Material 12px
         // floor and iOS HIG 11pt minimum). Dropped tracking-wide so
         // the wider letters fit within the 120px footprint cap.
-        // Slice 1-X-tunings (live-test verdict): dropped
-        // `whitespace-nowrap` + capped `max-w-[88px]` so the wider
-        // "incoming N — M unblocked" string wraps to two lines
-        // instead of overflowing right into the adjacent pod's
-        // battlefield zone. `leading-tight` keeps the two lines
-        // visually compact; `text-right` mirrors the top-right
-        // anchor.
         'px-1.5 py-0.5 rounded text-[11px] uppercase ' +
-        'font-semibold leading-tight max-w-[88px] text-right select-none ' +
+        'font-semibold whitespace-nowrap select-none ' +
         'border shadow-sm transition-colors duration-100 ' +
         // Slice 1-B critic-pass: WCAG 2.4.7 (Focus Visible) —
         // keyboard-focused badge gets an amber ring. Slice 1-X.3
