@@ -33,6 +33,7 @@ import type { ReactNode } from 'react';
 import type { WebPermanentView } from '../api/schemas';
 import { CardFace } from './CardFace';
 import { HoverCardDetail } from './HoverCardDetail';
+import { RoleMarkers } from './RoleMarkers';
 
 export type BucketKind = 'lands' | 'creatures' | 'artifactsEnchantments';
 
@@ -113,7 +114,7 @@ export function TabletopCardButton({
             : undefined
         }
         className={
-          'block p-0 m-0 bg-transparent border-0 outline-none ' +
+          'relative block p-0 m-0 bg-transparent border-0 outline-none ' +
           (clickable ? 'cursor-pointer' : 'cursor-default')
         }
         aria-label={perm.card.name}
@@ -127,6 +128,7 @@ export function TabletopCardButton({
           combatRole={combatRole}
           targetableForDialog={isEligibleTarget}
         />
+        <RoleMarkers combatRole={combatRole} />
       </button>
     </HoverCardDetail>
   );

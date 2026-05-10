@@ -128,6 +128,17 @@
   --color-mana-multicolor-glow: rgba(232, 197, 108, 0.55);
 
   /*
+   * Bundle 4 / Slice 4-A — combat role markers.
+   * Warm amber-orange for attackers, cool steel-blue for blockers.
+   * Hand-tuned to be distinct from --color-team-active (amber, pin
+   * tag/active player), --color-mana-red (vivid red), and
+   * --color-mana-blue (vivid sky blue) so the combat-role signal
+   * never visually conflates with player-state or mana-color signals.
+   */
+  --color-attacker: #E89045;
+  --color-blocker: #5C9BC2;
+
+  /*
    * Slice B-1 (variant=tabletop) — colorless commander zone background.
    * Distinct from `--color-mana-colorless-glow` (cool silver-grey,
    * tuned for halo overlay) — tabletop wants colorless players to read

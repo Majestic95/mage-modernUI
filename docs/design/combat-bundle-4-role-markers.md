@@ -75,7 +75,7 @@ All four sub-features read existing fields. **No `schemaVersion` bump.** Per T5:
 
 **Key design points:**
 - Brackets sit OUTSIDE the cardart bounds (negative inset of ~3 px) so they read as a frame around the tile, not as a stamp on top of it. T3 (full Scryfall art) is preserved — no pixels covered.
-- Per-role shape redundancy: attackers get a sharp 90° L-corner; blockers get the same L-corner but with a 1 px stem extension perpendicular to the L's vertex. WCAG 1.4.1 redundant-signal claim: a deuteranopia-simulator screenshot of a mixed attacker+blocker board still distinguishes the two via shape alone.
+- Per-role shape redundancy: attackers get a sharp 90° L-corner; blockers get the same L-corner plus a 4 px 45° inward diagonal stub from the L's vertex. (Original brief said "1 px perpendicular stem"; ratified up to 4 px diagonal in slice 4-A's UI-critic pass — at `strokeWidth=2` a 1 px perpendicular stub would be subsumed by the leg's stroke and produce no readable shape difference.) WCAG 1.4.1 redundant-signal claim: a deuteranopia-simulator screenshot of a mixed attacker+blocker board still distinguishes the two via shape alone.
 - Pure SVG inside an absolutely-positioned `<div>` overlay — no CSS keyframes, no per-creature React state. Re-renders only when `combatRole` changes.
 - Footprint preservation (T1): `<RoleMarkers>` is `position: absolute; pointer-events: none`. The button's bounding box is unchanged.
 
@@ -277,7 +277,7 @@ This brief covers tile-corner brackets, role + commander-color rings, eligibilit
 ## Open questions to resolve before slices land
 
 - **Token names + hex anchors for `--color-attacker` and `--color-blocker`.** Brainstorm says "warm orange" and "cool blue" but doesn't pin a hex. Default suggestion: `--color-attacker = oklch(0.75 0.15 50)` (~ warm amber-orange, distinct from the amber `--color-team-active`); `--color-blocker = oklch(0.70 0.13 230)` (~ cool steel-blue, distinct from `--color-mana-blue`). Decide at 4-A start with a 30-min A/B against the fixture.
-- **Bracket geometry redundant-signal for color-blind users.** Default suggestion: attacker = sharp 90° L-corner; blocker = same L with 1 px stem extension (deuteranopia-distinguishable via shape alone). 4-A's UI critic pass confirms or proposes an alternative shape pairing.
+- **Bracket geometry redundant-signal for color-blind users.** ~~Default suggestion: attacker = sharp 90° L-corner; blocker = same L with 1 px stem extension.~~ **Resolved in slice 4-A**: attacker = sharp 90° L-corner; blocker = same L + 4 px 45° inward diagonal stub from the vertex. UI critic ratified the 4 px diagonal over the original 1 px perpendicular suggestion (1 px perpendicular at `strokeWidth=2` is invisible — subsumed by the leg's stroke).
 - **Fixture extensions for 4-C and 4-D.** `?attackers=1` opt-in to park the fixture at DECLARE_ATTACKERS for the eligibility pulse; `?dense=1` opt-in to flood a pod with 6+ permanents for the LOD threshold test. Decide at 4-C / 4-D start.
 - **LOD threshold value (`LOD_FALLBACK_WIDTH_PX`).** Default suggestion: 88 px. Decide in 4-D's UI-critic pass against the actual stack-shrink fixture — may need to adjust if 88 is too aggressive or too lax.
 - **Outer ring on the `current` variant.** Deferred decision (see cross-slice section). Re-open only if user direction prioritizes legacy polish.
