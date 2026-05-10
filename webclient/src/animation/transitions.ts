@@ -108,6 +108,15 @@ export const COUNTER_POP = LIFE_FLASH_POP;
 // 50ms × N creatures gives a wave effect at start-of-turn untap.
 export const UNTAP_STAGGER_DELAY_MS = 50;
 
+// Bundle 1 / Slice 1-C — combat-arrow wave-reveal stagger. Each
+// defender's arrows fade in {@link ARROW_REVEAL_STEP_MS} after the
+// previous defender's so the user reads "this defender, then this,
+// then this" instead of all arrows popping at once. Cap at
+// {@link ARROW_REVEAL_MAX_INDEX} × step ms = 450ms total so exotic
+// 6+ player formats don't drag (4p Commander tops out at 270ms).
+export const ARROW_REVEAL_STEP_MS = 90;
+export const ARROW_REVEAL_MAX_INDEX = 5;
+
 // CSS transition-duration values in milliseconds.
 export const STACK_ZONE_COLLAPSE_MS = 200;
 export const LIFE_TOTAL_COLOR_MS = 300;

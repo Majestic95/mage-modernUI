@@ -291,6 +291,54 @@ describe('TargetingArrow', () => {
     expect(path?.hasAttribute('stroke-dasharray')).toBe(false);
   });
 
+  /* =================================================================
+   * Bundle 1 / Slice 1-C — wave-reveal stagger via revealDelayMs prop.
+   * =================================================================*/
+
+  it('forwards revealDelayMs onto the path as transition-delay (default 0ms)', () => {
+    render(
+      <TargetingArrow
+        source={{ x: 0, y: 0 }}
+        to={{ x: 10, y: 10 }}
+      />,
+    );
+    const path = screen
+      .getByTestId('targeting-arrow')
+      .querySelector('path[marker-end]');
+    // Default omits the prop -> transition-delay reads 0ms (no
+    // stagger, just the existing 120ms opacity transition).
+    expect(path?.getAttribute('style') ?? '').toContain('transition-delay: 0ms');
+  });
+
+  it('non-zero revealDelayMs serialises into transition-delay style', () => {
+    render(
+      <TargetingArrow
+        source={{ x: 0, y: 0 }}
+        to={{ x: 10, y: 10 }}
+        revealDelayMs={180}
+      />,
+    );
+    const path = screen
+      .getByTestId('targeting-arrow')
+      .querySelector('path[marker-end]');
+    // 2nd-defender arrow at 90ms cadence → 180ms.
+    expect(path?.getAttribute('style') ?? '').toContain('transition-delay: 180ms');
+  });
+
+  it('revealDelayMs={0} renders 0ms (motion-safe but not first-paint)', () => {
+    render(
+      <TargetingArrow
+        source={{ x: 0, y: 0 }}
+        to={{ x: 10, y: 10 }}
+        revealDelayMs={0}
+      />,
+    );
+    const path = screen
+      .getByTestId('targeting-arrow')
+      .querySelector('path[marker-end]');
+    expect(path?.getAttribute('style') ?? '').toContain('transition-delay: 0ms');
+  });
+
   it('two simultaneously-mounted instances carry distinct marker and gradient ids', () => {
     // Document-global SVG fragment-id resolution means two arrows
     // sharing a marker id paint with whichever marker is first in

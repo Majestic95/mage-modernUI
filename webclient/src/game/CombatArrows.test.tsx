@@ -20,7 +20,10 @@ import {
   type WebPlayerView,
 } from '../api/schemas';
 import { CombatArrows } from './CombatArrows';
-import { useArrowIsolation } from './arrowIsolationStore';
+import {
+  resetArrowsStaggered,
+  useArrowIsolation,
+} from './arrowIsolationStore';
 
 /* =====================================================================
  * Slice 1-A — minimal player fixtures for defender-color tests. Tests
@@ -188,6 +191,10 @@ beforeEach(() => {
   // each render. The store is a module singleton; without this the
   // pin would leak across tests.
   useArrowIsolation.getState().clearPin();
+  // Slice 1-C — reset the module-level stagger flag so each test
+  // starts in "first-paint eligible" state. Production callers get
+  // this for free via the phase watcher; tests need it explicit.
+  resetArrowsStaggered();
 });
 
 afterEach(() => {
@@ -197,6 +204,7 @@ afterEach(() => {
   // Slice 1-B — extra safety: clear pin after each test so a
   // failure that didn't unmount cleanly doesn't poison the next.
   useArrowIsolation.getState().clearPin();
+  resetArrowsStaggered();
 });
 
 // --- Endpoint fan ----------------------------------------------------
@@ -938,6 +946,320 @@ describe('CombatArrows — pinned-defender isolation (slice 1-B)', () => {
     // Pin SURVIVES the unmount — ready to re-engage when CombatArrows
     // remounts after the stack resolves.
     expect(useArrowIsolation.getState().pinnedDefenderId).toBe(defenderId);
+  });
+
+  /* =================================================================
+   * Bundle 1 / Slice 1-C — wave-reveal stagger.
+   * =================================================================*/
+
+  it('first-paint applies per-defender stagger to the rendered transition-delay', () => {
+    const def0 = '00000000-0000-0000-0000-0000000000aa';
+    const def1 = '00000000-0000-0000-0000-0000000000bb';
+    const def2 = '00000000-0000-0000-0000-0000000000cc';
+    mountPermanentNode('att-0', { x: 100, y: 200, w: 80, h: 112 });
+    mountPermanentNode('att-1', { x: 100, y: 400, w: 80, h: 112 });
+    mountPermanentNode('att-2', { x: 100, y: 600, w: 80, h: 112 });
+    mountPortraitNode(def0, { x: 1200, y: 100, w: 60, h: 60 });
+    mountPortraitNode(def1, { x: 1200, y: 350, w: 60, h: 60 });
+    mountPortraitNode(def2, { x: 1200, y: 600, w: 60, h: 60 });
+
+    const players = makePlayers([
+      { playerId: def0, colorIdentity: ['G'] },
+      { playerId: def1, colorIdentity: ['R'] },
+      { playerId: def2, colorIdentity: ['W'] },
+    ]);
+    const groups = [
+      makeCombatGroup({
+        defenderId: def0,
+        attackers: {
+          'att-0': makePerm(makeCard({ id: 'att-0', cardId: 'att-0' })),
+        },
+      }),
+      makeCombatGroup({
+        defenderId: def1,
+        attackers: {
+          'att-1': makePerm(makeCard({ id: 'att-1', cardId: 'att-1' })),
+        },
+      }),
+      makeCombatGroup({
+        defenderId: def2,
+        attackers: {
+          'att-2': makePerm(makeCard({ id: 'att-2', cardId: 'att-2' })),
+        },
+      }),
+    ];
+    const { container } = render(
+      <CombatArrows combat={groups} players={players} />,
+    );
+
+    const a0 = container.querySelector(
+      `path[data-arrow-defender-id="${def0}"]`,
+    );
+    const a1 = container.querySelector(
+      `path[data-arrow-defender-id="${def1}"]`,
+    );
+    const a2 = container.querySelector(
+      `path[data-arrow-defender-id="${def2}"]`,
+    );
+    // First-paint stagger: defender 0 → 0ms, defender 1 → 90ms,
+    // defender 2 → 180ms (per ARROW_REVEAL_STEP_MS = 90).
+    expect(a0?.getAttribute('style') ?? '').toContain(
+      'transition-delay: 0ms',
+    );
+    expect(a1?.getAttribute('style') ?? '').toContain(
+      'transition-delay: 90ms',
+    );
+    expect(a2?.getAttribute('style') ?? '').toContain(
+      'transition-delay: 180ms',
+    );
+  });
+
+  it('subsequent re-render with already-painted arrows zeroes the stagger', () => {
+    const defenderId = '00000000-0000-0000-0000-0000000000aa';
+    mountPermanentNode('att-1', { x: 100, y: 200, w: 80, h: 112 });
+    mountPortraitNode(defenderId, { x: 1200, y: 100, w: 60, h: 60 });
+    const players = makePlayers([
+      { playerId: defenderId, colorIdentity: ['G'] },
+    ]);
+    const groups = [
+      makeCombatGroup({
+        defenderId,
+        attackers: {
+          'att-1': makePerm(makeCard({ id: 'att-1', cardId: 'att-1' })),
+        },
+      }),
+    ];
+    const { rerender, container } = render(
+      <CombatArrows combat={groups} players={players} />,
+    );
+
+    // Re-render with the same content — useRef has the previous
+    // count, isFirstPaint flips false, all delays go to 0.
+    rerender(<CombatArrows combat={groups} players={players} />);
+
+    const arrow = container.querySelector(
+      `path[data-arrow-defender-id="${defenderId}"]`,
+    );
+    expect(arrow?.getAttribute('style') ?? '').toContain(
+      'transition-delay: 0ms',
+    );
+  });
+
+  it('prefers-reduced-motion: reduce zeroes the first-paint stagger', () => {
+    // matchMedia mock returning matches=true for the reduce query.
+    // Pattern lifted from `transitions.reducedMotion.test.tsx` so the
+    // mock shape (matches + addEventListener stubs) stays consistent
+    // with the project's other reduced-motion consumers.
+    const originalMatchMedia = window.matchMedia;
+    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+      matches: query.includes('reduce'),
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      onchange: null,
+      dispatchEvent: vi.fn(),
+    }));
+
+    try {
+      const def0 = '00000000-0000-0000-0000-0000000000aa';
+      const def1 = '00000000-0000-0000-0000-0000000000bb';
+      mountPermanentNode('att-0', { x: 100, y: 200, w: 80, h: 112 });
+      mountPermanentNode('att-1', { x: 100, y: 400, w: 80, h: 112 });
+      mountPortraitNode(def0, { x: 1200, y: 100, w: 60, h: 60 });
+      mountPortraitNode(def1, { x: 1200, y: 500, w: 60, h: 60 });
+
+      const players = makePlayers([
+        { playerId: def0, colorIdentity: ['G'] },
+        { playerId: def1, colorIdentity: ['U'] },
+      ]);
+      const groups = [
+        makeCombatGroup({
+          defenderId: def0,
+          attackers: {
+            'att-0': makePerm(makeCard({ id: 'att-0', cardId: 'att-0' })),
+          },
+        }),
+        makeCombatGroup({
+          defenderId: def1,
+          attackers: {
+            'att-1': makePerm(makeCard({ id: 'att-1', cardId: 'att-1' })),
+          },
+        }),
+      ];
+      const { container } = render(
+        <CombatArrows combat={groups} players={players} />,
+      );
+
+      // Both defenders render at 0ms despite different defenderIndex
+      // values — reduced-motion overrides the stagger.
+      const a0 = container.querySelector(
+        `path[data-arrow-defender-id="${def0}"]`,
+      );
+      const a1 = container.querySelector(
+        `path[data-arrow-defender-id="${def1}"]`,
+      );
+      expect(a0?.getAttribute('style') ?? '').toContain(
+        'transition-delay: 0ms',
+      );
+      expect(a1?.getAttribute('style') ?? '').toContain(
+        'transition-delay: 0ms',
+      );
+    } finally {
+      window.matchMedia = originalMatchMedia;
+    }
+  });
+
+  it('sparse-attacked defenders get consecutive 0ms / 90ms cadence (combat-order, not players-array order)', () => {
+    // Brief at line 147: `defenderOrder.indexOf(arrow.defenderId) * 90`.
+    // If the only attacked opponents are at players-array indices
+    // 2 and 3, the cadence should still start at 0 (first appearance
+    // in combat) — not 180ms (their players-array position). The
+    // pre-fix implementation produced 180/270 here; the fix
+    // produces 0/90.
+    const me = '00000000-0000-0000-0000-0000000000m1';
+    const opp1 = '00000000-0000-0000-0000-0000000000o1';
+    const def2 = '00000000-0000-0000-0000-0000000000d2';
+    const def3 = '00000000-0000-0000-0000-0000000000d3';
+    mountPermanentNode('att-2', { x: 100, y: 200, w: 80, h: 112 });
+    mountPermanentNode('att-3', { x: 100, y: 400, w: 80, h: 112 });
+    mountPortraitNode(def2, { x: 1200, y: 100, w: 60, h: 60 });
+    mountPortraitNode(def3, { x: 1200, y: 500, w: 60, h: 60 });
+
+    // Players list has 4 entries; only the last two are attacked.
+    const players = makePlayers([
+      { playerId: me, colorIdentity: ['G'] },
+      { playerId: opp1, colorIdentity: ['U'] },
+      { playerId: def2, colorIdentity: ['R'] },
+      { playerId: def3, colorIdentity: ['W'] },
+    ]);
+    const groups = [
+      makeCombatGroup({
+        defenderId: def2,
+        attackers: {
+          'att-2': makePerm(makeCard({ id: 'att-2', cardId: 'att-2' })),
+        },
+      }),
+      makeCombatGroup({
+        defenderId: def3,
+        attackers: {
+          'att-3': makePerm(makeCard({ id: 'att-3', cardId: 'att-3' })),
+        },
+      }),
+    ];
+    const { container } = render(
+      <CombatArrows combat={groups} players={players} />,
+    );
+
+    const a2 = container.querySelector(
+      `path[data-arrow-defender-id="${def2}"]`,
+    );
+    const a3 = container.querySelector(
+      `path[data-arrow-defender-id="${def3}"]`,
+    );
+    // Combat-order index: def2 → 0, def3 → 1. Cadence: 0ms, 90ms.
+    expect(a2?.getAttribute('style') ?? '').toContain(
+      'transition-delay: 0ms',
+    );
+    expect(a3?.getAttribute('style') ?? '').toContain(
+      'transition-delay: 90ms',
+    );
+  });
+
+  it('stagger does NOT replay on CombatArrows remount (stack-push during combat)', () => {
+    // Slice 1-C critic-pass fix: StackZoneRedesigned unmounts
+    // CombatArrows on every stack push during combat (instant cast,
+    // triggered ability). With prevArrowCount in a useRef, each
+    // remount would replay the full stagger. Module-level stagger
+    // flag in arrowIsolationStore persists across unmounts; only
+    // resets on COMBAT → non-COMBAT phase transition.
+    const def0 = '00000000-0000-0000-0000-0000000000aa';
+    const def1 = '00000000-0000-0000-0000-0000000000bb';
+    mountPermanentNode('att-0', { x: 100, y: 200, w: 80, h: 112 });
+    mountPermanentNode('att-1', { x: 100, y: 400, w: 80, h: 112 });
+    mountPortraitNode(def0, { x: 1200, y: 100, w: 60, h: 60 });
+    mountPortraitNode(def1, { x: 1200, y: 500, w: 60, h: 60 });
+
+    const players = makePlayers([
+      { playerId: def0, colorIdentity: ['G'] },
+      { playerId: def1, colorIdentity: ['U'] },
+    ]);
+    const groups = [
+      makeCombatGroup({
+        defenderId: def0,
+        attackers: {
+          'att-0': makePerm(makeCard({ id: 'att-0', cardId: 'att-0' })),
+        },
+      }),
+      makeCombatGroup({
+        defenderId: def1,
+        attackers: {
+          'att-1': makePerm(makeCard({ id: 'att-1', cardId: 'att-1' })),
+        },
+      }),
+    ];
+
+    // First render: stagger fires (first paint).
+    const { unmount, container } = render(
+      <CombatArrows combat={groups} players={players} />,
+    );
+    expect(
+      container
+        .querySelector(`path[data-arrow-defender-id="${def1}"]`)
+        ?.getAttribute('style') ?? '',
+    ).toContain('transition-delay: 90ms');
+    unmount();
+
+    // Simulated stack-push-then-resolve: same combat, fresh remount.
+    const { container: container2 } = render(
+      <CombatArrows combat={groups} players={players} />,
+    );
+    // Stagger does NOT replay — module-level flag remembers.
+    const a0 = container2.querySelector(
+      `path[data-arrow-defender-id="${def0}"]`,
+    );
+    const a1 = container2.querySelector(
+      `path[data-arrow-defender-id="${def1}"]`,
+    );
+    expect(a0?.getAttribute('style') ?? '').toContain(
+      'transition-delay: 0ms',
+    );
+    expect(a1?.getAttribute('style') ?? '').toContain(
+      'transition-delay: 0ms',
+    );
+  });
+
+  it('defenderIndex of -1 (defender not in players) clamps to 0ms (no negative-delay weirdness)', () => {
+    const ghostDefender = '00000000-0000-0000-0000-00000000ffff';
+    mountPermanentNode('att-x', { x: 100, y: 200, w: 80, h: 112 });
+    mountPortraitNode(ghostDefender, { x: 1200, y: 100, w: 60, h: 60 });
+
+    // Players list does NOT contain the defender.
+    const players = makePlayers([
+      {
+        playerId: '00000000-0000-0000-0000-000000001111',
+        colorIdentity: ['W'],
+      },
+    ]);
+    const groups = [
+      makeCombatGroup({
+        defenderId: ghostDefender,
+        attackers: {
+          'att-x': makePerm(makeCard({ id: 'att-x', cardId: 'att-x' })),
+        },
+      }),
+    ];
+    const { container } = render(
+      <CombatArrows combat={groups} players={players} />,
+    );
+    const arrow = container.querySelector(
+      `path[data-arrow-defender-id="${ghostDefender}"]`,
+    );
+    // -1 defenderIndex → clamp(0, min(-1, 5)) = 0 → 0 * 90 = 0ms.
+    expect(arrow?.getAttribute('style') ?? '').toContain(
+      'transition-delay: 0ms',
+    );
   });
 
   it('pin wins over hover (sticky filter takes precedence over cursor)', () => {

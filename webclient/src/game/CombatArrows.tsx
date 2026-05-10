@@ -1,11 +1,20 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type {
   WebCombatGroupView,
   WebPlayerView,
 } from '../api/schemas';
+import {
+  ARROW_REVEAL_MAX_INDEX,
+  ARROW_REVEAL_STEP_MS,
+} from '../animation/transitions';
 import { TargetingArrow } from './TargetingArrow';
 import { useCombatArrowGeometry } from './combatArrowGeometry';
-import { useArrowIsolation } from './arrowIsolationStore';
+import {
+  getArrowsAlreadyStaggered,
+  markArrowsStaggered,
+  useArrowIsolation,
+} from './arrowIsolationStore';
+import { usePrefersReducedMotion } from './usePrefersReducedMotion';
 
 /**
  * Combat-arrow overlay — extracted from StackZone.tsx (was at 865
@@ -40,6 +49,12 @@ import { useArrowIsolation } from './arrowIsolationStore';
 // while preserving identifiability of every color identity.
 const ARROW_DIM_OPACITY = 0.5;
 
+// Slice 1-C — wave-reveal stagger constants live in
+// `webclient/src/animation/transitions.ts` per the project's motion-
+// registry convention (Graphical critic 1-C, GC-N3). Both
+// `ARROW_REVEAL_STEP_MS` and `ARROW_REVEAL_MAX_INDEX` are imported
+// from there so future retunes happen in one place.
+
 export function CombatArrows({
   combat,
   players = [],
@@ -61,6 +76,42 @@ export function CombatArrows({
   // cursor hover); cursor hover still works when no pin is active.
   const pinnedDefenderId = useArrowIsolation((s) => s.pinnedDefenderId);
   const clearPin = useArrowIsolation((s) => s.clearPin);
+
+  // Slice 1-C — first-paint reveal stagger. State lives at module
+  // scope in arrowIsolationStore so a stack push during combat
+  // (which unmounts CombatArrows entirely — see StackZoneRedesigned)
+  // doesn't replay the cinematic when the stack resolves and arrows
+  // remount. The phase watcher in arrowIsolationStore auto-resets
+  // the flag on COMBAT → non-COMBAT transitions, so a fresh combat
+  // re-staggers from scratch.
+  const reducedMotion = usePrefersReducedMotion();
+  const isFirstPaint = !getArrowsAlreadyStaggered() && arrows.length > 0;
+  useEffect(() => {
+    if (arrows.length > 0) {
+      markArrowsStaggered();
+    }
+  }, [arrows.length]);
+
+  // Slice 1-C — defender-order index for the stagger cadence.
+  // Brief: `defenderOrder.indexOf(arrow.defenderId) * 90` (the
+  // defender's index in *the order they appear in combat*), NOT
+  // their position in the players array. Sparse cases — e.g., only
+  // opponents at players-indices 2 and 3 are being attacked — should
+  // produce consecutive 0/90 ms delays, not gap-prone 180/270 ms.
+  // Memo deps just on `arrows` (not on a fingerprint) — adding a
+  // fingerprint would conflict with the brief's load-bearing
+  // "delay derivation must NOT enter useCombatFingerprint" rule.
+  const defenderOrder = useMemo(() => {
+    const seen = new Set<string>();
+    const order: string[] = [];
+    for (const arrow of arrows) {
+      if (!seen.has(arrow.defenderId)) {
+        seen.add(arrow.defenderId);
+        order.push(arrow.defenderId);
+      }
+    }
+    return order;
+  }, [arrows]);
 
   // Slice 1-B — Escape clears the pin globally. Listener registers
   // alongside CombatArrows and tears down on unmount. The cleanup
@@ -117,6 +168,21 @@ export function CombatArrows({
           isolating &&
           (spec.attackerId === isolatingId || spec.targetId === isolatingId);
         const opacity = !isolating ? 1 : matches ? 1 : ARROW_DIM_OPACITY;
+        // Slice 1-C — per-arrow reveal delay. Only applied on the
+        // first-paint transition (no prior stagger this combat) AND
+        // when the user hasn't opted into reduced motion. The
+        // `Math.max(0, ...)` clamp neutralises the (-1) indexOf
+        // miss (defenderId not present in defenderOrder — shouldn't
+        // happen, defensive against future refactors).
+        const orderIndex = defenderOrder.indexOf(spec.defenderId);
+        const clampedIndex = Math.max(
+          0,
+          Math.min(orderIndex, ARROW_REVEAL_MAX_INDEX),
+        );
+        const revealDelayMs =
+          isFirstPaint && !reducedMotion
+            ? clampedIndex * ARROW_REVEAL_STEP_MS
+            : 0;
         return (
           <TargetingArrow
             key={spec.key}
@@ -135,6 +201,7 @@ export function CombatArrows({
             defenderIndex={
               spec.defenderIndex >= 0 ? spec.defenderIndex : undefined
             }
+            revealDelayMs={revealDelayMs}
           />
         );
       })}

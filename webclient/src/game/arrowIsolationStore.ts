@@ -61,13 +61,53 @@ export const useArrowIsolation = create<State>((set, get) => ({
  * `phase` value instead means it survives stack pushes within combat
  * and only dies when combat actually ends.
  *
+ * Slice 1-C extends the same pattern to the wave-reveal stagger:
+ * `arrowsAlreadyStaggered` is a module-level flag tracking whether
+ * the cinematic per-defender stagger already played for the CURRENT
+ * combat phase. CombatArrows reads it on each render; useEffect sets
+ * it after a non-empty paint. The phase watcher below clears it on
+ * COMBAT → non-COMBAT transitions so a fresh combat re-staggers.
+ * Without this, every stack push during combat (which unmounts /
+ * remounts CombatArrows) would replay the full stagger — a real
+ * UX regression flagged by both critics.
+ *
  * Module-level subscription to useGameStore. Single global subscriber,
  * lives for the app lifetime. Tracks the previous phase via module-
- * scope state and clears the pin on any COMBAT → non-COMBAT transition.
- * `lastPhase` is initialised to '' so the first-ever transition into
- * COMBAT does NOT trigger a clear (initial state is "no pin to clear"
- * anyway, so it's a no-op either way; documenting the invariant).
+ * scope state. `lastPhase` is initialised to '' so the first-ever
+ * transition into COMBAT does NOT trigger a clear (initial state is
+ * "no pin / not staggered" anyway, so it's a no-op either way;
+ * documenting the invariant).
  * =================================================================*/
+
+let arrowsAlreadyStaggered = false;
+
+/**
+ * Slice 1-C — has the wave-reveal stagger already played for the
+ * current combat phase? CombatArrows reads this to decide whether
+ * the next non-empty render is a "first paint" eligible for the
+ * cinematic stagger. The phase watcher resets this on COMBAT exit.
+ */
+export function getArrowsAlreadyStaggered(): boolean {
+  return arrowsAlreadyStaggered;
+}
+
+/**
+ * Slice 1-C — set after a non-empty CombatArrows render commits, so
+ * subsequent unmount → remount cycles within the same combat phase
+ * (every stack push in combat) don't replay the stagger.
+ */
+export function markArrowsStaggered(): void {
+  arrowsAlreadyStaggered = true;
+}
+
+/**
+ * Slice 1-C — exposed for test setup so the module-level flag stays
+ * honest across the test suite. Production callers don't need this;
+ * the phase watcher resets the flag automatically.
+ */
+export function resetArrowsStaggered(): void {
+  arrowsAlreadyStaggered = false;
+}
 
 let lastPhase: string = '';
 // Guard against test mocks that stub `useGameStore` without zustand's
@@ -80,6 +120,9 @@ if (typeof useGameStore.subscribe === 'function') {
     const phase = state.gameView?.phase ?? '';
     if (lastPhase === 'COMBAT' && phase !== 'COMBAT') {
       useArrowIsolation.getState().clearPin();
+      // Slice 1-C — also reset the stagger flag so the NEXT combat
+      // phase replays the cinematic from scratch.
+      arrowsAlreadyStaggered = false;
     }
     lastPhase = phase;
   });

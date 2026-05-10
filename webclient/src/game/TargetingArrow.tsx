@@ -87,6 +87,17 @@ interface Props {
    * by passing {@code undefined} when the lookup fails (-1 sentinel).
    */
   defenderIndex?: number | undefined;
+  /**
+   * Slice 1-C — wave-reveal stagger delay in milliseconds. Appended
+   * to the existing 120ms opacity transition as
+   * {@code transition-delay} so each defender's arrows fade in a
+   * beat after the previous defender's. CombatArrows computes this
+   * per-arrow at render time (defender position × 90ms, capped at
+   * 5 × 90 = 450ms, zeroed when {@code prefers-reduced-motion:
+   * reduce} is active or when the arrow set isn't on first paint).
+   * Default 0 — instant fade alongside the base transition.
+   */
+  revealDelayMs?: number | undefined;
 }
 
 export function TargetingArrow({
@@ -98,6 +109,7 @@ export function TargetingArrow({
   opacity,
   defenderId,
   defenderIndex,
+  revealDelayMs,
 }: Props) {
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
 
@@ -233,7 +245,15 @@ export function TargetingArrow({
         // WCAG 2.1 SC 2.3.3 (motion targets translation/parallax/
         // autoplay, not fades). Short 120ms keeps hover-isolation
         // feedback snappy without feeling instant.
-        style={{ transition: 'opacity 120ms ease-out' }}
+        // Slice 1-C — revealDelayMs (capped at 450ms by the caller)
+        // staggers each defender's arrows in turn on first-paint.
+        // Caller zeroes the delay under prefers-reduced-motion or
+        // on subsequent renders, so the inline transitionDelay falls
+        // back to 0ms naturally without a separate code path here.
+        style={{
+          transition: 'opacity 120ms ease-out',
+          transitionDelay: revealDelayMs ? `${revealDelayMs}ms` : '0ms',
+        }}
       />
     </svg>
   );
