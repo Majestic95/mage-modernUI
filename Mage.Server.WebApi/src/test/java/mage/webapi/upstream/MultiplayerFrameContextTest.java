@@ -280,4 +280,117 @@ class MultiplayerFrameContextTest {
         // Display card now resolves.
         assertEquals(card, ctx.displayCardFor(alice));
     }
+
+    /* =================================================================
+     * Slice 5-F (Bundle 5 / Damage Moment, 2026-05-10) — coverage for
+     * commanderDamageReceivedFor. The extract(Game) populate path
+     * is exercised in the embedded-server integration suite (slice
+     * 69e pattern); here we lock the accessor's UUID-keyed lookup,
+     * String-key conversion, and null-input defenses.
+     * ===============================================================*/
+
+    @Test
+    void commanderDamageReceivedFor_emptyContext_returnsEmptyMap() {
+        MultiplayerFrameContext ctx = MultiplayerFrameContext.EMPTY;
+        assertEquals(Map.of(), ctx.commanderDamageReceivedFor(UUID.randomUUID()));
+    }
+
+    @Test
+    void commanderDamageReceivedFor_nullPlayerId_returnsEmptyMap() {
+        // Defensive: a null PlayerView.getPlayerId() must NOT crash
+        // the mapper. The wire contract for this field is "always
+        // present, possibly empty" — never null.
+        MultiplayerFrameContext ctx = MultiplayerFrameContext.EMPTY;
+        assertEquals(Map.of(), ctx.commanderDamageReceivedFor(null));
+    }
+
+    @Test
+    void commanderDamageReceivedFor_unknownPlayerId_returnsEmptyMap() {
+        UUID alice = UUID.randomUUID();
+        UUID aliceCmdr = UUID.randomUUID();
+        UUID bob = UUID.randomUUID();
+        MultiplayerFrameContext ctx =
+                MultiplayerFrameContext.forTestingWithCommanderDamage(
+                        Map.of(alice, Map.of(aliceCmdr, 7)));
+        // Bob has received no commander damage — must return Map.of(),
+        // not null.
+        assertEquals(Map.of(), ctx.commanderDamageReceivedFor(bob));
+    }
+
+    @Test
+    void commanderDamageReceivedFor_singleCommander_returnsStringKeyedMap() {
+        UUID alice = UUID.randomUUID();
+        UUID aliceCmdr = UUID.randomUUID();
+        MultiplayerFrameContext ctx =
+                MultiplayerFrameContext.forTestingWithCommanderDamage(
+                        Map.of(alice, Map.of(aliceCmdr, 14)));
+        Map<String, Integer> dmg = ctx.commanderDamageReceivedFor(alice);
+        assertEquals(1, dmg.size());
+        // UUID converted to String for JSON-friendly map keys.
+        assertEquals(Integer.valueOf(14), dmg.get(aliceCmdr.toString()));
+    }
+
+    @Test
+    void commanderDamageReceivedFor_partnerPairing_returnsBothCommanders() {
+        // Partner / background pairings — an opponent can field 2
+        // commanders. Each commander tracks damage independently;
+        // both surface in the recipient's map. CR 704.5b applies
+        // per-commander, so reaching 21 from EITHER triggers the
+        // lethal sub-feature in slice 5-E.
+        UUID alice = UUID.randomUUID();
+        UUID partnerA = UUID.randomUUID();
+        UUID partnerB = UUID.randomUUID();
+        MultiplayerFrameContext ctx =
+                MultiplayerFrameContext.forTestingWithCommanderDamage(
+                        Map.of(alice, Map.of(partnerA, 12, partnerB, 6)));
+        Map<String, Integer> dmg = ctx.commanderDamageReceivedFor(alice);
+        assertEquals(2, dmg.size());
+        assertEquals(Integer.valueOf(12), dmg.get(partnerA.toString()));
+        assertEquals(Integer.valueOf(6), dmg.get(partnerB.toString()));
+    }
+
+    @Test
+    void commanderDamageReceivedFor_multipleRecipients_isolatedPerPlayer() {
+        // Each player's incoming-damage map is independent. Bob
+        // receiving damage from Alice's commander does not leak into
+        // Charlie's map.
+        UUID alice = UUID.randomUUID();
+        UUID bob = UUID.randomUUID();
+        UUID aliceCmdr = UUID.randomUUID();
+        UUID bobCmdr = UUID.randomUUID();
+        MultiplayerFrameContext ctx =
+                MultiplayerFrameContext.forTestingWithCommanderDamage(Map.of(
+                        alice, Map.of(bobCmdr, 9),
+                        bob, Map.of(aliceCmdr, 21)));
+        Map<String, Integer> aliceDmg = ctx.commanderDamageReceivedFor(alice);
+        Map<String, Integer> bobDmg = ctx.commanderDamageReceivedFor(bob);
+        assertEquals(1, aliceDmg.size());
+        assertEquals(Integer.valueOf(9), aliceDmg.get(bobCmdr.toString()));
+        assertEquals(1, bobDmg.size());
+        // 21+ is the lethal threshold (CR 704.5b); slice 5-E reads
+        // this same map and fires the cinematic.
+        assertEquals(Integer.valueOf(21), bobDmg.get(aliceCmdr.toString()));
+    }
+
+    @Test
+    void commanderDamageReceivedFor_mapIsImmutableCopy() {
+        // Defensive: the returned map must not be a reference into
+        // the internal state. Callers may freely iterate / annotate
+        // without polluting the next frame's read.
+        UUID alice = UUID.randomUUID();
+        UUID aliceCmdr = UUID.randomUUID();
+        MultiplayerFrameContext ctx =
+                MultiplayerFrameContext.forTestingWithCommanderDamage(
+                        Map.of(alice, Map.of(aliceCmdr, 5)));
+        Map<String, Integer> dmg = ctx.commanderDamageReceivedFor(alice);
+        // Map.copyOf returns an immutable Map; mutation throws.
+        try {
+            dmg.put("extra", 99);
+            // If no exception thrown, the contract failed.
+            assertEquals(true, false,
+                    "commanderDamageReceivedFor map must be immutable");
+        } catch (UnsupportedOperationException ok) {
+            // Expected.
+        }
+    }
 }

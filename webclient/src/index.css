@@ -659,6 +659,129 @@ input[type="checkbox"] {
   animation: combat-eligibility-pulse 1500ms cubic-bezier(0.45, 0, 0.55, 1) infinite;
 }
 
+/*
+ * Bundle 5 / Slice 5-B — portrait halo bloom on life-loss.
+ * Single-shot 600ms alpha + scale spike peaking at 50% so the
+ * bloom peak coincides with the LifeCounter's flash peak —
+ * visual (halo flare) and numeric (life count) land as one event.
+ * Duration mirrors `PORTRAIT_BLOOM_MS` in
+ * webclient/src/animation/transitions.ts.
+ */
+@keyframes portrait-bloom {
+  0%   { opacity: 0; transform: scale(1); }
+  50%  { opacity: 0.85; transform: scale(1.18); }
+  100% { opacity: 0; transform: scale(1); }
+}
+.animate-portrait-bloom {
+  animation: portrait-bloom 600ms cubic-bezier(0.25, 0.1, 0.25, 1) 1;
+}
+
+/*
+ * Bundle 5 / Slice 5-C — freeze-frame on damage resolution.
+ * Brief viewport-edge danger bloom — radial gradient from the
+ * outer 30% of the viewport inward, danger-tinted alpha. Peaks
+ * at 50% (200ms) and fades. Frames combat damage as a beat-of-
+ * punctuation moment without interrupting the central gameplay
+ * surface (radial-gradient transparent center keeps the action
+ * unobscured).
+ *
+ * Duration mirrors `DAMAGE_FREEZE_FRAME_MS` in
+ * webclient/src/animation/transitions.ts.
+ */
+@keyframes damage-freeze-frame-edge {
+  0%   { opacity: 0; }
+  50%  { opacity: 0.55; }
+  100% { opacity: 0; }
+}
+.animate-damage-freeze-frame-edge {
+  background: radial-gradient(
+    ellipse at center,
+    transparent 50%,
+    rgb(180 30 30 / 0.5) 100%
+  );
+  animation: damage-freeze-frame-edge 400ms cubic-bezier(0.4, 0, 0.6, 1) 1;
+}
+
+/*
+ * Bundle 5 / Slice 5-D — death handoff desaturate beat. 150ms
+ * grayscale filter applied via a CSS class on the dying card's
+ * existing button element. Painted in parallel with the existing
+ * fly-to-graveyard exit animation; the brief 150ms overlap reads
+ * as "the card desaturated AS it flew." Duration mirrors
+ * `CREATURE_DEATH_DESATURATE_MS` in
+ * webclient/src/animation/transitions.ts.
+ *
+ * NOT keyframe-driven — single static filter for the duration.
+ * Removed by the JS timeout in CardDeathSequence.tsx (pure DOM
+ * mutation; no React re-render in the hot path).
+ *
+ * Slice 5-X.0 (Bundle 5 critic-pass Tech-2 / UI-2) — wrapped in
+ * `@media (prefers-reduced-motion: no-preference)` so reduced-
+ * motion users see NO desaturate at all. The static filter
+ * survives the global reduced-motion rule (which only kills
+ * animation/transition durations, not filter values), so without
+ * this gate the card snaps to grayscale and back — more jarring
+ * than animated. Fly-to-graveyard exit still carries the death
+ * signal under reduced-motion; desaturate is purely cinematic
+ * enhancement.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  .animate-card-death-desaturate {
+    filter: grayscale(1) brightness(0.85);
+    transition: filter 50ms ease-in;
+  }
+}
+
+/*
+ * Bundle 5 / Slice 5-E — lethal-21 commander damage authority
+ * sequence. Two keyframes:
+ *
+ *  - `commander-lethal-pulse` paints the viewport-edge red bloom
+ *    matching the freeze-frame's family but deeper alpha (lethal
+ *    is the loudest beat in Bundle 5's cinematic grammar).
+ *
+ *  - `commander-lethal-banner` scales + fades a centered banner
+ *    in after the 80ms authority pause. Banner ramps up 240ms,
+ *    holds 240ms, fades 160ms. Total = 80 + 240 + 240 + 160 =
+ *    720ms — matches `LETHAL_AUTHORITY_TOTAL_MS` (640ms = pause
+ *    + ramp + hold; the fade overlaps with the pulse fade-out).
+ *
+ * Reduced-motion: project-wide global rule kills the keyframes.
+ * The lethal moment is purely cinematic punctuation; the engine's
+ * actual loss enforcement (CR 704.5b state-based action) plays
+ * out independently via the existing player-eliminated overlay.
+ */
+@keyframes commander-lethal-pulse {
+  0%   { background: rgba(80, 0, 0, 0.0); }
+  20%  { background: rgba(80, 0, 0, 0.45); }
+  60%  { background: rgba(80, 0, 0, 0.45); }
+  100% { background: rgba(80, 0, 0, 0.0); }
+}
+.animate-commander-lethal-pulse {
+  background: radial-gradient(
+    ellipse at center,
+    transparent 30%,
+    rgba(120, 0, 0, 0.55) 100%
+  );
+  animation: commander-lethal-pulse 640ms cubic-bezier(0.4, 0, 0.6, 1) 1;
+}
+
+@keyframes commander-lethal-banner {
+  0%   { opacity: 0; transform: scale(0.6); }
+  35%  { opacity: 1; transform: scale(1.05); }
+  50%  { opacity: 1; transform: scale(1); }
+  85%  { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.05); }
+}
+.animate-commander-lethal-banner {
+  /* Initial state — invisible until the keyframe ramps in after
+     the configured animation-delay (set inline by the React
+     component to LETHAL_AUTHORITY_PAUSE_MS). */
+  opacity: 0;
+  animation: commander-lethal-banner 560ms cubic-bezier(0.25, 0.1, 0.25, 1) 1
+             forwards;
+}
+
 .animate-lane-active-glow {
   /* Same 1900ms period as `animate-player-active-halo` so the lane
    * border breathes in sync with the portrait halo. */

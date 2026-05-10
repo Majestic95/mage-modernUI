@@ -302,6 +302,43 @@ export const CARD_TARGETED_PULSE_PERIOD_MS = 1000;
 export const PARTICLE_DRIFT_CLASS = 'animate-particle-drift';
 export const PARTICLE_DRIFT_PERIOD_MS = 60_000;
 
+// Bundle 5 / Slice 5-A — damage parcel cinematic. Per the brief:
+// 300-400ms per parcel travel along the arrow path. 350ms is the
+// midpoint — long enough that the parcel's path is legible at
+// 1440p, short enough that multi-attacker stagger doesn't pile up
+// uncomfortably. STAGGER_MS spaces multi-event frames so the user
+// can count individual hits ("three parcels arrived in sequence")
+// instead of seeing a single muddled flash.
+export const DAMAGE_PARCEL_TRAVEL_MS = 350;
+export const DAMAGE_PARCEL_STAGGER_MS = 50;
+
+// Bundle 5 / Slice 5-B — portrait halo bloom on life-loss. Total
+// duration peaks alpha + scale at ~50% (300ms in) so the bloom
+// peak coincides with the LifeCounter's flash peak — visual +
+// numeric land synchronously per the brief.
+export const PORTRAIT_BLOOM_MS = 600;
+
+// Bundle 5 / Slice 5-C — freeze-frame on damage resolution. Brief
+// viewport-edge danger bloom that frames combat damage as a
+// punctuation moment (~0.4s — long enough to register as a beat,
+// short enough to not interrupt gameplay rhythm).
+export const DAMAGE_FREEZE_FRAME_MS = 400;
+
+// Bundle 5 / Slice 5-D — death handoff desaturate beat. Brief
+// 150ms grayscale filter on a dying creature, painting in
+// parallel with the existing fly-to-graveyard animation so the
+// card visibly desaturates AS it leaves the battlefield.
+export const CREATURE_DEATH_DESATURATE_MS = 150;
+
+// Bundle 5 / Slice 5-E — lethal-21 commander damage authority
+// sequence. Brief 80ms "everything pauses" beat, then a banner
+// flares in (240ms ramp), holds (240ms), and fades (160ms).
+// Total ~640ms per sequence; multi-lethal events stagger 300ms
+// apart so each lethal moment reads as a distinct beat.
+export const LETHAL_AUTHORITY_PAUSE_MS = 80;
+export const LETHAL_AUTHORITY_TOTAL_MS = 640;
+export const LETHAL_AUTHORITY_STAGGER_MS = 300;
+
 /* ============================================================
    Slice 70-Z.2 / 70-Z.3 / 70-Z.4 — card animation system timing.
    The seam ships in 70-Z.2 (no visual change); the constants here

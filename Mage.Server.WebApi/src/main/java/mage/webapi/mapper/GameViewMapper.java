@@ -279,7 +279,15 @@ public final class GameViewMapper {
                 deriveSkipState(pv),
                 displayCard == null ? "" : displayCard.name(),
                 displayCard == null ? "" : displayCard.setCode(),
-                displayCard == null ? "" : displayCard.cardNumber()
+                displayCard == null ? "" : displayCard.cardNumber(),
+                // Schema 1.35 / slice 5-F (Bundle 5 / Damage Moment) —
+                // per-commander commander-damage map. Read from the
+                // frame context which inverts each commander's
+                // CommanderInfoWatcher.getDamageToPlayer(). Empty map
+                // when no commander has dealt combat damage to this
+                // player (most common case in non-Commander games and
+                // pre-combat Commander turns).
+                effective.commanderDamageReceivedFor(pv.getPlayerId())
         );
     }
 

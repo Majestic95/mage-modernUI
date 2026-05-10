@@ -31,6 +31,10 @@ import { useLayoutVariant } from '../layoutVariants';
 import { CommanderColorsProvider } from './useCommanderColors';
 import { buildOnSpendMana } from './manaPaymentAdapter';
 import { TurnEdgeGlow } from './TurnEdgeGlow';
+import { DamageParcelOverlay } from './DamageParcelOverlay';
+import { DamageFreezeFrame } from './DamageFreezeFrame';
+import { CardDeathSequence } from './CardDeathSequence';
+import { CommanderLethalSequence } from './CommanderLethalSequence';
 import { useTurnTabTitle } from './useTurnTabTitle';
 import { useStopOnCombatSteps } from './useStopOnCombatSteps';
 
@@ -344,6 +348,36 @@ export function GameTable({ gameId, gameView, stream }: Props) {
           + pointer-events-none → never blocks clicks, sits below
           ActionPanel (z-30) / dialogs / modals. */}
       <TurnEdgeGlow />
+
+      {/* Bundle 5 / Slice 5-A — damage parcels travel along combat
+          arrows when life decreases. Viewport-fixed SVG overlay
+          mounted at z=25 (above arrows + below ActionPanel chrome
+          at z=30). Empty SVG when no parcels in flight; pointer-
+          events:none so it never blocks clicks. */}
+      <DamageParcelOverlay />
+
+      {/* Bundle 5 / Slice 5-C — viewport-edge danger bloom on
+          damage resolution. Radial gradient frames the action with
+          a brief 400ms danger tint when life decreases. Mounted at
+          z=28 — above parcels (z=25) so the freeze-frame paints
+          briefly over them, below ActionPanel chrome (z=30). */}
+      <DamageFreezeFrame />
+
+      {/* Bundle 5 / Slice 5-D — death handoff desaturate beat.
+          Mountless side-effect component subscribing to
+          useGameDelta `creature_died` events; applies a 150ms
+          grayscale CSS class to the dying card's existing button
+          via DOM query. Renders nothing visible. */}
+      <CardDeathSequence />
+
+      {/* Bundle 5 / Slice 5-E — lethal-21 commander damage
+          authority sequence. Reads schema 1.35's
+          WebPlayerView.commanderDamageReceived (slice 5-F's wire
+          field) for threshold-crossing detection. On a lethal
+          event, plays a brief authority sequence: viewport-edge
+          deeper red pulse + centered banner. z=29, the loudest
+          beat in Bundle 5's cinematic grammar. */}
+      <CommanderLethalSequence />
 
       {/* Slice 70-O — REDESIGN drops the in-grid header slot. The
           actual GameHeader is rendered as a sibling of GameTable

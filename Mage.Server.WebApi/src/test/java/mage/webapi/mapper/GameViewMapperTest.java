@@ -117,10 +117,14 @@ class GameViewMapperTest {
                         mage.webapi.dto.stream.WebPlayerView
                                 .CONNECTION_STATE_CONNECTED,
                         mage.webapi.dto.stream.WebPlayerView.SKIP_STATE_NONE,
-                        "", "", "");
+                        "", "", "",
+                        // Schema 1.35 — slice 5-F (Bundle 5 / Damage Moment).
+                        // commanderDamageReceived: empty for the
+                        // non-Commander player fixture used in this test.
+                        Map.of());
         JsonNode node = JSON.valueToTree(dto);
-        assertEquals(28, node.size(),
-                "WebPlayerView must have exactly 28 fields; got: " + node);
+        assertEquals(29, node.size(),
+                "WebPlayerView must have exactly 29 fields; got: " + node);
         for (String field : List.of(
                 "playerId", "name", "life", "wins", "winsNeeded",
                 "libraryCount", "handCount", "graveyard", "exile",
@@ -129,7 +133,8 @@ class GameViewMapperTest {
                 "monarch", "initiative", "designationNames",
                 "commandList", "teamId", "colorIdentity",
                 "connectionState", "skipState",
-                "displayCardName", "displayCardSetCode", "displayCardNumber")) {
+                "displayCardName", "displayCardSetCode", "displayCardNumber",
+                "commanderDamageReceived")) {
             assertTrue(node.has(field), "missing field: " + field);
         }
         assertTrue(node.get("teamId").isNull(),
