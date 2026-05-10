@@ -45,6 +45,7 @@ import type { WebCardView, WebPermanentView } from '../api/schemas';
 import { ZoneBrowser } from './ZoneBrowser';
 import { groupWithAttachmentsAndStacks } from './battlefieldRows';
 import { computePodCardSizeVars } from './podShrink';
+import { useMinimalChrome } from './MinimalChromeContext';
 import {
   BucketCardsRow,
   DuplicateStackContainer,
@@ -246,6 +247,10 @@ function BucketBox({
   const visibleCount = groupedCards.length;
   const bucketSizeVars: CSSProperties =
     computePodCardSizeVars(visibleCount) ?? {};
+  // Cinematic-lab: drop the per-bucket commander-color border so the
+  // BattlefieldBackground artwork is visible inside each pod. Pod-
+  // level colored zone fill stays as the player-identity cue.
+  const minimalChrome = useMinimalChrome();
   return (
     <div
       data-testid={`tabletop-bucket-${kind}`}
@@ -258,8 +263,15 @@ function BucketBox({
       // Dropped the bucket's own bg-zinc-900/30 so the underlying
       // commander-identity gradient shows through (eliminates a
       // dim-overlay-on-color muddying the zone color).
-      className="flex-shrink-0 flex-grow-0 min-h-0 min-w-0 relative rounded border overflow-hidden"
-      style={{ flexBasis, borderColor: borderTint, ...bucketSizeVars }}
+      className={
+        'flex-shrink-0 flex-grow-0 min-h-0 min-w-0 relative rounded overflow-hidden' +
+        (minimalChrome ? '' : ' border')
+      }
+      style={{
+        flexBasis,
+        ...(minimalChrome ? {} : { borderColor: borderTint }),
+        ...bucketSizeVars,
+      }}
     >
       {/* Label is a click target — opens a ZoneBrowser modal listing
           every card in this bucket at full size (user direction

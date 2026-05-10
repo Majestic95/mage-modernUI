@@ -67,6 +67,7 @@ import { flushSync } from 'react-dom';
 import { LayoutGroup, MotionConfig } from 'framer-motion';
 import { BattlefieldBackground } from '../game/BattlefieldBackground';
 import { GameHeader } from '../game/GameHeader';
+import { MinimalChromeProvider } from '../game/MinimalChromeContext';
 import { GameTable } from '../game/GameTable';
 import { buildDemoGameView } from '../game/devFixtures';
 import { useGameStore } from '../game/store';
@@ -316,11 +317,12 @@ export function CinematicLab() {
     <LayoutVariantProvider variant={variant}>
       <MotionConfig reducedMotion="user">
         <LayoutGroup>
-          <div
-            className="relative h-screen flex flex-col bg-zinc-950 text-zinc-100 overflow-hidden"
-            data-testid="cinematic-lab"
-          >
-            <BattlefieldBackground />
+          <MinimalChromeProvider enabled>
+            <div
+              className="relative h-screen flex flex-col bg-zinc-950 text-zinc-100 overflow-hidden"
+              data-testid="cinematic-lab"
+            >
+              <BattlefieldBackground />
             <GameHeader
               gameId="cinematic-lab"
               connection="open"
@@ -344,7 +346,8 @@ export function CinematicLab() {
               onDeclareAttackers={triggerDeclareAttackers}
               onReset={resetFixture}
             />
-          </div>
+            </div>
+          </MinimalChromeProvider>
         </LayoutGroup>
       </MotionConfig>
     </LayoutVariantProvider>

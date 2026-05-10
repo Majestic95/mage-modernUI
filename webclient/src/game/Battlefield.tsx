@@ -12,6 +12,7 @@ import type { DragState } from './useDragState';
 import { LAYOUT_BOUNDS, REDESIGN } from '../featureFlags';
 import { useLayoutVariant } from '../layoutVariants';
 import { AsymmetricTLayout } from './asymmetricT';
+import { useMinimalChrome } from './MinimalChromeContext';
 
 // LEGACY-BRANCH-FORK — slice 70-X.13 (Wave 4) cleanup marker.
 // Battlefield forks on REDESIGN inline (slotPart split at ~289,
@@ -130,6 +131,12 @@ export function Battlefield({
   // LAYOUT_BOUNDS=true to use the 4-pod grid (cross/plus); current
   // keeps asymmetric-T.
   const variant = useLayoutVariant();
+  // Cinematic-lab opt-in suppression of the "play surface" chrome
+  // (grid container border + inset ring + scrim + inner shadow, plus
+  // per-pod-cell drop-shadow + ring) so the BattlefieldBackground
+  // artwork shows through unobscured. Default is false everywhere
+  // else (Game.tsx, DemoGame.tsx) so production chrome is unaffected.
+  const minimalChrome = useMinimalChrome();
 
   return (
     // Slice 57 (UX audit fix B) â€” Battlefield restructure. Pre-fix:
@@ -285,8 +292,10 @@ export function Battlefield({
               // bottom-padding pb-56 → pb-64 so the bottom pod has
               // +32px clearance over the floating hand fan.
               'flex-1 min-h-0 p-4 pb-64 grid gap-4 rounded-xl ' +
-              'border-2 border-zinc-800 ring-1 ring-zinc-700/50 ring-inset ' +
-              'bg-zinc-950/40 shadow-[inset_0_0_60px_rgba(0,0,0,0.55)]'
+              (minimalChrome
+                ? ''
+                : 'border-2 border-zinc-800 ring-1 ring-zinc-700/50 ring-inset ' +
+                  'bg-zinc-950/40 shadow-[inset_0_0_60px_rgba(0,0,0,0.55)]')
             : 'flex-1 min-h-0 p-4 pb-56 grid gap-4')
         }
         // Slice 70-E critic UI-Critical-1 — inline style for the
@@ -410,7 +419,9 @@ export function Battlefield({
                 // — subtle elevation so each pod reads as resting on
                 // the table surface. Applied to opponent pods only;
                 // bottom-pod gets the same on its own wrapper below.
-                (isTabletop
+                // Suppressed under minimalChrome (cinematic lab) so
+                // the battlefield artwork shows through.
+                (isTabletop && !minimalChrome
                   ? ' rounded-md shadow-lg shadow-black/45 ring-1 ring-zinc-700/30'
                   : '')
               }
@@ -541,8 +552,8 @@ export function Battlefield({
             'min-w-0' +
             // P12 — bottom pod gets the same subtle elevation as
             // opponent pods so all 4 pods read as resting on the
-            // table surface.
-            (variant === 'tabletop'
+            // table surface. Suppressed under minimalChrome (lab).
+            (variant === 'tabletop' && !minimalChrome
               ? ' rounded-md shadow-lg shadow-black/45 ring-1 ring-zinc-700/30'
               : '')
           }
