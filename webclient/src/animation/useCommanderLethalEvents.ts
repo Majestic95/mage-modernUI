@@ -39,6 +39,15 @@ export type CommanderLethalEvent = {
   defenderId: string;
   commanderId: string;
   damage: number;
+  /**
+   * Slice 5-X.0 BugHunter-5 — captured at diff time so the
+   * cinematic doesn't have to do a second store read after the
+   * staggered timeout fires. Avoids the race where
+   * CommanderLethalSequence's `setTimeout(...)` callback runs
+   * after the user has disconnected (gameView=null) and the
+   * defender lookup falls back to a generic 'Player' label.
+   */
+  defenderName: string;
 };
 
 export function useCommanderLethalEvents(
@@ -101,6 +110,7 @@ export function diffLethalEvents(
         defenderId: nextPlayer.playerId,
         commanderId,
         damage,
+        defenderName: nextPlayer.name,
       });
     }
   }

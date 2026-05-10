@@ -35,7 +35,6 @@ import {
   useCommanderLethalEvents,
   type CommanderLethalEvent,
 } from '../animation/useCommanderLethalEvents';
-import { useGameStore } from './store';
 
 interface ActiveSequence {
   id: number;
@@ -63,10 +62,15 @@ export function CommanderLethalSequence() {
 
   function startSequence(event: CommanderLethalEvent) {
     const id = nextIdRef.current++;
-    const gv = useGameStore.getState().gameView;
-    const defender = gv?.players.find((p) => p.playerId === event.defenderId);
-    const defenderName = defender?.name ?? 'Player';
-    setActive({ id, defenderName, damage: event.damage });
+    // Slice 5-X.0 BugHunter-5 — defenderName captured at diff time
+    // (in useCommanderLethalEvents) so we don't have to re-read
+    // the store after the staggered timeout. Avoids race where
+    // user disconnects between event-emit and sequence-start.
+    setActive({
+      id,
+      defenderName: event.defenderName,
+      damage: event.damage,
+    });
     const endTimeout = setTimeout(() => {
       pendingTimeoutsRef.current.delete(endTimeout);
       // Only clear if a newer sequence hasn't started in the
@@ -99,7 +103,6 @@ export function CommanderLethalSequence() {
       key={`lethal-${active.id}`}
       data-testid="commander-lethal-sequence"
       data-active="true"
-      aria-hidden="true"
       className="pointer-events-none animate-commander-lethal-pulse"
       style={{
         position: 'fixed',
@@ -114,6 +117,29 @@ export function CommanderLethalSequence() {
         justifyContent: 'center',
       }}
     >
+      {/* Slice 5-X.0 UX-1 — aria-live announcement so reduced-
+          motion users get the lethal signal even when the visual
+          banner's keyframe is suppressed. Sits inside an offscreen
+          sr-only container; the rest of the overlay is decorative
+          (the banner itself is keyframe-driven and aria-hidden). */}
+      <div
+        role="status"
+        aria-live="assertive"
+        data-testid="commander-lethal-announcement"
+        style={{
+          position: 'absolute',
+          width: 1,
+          height: 1,
+          padding: 0,
+          margin: -1,
+          overflow: 'hidden',
+          clip: 'rect(0,0,0,0)',
+          whiteSpace: 'nowrap',
+          border: 0,
+        }}
+      >
+        Lethal commander damage to {active.defenderName}
+      </div>
       <div
         data-testid="commander-lethal-banner"
         className="animate-commander-lethal-banner"

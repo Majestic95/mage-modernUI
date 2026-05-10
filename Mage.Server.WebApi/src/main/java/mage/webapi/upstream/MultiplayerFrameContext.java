@@ -1,5 +1,6 @@
 package mage.webapi.upstream;
 
+import mage.constants.CommanderCardType;
 import mage.constants.RangeOfInfluence;
 import mage.game.Game;
 import mage.game.permanent.Permanent;
@@ -337,7 +338,19 @@ public final class MultiplayerFrameContext {
             Map<UUID, Map<UUID, Integer>> out = null;
             for (Player p : players.values()) {
                 if (p == null) continue;
-                Set<UUID> commanderIds = p.getCommandersIds();
+                // Slice 5-X.0 (Bundle 5 critic-pass HIGH-1) — use
+                // game.getCommandersIds(...) (the rules-correct
+                // accessor) rather than the deprecated
+                // Player.getCommandersIds(). The engine's own
+                // lethal-21 enforcement at
+                // GameCommanderImpl.checkStateBasedActions:254 uses
+                // game.getCommandersIds(player,
+                // COMMANDER_OR_OATHBREAKER, false). Mirroring that
+                // exactly ensures Oathbreaker / signature-spell
+                // formats are tracked correctly.
+                Set<UUID> commanderIds = game.getCommandersIds(
+                        p, CommanderCardType.COMMANDER_OR_OATHBREAKER,
+                        false);
                 if (commanderIds == null || commanderIds.isEmpty()) {
                     continue;
                 }

@@ -714,10 +714,22 @@ input[type="checkbox"] {
  * NOT keyframe-driven — single static filter for the duration.
  * Removed by the JS timeout in CardDeathSequence.tsx (pure DOM
  * mutation; no React re-render in the hot path).
+ *
+ * Slice 5-X.0 (Bundle 5 critic-pass Tech-2 / UI-2) — wrapped in
+ * `@media (prefers-reduced-motion: no-preference)` so reduced-
+ * motion users see NO desaturate at all. The static filter
+ * survives the global reduced-motion rule (which only kills
+ * animation/transition durations, not filter values), so without
+ * this gate the card snaps to grayscale and back — more jarring
+ * than animated. Fly-to-graveyard exit still carries the death
+ * signal under reduced-motion; desaturate is purely cinematic
+ * enhancement.
  */
-.animate-card-death-desaturate {
-  filter: grayscale(1) brightness(0.85);
-  transition: filter 50ms ease-in;
+@media (prefers-reduced-motion: no-preference) {
+  .animate-card-death-desaturate {
+    filter: grayscale(1) brightness(0.85);
+    transition: filter 50ms ease-in;
+  }
 }
 
 /*

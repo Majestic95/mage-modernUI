@@ -88,12 +88,25 @@ function reducedMotionEnabled(): boolean {
  * CombatArrows emits one path per (attacker, defender) pair carrying
  * a {@code data-arrow-defender-id} attribute. Returns null when the
  * path isn't yet in the DOM (graceful skip).
+ *
+ * <p>Slice 5-X.0 BugHunter-7 — defender id is escaped via
+ * {@code CSS.escape} before splicing into the attribute selector
+ * so a malformed wire payload (or future format change introducing
+ * special characters) can't crash the overlay with a SyntaxError.
  */
 function findArrowPath(defenderId: string): SVGPathElement | null {
   if (typeof document === 'undefined') return null;
-  return document.querySelector<SVGPathElement>(
-    `path[data-arrow-defender-id="${defenderId}"]`,
-  );
+  try {
+    const escaped =
+      typeof CSS !== 'undefined' && CSS.escape
+        ? CSS.escape(defenderId)
+        : defenderId;
+    return document.querySelector<SVGPathElement>(
+      `path[data-arrow-defender-id="${escaped}"]`,
+    );
+  } catch {
+    return null;
+  }
 }
 
 export function DamageParcelOverlay() {
@@ -145,7 +158,16 @@ export function DamageParcelOverlay() {
       return next;
     });
     const startTime = performance.now();
+    // Slice 5-X.0 Tech-1 — track this parcel's CURRENT raf handle
+    // in a closure so each tick's new handle replaces the previous
+    // one in `activeRafsRef`. Previously the Set just grew unbounded
+    // for the parcel's lifetime; on completion the final handle is
+    // also removed.
+    let currentRaf = 0;
     const stepRafFn = (now: number) => {
+      // Drop the just-fired handle from the cleanup Set (it's now
+      // already executed, no point cancelling it).
+      activeRafsRef.current.delete(currentRaf);
       const elapsed = now - startTime;
       const progress = Math.min(1, elapsed / DAMAGE_PARCEL_TRAVEL_MS);
       const point = pathEl.getPointAtLength(progress * totalLength);
@@ -157,11 +179,11 @@ export function DamageParcelOverlay() {
         return next;
       });
       if (progress < 1) {
-        const handle = requestAnimationFrame(stepRafFn);
-        activeRafsRef.current.add(handle);
+        currentRaf = requestAnimationFrame(stepRafFn);
+        activeRafsRef.current.add(currentRaf);
       } else {
-        // Travel complete — remove the parcel after one more frame
-        // so React can render the final position before unmount.
+        // Travel complete — remove the parcel state entirely. No new
+        // RAF queued so currentRaf stays as the just-deleted handle.
         setParcels((prev) => {
           if (!prev.has(id)) return prev;
           const next = new Map(prev);
@@ -170,8 +192,8 @@ export function DamageParcelOverlay() {
         });
       }
     };
-    const initialHandle = requestAnimationFrame(stepRafFn);
-    activeRafsRef.current.add(initialHandle);
+    currentRaf = requestAnimationFrame(stepRafFn);
+    activeRafsRef.current.add(currentRaf);
   }
 
   useEffect(() => {
@@ -236,8 +258,15 @@ export function DamageParcelOverlay() {
           fill={PARCEL_FILL}
           stroke={PARCEL_STROKE}
           strokeWidth={1}
-          // Slight glow so the parcel pops against arrow strokes.
-          style={{ filter: 'drop-shadow(0 0 4px rgb(255 220 130 / 0.7))' }}
+          // Slice 5-X.0 UI-1 — dual drop-shadow: warm glow + dark
+          // 1px outline so the parcel pops on warm-tinted arrows
+          // (Boros / Mardu / mono-R defender colors) where the
+          // single warm glow alone visually merges with the arrow
+          // stroke.
+          style={{
+            filter:
+              'drop-shadow(0 0 1px rgb(0 0 0 / 0.9)) drop-shadow(0 0 4px rgb(255 220 130 / 0.7))',
+          }}
         />
       ))}
     </svg>

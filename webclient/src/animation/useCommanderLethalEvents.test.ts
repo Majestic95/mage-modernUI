@@ -103,6 +103,10 @@ describe('diffLethalEvents', () => {
       defenderId: ALICE,
       commanderId: CMDR_A,
       damage: 21,
+      // Slice 5-X.0 BugHunter-5 — defenderName captured at diff
+      // time. makePlayer uses `player-${playerId.slice(0,4)}` so
+      // ALICE = '11111111-...' → 'player-1111'.
+      defenderName: 'player-1111',
     });
   });
 
