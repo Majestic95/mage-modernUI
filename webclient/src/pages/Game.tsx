@@ -7,6 +7,7 @@ import { GameEndOverlay } from '../game/GameEndOverlay';
 import { CardAnimationLayer } from '../animation/CardAnimationLayer';
 import { DeltaPump } from '../animation/DeltaPump';
 import { resetAnimationState } from '../animation/animationState';
+import { BattlefieldBackground } from '../game/BattlefieldBackground';
 import { GameHeader } from '../game/GameHeader';
 import { GameTable } from '../game/GameTable';
 import { Waiting } from '../game/Waiting';
@@ -172,7 +173,8 @@ export function Game({ gameId, onLeave }: Props) {
     <LayoutVariantProvider variant={variant}>
       <MotionConfig reducedMotion="user">
         <LayoutGroup>
-          <div className="h-screen flex flex-col bg-zinc-950 text-zinc-100 overflow-hidden">
+          <div className="relative h-screen flex flex-col bg-zinc-950 text-zinc-100 overflow-hidden">
+            <BattlefieldBackground />
             <GameHeader
             gameId={gameId}
             connection={connection}

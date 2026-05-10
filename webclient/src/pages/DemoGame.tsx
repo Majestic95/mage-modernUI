@@ -26,6 +26,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { LayoutGroup, MotionConfig } from 'framer-motion';
+import { BattlefieldBackground } from '../game/BattlefieldBackground';
 import { GameHeader } from '../game/GameHeader';
 import { GameTable } from '../game/GameTable';
 import {
@@ -178,7 +179,8 @@ export function DemoGame() {
     <LayoutVariantProvider variant={variant}>
       <MotionConfig reducedMotion="user">
         <LayoutGroup>
-          <div className="h-screen flex flex-col bg-zinc-950 text-zinc-100 overflow-hidden">
+          <div className="relative h-screen flex flex-col bg-zinc-950 text-zinc-100 overflow-hidden">
+            <BattlefieldBackground />
             <VariantSwitcher current={variant} onChange={onVariantChange} />
             <GameHeader
               gameId="demo-fixture"
