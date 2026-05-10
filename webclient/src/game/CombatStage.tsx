@@ -1,41 +1,85 @@
 /**
- * Bundle 2 / Slice 2-A — combat-stage overlay component.
+ * Bundle 2 — combat-stage overlay component.
  *
- * <p>Currently renders only the outer vignette dim (slice 2-A scope).
- * Slice 2-B will add the central-area frame + slate-clap pulse; slice
- * 2-C will add the sub-step cross-fade tint. All three layers
- * coexist as siblings of the vignette inside this component.
+ * <p>Mounts inside {@link ./Battlefield} as a sibling of the pod grid
+ * (positioned absolute over the battlefield content). Reads from
+ * {@link ./combatStageStore} — no props, no game-view threading.
  *
- * <p>Reads from {@link ./combatStageStore} — no props, no game-view
- * threading. Mounts in {@link ./Battlefield} as a sibling of the pod
- * grid (positioned absolute over the battlefield content) so the
- * vignette covers the full battlefield viewport.
+ * <p><b>Layers (rendered as siblings inside this component):</b>
+ * <ul>
+ *   <li>Slice 2-A — outer vignette dim (z-3). Always mounted; ramps
+ *       opacity 0 ↔ 0.35 based on stageActive.</li>
+ *   <li>Slice 2-B — central-area frame (z-5). Mounts only when
+ *       stageActive=true. Thin gold inset edge + deeper inset shadow
+ *       on the central focal rectangle.</li>
+ *   <li>Slice 2-B — slate-clap pulse element (z-5, overlays the
+ *       frame). Mounts only when stageActive=true, keyed on
+ *       {@code slatePulseCounter} so each increment remounts the
+ *       element + restarts the one-shot keyframe (0.6 → 1.0 → 0.6
+ *       opacity over 800ms).</li>
+ *   <li>Slice 2-C (queued) — sub-step cross-fade tint.</li>
+ * </ul>
  *
  * <p><b>z-index ladder (locked in the bundle brief):</b>
- * vignette at z-3 (above battlefield artwork at z=0, below the pod
- * grid + cards at higher z), slated to coexist with frame/step-tint
- * at z-5 from slice 2-B. Bundle 5 parcels (z=25) and Bundle 6 arrows
- * (z=40) paint on top — Bundle 2 is the atmospheric backdrop.
+ * vignette z-3, frame + pulse z-5. Both below Bundle 5 parcels
+ * (z=25) and Bundle 6 arrows (z=40) — Bundle 2 is the atmospheric
+ * backdrop, not the cinematic layer.
  *
- * <p><b>Reduced motion:</b> the opacity transition is silenced by the
- * scoped {@code .combat-stage-vignette} rule inside the global
- * {@code @media (prefers-reduced-motion: reduce)} block in index.css.
- * The vignette still appears (it's a state signal, not motion) — the
- * opacity just snaps instead of ramping.
+ * <p><b>Reduced motion:</b> the opacity transitions + slate-clap
+ * keyframe are silenced by scoped overrides inside the global
+ * {@code @media (prefers-reduced-motion: reduce)} block in
+ * index.css. The vignette still appears (state signal), the frame's
+ * gold edge persists static; the slate-clap is the only motion that
+ * fully disappears under reduced-motion.
  */
 import { useCombatStageStore } from './combatStageStore';
 
 export function CombatStage() {
   const stageActive = useCombatStageStore((s) => s.stageActive);
+  const slatePulseCounter = useCombatStageStore((s) => s.slatePulseCounter);
 
   return (
-    <div
-      data-testid="combat-stage-vignette"
-      data-stage-active={stageActive}
-      aria-hidden="true"
-      className={`combat-stage-vignette pointer-events-none absolute inset-0 ${
-        stageActive ? 'is-active' : ''
-      }`}
-    />
+    <>
+      <div
+        data-testid="combat-stage-vignette"
+        data-stage-active={stageActive}
+        aria-hidden="true"
+        className={`combat-stage-vignette pointer-events-none absolute inset-0 ${
+          stageActive ? 'is-active' : ''
+        }`}
+      />
+      {stageActive && (
+        <>
+          {/* Slice 2-B — central-area frame. Always-on while
+              stageActive=true. Thin gold inset edge + deeper inset
+              shadow at the central focal rectangle. Positioned at
+              viewport center via top/left 50% + translate-1/2; width
+              + height are relative percentages tuned at 1440p (T4
+              target). Static visual once mounted; the slate-pulse
+              fires as a sibling overlay so the frame itself never
+              animates. */}
+          <div
+            data-testid="combat-stage-frame"
+            aria-hidden="true"
+            className="combat-stage-frame pointer-events-none absolute"
+          />
+          {/* Slice 2-B — slate-clap pulse. Keyed on slatePulseCounter
+              so each counter increment unmounts the previous element
+              and mounts a fresh one — the new one's mount triggers
+              the keyframe from t=0 (the canonical CSS "restart an
+              animation by remounting" trick). The keyframe is a
+              single 800ms pulse (0.6 → 1.0 → 0.6 opacity on an
+              overlay gold ring) that runs ONCE then the element
+              settles invisibly. */}
+          <div
+            key={slatePulseCounter}
+            data-testid="combat-stage-slate-pulse"
+            data-pulse-counter={slatePulseCounter}
+            aria-hidden="true"
+            className="combat-stage-slate-pulse pointer-events-none absolute"
+          />
+        </>
+      )}
+    </>
   );
 }

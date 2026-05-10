@@ -918,6 +918,100 @@ input[type="checkbox"] {
 }
 
 /*
+ * Bundle 2 / Slice 2-B — central-area frame.
+ *
+ * A `position: absolute` rectangle centered at the viewport,
+ * approximately 35% × 35% of the viewport — sized to roughly match
+ * the central focal cell at the 1440p (T4) target. The frame itself
+ * is transparent; its visual identity comes from two inset shadows:
+ *
+ *   1. Thin gold edge — `box-shadow: inset 0 0 0 1px rgba(255,210,
+ *      120,0.6)` — reads as "scene boundary."
+ *   2. Deeper inset shadow — `inset 0 0 28px rgba(0,0,0,0.45)` —
+ *      reads as "spotlit stage" (the gold edge is illuminated against
+ *      a darkened interior gradient).
+ *
+ * z-index 5 sits above the vignette (z=3) and below pod grid + cards
+ * + Bundle 5 parcels (z=25) + Bundle 6 arrows (z=40). The frame
+ * paints a static visual; the sibling slate-clap pulse (next block
+ * below) handles the one-shot intensity flare.
+ *
+ * Brief: the frame is part of the "lit stage" read. Pairs with the
+ * vignette to communicate "the action is here now."
+ */
+.combat-stage-frame {
+  z-index: 5;
+  top: 50%;
+  left: 50%;
+  width: 35%;
+  height: 35%;
+  transform: translate(-50%, -50%);
+  border-radius: 6px;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 210, 120, 0.6),
+    inset 0 0 28px rgba(0, 0, 0, 0.45);
+}
+
+/*
+ * Bundle 2 / Slice 2-B — slate-clap pulse.
+ *
+ * A sibling overlay that flares ONCE when slatePulseCounter
+ * increments (the React component keys this element on the counter
+ * value, so each increment unmount/remounts the element and the
+ * keyframe runs fresh from t=0). The keyframe is a single 800ms
+ * pulse on a brighter gold ring overlaying the frame — opacity
+ * 0.6 → 1.0 → 0.6 with the box-shadow's gold-edge intensity
+ * scaling correspondingly. After the 800ms cycle, the element
+ * settles at opacity 0 (invisible) and stays mounted until the next
+ * counter change or until stageActive flips false.
+ *
+ * Geometry matches the frame (same 35% × 35% centered rectangle)
+ * so the pulse appears to fire ON the frame's edge, not adjacent
+ * to it.
+ *
+ * Reduced motion: the keyframe is silenced by the override below;
+ * the gold frame underneath persists static so combat-entry still
+ * reads as a state change (just without the cinematic flare).
+ */
+@keyframes combat-stage-slate-pulse {
+  0% {
+    opacity: 0;
+    box-shadow: inset 0 0 0 1px rgba(255, 220, 140, 0.6);
+  }
+  25% {
+    opacity: 1;
+    box-shadow: inset 0 0 0 2px rgba(255, 230, 160, 1);
+  }
+  50% {
+    opacity: 1;
+    box-shadow: inset 0 0 0 2px rgba(255, 230, 160, 1);
+  }
+  100% {
+    opacity: 0;
+    box-shadow: inset 0 0 0 1px rgba(255, 220, 140, 0.6);
+  }
+}
+.combat-stage-slate-pulse {
+  z-index: 5;
+  top: 50%;
+  left: 50%;
+  width: 35%;
+  height: 35%;
+  transform: translate(-50%, -50%);
+  border-radius: 6px;
+  opacity: 0;
+  animation: combat-stage-slate-pulse 800ms ease-in-out 1 forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .combat-stage-slate-pulse {
+    animation: none !important;
+    /* Without the keyframe, the element renders invisibly so combat
+     * entry/exit is signaled by the vignette ramp + frame mount alone. */
+    opacity: 0 !important;
+  }
+}
+
+/*
  * Slice 52d → 70-B (ADR 0011 D4) — accessibility: honor
  * prefers-reduced-motion across the CSS animation/transition surface.
  * Framer Motion JS animations have a parallel control point at

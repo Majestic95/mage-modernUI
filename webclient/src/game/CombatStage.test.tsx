@@ -131,6 +131,63 @@ describe('CombatStage (slice 2-A)', () => {
     expect(vignette.className).toContain('pointer-events-none');
   });
 
+  it('slice 2-B — frame mounts only when stageActive=true', () => {
+    const { queryByTestId, rerender } = render(<CombatStage />);
+    // Baseline: no game view → stageActive=false → no frame.
+    expect(queryByTestId('combat-stage-frame')).toBeNull();
+    setPhaseAndStep('PRECOMBAT_MAIN', 'PRECOMBAT_MAIN');
+    rerender(<CombatStage />);
+    expect(queryByTestId('combat-stage-frame')).toBeNull();
+    setPhaseAndStep('COMBAT', 'BEGIN_COMBAT');
+    rerender(<CombatStage />);
+    expect(queryByTestId('combat-stage-frame')).not.toBeNull();
+    setPhaseAndStep('POSTCOMBAT_MAIN', 'POSTCOMBAT_MAIN');
+    rerender(<CombatStage />);
+    expect(queryByTestId('combat-stage-frame')).toBeNull();
+  });
+
+  it('slice 2-B — slate-pulse element mounts only when stageActive=true', () => {
+    const { queryByTestId, rerender } = render(<CombatStage />);
+    expect(queryByTestId('combat-stage-slate-pulse')).toBeNull();
+    setPhaseAndStep('COMBAT', 'BEGIN_COMBAT');
+    rerender(<CombatStage />);
+    expect(queryByTestId('combat-stage-slate-pulse')).not.toBeNull();
+  });
+
+  it('slice 2-B — slate-pulse element keyed by slatePulseCounter (data-attribute reflects counter)', () => {
+    const { getByTestId, rerender } = render(<CombatStage />);
+    // First transition: PRECOMBAT → COMBAT increments counter to 1.
+    setPhaseAndStep('PRECOMBAT_MAIN', 'PRECOMBAT_MAIN');
+    setPhaseAndStep('COMBAT', 'BEGIN_COMBAT');
+    rerender(<CombatStage />);
+    expect(
+      getByTestId('combat-stage-slate-pulse').getAttribute(
+        'data-pulse-counter',
+      ),
+    ).toBe('1');
+    // Exit + re-enter increments counter twice more → 3.
+    setPhaseAndStep('POSTCOMBAT_MAIN', 'POSTCOMBAT_MAIN');
+    setPhaseAndStep('COMBAT', 'BEGIN_COMBAT');
+    rerender(<CombatStage />);
+    expect(
+      getByTestId('combat-stage-slate-pulse').getAttribute(
+        'data-pulse-counter',
+      ),
+    ).toBe('3');
+  });
+
+  it('slice 2-B — frame + slate-pulse are aria-hidden + pointer-events-none', () => {
+    const { getByTestId, rerender } = render(<CombatStage />);
+    setPhaseAndStep('COMBAT', 'BEGIN_COMBAT');
+    rerender(<CombatStage />);
+    const frame = getByTestId('combat-stage-frame');
+    const pulse = getByTestId('combat-stage-slate-pulse');
+    expect(frame.getAttribute('aria-hidden')).toBe('true');
+    expect(frame.className).toContain('pointer-events-none');
+    expect(pulse.getAttribute('aria-hidden')).toBe('true');
+    expect(pulse.className).toContain('pointer-events-none');
+  });
+
   it('stack-push during combat (no phase change) does NOT cause vignette flicker', () => {
     const { getByTestId, rerender } = render(<CombatStage />);
     setPhaseAndStep('COMBAT', 'DECLARE_ATTACKERS');
