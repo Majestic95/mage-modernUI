@@ -120,6 +120,17 @@ interface RoleMarkersProps {
    * {@code undefined} for the same.
    */
   combatRole: CombatRole | null | undefined;
+  /**
+   * Slice 4-X.0 — when the underlying creature is tapped, the
+   * cardart rotates 90° via CardFace's internal `motion.div`. The
+   * marker overlays are SIBLINGS of CardFace (not children), so
+   * without explicit handling here the brackets + inner ring would
+   * stay upright while the cardart rotates — exact bug class
+   * fixed at CardFace.tsx:382-387 for the commander halo. We
+   * mirror the 90° rotation around the wrapper's center so the
+   * marker chrome stays aligned with the rotated cardart.
+   */
+  tapped?: boolean | undefined;
 }
 
 interface RoleOuterHaloProps extends RoleMarkersProps {
@@ -131,6 +142,14 @@ interface RoleOuterHaloProps extends RoleMarkersProps {
    */
   controllerColorIdentity: readonly string[] | undefined;
 }
+
+// Slice 4-X.0 — CSS transition for the tap-rotation. Fixed-duration
+// approximation of CardFace's spring `MANA_TAP_ROTATE`; close enough
+// that markers + cardart visually stay locked together through the
+// rotation. Spring exact-match isn't worth the complexity for a
+// decorative overlay.
+const TAP_ROTATE_TRANSITION =
+  'transform 220ms cubic-bezier(0.45, 0, 0.55, 1)';
 
 type LodMode = 'full' | 'sigil';
 
@@ -203,6 +222,14 @@ function RoleSigil({ role }: { role: CombatRole }) {
   const bg =
     role === 'attacker' ? 'var(--color-attacker)' : 'var(--color-blocker)';
   const letter = role === 'attacker' ? 'A' : 'B';
+  // Slice 4-X.0 N-F — shape redundancy at sigil mode. At full LOD
+  // the WCAG 1.4.1 redundant signal is bracket geometry (sharp L vs
+  // L+stub). At sigil mode the brackets are gone and color-blind
+  // viewers were left with only the letter glyph (~8 px tall, hard
+  // to discriminate at peek-strip scale). Differentiating the
+  // sigil's BACKGROUND shape — circle for attacker, rounded square
+  // for blocker — restores the redundant shape signal.
+  const sigilRadius = role === 'attacker' ? '50%' : '4px';
   return (
     <div
       data-testid="role-sigil"
@@ -221,7 +248,7 @@ function RoleSigil({ role }: { role: CombatRole }) {
         left: SIGIL_OFFSET,
         width: SIGIL_SIZE,
         height: SIGIL_SIZE,
-        borderRadius: '50%',
+        borderRadius: sigilRadius,
         background: bg,
         color: 'var(--color-bg-base)',
         fontFamily: 'serif',
@@ -340,20 +367,22 @@ function CornerBracket({ role }: { role: CombatRole }) {
 export function RoleOuterHalo({
   combatRole,
   controllerColorIdentity,
+  tapped,
 }: RoleOuterHaloProps) {
   // Hooks must run unconditionally per rules-of-hooks; ref + LOD
   // measurement happen even when combatRole is null (zero-cost since
   // wrapper isn't mounted, observer never attaches).
   const wrapperRef = useRef<HTMLDivElement>(null);
-  const lodMode = useTileLodMode(wrapperRef);
+  // Slice 4-X.0 BH-3 — `useTileLodMode` is still called for the
+  // observer side-effect (parent measures + the LOD mode is
+  // observable for debugging via the markers' own `data-lod-mode`),
+  // but the halo persists at all modes (slice 4-D ratification) so
+  // we no longer surface the result on the halo itself. Discarded
+  // void-cast keeps eslint happy without the dead `data-lod-mode`
+  // attribute the bug-hunter critic flagged as "lying about a
+  // non-fact."
+  void useTileLodMode(wrapperRef);
   if (combatRole == null) return null;
-  // Slice 4-D — outer halo PERSISTS at sigil mode. The brief's
-  // "brackets and rings collapse to a sigil" applies to the bracket
-  // chrome + inner ring, not the outer halo: at small sizes the
-  // halo's controller-color cue is the sole "whose creature is
-  // this" signal, and a 2.5 px frame on a 60 px tile (~4% width)
-  // is proportional to a 14 px bracket on a 200 px tile — not
-  // visually loud. UI critic pass slice 4-D ratified persistence.
   const background = controllerOuterRingBackground(
     controllerColorIdentity ?? [],
   );
@@ -362,7 +391,6 @@ export function RoleOuterHalo({
       ref={wrapperRef}
       data-testid="role-outer-halo"
       data-role={combatRole}
-      data-lod-mode={lodMode}
       aria-hidden="true"
       style={{
         position: 'absolute',
@@ -373,6 +401,13 @@ export function RoleOuterHalo({
         // uniform-thickness frame (square corners around a rounded
         // card would read as a glitch).
         borderRadius: `calc(${CARDART_RADIUS} + ${OUTER_HALO_THICKNESS}px)`,
+        // Slice 4-X.0 B-1 — rotate with the cardart on tap so the
+        // halo doesn't leave a portrait-shaped frame behind a
+        // sideways creature. transformOrigin: center pivots around
+        // the cardart's center (matching CardFace's motion.div).
+        transform: tapped ? 'rotate(90deg)' : undefined,
+        transformOrigin: 'center',
+        transition: TAP_ROTATE_TRANSITION,
       }}
     />
   );
@@ -383,7 +418,7 @@ export function RoleOuterHalo({
  * AFTER {@code <CardFace>} so both overlays paint on top of the
  * cardart. Renders {@code null} for non-combat creatures.
  */
-export function RoleMarkers({ combatRole }: RoleMarkersProps) {
+export function RoleMarkers({ combatRole, tapped }: RoleMarkersProps) {
   // Hooks must run unconditionally per rules-of-hooks; ref + LOD
   // measurement happen even when combatRole is null (zero-cost since
   // the wrapper isn't mounted, observer never attaches).
@@ -405,6 +440,13 @@ export function RoleMarkers({ combatRole }: RoleMarkersProps) {
         position: 'absolute',
         inset: -BRACKET_OUTSET,
         pointerEvents: 'none',
+        // Slice 4-X.0 B-1 — same rotate-with-cardart fix as
+        // RoleOuterHalo. Brackets + inner ring + sigil all rotate
+        // together so the marker chrome stays aligned with the
+        // rotated cardart on tap.
+        transform: tapped ? 'rotate(90deg)' : undefined,
+        transformOrigin: 'center',
+        transition: TAP_ROTATE_TRANSITION,
         // Brackets sit OUTSIDE the cardart bounds (negative inset)
         // so they read as a frame around the tile, not a stamp on
         // top of it. T3 — no Scryfall art pixels are occluded.

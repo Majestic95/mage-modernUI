@@ -107,6 +107,15 @@ export function TabletopCardButton({
   combatRole,
   controllerColorIdentity,
 }: CardButtonProps) {
+  // Slice 4-X.0 N-A — suffix the button's accessible name with the
+  // creature's combat role when it's in combat. Bundle 4's chrome
+  // (halo, ring, brackets, sigil) is all aria-hidden + decorative;
+  // the in-CardFace ATK/BLK text badge is read-on-inspection only.
+  // SR users tabbing through the battlefield otherwise hear just
+  // the card name, with no role announcement.
+  const ariaLabel = combatRole
+    ? `${perm.card.name}, ${combatRole}`
+    : perm.card.name;
   return (
     <HoverCardDetail card={perm.card}>
       <button
@@ -122,11 +131,20 @@ export function TabletopCardButton({
             ? () => onObjectClick(perm.card.id)
             : undefined
         }
+        // Slice 4-X.0 B-3 — focus-visible outline restores keyboard
+        // focus indication. WCAG 2.4.7 — `outline-none` was
+        // suppressing the default browser focus ring; Bundle 4's
+        // chrome is decorative (identical for all eligible
+        // attackers) so it cannot stand in as a focus indicator.
+        // outline-offset:2 paints OUTSIDE the button bounds so it
+        // doesn't displace layout (T1 footprint preservation).
         className={
           'relative block p-0 m-0 bg-transparent border-0 outline-none ' +
+          'focus-visible:outline focus-visible:outline-2 ' +
+          'focus-visible:outline-offset-2 focus-visible:outline-amber-300 ' +
           (clickable ? 'cursor-pointer' : 'cursor-default')
         }
-        aria-label={perm.card.name}
+        aria-label={ariaLabel}
       >
         {/* Slice 4-B outer halo — paints BEHIND the cardart so the
             cardart covers the center and only the 2.5 px frame
@@ -134,6 +152,7 @@ export function TabletopCardButton({
         <RoleOuterHalo
           combatRole={combatRole}
           controllerColorIdentity={controllerColorIdentity}
+          tapped={perm.tapped}
         />
         <CardFace
           card={perm.card}
@@ -147,7 +166,7 @@ export function TabletopCardButton({
         {/* Slices 4-A + 4-B inner ring + corner brackets — paint ON
             TOP of the cardart so their stroke isn't occluded. MUST
             stay after <CardFace>. */}
-        <RoleMarkers combatRole={combatRole} />
+        <RoleMarkers combatRole={combatRole} tapped={perm.tapped} />
       </button>
     </HoverCardDetail>
   );

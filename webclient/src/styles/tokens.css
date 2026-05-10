@@ -134,8 +134,16 @@
    * tag/active player), --color-mana-red (vivid red), and
    * --color-mana-blue (vivid sky blue) so the combat-role signal
    * never visually conflates with player-state or mana-color signals.
+   *
+   * Slice 4-X.0 (UI bundle-critic B-1) — attacker shifted from
+   * #E89045 (hue ~28°, near red) to #E8A540 (hue ~37°, yellow-
+   * orange) per the brief's original `oklch(0.75 0.15 50)` intent.
+   * The redder original was visually collapsing with --color-mana-red
+   * outer halos on mono-R-controller attackers (5 warm/red elements
+   * piling up — outer halo + inner ring + brackets + ATK badge +
+   * damaged P/T digit all sat in the orange→red 25-40° hue arc).
    */
-  --color-attacker: #E89045;
+  --color-attacker: #E8A540;
   --color-blocker: #5C9BC2;
 
   /*

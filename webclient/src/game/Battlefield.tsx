@@ -109,6 +109,12 @@ export function Battlefield({
   >(() => {
     const m = new Map<string, readonly string[]>();
     for (const p of gv.players) {
+      // Slice 4-X.0 N-C — skip empty-name entries. Defensive against
+      // the empty-string-sentinel bug class (cf. WebPlayerView's
+      // skipState='' precedent in memory). If the wire ever emits
+      // p.name='' for two players in a brief loading window, two
+      // creatures would otherwise share the wrong commander color.
+      if (!p.name) continue;
       m.set(p.name, p.colorIdentity ?? []);
     }
     return m;

@@ -700,7 +700,7 @@ describe('RoleMarkers / RoleOuterHalo LOD fallback (slice 4-D)', () => {
     expect(sigil.getAttribute('aria-hidden')).toBe('true');
   });
 
-  it('exactly 2 observers per combat creature (one in RoleOuterHalo, one in RoleMarkers); disconnect spy fires on unmount', () => {
+  it('exactly 2 observers per combat creature (one in RoleOuterHalo, one in RoleMarkers); each observed parent + disconnected on unmount', () => {
     const { unmount } = render(
       <TabletopCardButton
         perm={makePerm()}
@@ -716,6 +716,14 @@ describe('RoleMarkers / RoleOuterHalo LOD fallback (slice 4-D)', () => {
     // looser >= 2 floor. RoleMarkers' useTileLodMode + RoleOuterHalo's
     // useTileLodMode each instantiate one observer.
     expect(ResizeObserverMock.instances).toHaveLength(2);
+    // Slice 4-X.0 BugHunter HIGH-1 — assert observe() was actually
+    // called BEFORE unmount. Without this, a hypothetical bug
+    // where useLayoutEffect short-circuits before observer.observe()
+    // would still pass the disconnectCount assertion (the cleanup
+    // arrow always fires on unmount whether or not observe ran).
+    for (const obs of ResizeObserverMock.instances) {
+      expect(obs.observed.size).toBe(1);
+    }
     unmount();
     // Tech critic notable T-2 — assert disconnect was actually
     // called (not just that the mock's `observed` set ended up
@@ -724,6 +732,56 @@ describe('RoleMarkers / RoleOuterHalo LOD fallback (slice 4-D)', () => {
       expect(obs.disconnectCount).toBe(1);
       expect(obs.observed.size).toBe(0);
     }
+  });
+
+  it('attacker sigil is a circle (border-radius 50%) for WCAG 1.4.1 redundant-shape signal', () => {
+    const { container } = render(
+      <TabletopCardButton
+        perm={makePerm()}
+        clickable={false}
+        onObjectClick={undefined}
+        isEligibleTarget={false}
+        isEligibleCombat={false}
+        combatRole="attacker"
+        controllerColorIdentity={['G']}
+      />,
+    );
+    const button = container.querySelector('button')!;
+    pinWidth(button, 60);
+    act(() => {
+      for (const obs of ResizeObserverMock.instances) obs.fire();
+    });
+    const sigil = container.querySelector(
+      '[data-testid="role-sigil"]',
+    ) as HTMLElement;
+    expect(sigil.style.borderRadius).toBe('50%');
+  });
+
+  it('blocker sigil is a rounded square (border-radius 4px) — distinct shape from attacker', () => {
+    // Slice 4-X.0 N-F — at sigil mode the brackets are gone; only
+    // the letter glyph + sigil shape distinguish role for color-blind
+    // viewers. Circle (attacker) vs rounded-square (blocker)
+    // restores the WCAG 1.4.1 redundant-shape signal.
+    const { container } = render(
+      <TabletopCardButton
+        perm={makePerm()}
+        clickable={false}
+        onObjectClick={undefined}
+        isEligibleTarget={false}
+        isEligibleCombat={false}
+        combatRole="blocker"
+        controllerColorIdentity={['G']}
+      />,
+    );
+    const button = container.querySelector('button')!;
+    pinWidth(button, 60);
+    act(() => {
+      for (const obs of ResizeObserverMock.instances) obs.fire();
+    });
+    const sigil = container.querySelector(
+      '[data-testid="role-sigil"]',
+    ) as HTMLElement;
+    expect(sigil.style.borderRadius).toBe('4px');
   });
 
   it('graceful fallback to full LOD when ResizeObserver is undefined', () => {
@@ -745,5 +803,160 @@ describe('RoleMarkers / RoleOuterHalo LOD fallback (slice 4-D)', () => {
     // we default to 'full'.
     const markers = container.querySelector('[data-testid="role-markers"]');
     expect(markers?.getAttribute('data-lod-mode')).toBe('full');
+  });
+
+  it('outer halo has NO data-lod-mode attribute (BugHunter MED-3 / LOW-7 — halo persists at all LOD modes; attribute would lie)', () => {
+    const { container } = render(
+      <TabletopCardButton
+        perm={makePerm()}
+        clickable={false}
+        onObjectClick={undefined}
+        isEligibleTarget={false}
+        isEligibleCombat={false}
+        combatRole="attacker"
+        controllerColorIdentity={['G']}
+      />,
+    );
+    const halo = container.querySelector('[data-testid="role-outer-halo"]');
+    expect(halo).not.toBeNull();
+    // Halo persists at all LOD modes per slice 4-D ratification.
+    // The data-lod-mode attribute (which exists on RoleMarkers'
+    // wrapper) would be a dead lie if also surfaced on the halo.
+    expect(halo?.getAttribute('data-lod-mode')).toBeNull();
+  });
+});
+
+/* ===================================================================
+ * Slice 4-X.0 — tap-rotation invariant.
+ *
+ * Pinned because Bundle 4's marker overlays are SIBLINGS of CardFace
+ * (not children), so without this regression test a tapped attacker
+ * would silently render a horizontal cardart inside an upright
+ * orange-bracket frame. Same bug class as the 2026-05-04 commander-
+ * halo desync at CardFace.tsx:382-387.
+ * =================================================================*/
+
+describe('TabletopCardButton aria-label + focus-visible (slice 4-X.0)', () => {
+  it('aria-label is just the card name when combatRole is null', () => {
+    const { container } = render(
+      <TabletopCardButton
+        perm={makePerm()}
+        clickable={false}
+        onObjectClick={undefined}
+        isEligibleTarget={false}
+        isEligibleCombat={false}
+        combatRole={null}
+        controllerColorIdentity={['G']}
+      />,
+    );
+    const button = container.querySelector('button')!;
+    expect(button.getAttribute('aria-label')).toBe('Llanowar Elves');
+  });
+
+  it('aria-label suffixes role when combatRole is attacker (UX N-A — SR users hear the role)', () => {
+    const { container } = render(
+      <TabletopCardButton
+        perm={makePerm()}
+        clickable={false}
+        onObjectClick={undefined}
+        isEligibleTarget={false}
+        isEligibleCombat={false}
+        combatRole="attacker"
+        controllerColorIdentity={['G']}
+      />,
+    );
+    const button = container.querySelector('button')!;
+    expect(button.getAttribute('aria-label')).toBe('Llanowar Elves, attacker');
+  });
+
+  it('aria-label suffixes role when combatRole is blocker', () => {
+    const { container } = render(
+      <TabletopCardButton
+        perm={makePerm()}
+        clickable={false}
+        onObjectClick={undefined}
+        isEligibleTarget={false}
+        isEligibleCombat={false}
+        combatRole="blocker"
+        controllerColorIdentity={['G']}
+      />,
+    );
+    const button = container.querySelector('button')!;
+    expect(button.getAttribute('aria-label')).toBe('Llanowar Elves, blocker');
+  });
+
+  it('button className includes focus-visible classes (UX B-1 — WCAG 2.4.7 keyboard focus indicator)', () => {
+    const { container } = render(
+      <TabletopCardButton
+        perm={makePerm()}
+        clickable={true}
+        onObjectClick={() => {}}
+        isEligibleTarget={false}
+        isEligibleCombat={false}
+        combatRole={null}
+        controllerColorIdentity={['G']}
+      />,
+    );
+    const button = container.querySelector('button')!;
+    expect(button.className).toContain('focus-visible:outline');
+    expect(button.className).toContain('focus-visible:outline-2');
+    expect(button.className).toContain('focus-visible:outline-offset-2');
+    expect(button.className).toContain('focus-visible:outline-amber-300');
+  });
+});
+
+describe('RoleMarkers / RoleOuterHalo tap-rotation (slice 4-X.0)', () => {
+  it('untapped creature: marker wrappers carry no rotation transform', () => {
+    const perm = makePerm();
+    // perm.tapped is false by default in makePerm
+    const { container } = render(
+      <TabletopCardButton
+        perm={perm}
+        clickable={false}
+        onObjectClick={undefined}
+        isEligibleTarget={false}
+        isEligibleCombat={false}
+        combatRole="attacker"
+        controllerColorIdentity={['G']}
+      />,
+    );
+    const halo = container.querySelector(
+      '[data-testid="role-outer-halo"]',
+    ) as HTMLElement;
+    const markers = container.querySelector(
+      '[data-testid="role-markers"]',
+    ) as HTMLElement;
+    // No rotation when not tapped (transform is the empty string in
+    // jsdom for `undefined` inline values).
+    expect(halo.style.transform).toBe('');
+    expect(markers.style.transform).toBe('');
+  });
+
+  it('tapped creature: both halo and markers rotate 90° around center', () => {
+    const tappedPerm = webPermanentViewSchema.parse({
+      ...makePerm(),
+      tapped: true,
+    });
+    const { container } = render(
+      <TabletopCardButton
+        perm={tappedPerm}
+        clickable={false}
+        onObjectClick={undefined}
+        isEligibleTarget={false}
+        isEligibleCombat={false}
+        combatRole="attacker"
+        controllerColorIdentity={['G']}
+      />,
+    );
+    const halo = container.querySelector(
+      '[data-testid="role-outer-halo"]',
+    ) as HTMLElement;
+    const markers = container.querySelector(
+      '[data-testid="role-markers"]',
+    ) as HTMLElement;
+    expect(halo.style.transform).toBe('rotate(90deg)');
+    expect(halo.style.transformOrigin).toBe('center');
+    expect(markers.style.transform).toBe('rotate(90deg)');
+    expect(markers.style.transformOrigin).toBe('center');
   });
 });

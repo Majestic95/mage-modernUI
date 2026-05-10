@@ -412,4 +412,44 @@ describe('CardFace combat eligibility shimmer (slice 4-C)', () => {
       container.querySelector('.animate-combat-eligibility-pulse'),
     ).toBeNull();
   });
+
+  it('pulse OFF when eligible AND already assigned (combatRole != null) — slice 4-X.0 N-E', () => {
+    // Pulse is a picker affordance for the declare-step. Once the
+    // creature is assigned to a combat group it has brackets +
+    // inner ring + halo carrying the role signal; a pulse on top
+    // would make the tile visually loud and undermine Bundle 4's
+    // "scan who's in combat" pain axis.
+    const { container } = render(
+      <CardFace
+        card={BASE_CARD}
+        size="battlefield"
+        perm={buildPerm(BASE_CARD, 0)}
+        isEligibleCombat={true}
+        combatRole="attacker"
+      />,
+    );
+    // Static ring still painted (assigned creatures are still
+    // "eligible" in the engine's sense — they could re-target).
+    const ringEl = container.querySelector('.ring-amber-400\\/60');
+    expect(ringEl).not.toBeNull();
+    // But the pulse class is suppressed.
+    expect(
+      container.querySelector('.animate-combat-eligibility-pulse'),
+    ).toBeNull();
+  });
+
+  it('pulse ON when eligible AND combatRole is null (creature is a candidate but not yet picked)', () => {
+    const { container } = render(
+      <CardFace
+        card={BASE_CARD}
+        size="battlefield"
+        perm={buildPerm(BASE_CARD, 0)}
+        isEligibleCombat={true}
+        combatRole={null}
+      />,
+    );
+    expect(
+      container.querySelector('.animate-combat-eligibility-pulse'),
+    ).not.toBeNull();
+  });
 });

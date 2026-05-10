@@ -161,11 +161,20 @@ input[type="checkbox"] {
  *
  * Slow 1500ms sine-wave alpha pulse on the existing static
  * `ring-2 ring-amber-400/60` eligibility ring (CardFace.tsx:319).
- * Layered on as an additive box-shadow so the static ring stays as
- * the source-of-truth visual cue; under `prefers-reduced-motion:
- * reduce` the global rule at the bottom of this file kills the
- * keyframe but the static ring keeps painting (additive enhancement,
- * never subtractive).
+ * Each keyframe stop INCLUDES the static ring shadow as its first
+ * layer — Tailwind's `ring-2` compiles to `box-shadow`, and a
+ * `box-shadow` keyframe overrides (not composites with) the
+ * static rule. Slice 4-X.0 (BugHunter HIGH-2) restored the ring
+ * layer so the static ring genuinely stays painted across the
+ * entire animation cycle, matching slice 4-C's "additive
+ * enhancement" claim.
+ *
+ * Outer breath layer 0.35→0.85 alpha at 8px 2px spread (slice 4-X.0
+ * UI B-2 retuning). Wider spread + deeper peak resolves the amber
+ * × amber × amber three-way visual collision that the original
+ * 6px 1px 0.30→0.65 pulse couldn't escape. Pulse now reads as a
+ * halo growing outward from the ring rather than co-located
+ * breathing on the same ring.
  *
  * `rgb(251 191 36)` = Tailwind amber-400 — same hue as the static
  * ring so the pulse reads as breathing, not as a separate signal.
@@ -174,8 +183,16 @@ input[type="checkbox"] {
  * "you can click these" wayfinding without competing for attention.
  */
 @keyframes combat-eligibility-pulse {
-  0%, 100% { box-shadow: 0 0 6px 1px rgb(251 191 36 / 0.30); }
-  50%      { box-shadow: 0 0 6px 1px rgb(251 191 36 / 0.65); }
+  0%, 100% {
+    box-shadow:
+      0 0 0 2px rgb(251 191 36 / 0.6),
+      0 0 8px 2px rgb(251 191 36 / 0.35);
+  }
+  50% {
+    box-shadow:
+      0 0 0 2px rgb(251 191 36 / 0.6),
+      0 0 8px 2px rgb(251 191 36 / 0.85);
+  }
 }
 
 /*
