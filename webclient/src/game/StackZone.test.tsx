@@ -507,10 +507,20 @@ describe('StackZone — REDESIGN combat mode (picture-catalog §3.2)', () => {
     expect(screen.getAllByTestId('targeting-arrow')).toHaveLength(2);
   });
 
-  it('prefers stack mode when both stack and combat are non-empty (combat-trick caveat §3.2)', () => {
-    // Per §3.2: "If a spell is cast during combat, switch BACK to
-    // stack mode for the duration of that spell on the stack, then
-    // return to combat mode."
+  it('cohabits stack and combat modes when both are non-empty (Option D — z-layer cohabitation, 2026-05-10)', () => {
+    // Pre-2026-05-10 contract (now superseded): "If a spell is cast
+    // during combat, switch BACK to stack mode for the duration of
+    // that spell" — picture-catalog §3.2's combat-trick caveat.
+    //
+    // Post-2026-05-10 contract (foundation Option D): both render
+    // simultaneously when both are non-empty. CombatArrows on
+    // z-index 0; StackFan on z-index 1 above. Bundle 5 (Damage
+    // Moment) and Bundle 6 (Arrow Storytelling) both depend on
+    // arrows staying visible while damage resolves; the prior
+    // mutex would have shipped with a degraded cinematic when
+    // anything hit the stack mid-combat. Tradeoff: stack tile
+    // briefly obscures arrow paths that cross the focal cell. See
+    // docs/design/foundation-central-area-mutex.md.
     const spell = makeCard({ id: 'spell-1', cardId: 'spell-1' });
     const attackerNode = document.createElement('div');
     attackerNode.setAttribute('data-permanent-id', 'creat-1');
@@ -519,10 +529,30 @@ describe('StackZone — REDESIGN combat mode (picture-catalog §3.2)', () => {
     const group = makeCombatGroup({
       attackers: { 'creat-1': makePerm(attacker) },
     });
-    render(<StackZone stack={makeStack([spell])} combat={[group]} />);
+    const { container } = render(
+      <StackZone stack={makeStack([spell])} combat={[group]} />,
+    );
+    // Cohabit wrapper announces the mode.
+    const cohabitWrapper = container.querySelector(
+      '[data-cohabit-mode="true"]',
+    );
+    expect(cohabitWrapper).not.toBeNull();
+    // Both leaf renderers mount their own data-testid='stack-zone' —
+    // CombatArrows with stack-mode='combat' or 'combat-pending',
+    // StackFan with stack-mode='focal'. getAllByTestId returns both.
+    const zones = screen.getAllByTestId('stack-zone');
+    const modes = zones
+      .map((z) => z.getAttribute('data-stack-mode'))
+      .filter((m) => m !== null) as string[];
+    expect(modes).toContain('focal');
+    // Combat half present too — either fully-mounted 'combat' or
+    // pre-DOM-mount 'combat-pending' is acceptable (CombatArrows
+    // measures parents asynchronously).
+    expect(modes.some((m) => m === 'combat' || m === 'combat-pending')).toBe(
+      true,
+    );
+    // Stack focal card still painted (focal-mode rendering intact).
     expect(screen.getByTestId('stack-focal-card')).toBeInTheDocument();
-    const zone = screen.getByTestId('stack-zone');
-    expect(zone.dataset['stackMode']).toBe('focal');
   });
 });
 

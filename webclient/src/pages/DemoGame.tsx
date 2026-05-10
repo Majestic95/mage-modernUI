@@ -69,7 +69,17 @@ export function DemoGame() {
     const combatPhase: 'damage' | 'declare' | undefined =
       combat === 'declare' ? 'declare' : undefined;
     const tappedAttackers = params.get('tapped') === '1';
-    return { combatActive, combatPhase, tappedAttackers };
+    // Foundation Option D (2026-05-10) — `?stack=1` seeds a
+    // Lightning Bolt on the stack alongside combat groups so the
+    // new z-layer cohabit-mode rendering is reachable from the
+    // static fixture.
+    const stackDuringCombat = params.get('stack') === '1';
+    return {
+      combatActive,
+      combatPhase,
+      tappedAttackers,
+      stackDuringCombat,
+    };
   }, []);
   const gameView = useMemo(
     () => buildDemoGameView(fixtureOpts),

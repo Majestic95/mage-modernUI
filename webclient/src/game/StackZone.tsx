@@ -226,11 +226,51 @@ function StackZoneRedesigned({
     );
   }
 
+  // Foundation experiment (Option D — z-layer cohabitation, 2026-05-10).
+  // Single-renderer cases (combat alone, stack alone) keep their
+  // pre-experiment direct return so existing tests + the inner
+  // testid='stack-zone' contracts on CombatArrows / StackFan stay
+  // intact. The new cohabit branch (combat active AND stack
+  // non-empty) replaces the prior "stack non-empty wins, arrows
+  // unmount" mutex with a layered mount: CombatArrows on z=0,
+  // StackFan on z=1. Bundle 5 (Damage Moment) + Bundle 6 (Arrow
+  // Storytelling) need arrows to stay visible while damage
+  // resolves; the prior mutex would have shipped both bundles with
+  // a silently-degraded cinematic whenever anything hit the stack
+  // mid-combat. Tradeoff: stack tile briefly obscures the
+  // ~10-20% of arrow paths that crosses the focal cell. User
+  // direction (2026-05-10): ship as Option D first, escalate to
+  // Option C (compact-stack restructure) only if live-test verdict
+  // says the obscuration reads as broken. Full decision context in
+  // docs/design/foundation-central-area-mutex.md.
   if (stackEmpty && combatActive) {
     return <CombatArrows combat={combat} players={players} />;
   }
-
-  return <StackFan entries={entries} />;
+  if (!combatActive) {
+    return <StackFan entries={entries} />;
+  }
+  // Cohabit: combat active AND stack non-empty. Both render. The
+  // outer wrapper has no testid='stack-zone' — CombatArrows and
+  // StackFan each emit their own at the layer roots, which is the
+  // existing contract. Tests that target cohabit mode use
+  // `data-cohabit-mode` on the wrapper or query the inner testids
+  // via `getAllByTestId('stack-zone')`.
+  return (
+    <div
+      data-cohabit-mode="true"
+      className="relative h-full w-full"
+    >
+      <div className="absolute inset-0" style={{ zIndex: 0 }}>
+        <CombatArrows combat={combat} players={players} />
+      </div>
+      <div
+        className="absolute inset-0 flex items-center justify-center"
+        style={{ zIndex: 1 }}
+      >
+        <StackFan entries={entries} />
+      </div>
+    </div>
+  );
 }
 
 /**
