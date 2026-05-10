@@ -31,7 +31,7 @@ afterEach(() => {
 });
 
 describe('CinematicLab', () => {
-  it('mounts the lab page with all four trigger buttons + status text', () => {
+  it('mounts the lab page with all five trigger buttons + status text', () => {
     render(<CinematicLab />);
     expect(screen.getByTestId('cinematic-lab')).toBeInTheDocument();
     expect(screen.getByTestId('cinematic-lab-panel')).toBeInTheDocument();
@@ -39,6 +39,9 @@ describe('CinematicLab', () => {
     expect(screen.getByTestId('trigger-creature-dies')).toBeInTheDocument();
     expect(
       screen.getByTestId('trigger-lethal-commander'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId('trigger-declare-attackers'),
     ).toBeInTheDocument();
     expect(screen.getByTestId('trigger-reset')).toBeInTheDocument();
     expect(screen.getByTestId('cinematic-lab-status')).toBeInTheDocument();
@@ -125,6 +128,22 @@ describe('CinematicLab', () => {
     for (const p of view.players) {
       expect(p.life).toBe(baselineByPlayer.get(p.playerId)!);
     }
+  });
+
+  it('declare-attackers button transitions through non-combat then back to combat-active after raf', async () => {
+    render(<CinematicLab />);
+    const initialView = useGameStore.getState().gameView!;
+    expect(initialView.combat.length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByTestId('trigger-declare-attackers'));
+    // Step 1 fired synchronously: combat is now empty (cleared fixture).
+    const afterStep1 = useGameStore.getState().gameView!;
+    expect(afterStep1.combat.length).toBe(0);
+    // Step 2 fires on the next animation frame: combat is restored.
+    await act(async () => {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    });
+    const afterStep2 = useGameStore.getState().gameView!;
+    expect(afterStep2.combat.length).toBeGreaterThan(0);
   });
 
   it('status text updates after each trigger (non-empty acknowledgement)', () => {

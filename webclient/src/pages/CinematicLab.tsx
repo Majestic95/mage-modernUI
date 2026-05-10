@@ -1,13 +1,27 @@
 /**
- * Bundle 5 cinematic-lab — dev-only page mounted at
- * `?game=cinematic-lab` for triggering each Bundle 5 slice's animation
- * on demand. Wraps the existing combat-active fixture (so attackers,
- * defenders, arrows, and commander metadata are all mounted) and adds
- * a floating control panel with one button per cinematic. Each button
- * mutates `useGameStore.setState({ gameView: ... })` directly — Bundle
- * 5's frame-diff hooks (`useDamageEvents`, `useGameDelta`,
+ * Cinematic lab — dev-only page mounted at `?game=cinematic-lab` for
+ * triggering each combat-bundle slice's animation on demand. Started
+ * as Bundle 5 verification surface; Bundle 6's slice 6-A v2
+ * (overlay-path ink draw-in) added a "Declare attackers" trigger
+ * (combat-exit → raf → combat-re-enter so the per-arrow
+ * arrowsDrawn Set clears via the phase watcher and the ink layer
+ * re-mounts fresh). Wraps the existing combat-active fixture (so
+ * attackers, defenders, arrows, and commander metadata are all
+ * mounted) and adds a floating control panel with one button per
+ * cinematic. Each button mutates `useGameStore.setState({ gameView: ... })`
+ * directly — frame-diff hooks (`useDamageEvents`, `useGameDelta`,
  * `useCommanderLethalEvents`) react to the state change and fire the
- * cinematic on top of the live DOM.
+ * cinematic on top of the live DOM. Slice 6-A v2's draw-in fires
+ * naturally too (TargetingArrow's drawIn prop, latched-on-mount, runs
+ * the ink lifecycle the same way a real-game first-paint would).
+ *
+ * <p><b>File-size note:</b> 461 LOC at slice 6-A's lab-button addition
+ * (was 421 at Bundle 5's lab landing). Past CLAUDE.md's 400 soft cap
+ * but under the 500 hard cap. Bundle 6 will add 2 more lab buttons
+ * (6-B declare-blockers, 6-C step-transition) which will push the
+ * file past 500. Split queued: extract `<ControlPanel>` + `<LabButton>`
+ * (~100 LOC) to a sibling `CinematicLabPanel.tsx` BEFORE slice 6-B's
+ * lab button lands. Trigger callbacks + the helper stay here.
  *
  * <p>Why a separate page (not gated inside DemoGame): DemoGame is the
  * canonical layout-iteration fixture; bolting the lab controls onto
@@ -237,10 +251,40 @@ export function CinematicLab() {
     });
   }, []);
 
+  const triggerDeclareAttackers = useCallback(() => {
+    // Slice 6-A demo. Two-step transition exits combat then re-enters
+    // it the next frame, exercising the arrowIsolationStore phase
+    // watcher's COMBAT → non-COMBAT branch which clears the per-arrow
+    // ink-draw Set. Without the exit step, the arrowsDrawn Set still
+    // contains every attacker id from the lab's initial mount, so a
+    // direct combatActive=true → combatActive=true setState wouldn't
+    // re-fire the ink-overlay draw-in.
+    //
+    // Same epochRef supersession as the lethal trigger — a Reset (or
+    // another trigger) bumping the epoch between step 1 and step 2
+    // drops the deferred restore so the post-reset state isn't
+    // clobbered.
+    const epoch = ++epochRef.current;
+    const cleared = buildDemoGameView({ combatActive: false });
+    useGameStore.setState({ gameView: cleared });
+    requestAnimationFrame(() => {
+      if (epoch !== epochRef.current) return;
+      const live = useGameStore.getState().gameView;
+      if (!live) return;
+      const declared = buildDemoGameView({ combatActive: true });
+      useGameStore.setState({ gameView: declared });
+    });
+    setLabState({
+      lastAction:
+        'Declare attackers — combat exited then re-entered. Watch the ink-overlay pen-stroke draw-in (slice 6-A v2) sweep along each attack arrow over 400ms while the dashed Bundle 1 base path stays underneath.',
+    });
+  }, []);
+
   const resetFixture = useCallback(() => {
     // Bump the epoch so any in-flight lethal raf is silently dropped
     // (see N2 fix above). Without this, "Lethal" → "Reset" before
     // the next frame would clobber the reset with the step-2 state.
+    // Same epoch ALSO supersedes any in-flight Declare-attackers raf.
     epochRef.current += 1;
     const fresh = buildDemoGameView({ combatActive: true });
     useGameStore.setState({ gameView: fresh });
@@ -279,6 +323,7 @@ export function CinematicLab() {
               onCombatDamage={triggerCombatDamage}
               onCreatureDies={triggerCreatureDies}
               onLethal={triggerLethalCommanderDamage}
+              onDeclareAttackers={triggerDeclareAttackers}
               onReset={resetFixture}
             />
           </div>
@@ -293,6 +338,7 @@ interface ControlPanelProps {
   onCombatDamage: () => void;
   onCreatureDies: () => void;
   onLethal: () => void;
+  onDeclareAttackers: () => void;
   onReset: () => void;
 }
 
@@ -301,6 +347,7 @@ function ControlPanel({
   onCombatDamage,
   onCreatureDies,
   onLethal,
+  onDeclareAttackers,
   onReset,
 }: ControlPanelProps) {
   // Position top-right so it doesn't overlap the action panel
@@ -312,11 +359,11 @@ function ControlPanel({
       data-testid="cinematic-lab-panel"
     >
       <h2 className="text-base font-bold text-zinc-100 mb-2">
-        Bundle 5 cinematic lab
+        Cinematic lab
       </h2>
       <p className="text-xs text-zinc-400 mb-3">
-        Click a button to trigger a Bundle 5 effect. Reset between
-        runs to re-fire.
+        Click a button to trigger a Bundle 5 / Bundle 6 effect.
+        Reset between runs to re-fire.
       </p>
       <div className="flex flex-col gap-2">
         <LabButton
@@ -339,6 +386,13 @@ function ControlPanel({
           label="Lethal commander damage (21)"
           description="Centered banner + viewport pulse on threshold cross."
           onClick={onLethal}
+        />
+        <LabButton
+          testid="trigger-declare-attackers"
+          slices="6-A v2"
+          label="Declare attackers"
+          description="Attack arrows ink-overlay pen-stroke draw-in (400ms / arrow)."
+          onClick={onDeclareAttackers}
         />
         <LabButton
           testid="trigger-reset"
