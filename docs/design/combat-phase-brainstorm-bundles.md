@@ -2,15 +2,16 @@
 
 > **Source:** Original brainstorm authored 2026-05 from three parallel design passes (interaction, visual, motion design) merged into six idea bundles. Originally lived as a Cursor plan file at `~/.cursor/plans/combat_phase_brainstorm_clusters_5c8a1050.plan.md`; copied into the repo here on 2026-05-09 so future agents have a stable in-repo reference.
 >
-> **Status snapshot (2026-05-09):**
+> **Status snapshot (2026-05-10):**
 > - **Bundle 3 — Combat Dashboard:** SHIPPED on `feat/combat-bundle-3-dashboard` (merged into `main`). Per-bundle scope brief: [`docs/design/combat-bundle-3-dashboard.md`](combat-bundle-3-dashboard.md). Critic-pass post-mortem: [`docs/decisions/0014-self-authored-spec-failure-modes.md`](../decisions/0014-self-authored-spec-failure-modes.md).
 > - **Bundle 1 — Defender Lanes:** SHIPPED on `feat/combat-bundle-1-defender-lanes` (merged into `main` 2026-05-09 as `2d6b6e40`). Per-bundle scope brief: [`docs/design/combat-bundle-1-defender-lanes.md`](combat-bundle-1-defender-lanes.md). Critic-pass log rows: 1-A through 1-X.3 + live-test tunings burst in [`docs/decisions/critic-pass-log.md`](../decisions/critic-pass-log.md).
-> - **Bundle 4 — Combat Role Markers:** scope brief landed 2026-05-09; ready to slice. Per-bundle scope brief: [`docs/design/combat-bundle-4-role-markers.md`](combat-bundle-4-role-markers.md).
-> - **Bundles 2, 5, 6:** still in brainstorm state; no per-bundle scope brief written yet. Bundles 5 + 6 are gated on the central-area-mutex decision (see "Important snag" below).
+> - **Bundle 4 — Combat Role Markers:** SHIPPED on `feat/combat-bundle-4-role-markers` (merged into `main` 2026-05-10 as `30d89e6698`). Per-bundle scope brief: [`docs/design/combat-bundle-4-role-markers.md`](combat-bundle-4-role-markers.md). Critic-pass log rows: 4-A through 4-X.1 (including bundle-level 4-specialist critic pass at 4-X.0) in [`docs/decisions/critic-pass-log.md`](../decisions/critic-pass-log.md).
+> - **Foundation: central-area mutex resolution** — scope brief landed 2026-05-10; user-decision pending. [`docs/design/foundation-central-area-mutex.md`](foundation-central-area-mutex.md). Recommendation: Option C (shrink the stack) — unblocks Bundles 5 + 6 + benefits Bundle 2.
+> - **Bundles 2, 5, 6:** still in brainstorm state; no per-bundle scope brief written yet. Bundles 5 + 6 are gated on the foundation-mutex decision above. Bundle 2 (Combat Stage) is independent but lower-leverage than Bundle 5.
 >
 > **Open questions still to be answered (originally listed at the bottom of this brainstorm):**
-> - Which bundles to pursue and in what order beyond Bundle 3.
-> - How to handle the "central area can only show one thing at a time" snag — live with it, move arrows elsewhere, or shrink the stack during combat.
+> - Which bundles to pursue and in what order beyond Bundles 3 / 1 / 4. (Recommended next: foundation-mutex → Bundle 5 → Bundle 6 → Bundle 2.)
+> - ~~How to handle the "central area can only show one thing at a time" snag — live with it, move arrows elsewhere, or shrink the stack during combat.~~ Resolved at scope-brief stage; user-decision pending in [`docs/design/foundation-central-area-mutex.md`](foundation-central-area-mutex.md).
 > - Whether the server already exposes per-opponent commander damage on the wire (needed for Bundle 5's lethal-21 moment). If not, that sub-feature can't ship without server-side work first.
 
 ---
