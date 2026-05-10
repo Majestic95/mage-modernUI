@@ -99,6 +99,7 @@ export function StackZone({
   stack,
   combat = [],
   players = [],
+  step,
 }: {
   stack: Record<string, WebCardView>;
   /**
@@ -116,6 +117,13 @@ export function StackZone({
    * found.
    */
   players?: readonly WebPlayerView[];
+  /**
+   * Slice 6-C — wire's combat step string passed through to
+   * {@link CombatArrows} → {@link TargetingArrow} for the shimmer-
+   * overlay palette during damage steps. Optional so older call
+   * sites + tests don't need to plumb it.
+   */
+  step?: string | undefined;
 }) {
   // Wire contract: the server emits the stack as a LinkedHashMap with
   // newest-first iteration order (the topmost / next-to-resolve spell
@@ -132,7 +140,12 @@ export function StackZone({
 
   if (REDESIGN) {
     return (
-      <StackZoneRedesigned entries={entries} combat={combat} players={players} />
+      <StackZoneRedesigned
+        entries={entries}
+        combat={combat}
+        players={players}
+        step={step}
+      />
     );
   }
 
@@ -208,10 +221,12 @@ function StackZoneRedesigned({
   entries,
   combat,
   players,
+  step,
 }: {
   entries: readonly WebCardView[];
   combat: readonly WebCombatGroupView[];
   players: readonly WebPlayerView[];
+  step?: string | undefined;
 }) {
   const stackEmpty = entries.length === 0;
   const combatActive = combat.length > 0;
@@ -244,7 +259,7 @@ function StackZoneRedesigned({
   // says the obscuration reads as broken. Full decision context in
   // docs/design/foundation-central-area-mutex.md.
   if (stackEmpty && combatActive) {
-    return <CombatArrows combat={combat} players={players} />;
+    return <CombatArrows combat={combat} players={players} step={step} />;
   }
   if (!combatActive) {
     return <StackFan entries={entries} />;
@@ -261,7 +276,7 @@ function StackZoneRedesigned({
       className="relative h-full w-full"
     >
       <div className="absolute inset-0" style={{ zIndex: 0 }}>
-        <CombatArrows combat={combat} players={players} />
+        <CombatArrows combat={combat} players={players} step={step} />
       </div>
       <div
         className="absolute inset-0 flex items-center justify-center"

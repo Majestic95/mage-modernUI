@@ -196,6 +196,97 @@ describe('TargetingArrow — slice 6-A ink-overlay draw-in', () => {
     ).not.toBeNull();
   });
 
+  it('slice 6-C — does NOT mount shimmer layer when damageStep is undefined', () => {
+    const { container } = render(
+      <TargetingArrow
+        source={{ x: 0, y: 0 }}
+        to={{ x: 100, y: 100 }}
+        strokeDasharray="8 6"
+      />,
+    );
+    expect(
+      container.querySelector('path[data-arrow-layer="shimmer"]'),
+    ).toBeNull();
+  });
+
+  it('slice 6-C — mounts shimmer layer with first-strike class when damageStep="first-strike"', () => {
+    const { container } = render(
+      <TargetingArrow
+        source={{ x: 0, y: 0 }}
+        to={{ x: 100, y: 100 }}
+        strokeDasharray="8 6"
+        damageStep="first-strike"
+      />,
+    );
+    const shimmer = container.querySelector(
+      'path[data-arrow-layer="shimmer"]',
+    );
+    expect(shimmer).not.toBeNull();
+    expect(shimmer?.getAttribute('class')).toBe('arrow-shimmer-first-strike');
+    expect(shimmer?.getAttribute('data-damage-step')).toBe('first-strike');
+  });
+
+  it('slice 6-C — mounts shimmer layer with regular class when damageStep="regular"', () => {
+    const { container } = render(
+      <TargetingArrow
+        source={{ x: 0, y: 0 }}
+        to={{ x: 100, y: 100 }}
+        strokeDasharray="8 6"
+        damageStep="regular"
+      />,
+    );
+    const shimmer = container.querySelector(
+      'path[data-arrow-layer="shimmer"]',
+    );
+    expect(shimmer).not.toBeNull();
+    expect(shimmer?.getAttribute('class')).toBe('arrow-shimmer-regular');
+    expect(shimmer?.getAttribute('data-damage-step')).toBe('regular');
+  });
+
+  it('slice 6-C — shimmer class swaps when damageStep transitions (cross-dissolve via re-render)', () => {
+    const { container, rerender } = render(
+      <TargetingArrow
+        source={{ x: 0, y: 0 }}
+        to={{ x: 100, y: 100 }}
+        strokeDasharray="8 6"
+        damageStep="first-strike"
+      />,
+    );
+    expect(
+      container
+        .querySelector('path[data-arrow-layer="shimmer"]')
+        ?.getAttribute('class'),
+    ).toBe('arrow-shimmer-first-strike');
+    rerender(
+      <TargetingArrow
+        source={{ x: 0, y: 0 }}
+        to={{ x: 100, y: 100 }}
+        strokeDasharray="8 6"
+        damageStep="regular"
+      />,
+    );
+    expect(
+      container
+        .querySelector('path[data-arrow-layer="shimmer"]')
+        ?.getAttribute('class'),
+    ).toBe('arrow-shimmer-regular');
+  });
+
+  it('slice 6-C — base path strokeDasharray="8 6" preserved alongside shimmer layer (regression)', () => {
+    // The same v1-bug guard from slice 6-A v2 — the base layer must
+    // never be touched by sibling layers (ink OR shimmer).
+    const { container } = render(
+      <TargetingArrow
+        source={{ x: 0, y: 0 }}
+        to={{ x: 100, y: 100 }}
+        strokeDasharray="8 6"
+        damageStep="first-strike"
+      />,
+    );
+    const base = container.querySelector('path[data-arrow-layer="base"]');
+    expect(base?.getAttribute('stroke-dasharray')).toBe('8 6');
+  });
+
   it('latches drawIn on mount — flipping the prop to undefined mid-animation does not interrupt', () => {
     const { container, rerender } = render(
       <TargetingArrow

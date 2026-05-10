@@ -415,6 +415,21 @@ export const LETHAL_AUTHORITY_PAUSE_MS = 80;
 export const LETHAL_AUTHORITY_TOTAL_MS = 640;
 export const LETHAL_AUTHORITY_STAGGER_MS = 300;
 
+// Bundle 6 / Slice 6-C — first-strike-vs-regular damage palette
+// shimmer. A third sibling <path data-arrow-layer="shimmer">
+// breathes a step-keyed color overlay over the base + ink layers
+// during the COMBAT_DAMAGE / FIRST_COMBAT_DAMAGE steps. Cool cyan-
+// white reads as "fast first-strike damage"; warm amber reads as
+// "regular combat damage." When both fire in one turn (a creature
+// with first-strike that survives to deal regular damage), the user
+// sees the same arrow shift palette at the step boundary.
+//
+// Reduced-motion: the global @media (prefers-reduced-motion: reduce)
+// rule in index.css suppresses the keyframe animation but the static
+// stroke color persists — color isn't motion (WCAG 2.3.3 footnote).
+export const ARROW_SHIMMER_FIRST_STRIKE_MS = 200;
+export const ARROW_SHIMMER_REGULAR_MS = 350;
+
 // Bundle 6 / Slice 6-A — attack-arrow pen-stroke draw-in.
 // Mechanism: a sibling "ink" <path> is mounted on top of the base
 // dashed arrow (which keeps its '8 6' dasharray unchanged). The ink

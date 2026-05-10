@@ -55,9 +55,25 @@ const ARROW_DIM_OPACITY = 0.2;
 // `ARROW_REVEAL_STEP_MS` and `ARROW_REVEAL_MAX_INDEX` are imported
 // from there so future retunes happen in one place.
 
+/**
+ * Slice 6-C — derive the shimmer-overlay palette from the wire's
+ * combat-step string. Returns {@code undefined} for any step outside
+ * the two damage steps so the shimmer overlay only mounts during
+ * actual damage resolution; PRECOMBAT_MAIN, DECLARE_ATTACKERS, etc.
+ * all return undefined.
+ */
+function damageStepFromGameStep(
+  step: string | undefined,
+): 'first-strike' | 'regular' | undefined {
+  if (step === 'FIRST_COMBAT_DAMAGE') return 'first-strike';
+  if (step === 'COMBAT_DAMAGE') return 'regular';
+  return undefined;
+}
+
 export function CombatArrows({
   combat,
   players = [],
+  step,
 }: {
   combat: readonly WebCombatGroupView[];
   /**
@@ -68,7 +84,17 @@ export function CombatArrows({
    * legacy neutral teal stroke when no defender is found in the list.
    */
   players?: readonly WebPlayerView[];
+  /**
+   * Slice 6-C — wire's combat step (e.g. {@code 'FIRST_COMBAT_DAMAGE'}
+   * / {@code 'COMBAT_DAMAGE'}) used to derive the per-arrow shimmer
+   * overlay's palette. Passed through to TargetingArrow's
+   * {@code damageStep} prop after the FIRST_COMBAT_DAMAGE → 'first-
+   * strike' / COMBAT_DAMAGE → 'regular' / else → undefined mapping.
+   * Optional so older call sites + tests don't need to plumb it.
+   */
+  step?: string | undefined;
 }) {
+  const damageStep = damageStepFromGameStep(step);
   const arrows = useCombatArrowGeometry(combat, players);
   const hoveredId = useHoveredCombatId();
   // Slice 1-B — pinned-defender id from the IncomingTag click affordance.
@@ -218,6 +244,7 @@ export function CombatArrows({
             revealDelayMs={revealDelayMs}
             drawIn={drawIn}
             markId={arrowKindTrackId}
+            damageStep={damageStep}
           />
         );
       })}
@@ -245,12 +272,14 @@ function ArrowRow({
   revealDelayMs,
   drawIn,
   markId,
+  damageStep,
 }: {
   spec: import('./combatArrowGeometry').ArrowSpec;
   opacity: number;
   revealDelayMs: number;
   drawIn: { kind: 'attack' } | { kind: 'block' } | undefined;
   markId: string;
+  damageStep: 'first-strike' | 'regular' | undefined;
 }) {
   // Mark the arrow as drawn on first paint so a re-render or stack-
   // push remount within the same combat phase doesn't replay the ink
@@ -281,6 +310,7 @@ function ArrowRow({
       }
       revealDelayMs={revealDelayMs}
       drawIn={drawIn}
+      damageStep={damageStep}
     />
   );
 }

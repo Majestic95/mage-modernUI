@@ -504,6 +504,7 @@ export function Battlefield({
                 stack={gv.stack}
                 combat={gv.combat}
                 players={gv.players}
+                step={gv.step}
               />
               <div
                 data-testid="central-focal-turn-label"

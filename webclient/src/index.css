@@ -789,6 +789,48 @@ input[type="checkbox"] {
 }
 
 /*
+ * Bundle 6 / Slice 6-C — first-strike-vs-regular damage palette
+ * shimmer. A third sibling <path data-arrow-layer="shimmer"> on each
+ * combat arrow breathes a step-keyed color overlay during the
+ * FIRST_COMBAT_DAMAGE / COMBAT_DAMAGE steps. mix-blend-mode: screen
+ * lifts the shimmer over the existing arrow stroke without obscuring
+ * the per-defender color identity underneath.
+ *
+ * Two keyframes — sharp 200ms cycle for first-strike (cool cyan-
+ * white reads as "fast / piercing"); slower 350ms cycle for regular
+ * combat damage (warm amber-orange reads as "weighty / settling").
+ *
+ * Reduced motion: the global @media (prefers-reduced-motion: reduce)
+ * rule kills the keyframe animation, but the static stroke + opacity
+ * persist — color isn't motion, so the cool-vs-warm differentiation
+ * remains as a static signal (WCAG 1.4.1 redundant-signal claim).
+ */
+@keyframes arrow-shimmer-first-strike {
+  0%, 100% { opacity: 0.2; }
+  50%      { opacity: 0.7; }
+}
+@keyframes arrow-shimmer-regular {
+  0%, 100% { opacity: 0.15; }
+  50%      { opacity: 0.55; }
+}
+.arrow-shimmer-first-strike {
+  /* Cool cyan-white — first-strike palette. */
+  stroke: rgba(180, 230, 255, 0.7);
+  fill: none;
+  mix-blend-mode: screen;
+  pointer-events: none;
+  animation: arrow-shimmer-first-strike 200ms ease-in-out infinite;
+}
+.arrow-shimmer-regular {
+  /* Warm amber-orange — regular combat damage palette. */
+  stroke: rgba(255, 200, 130, 0.7);
+  fill: none;
+  mix-blend-mode: screen;
+  pointer-events: none;
+  animation: arrow-shimmer-regular 350ms ease-in-out infinite;
+}
+
+/*
  * Slice 52d → 70-B (ADR 0011 D4) — accessibility: honor
  * prefers-reduced-motion across the CSS animation/transition surface.
  * Framer Motion JS animations have a parallel control point at

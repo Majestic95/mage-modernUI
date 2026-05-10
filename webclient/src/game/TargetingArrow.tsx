@@ -140,6 +140,23 @@ interface Props {
    * static base path conveys the same information without animation.
    */
   drawIn?: DrawInSpec | undefined;
+  /**
+   * Slice 6-C — when set, mounts a third sibling "shimmer" path on
+   * top of the base + ink layers that breathes a step-keyed color
+   * overlay during damage steps. {@code 'first-strike'} → cool cyan-
+   * white shimmer with a sharp 200ms cycle. {@code 'regular'} →
+   * warm amber-orange shimmer with a slower 350ms cycle.
+   *
+   * <p>Cross-dissolve between palettes happens via CSS class swap
+   * when the prop value changes (e.g. when the engine transitions
+   * from FIRST_COMBAT_DAMAGE → COMBAT_DAMAGE on a creature with
+   * first strike that survived to deal regular damage).
+   *
+   * <p>Reduced-motion: the keyframe animation is silenced by the
+   * global rule, but the static stroke color persists so cool-vs-
+   * warm differentiation is preserved as a static signal.
+   */
+  damageStep?: 'first-strike' | 'regular' | undefined;
 }
 
 export function TargetingArrow({
@@ -153,6 +170,7 @@ export function TargetingArrow({
   defenderIndex,
   revealDelayMs,
   drawIn,
+  damageStep,
 }: Props) {
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
 
@@ -418,6 +436,29 @@ export function TargetingArrow({
               `opacity ${ARROW_INK_FADEOUT_MS}ms ease-out`,
             ].join(', '),
           }}
+        />
+      )}
+      {damageStep !== undefined && (
+        // Slice 6-C — shimmer overlay path. Step-keyed CSS class
+        // controls stroke color + keyframe animation:
+        //   'first-strike' → cool cyan-white, sharp 200ms cycle
+        //   'regular'      → warm amber-orange, slower 350ms cycle
+        // mix-blend-mode: screen (in CSS) lifts the shimmer over the
+        // existing arrow stroke without obscuring the per-defender
+        // color identity underneath. Cross-dissolve between palettes
+        // happens via React's natural class swap when damageStep
+        // changes (engine transitions FIRST_COMBAT_DAMAGE → COMBAT_DAMAGE).
+        <path
+          data-arrow-layer="shimmer"
+          data-damage-step={damageStep}
+          d={`M ${source.x} ${source.y} Q ${midX} ${midY} ${target.x} ${target.y}`}
+          strokeWidth="5"
+          strokeLinecap="butt"
+          className={
+            damageStep === 'first-strike'
+              ? 'arrow-shimmer-first-strike'
+              : 'arrow-shimmer-regular'
+          }
         />
       )}
     </svg>
