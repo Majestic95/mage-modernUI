@@ -21,8 +21,8 @@ import { usePrefersReducedMotion } from './usePrefersReducedMotion';
 /**
  * Combat-arrow overlay — extracted from StackZone.tsx (was at 865
  * LOC, past the 500 hard cap with no documented exception). The
- * geometry layer (ArrowSpec, useCombatArrowGeometry, applyEndpointFan,
- * fingerprint memo, DOM-rect helpers) was further split out into
+ * geometry layer (ArrowSpec, useCombatArrowGeometry, fingerprint
+ * memo, DOM-rect helpers) was further split out into
  * {@link ./combatArrowGeometry} in slice 1-X.0 (mechanical-tier,
  * 2026-05-09) so this file lands back under cap with room for slices
  * 1-B / 1-C / 1-D to layer on. This file owns only:

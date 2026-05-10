@@ -38,31 +38,29 @@ const ARROW_DASH_PATTERN = '8 6';
  *   <li>{@link ArrowSpec} — per-arrow render spec (geometry + visual
  *       signal + identity metadata) consumed by the renderer.</li>
  *   <li>{@link useCombatArrowGeometry} — the React hook that
- *       measures source/target rects from the DOM and applies the
- *       endpoint-fan pass.</li>
+ *       measures source/target rects from the DOM.</li>
  *   <li>{@code useCombatFingerprint} (internal) — content-keyed
  *       memo so the geometry effect doesn't re-run on referentially-
  *       fresh-but-equal gameUpdate frames.</li>
- *   <li>{@code applyEndpointFan} (internal) — splays endpoints when
- *       multiple arrows share a target so the arrowheads don't
- *       stack on a single pixel.</li>
  *   <li>DOM-rect helpers (internal) — {@code rectForPermanent},
  *       {@code rectForPlayer}, {@code combatEndpointNodes},
  *       {@code centerOf}, {@code cssEscape}.</li>
  * </ul>
  *
- * <p><b>Why endpoint-fanning:</b> when N attackers all target the
- * same defender (or N attackers all pile onto one blocker), every
- * arrow's {@code target} resolved to the same {@code centerOf(rect)}
- * point. Arrowheads stacked on a single pixel — visually unreadable.
- * The fan offsets each shared-target endpoint along the perpendicular
- * to that arrow's source→target direction by
- * {@link ARROW_FAN_SPACING_PX} × signed-index, producing a small
- * fan at the receiving end. Sources are unchanged because each
- * attacker is a distinct DOM tile.
+ * <p><b>Endpoint convergence (2026-05-10):</b> when N attackers all
+ * target the same defender (or N attackers all pile onto one
+ * blocker), every arrow's {@code target} resolves to the same
+ * {@code centerOf(rect)} point — the portrait or blocker tile center.
+ * The earlier endpoint-fan pass splayed those endpoints along the
+ * perpendicular by {@code 24px × signed-index} so the arrowheads
+ * didn't stack on a single pixel; user direction (this slice)
+ * removed the fan in favor of strict convergence — N arrows land on
+ * exactly the same pixel of the defender's portrait, all "aimed at
+ * the same point." Arrowheads still render fine because each arrow
+ * has its own marker; they paint on top of each other but the visual
+ * read is "this many attackers aimed at the same target," which is
+ * the intended signal.
  */
-
-const ARROW_FAN_SPACING_PX = 24;
 
 export interface ArrowSpec {
   key: string;
@@ -176,8 +174,10 @@ export function useCombatArrowGeometry(
         }
       }
 
-      const next = applyEndpointFan(raw);
-      if (!cancelled) setArrows(next);
+      // Endpoint convergence: N attackers targeting one defender land
+      // on the same portrait pixel (no fan offset). Spread to a fresh
+      // array reference so React detects the state change.
+      if (!cancelled) setArrows([...raw]);
     };
 
     let frame: number | null = null;
@@ -224,57 +224,6 @@ export function useCombatArrowGeometry(
   }, [combatFingerprint]);
 
   return arrows;
-}
-
-/**
- * Splays endpoints of arrows that share a target. Returns a new
- * array; raw is not mutated. Single-arrow targets pass through
- * unchanged so an unblocked 1v1 attack looks identical to today.
- *
- * <p>Buckets by {@code arrow.targetId} (the canonical "same target"
- * key — blocker permanent id or {@code player:<defenderId>}) rather
- * than by quantized screen coordinate. Coordinate-based grouping
- * carried a false-positive risk if two unrelated targets ever
- * landed within a few pixels of each other.
- */
-function applyEndpointFan(raw: readonly ArrowSpec[]): ArrowSpec[] {
-  const groups = new Map<string, ArrowSpec[]>();
-  for (const arrow of raw) {
-    let bucket = groups.get(arrow.targetId);
-    if (!bucket) {
-      bucket = [];
-      groups.set(arrow.targetId, bucket);
-    }
-    bucket.push(arrow);
-  }
-
-  const out: ArrowSpec[] = [];
-  for (const bucket of groups.values()) {
-    if (bucket.length === 1) {
-      out.push(bucket[0]!);
-      continue;
-    }
-    // Stable visual order: leftmost source → leftmost fan slot.
-    bucket.sort((a, b) => a.source.x - b.source.x);
-    const n = bucket.length;
-    for (let i = 0; i < n; i++) {
-      const arrow = bucket[i]!;
-      const offset = (i - (n - 1) / 2) * ARROW_FAN_SPACING_PX;
-      const dx = arrow.target.x - arrow.source.x;
-      const dy = arrow.target.y - arrow.source.y;
-      const len = Math.hypot(dx, dy) || 1;
-      const px = -dy / len;
-      const py = dx / len;
-      out.push({
-        ...arrow,
-        target: {
-          x: arrow.target.x + px * offset,
-          y: arrow.target.y + py * offset,
-        },
-      });
-    }
-  }
-  return out;
 }
 
 /**

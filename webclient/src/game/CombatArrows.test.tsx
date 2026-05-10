@@ -207,10 +207,17 @@ afterEach(() => {
   resetCombatArrowsStaggered();
 });
 
-// --- Endpoint fan ----------------------------------------------------
+// --- Endpoint convergence (no-fan, 2026-05-10) ----------------------
+//
+// User direction: all damage arrows targeting the same defender's
+// portrait converge to a single pixel — the portrait center. The
+// earlier endpoint-fan that splayed shared-target arrows along the
+// perpendicular has been removed. Multiple arrows now land on
+// exactly the same point; their arrowheads paint over each other,
+// reading as "this many attackers aimed at the same target."
 
-describe('CombatArrows — endpoint fanning', () => {
-  it('leaves a single attacker→defender arrow unfanned (N=1, offset=0)', () => {
+describe('CombatArrows — endpoint convergence', () => {
+  it('lands a single attacker→defender arrow on the portrait center', () => {
     const defenderId = '00000000-0000-0000-0000-00000000aaaa';
     mountPermanentNode('att-1', { x: 100, y: 100, w: 80, h: 112 });
     mountPortraitNode(defenderId, { x: 1000, y: 100, w: 60, h: 60 });
@@ -224,18 +231,19 @@ describe('CombatArrows — endpoint fanning', () => {
 
     const paths = container.querySelectorAll('path[marker-end]');
     expect(paths.length).toBe(1);
-    // Target = portrait center at (1030, 130). Single-arrow groups
-    // pass through unchanged.
+    // Target = portrait center at (1030, 130).
     expect(paths[0]?.getAttribute('d')).toMatch(/Q .+ 1030 130$/);
   });
 
-  it('fans endpoints when multiple attackers share one defender', () => {
+  it('all multi-attacker arrows converge on the SAME portrait pixel (no fan offset)', () => {
     const defenderId = '00000000-0000-0000-0000-00000000aaaa';
-    // 3 attackers spread horizontally so source.x sort is well-defined.
+    // 3 attackers spread horizontally — each has a distinct DOM tile,
+    // so their sources differ. The targets must all collapse to the
+    // single portrait center.
     mountPermanentNode('att-1', { x: 100, y: 200, w: 80, h: 112 });
     mountPermanentNode('att-2', { x: 300, y: 200, w: 80, h: 112 });
     mountPermanentNode('att-3', { x: 500, y: 200, w: 80, h: 112 });
-    // One shared defender portrait.
+    // One shared defender portrait — center at (1230, 130).
     mountPortraitNode(defenderId, { x: 1200, y: 100, w: 60, h: 60 });
 
     const a1 = makeCard({ id: 'att-1', cardId: 'att-1' });
@@ -261,28 +269,14 @@ describe('CombatArrows — endpoint fanning', () => {
       return m ? { x: parseFloat(m[1]!), y: parseFloat(m[2]!) } : null;
     });
 
-    // All three target coordinates must be distinct (the fan offset
-    // produced different points). Compare via JSON to dedupe.
+    // Every arrow lands on (1230, 130) — no fan offset applied.
+    for (const t of targets) {
+      expect(t?.x).toBe(1230);
+      expect(t?.y).toBe(130);
+    }
+    // Sanity: all targets are exactly the same point.
     const distinct = new Set(targets.map((t) => JSON.stringify(t)));
-    expect(distinct.size).toBe(3);
-
-    // None of the three may sit at the raw un-fanned center
-    // (1230, 130) — proves the fan offset was actually applied
-    // to all arrows. The middle arrow (i=1, offset=0) is still
-    // un-displaced by design; we accept that and just check that
-    // no MORE THAN ONE arrow is at the raw center.
-    const atRawCenter = targets.filter(
-      (t) => t && Math.abs(t.x - 1230) < 0.01 && Math.abs(t.y - 130) < 0.01,
-    );
-    expect(atRawCenter.length).toBeLessThanOrEqual(1);
-
-    // Mean X stays near the raw center — the fan is approximately
-    // symmetric. Loose tolerance: the per-arrow perpendicular
-    // vector differs slightly (each source→target angle is
-    // distinct), so symmetry around X is only approximate.
-    const meanX =
-      targets.reduce((sum, t) => sum + (t?.x ?? 0), 0) / targets.length;
-    expect(Math.abs(meanX - 1230)).toBeLessThan(5);
+    expect(distinct.size).toBe(1);
   });
 });
 
