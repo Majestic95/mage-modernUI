@@ -13,6 +13,7 @@ import { LAYOUT_BOUNDS, REDESIGN } from '../featureFlags';
 import { useLayoutVariant } from '../layoutVariants';
 import { AsymmetricTLayout } from './asymmetricT';
 import { useMinimalChrome } from './MinimalChromeContext';
+import { CombatStage } from './CombatStage';
 
 // LEGACY-BRANCH-FORK — slice 70-X.13 (Wave 4) cleanup marker.
 // Battlefield forks on REDESIGN inline (slotPart split at ~289,
@@ -161,6 +162,15 @@ export function Battlefield({
     // user wants a static viewport — content beyond bounds is
     // clipped rather than scrolled.
     <div className="flex-1 flex flex-col relative overflow-hidden">
+      {/* Bundle 2 / Slice 2-A — CombatStage overlay (vignette dim while
+          phase === COMBAT). Mounted as the FIRST child of the
+          battlefield wrapper so it covers the full battlefield area
+          via absolute positioning. z-index 3 sits above the
+          BattlefieldBackground artwork (z=0) and below the pod grid
+          + cards. Slice 2-B will add the central-area frame +
+          slate-clap pulse; slice 2-C will add the sub-step
+          cross-fade tint. All three layers live inside <CombatStage>. */}
+      <CombatStage />
       {/* Slice 1-X-tunings round 3 (2026-05-09) — DefenderBeams
           unmounted here pending further design verdict on whether
           ambient-pressure beams add user-perceived value beyond the

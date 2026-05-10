@@ -31,7 +31,7 @@ afterEach(() => {
 });
 
 describe('CinematicLab', () => {
-  it('mounts the lab page with all seven trigger buttons + status text', () => {
+  it('mounts the lab page with all ten trigger buttons + status text', () => {
     render(<CinematicLab />);
     expect(screen.getByTestId('cinematic-lab')).toBeInTheDocument();
     expect(screen.getByTestId('cinematic-lab-panel')).toBeInTheDocument();
@@ -45,6 +45,9 @@ describe('CinematicLab', () => {
     ).toBeInTheDocument();
     expect(screen.getByTestId('trigger-declare-blockers')).toBeInTheDocument();
     expect(screen.getByTestId('trigger-damage-step')).toBeInTheDocument();
+    expect(screen.getByTestId('trigger-enter-combat')).toBeInTheDocument();
+    expect(screen.getByTestId('trigger-exit-combat')).toBeInTheDocument();
+    expect(screen.getByTestId('trigger-cycle-substeps')).toBeInTheDocument();
     expect(screen.getByTestId('trigger-reset')).toBeInTheDocument();
     expect(screen.getByTestId('cinematic-lab-status')).toBeInTheDocument();
   });
@@ -221,6 +224,67 @@ describe('CinematicLab', () => {
         vi.advanceTimersByTime(1500);
       });
       expect(useGameStore.getState().gameView!.step).toBe('COMBAT_DAMAGE');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('slice 2-A — enter-combat button transitions phase to COMBAT', () => {
+    render(<CinematicLab />);
+    fireEvent.click(screen.getByTestId('trigger-enter-combat'));
+    // Two setStates run synchronously inside the click handler (flushSync
+    // for the cleared state, then plain setState for the COMBAT state).
+    // After the handler returns, the store should report COMBAT phase.
+    const view = useGameStore.getState().gameView!;
+    expect(view.phase).toBe('COMBAT');
+    expect(view.step).toBe('BEGIN_COMBAT');
+    expect(
+      screen.getByTestId('cinematic-lab-status').textContent,
+    ).toContain('Enter combat');
+  });
+
+  it('slice 2-A — exit-combat button transitions phase to POSTCOMBAT_MAIN', () => {
+    render(<CinematicLab />);
+    // Baseline is COMBAT already (fixture sets phase: 'COMBAT' / step:
+    // 'COMBAT_DAMAGE'). Clicking exit-combat should land in POSTCOMBAT.
+    fireEvent.click(screen.getByTestId('trigger-exit-combat'));
+    const view = useGameStore.getState().gameView!;
+    expect(view.phase).toBe('POSTCOMBAT_MAIN');
+    expect(
+      screen.getByTestId('cinematic-lab-status').textContent,
+    ).toContain('Exit combat');
+  });
+
+  it('slice 2-A — cycle-substeps button walks step through six values over 7500ms', () => {
+    vi.useFakeTimers();
+    try {
+      render(<CinematicLab />);
+      fireEvent.click(screen.getByTestId('trigger-cycle-substeps'));
+      // First step fires synchronously.
+      expect(useGameStore.getState().gameView!.step).toBe('BEGIN_COMBAT');
+      // Subsequent steps fire on setTimeout schedule: 1500ms each.
+      act(() => {
+        vi.advanceTimersByTime(1500);
+      });
+      expect(useGameStore.getState().gameView!.step).toBe('DECLARE_ATTACKERS');
+      act(() => {
+        vi.advanceTimersByTime(1500);
+      });
+      expect(useGameStore.getState().gameView!.step).toBe('DECLARE_BLOCKERS');
+      act(() => {
+        vi.advanceTimersByTime(1500);
+      });
+      expect(useGameStore.getState().gameView!.step).toBe(
+        'FIRST_COMBAT_DAMAGE',
+      );
+      act(() => {
+        vi.advanceTimersByTime(1500);
+      });
+      expect(useGameStore.getState().gameView!.step).toBe('COMBAT_DAMAGE');
+      act(() => {
+        vi.advanceTimersByTime(1500);
+      });
+      expect(useGameStore.getState().gameView!.step).toBe('END_COMBAT');
     } finally {
       vi.useRealTimers();
     }

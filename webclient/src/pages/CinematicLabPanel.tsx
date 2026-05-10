@@ -24,6 +24,9 @@ interface ControlPanelProps {
   onDeclareAttackers: () => void;
   onDeclareBlockers: () => void;
   onDamageStep: () => void;
+  onEnterCombat: () => void;
+  onExitCombat: () => void;
+  onCycleSubSteps: () => void;
   onReset: () => void;
 }
 
@@ -35,6 +38,9 @@ export function ControlPanel({
   onDeclareAttackers,
   onDeclareBlockers,
   onDamageStep,
+  onEnterCombat,
+  onExitCombat,
+  onCycleSubSteps,
   onReset,
 }: ControlPanelProps) {
   // Position top-right so it doesn't overlap the action panel
@@ -94,6 +100,27 @@ export function ControlPanel({
           label="Damage step (cross-dissolve)"
           description="Shimmer cool (first-strike) → 1500ms hold → warm (regular) via 300ms stroke transition."
           onClick={onDamageStep}
+        />
+        <LabButton
+          testid="trigger-enter-combat"
+          slices="2-A"
+          label="Enter combat"
+          description="Phase transitions PRECOMBAT_MAIN → COMBAT. Slate-pulse counter increments + vignette ramps in over 350ms."
+          onClick={onEnterCombat}
+        />
+        <LabButton
+          testid="trigger-exit-combat"
+          slices="2-A"
+          label="Exit combat"
+          description="Phase transitions COMBAT → POSTCOMBAT_MAIN. Slate-pulse counter increments + vignette ramps out over 250ms."
+          onClick={onExitCombat}
+        />
+        <LabButton
+          testid="trigger-cycle-substeps"
+          slices="2-A · 2-C preview"
+          label="Cycle combat sub-steps"
+          description="Walks through BEGIN_COMBAT → DECLARE_ATTACKERS → … → END_COMBAT with 1500ms hold each (verification surface for 2-C)."
+          onClick={onCycleSubSteps}
         />
         <LabButton
           testid="trigger-reset"

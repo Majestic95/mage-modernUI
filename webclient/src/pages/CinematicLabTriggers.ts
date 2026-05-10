@@ -52,6 +52,9 @@ export interface CinematicLabTriggers {
   triggerDeclareAttackers: () => void;
   triggerDeclareBlockers: () => void;
   triggerDamageStep: () => void;
+  triggerEnterCombat: () => void;
+  triggerExitCombat: () => void;
+  triggerCycleSubSteps: () => void;
   resetFixture: () => void;
 }
 
@@ -291,6 +294,103 @@ export function useCinematicLabTriggers(
     );
   }, [announce]);
 
+  const triggerEnterCombat = useCallback(() => {
+    // Bundle 2 / Slice 2-A — combat-stage entry demo. Sets phase to
+    // PRECOMBAT_MAIN for one frame, then to COMBAT/BEGIN_COMBAT. The
+    // combatStageStore subscription sees the transition and fires the
+    // slate-pulse counter; CombatStage's vignette ramps in.
+    //
+    // Pattern mirrors declare-attackers: flushSync the cleared state
+    // so React commits + actually updates the store before the second
+    // setState lands, guaranteeing the transition is observable.
+    const current = useGameStore.getState().gameView;
+    if (!current) return;
+    flushSync(() => {
+      useGameStore.setState({
+        gameView: { ...current, phase: 'PRECOMBAT_MAIN', step: 'PRECOMBAT_MAIN' },
+      });
+    });
+    const live = useGameStore.getState().gameView;
+    if (!live) return;
+    useGameStore.setState({
+      gameView: { ...live, phase: 'COMBAT', step: 'BEGIN_COMBAT' },
+    });
+    announce(
+      'Enter combat — slate-pulse fires (counter increments), vignette ramps in over 350ms. Watch the outer pods dim while the central focal area stays lit.',
+    );
+  }, [announce]);
+
+  const triggerExitCombat = useCallback(() => {
+    // Bundle 2 / Slice 2-A — combat-stage exit demo. Sets phase to
+    // COMBAT first (if not already), then to POSTCOMBAT_MAIN. The
+    // transition emits a slate-pulse + ramps the vignette out over
+    // 250ms.
+    const current = useGameStore.getState().gameView;
+    if (!current) return;
+    if (current.phase !== 'COMBAT') {
+      flushSync(() => {
+        useGameStore.setState({
+          gameView: { ...current, phase: 'COMBAT', step: 'COMBAT_DAMAGE' },
+        });
+      });
+    }
+    const live = useGameStore.getState().gameView;
+    if (!live) return;
+    useGameStore.setState({
+      gameView: {
+        ...live,
+        phase: 'POSTCOMBAT_MAIN',
+        step: 'POSTCOMBAT_MAIN',
+      },
+    });
+    announce(
+      'Exit combat — slate-pulse fires (counter increments), vignette ramps out over 250ms.',
+    );
+  }, [announce]);
+
+  const triggerCycleSubSteps = useCallback(() => {
+    // Bundle 2 / Slice 2-A — combat sub-step cycler. Walks through the
+    // six combat sub-steps with a 1500ms hold each so 2-C's
+    // cross-fade tint (not yet shipped — placeholder for live A/B)
+    // fires N times consecutively. epochRef supersession lets reset
+    // cancel an in-flight cycle.
+    const subSteps: ReadonlyArray<string> = [
+      'BEGIN_COMBAT',
+      'DECLARE_ATTACKERS',
+      'DECLARE_BLOCKERS',
+      'FIRST_COMBAT_DAMAGE',
+      'COMBAT_DAMAGE',
+      'END_COMBAT',
+    ];
+    const current = useGameStore.getState().gameView;
+    if (!current) return;
+    // Ensure we're in COMBAT phase first; if not, snap there.
+    if (current.phase !== 'COMBAT') {
+      useGameStore.setState({
+        gameView: { ...current, phase: 'COMBAT', step: subSteps[0]! },
+      });
+    } else {
+      useGameStore.setState({
+        gameView: { ...current, step: subSteps[0]! },
+      });
+    }
+    const epoch = ++epochRef.current;
+    for (let i = 1; i < subSteps.length; i++) {
+      const stepName = subSteps[i]!;
+      setTimeout(() => {
+        if (epoch !== epochRef.current) return;
+        const live = useGameStore.getState().gameView;
+        if (!live) return;
+        useGameStore.setState({
+          gameView: { ...live, step: stepName },
+        });
+      }, i * 1500);
+    }
+    announce(
+      'Cycle sub-steps — BEGIN_COMBAT → DECLARE_ATTACKERS → DECLARE_BLOCKERS → FIRST_COMBAT_DAMAGE → COMBAT_DAMAGE → END_COMBAT, 1500ms hold per step. Watch the central focal area for 2-C cross-fade behavior once that slice ships.',
+    );
+  }, [announce]);
+
   const resetFixture = useCallback(() => {
     // Bump the epoch so any in-flight lethal raf or damage-step timer
     // is silently dropped.
@@ -313,6 +413,9 @@ export function useCinematicLabTriggers(
     triggerDeclareAttackers,
     triggerDeclareBlockers,
     triggerDamageStep,
+    triggerEnterCombat,
+    triggerExitCombat,
+    triggerCycleSubSteps,
     resetFixture,
   };
 }

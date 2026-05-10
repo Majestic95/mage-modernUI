@@ -149,6 +149,9 @@ export function CinematicLab() {
                 onDeclareAttackers={triggers.triggerDeclareAttackers}
                 onDeclareBlockers={triggers.triggerDeclareBlockers}
                 onDamageStep={triggers.triggerDamageStep}
+                onEnterCombat={triggers.triggerEnterCombat}
+                onExitCombat={triggers.triggerExitCombat}
+                onCycleSubSteps={triggers.triggerCycleSubSteps}
                 onReset={triggers.resetFixture}
               />
             </div>

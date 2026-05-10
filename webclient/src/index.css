@@ -870,6 +870,54 @@ input[type="checkbox"] {
 }
 
 /*
+ * Bundle 2 / Slice 2-A — combat-stage outer vignette dim.
+ *
+ * A `position: absolute` overlay div, mounted inside Battlefield.tsx
+ * as a sibling of the pod grid (z-index 3 — above the battlefield
+ * artwork backdrop, below the pod grid + cards). When `stageActive`
+ * (derived from `phase === 'COMBAT'` in combatStageStore) is true,
+ * the vignette ramps to its settled opacity (0.35) over 350ms; when
+ * stageActive flips false, it ramps back to 0 over 250ms.
+ *
+ * The radial-gradient darkens the outer ~30% of the viewport, leaving
+ * the central focal area untouched. Slice 2-B will add an inset gold
+ * frame on top of the central area to complete the "spotlit stage"
+ * read.
+ *
+ * Opacity cap of 0.35 is a HARD ceiling per the brainstorm doc's risk
+ * note: "can become a second modal layer over the board if we push
+ * the dimming too hard." Strict opacity cap so it reads as atmosphere.
+ *
+ * Reduced motion: the scoped override below silences the opacity
+ * transition (snap instead of ramp). The vignette still appears —
+ * it's a state signal, not motion. WCAG 2.3.3 footnote: opacity
+ * transitions are exempt, but the dim itself can read as motion at
+ * the periphery, so defensive snap.
+ */
+.combat-stage-vignette {
+  z-index: 3;
+  opacity: 0;
+  background: radial-gradient(
+    ellipse at center,
+    transparent 35%,
+    rgba(0, 0, 0, 0.5) 100%
+  );
+  transition: opacity 250ms ease-out;
+}
+.combat-stage-vignette.is-active {
+  opacity: 0.35;
+  /* Asymmetric ramp — entry takes 350ms (settling in), exit takes
+   * the default 250ms (faster to clear so the post-combat main
+   * phase doesn't feel laggy). */
+  transition: opacity 350ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .combat-stage-vignette {
+    transition: none !important;
+  }
+}
+
+/*
  * Slice 52d → 70-B (ADR 0011 D4) — accessibility: honor
  * prefers-reduced-motion across the CSS animation/transition surface.
  * Framer Motion JS animations have a parallel control point at
