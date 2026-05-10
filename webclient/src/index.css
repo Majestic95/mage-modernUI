@@ -676,6 +676,32 @@ input[type="checkbox"] {
   animation: portrait-bloom 600ms cubic-bezier(0.25, 0.1, 0.25, 1) 1;
 }
 
+/*
+ * Bundle 5 / Slice 5-C — freeze-frame on damage resolution.
+ * Brief viewport-edge danger bloom — radial gradient from the
+ * outer 30% of the viewport inward, danger-tinted alpha. Peaks
+ * at 50% (200ms) and fades. Frames combat damage as a beat-of-
+ * punctuation moment without interrupting the central gameplay
+ * surface (radial-gradient transparent center keeps the action
+ * unobscured).
+ *
+ * Duration mirrors `DAMAGE_FREEZE_FRAME_MS` in
+ * webclient/src/animation/transitions.ts.
+ */
+@keyframes damage-freeze-frame-edge {
+  0%   { opacity: 0; }
+  50%  { opacity: 0.55; }
+  100% { opacity: 0; }
+}
+.animate-damage-freeze-frame-edge {
+  background: radial-gradient(
+    ellipse at center,
+    transparent 50%,
+    rgb(180 30 30 / 0.5) 100%
+  );
+  animation: damage-freeze-frame-edge 400ms cubic-bezier(0.4, 0, 0.6, 1) 1;
+}
+
 .animate-lane-active-glow {
   /* Same 1900ms period as `animate-player-active-halo` so the lane
    * border breathes in sync with the portrait halo. */

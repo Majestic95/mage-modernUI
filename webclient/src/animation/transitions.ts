@@ -318,6 +318,12 @@ export const DAMAGE_PARCEL_STAGGER_MS = 50;
 // numeric land synchronously per the brief.
 export const PORTRAIT_BLOOM_MS = 600;
 
+// Bundle 5 / Slice 5-C — freeze-frame on damage resolution. Brief
+// viewport-edge danger bloom that frames combat damage as a
+// punctuation moment (~0.4s — long enough to register as a beat,
+// short enough to not interrupt gameplay rhythm).
+export const DAMAGE_FREEZE_FRAME_MS = 400;
+
 /* ============================================================
    Slice 70-Z.2 / 70-Z.3 / 70-Z.4 — card animation system timing.
    The seam ships in 70-Z.2 (no visual change); the constants here
