@@ -41,7 +41,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   DAMAGE_PARCEL_STAGGER_MS,
-  DAMAGE_PARCEL_TRAVEL_MS,
+  damageParcelTravelMs,
 } from '../animation/transitions';
 import { useDamageEvents, type DamageEvent } from '../animation/useDamageEvents';
 
@@ -67,7 +67,9 @@ interface ActiveParcel {
   cy: number;
 }
 
-const PARCEL_RADIUS = 5;
+// Tuning slice (2026-05-10) — 5 → 7 per user direction. Bigger
+// parcel reads more clearly at 1440p without dominating the arrow.
+const PARCEL_RADIUS = 7;
 const PARCEL_FILL = 'rgb(255, 240, 200)';
 const PARCEL_STROKE = 'rgb(255, 200, 90)';
 
@@ -158,6 +160,11 @@ export function DamageParcelOverlay() {
       return next;
     });
     const startTime = performance.now();
+    // Tuning slice (2026-05-10) — travel duration is now a function
+    // of the event's amount (frame total life delta). Captured in
+    // closure so the running parcel's pacing is fixed at start
+    // even if the global tier function evolves later.
+    const travelMs = damageParcelTravelMs(event.amount);
     // Slice 5-X.0 Tech-1 — track this parcel's CURRENT raf handle
     // in a closure so each tick's new handle replaces the previous
     // one in `activeRafsRef`. Previously the Set just grew unbounded
@@ -169,7 +176,7 @@ export function DamageParcelOverlay() {
       // already executed, no point cancelling it).
       activeRafsRef.current.delete(currentRaf);
       const elapsed = now - startTime;
-      const progress = Math.min(1, elapsed / DAMAGE_PARCEL_TRAVEL_MS);
+      const progress = Math.min(1, elapsed / travelMs);
       const point = pathEl.getPointAtLength(progress * totalLength);
       setParcels((prev) => {
         const existing = prev.get(id);

@@ -302,15 +302,47 @@ export const CARD_TARGETED_PULSE_PERIOD_MS = 1000;
 export const PARTICLE_DRIFT_CLASS = 'animate-particle-drift';
 export const PARTICLE_DRIFT_PERIOD_MS = 60_000;
 
-// Bundle 5 / Slice 5-A — damage parcel cinematic. Per the brief:
-// 300-400ms per parcel travel along the arrow path. 350ms is the
-// midpoint — long enough that the parcel's path is legible at
-// 1440p, short enough that multi-attacker stagger doesn't pile up
-// uncomfortably. STAGGER_MS spaces multi-event frames so the user
-// can count individual hits ("three parcels arrived in sequence")
-// instead of seeing a single muddled flash.
-export const DAMAGE_PARCEL_TRAVEL_MS = 350;
+// Bundle 5 / Slice 5-A — damage parcel cinematic.
+//
+// Tuning slice (2026-05-10) — replaced the single 350ms travel
+// duration with a 3-tier amount-based mapping per user direction:
+// small hits resolve quickly, big swings linger as a cinematic
+// beat the user can read. The `amount` field on a `DamageEvent`
+// is the FRAME total life delta on the defender (not per-attacker),
+// so a 3-attacker swing for 3 total damage uses the medium tier
+// for all 3 parcels — the cinematic weight reflects the combined
+// combat-damage moment.
+//
+// STAGGER_MS spaces multi-event frames so the user can count
+// individual hits ("three parcels arrived in sequence") instead
+// of seeing a single muddled flash.
+export const DAMAGE_PARCEL_TRAVEL_MS_LIGHT = 1000;
+export const DAMAGE_PARCEL_TRAVEL_MS_MEDIUM = 2000;
+export const DAMAGE_PARCEL_TRAVEL_MS_HEAVY = 3000;
 export const DAMAGE_PARCEL_STAGGER_MS = 50;
+
+/**
+ * Damage-tiered travel duration. Tiers per user direction
+ * (2026-05-10):
+ *
+ * <ul>
+ *   <li>{@code amount <= 1} — light tier (1000ms). Single-damage
+ *       hits get the longest VISIBILITY-relative pacing so the
+ *       parcel is unmistakable at 1440p.</li>
+ *   <li>{@code amount in [2, 4]} — medium tier (2000ms).</li>
+ *   <li>{@code amount >= 5} — heavy tier (3000ms). Big-damage
+ *       moments register as a punctuation beat.</li>
+ * </ul>
+ *
+ * <p>The {@code <= 1} branch covers the no-damage edge defensively;
+ * upstream {@link diffDamageEvents} already filters {@code delta <= 0}
+ * so 0/negative amounts never reach the parcel layer.
+ */
+export function damageParcelTravelMs(amount: number): number {
+  if (amount <= 1) return DAMAGE_PARCEL_TRAVEL_MS_LIGHT;
+  if (amount <= 4) return DAMAGE_PARCEL_TRAVEL_MS_MEDIUM;
+  return DAMAGE_PARCEL_TRAVEL_MS_HEAVY;
+}
 
 // Bundle 5 / Slice 5-B — portrait halo bloom on life-loss. Total
 // duration peaks alpha + scale at ~50% (300ms in) so the bloom
