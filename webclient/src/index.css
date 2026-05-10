@@ -1012,6 +1012,62 @@ input[type="checkbox"] {
 }
 
 /*
+ * Bundle 2 / Slice 2-C — sub-step cross-fade tint.
+ *
+ * Soft scene-change tint overlay that cross-fades between palettes as
+ * `gameView.step` transitions through the six combat sub-steps. The
+ * tint sits at the same z-index as the frame (z=5) and shares its
+ * geometry (35% × 35% centered rectangle, tuned at 1440p T4 target)
+ * so the color reads INSIDE the spotlit stage area.
+ *
+ * The store's 150ms perceived-gap mechanism (slice 2-C) means
+ * `currentSubStep` flips to null between two non-null sub-steps. The
+ * neutral tint (`data-substep="none"`) lights up during the gap; the
+ * new sub-step's tint lights up after the gap completes. Combined
+ * with the 250ms `transition: background-color` here, the user sees
+ * a soft fade-out to neutral followed by a fade-in to the new sub-
+ * step's palette — a "scene-change between acts" effect.
+ *
+ * Palette mapping:
+ *   declare-* steps → warm amber tint (planning + decision space)
+ *   damage-* steps → cool cyan tint (resolution + finality)
+ *   begin / end / none → neutral gray-white tint (transition state)
+ *
+ * Reduced motion: scoped override below silences the cross-fade
+ * transition. Tints still apply (color is a state signal); they
+ * just snap instead of fading.
+ */
+.combat-stage-substep-tint {
+  z-index: 5;
+  top: 50%;
+  left: 50%;
+  width: 35%;
+  height: 35%;
+  transform: translate(-50%, -50%);
+  border-radius: 6px;
+  background-color: rgba(180, 180, 180, 0.06);
+  transition: background-color 250ms ease-out;
+}
+.combat-stage-substep-tint[data-substep='DECLARE_ATTACKERS'],
+.combat-stage-substep-tint[data-substep='DECLARE_BLOCKERS'] {
+  background-color: rgba(220, 160, 80, 0.08);
+}
+.combat-stage-substep-tint[data-substep='FIRST_COMBAT_DAMAGE'],
+.combat-stage-substep-tint[data-substep='COMBAT_DAMAGE'] {
+  background-color: rgba(120, 180, 220, 0.08);
+}
+.combat-stage-substep-tint[data-substep='BEGIN_COMBAT'],
+.combat-stage-substep-tint[data-substep='END_COMBAT'],
+.combat-stage-substep-tint[data-substep='none'] {
+  background-color: rgba(180, 180, 180, 0.06);
+}
+@media (prefers-reduced-motion: reduce) {
+  .combat-stage-substep-tint {
+    transition: none !important;
+  }
+}
+
+/*
  * Slice 52d → 70-B (ADR 0011 D4) — accessibility: honor
  * prefers-reduced-motion across the CSS animation/transition surface.
  * Framer Motion JS animations have a parallel control point at

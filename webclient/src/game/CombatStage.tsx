@@ -37,6 +37,7 @@ import { useCombatStageStore } from './combatStageStore';
 export function CombatStage() {
   const stageActive = useCombatStageStore((s) => s.stageActive);
   const slatePulseCounter = useCombatStageStore((s) => s.slatePulseCounter);
+  const currentSubStep = useCombatStageStore((s) => s.currentSubStep);
 
   return (
     <>
@@ -50,33 +51,36 @@ export function CombatStage() {
       />
       {stageActive && (
         <>
-          {/* Slice 2-B — central-area frame. Always-on while
-              stageActive=true. Thin gold inset edge + deeper inset
-              shadow at the central focal rectangle. Positioned at
-              viewport center via top/left 50% + translate-1/2; width
-              + height are relative percentages tuned at 1440p (T4
-              target). Static visual once mounted; the slate-pulse
-              fires as a sibling overlay so the frame itself never
-              animates. */}
+          {/* Slice 2-B — central-area frame. */}
           <div
             data-testid="combat-stage-frame"
             aria-hidden="true"
             className="combat-stage-frame pointer-events-none absolute"
           />
-          {/* Slice 2-B — slate-clap pulse. Keyed on slatePulseCounter
-              so each counter increment unmounts the previous element
-              and mounts a fresh one — the new one's mount triggers
-              the keyframe from t=0 (the canonical CSS "restart an
-              animation by remounting" trick). The keyframe is a
-              single 800ms pulse (0.6 → 1.0 → 0.6 opacity on an
-              overlay gold ring) that runs ONCE then the element
-              settles invisibly. */}
+          {/* Slice 2-B — slate-clap pulse, keyed on counter for
+              keyframe restart-by-remount. */}
           <div
             key={slatePulseCounter}
             data-testid="combat-stage-slate-pulse"
             data-pulse-counter={slatePulseCounter}
             aria-hidden="true"
             className="combat-stage-slate-pulse pointer-events-none absolute"
+          />
+          {/* Slice 2-C — sub-step cross-fade tint. The {@code data-
+              substep} attribute drives the per-sub-step background-
+              color rule in CSS; the {@code transition: background-
+              color 250ms ease-out} on .combat-stage-substep-tint
+              interpolates smoothly between the warm declare-* /
+              cool damage-* / neutral begin-end palettes. The store's
+              150ms perceived-gap mechanism (slice 2-C) means
+              currentSubStep flips through null between two non-null
+              sub-steps, so the tint cross-fades to neutral mid-gap
+              before re-saturating into the new sub-step's palette. */}
+          <div
+            data-testid="combat-stage-substep-tint"
+            data-substep={currentSubStep ?? 'none'}
+            aria-hidden="true"
+            className="combat-stage-substep-tint pointer-events-none absolute"
           />
         </>
       )}

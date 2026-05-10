@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   webGameViewSchema,
   webPlayerViewSchema,
@@ -6,6 +6,7 @@ import {
 import { useGameStore } from './store';
 import {
   resetCombatStageStore,
+  SUB_STEP_GAP_MS,
   useCombatStageStore,
 } from './combatStageStore';
 
@@ -111,26 +112,117 @@ describe('combatStageStore', () => {
     expect(useCombatStageStore.getState().stageActive).toBe(false);
   });
 
-  it('currentSubStep tracks gameView.step while in combat', () => {
-    setPhaseAndStep('PRECOMBAT_MAIN', 'PRECOMBAT_MAIN');
-    setPhaseAndStep('COMBAT', 'BEGIN_COMBAT');
-    expect(useCombatStageStore.getState().currentSubStep).toBe('BEGIN_COMBAT');
-    setPhaseAndStep('COMBAT', 'DECLARE_ATTACKERS');
-    expect(useCombatStageStore.getState().currentSubStep).toBe(
-      'DECLARE_ATTACKERS',
-    );
-    setPhaseAndStep('COMBAT', 'DECLARE_BLOCKERS');
-    expect(useCombatStageStore.getState().currentSubStep).toBe(
-      'DECLARE_BLOCKERS',
-    );
-    setPhaseAndStep('COMBAT', 'FIRST_COMBAT_DAMAGE');
-    expect(useCombatStageStore.getState().currentSubStep).toBe(
-      'FIRST_COMBAT_DAMAGE',
-    );
-    setPhaseAndStep('COMBAT', 'COMBAT_DAMAGE');
-    expect(useCombatStageStore.getState().currentSubStep).toBe('COMBAT_DAMAGE');
-    setPhaseAndStep('COMBAT', 'END_COMBAT');
-    expect(useCombatStageStore.getState().currentSubStep).toBe('END_COMBAT');
+  it('currentSubStep tracks gameView.step while in combat (with 150ms cross-fade gap between sub-steps)', () => {
+    vi.useFakeTimers();
+    try {
+      // Combat entry — sub-step lands directly (no gap on stage-active flip).
+      setPhaseAndStep('PRECOMBAT_MAIN', 'PRECOMBAT_MAIN');
+      setPhaseAndStep('COMBAT', 'BEGIN_COMBAT');
+      expect(useCombatStageStore.getState().currentSubStep).toBe(
+        'BEGIN_COMBAT',
+      );
+      // Sub-step transitions WITHIN combat go through the 150ms gap:
+      // currentSubStep first flips to null, then to the new value
+      // after SUB_STEP_GAP_MS.
+      setPhaseAndStep('COMBAT', 'DECLARE_ATTACKERS');
+      expect(useCombatStageStore.getState().currentSubStep).toBeNull();
+      vi.advanceTimersByTime(SUB_STEP_GAP_MS);
+      expect(useCombatStageStore.getState().currentSubStep).toBe(
+        'DECLARE_ATTACKERS',
+      );
+      setPhaseAndStep('COMBAT', 'DECLARE_BLOCKERS');
+      expect(useCombatStageStore.getState().currentSubStep).toBeNull();
+      vi.advanceTimersByTime(SUB_STEP_GAP_MS);
+      expect(useCombatStageStore.getState().currentSubStep).toBe(
+        'DECLARE_BLOCKERS',
+      );
+      setPhaseAndStep('COMBAT', 'FIRST_COMBAT_DAMAGE');
+      vi.advanceTimersByTime(SUB_STEP_GAP_MS);
+      expect(useCombatStageStore.getState().currentSubStep).toBe(
+        'FIRST_COMBAT_DAMAGE',
+      );
+      setPhaseAndStep('COMBAT', 'COMBAT_DAMAGE');
+      vi.advanceTimersByTime(SUB_STEP_GAP_MS);
+      expect(useCombatStageStore.getState().currentSubStep).toBe(
+        'COMBAT_DAMAGE',
+      );
+      setPhaseAndStep('COMBAT', 'END_COMBAT');
+      vi.advanceTimersByTime(SUB_STEP_GAP_MS);
+      expect(useCombatStageStore.getState().currentSubStep).toBe('END_COMBAT');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('slice 2-C — sub-step transition mid-combat flips to null then to new value after 150ms', () => {
+    vi.useFakeTimers();
+    try {
+      setPhaseAndStep('COMBAT', 'DECLARE_ATTACKERS');
+      // Initial sub-step (no previous combat sub-step) lands directly.
+      expect(useCombatStageStore.getState().currentSubStep).toBe(
+        'DECLARE_ATTACKERS',
+      );
+      setPhaseAndStep('COMBAT', 'DECLARE_BLOCKERS');
+      // Immediately after emission: currentSubStep is null (the "out"
+      // half of the cross-fade).
+      expect(useCombatStageStore.getState().currentSubStep).toBeNull();
+      // Mid-gap (advance by < SUB_STEP_GAP_MS): still null.
+      vi.advanceTimersByTime(SUB_STEP_GAP_MS - 50);
+      expect(useCombatStageStore.getState().currentSubStep).toBeNull();
+      // After full gap: the new sub-step appears.
+      vi.advanceTimersByTime(60);
+      expect(useCombatStageStore.getState().currentSubStep).toBe(
+        'DECLARE_BLOCKERS',
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('slice 2-C — rapid sub-step transitions during the gap window cancel the pending timer', () => {
+    vi.useFakeTimers();
+    try {
+      setPhaseAndStep('COMBAT', 'DECLARE_ATTACKERS');
+      setPhaseAndStep('COMBAT', 'DECLARE_BLOCKERS');
+      // We're in the gap, currentSubStep === null.
+      expect(useCombatStageStore.getState().currentSubStep).toBeNull();
+      vi.advanceTimersByTime(50);
+      // Another step transition arrives mid-gap — should cancel the
+      // pending timer + apply the new value directly (current is
+      // null, so the gap branch doesn't re-fire).
+      setPhaseAndStep('COMBAT', 'FIRST_COMBAT_DAMAGE');
+      expect(useCombatStageStore.getState().currentSubStep).toBe(
+        'FIRST_COMBAT_DAMAGE',
+      );
+      // The old (cancelled) timer must NOT fire — advance past its
+      // original landing point and verify currentSubStep is still
+      // FIRST_COMBAT_DAMAGE (not DECLARE_BLOCKERS from the stale timer).
+      vi.advanceTimersByTime(SUB_STEP_GAP_MS);
+      expect(useCombatStageStore.getState().currentSubStep).toBe(
+        'FIRST_COMBAT_DAMAGE',
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('slice 2-C — combat exit during the gap window cancels the pending timer', () => {
+    vi.useFakeTimers();
+    try {
+      setPhaseAndStep('COMBAT', 'DECLARE_ATTACKERS');
+      setPhaseAndStep('COMBAT', 'DECLARE_BLOCKERS');
+      // Mid-gap. Phase exits combat — should cancel the pending timer.
+      setPhaseAndStep('POSTCOMBAT_MAIN', 'POSTCOMBAT_MAIN');
+      expect(useCombatStageStore.getState().stageActive).toBe(false);
+      expect(useCombatStageStore.getState().currentSubStep).toBeNull();
+      // Advance past the original timer's landing point — stale timer
+      // must NOT write DECLARE_BLOCKERS into the inactive stage.
+      vi.advanceTimersByTime(SUB_STEP_GAP_MS);
+      expect(useCombatStageStore.getState().stageActive).toBe(false);
+      expect(useCombatStageStore.getState().currentSubStep).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('currentSubStep returns null outside combat even if step is a non-combat name', () => {

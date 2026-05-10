@@ -176,6 +176,37 @@ describe('CombatStage (slice 2-A)', () => {
     ).toBe('3');
   });
 
+  it('slice 2-C — sub-step tint overlay mounts when stageActive=true', () => {
+    const { queryByTestId, rerender } = render(<CombatStage />);
+    expect(queryByTestId('combat-stage-substep-tint')).toBeNull();
+    setPhaseAndStep('COMBAT', 'BEGIN_COMBAT');
+    rerender(<CombatStage />);
+    expect(queryByTestId('combat-stage-substep-tint')).not.toBeNull();
+  });
+
+  it('slice 2-C — sub-step tint data-substep matches currentSubStep', () => {
+    const { getByTestId, rerender } = render(<CombatStage />);
+    setPhaseAndStep('COMBAT', 'BEGIN_COMBAT');
+    rerender(<CombatStage />);
+    expect(
+      getByTestId('combat-stage-substep-tint').getAttribute('data-substep'),
+    ).toBe('BEGIN_COMBAT');
+  });
+
+  it('slice 2-C — sub-step tint data-substep is "none" when currentSubStep is null (mid-gap)', () => {
+    const { getByTestId, rerender } = render(<CombatStage />);
+    setPhaseAndStep('COMBAT', 'DECLARE_ATTACKERS');
+    rerender(<CombatStage />);
+    // Now transition to a different sub-step — the store flips to
+    // currentSubStep=null (the gap's "out" half). Tint's data-substep
+    // should reflect 'none' until the gap completes.
+    setPhaseAndStep('COMBAT', 'DECLARE_BLOCKERS');
+    rerender(<CombatStage />);
+    expect(
+      getByTestId('combat-stage-substep-tint').getAttribute('data-substep'),
+    ).toBe('none');
+  });
+
   it('slice 2-B — frame + slate-pulse are aria-hidden + pointer-events-none', () => {
     const { getByTestId, rerender } = render(<CombatStage />);
     setPhaseAndStep('COMBAT', 'BEGIN_COMBAT');

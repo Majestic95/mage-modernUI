@@ -80,6 +80,35 @@ export const useCombatStageStore = create<CombatStageState>(() => ({
 let lastPhase = '';
 
 /**
+ * Slice 2-C — sub-step cross-fade perceived gap duration. When the
+ * step transitions between TWO non-null combat sub-steps, the
+ * coordinator first flips {@code currentSubStep} to {@code null} for
+ * this many milliseconds, then sets it to the new value. The brief
+ * window of null gives the user a soft "handoff between acts"
+ * reading, rather than a hard step-to-step cut.
+ *
+ * <p>Skipped on null → value (combat entry — no out-phase to wait
+ * for) and value → null (combat exit — coordinated by stage-active
+ * flip already).
+ */
+export const SUB_STEP_GAP_MS = 150;
+
+/**
+ * Slice 2-C — pending-timer tracker for the cross-fade gap. Each new
+ * step transition that needs a gap cancels the previous timer (if
+ * any) before scheduling a fresh one — so rapid step changes during
+ * the gap window don't stack-up pending writes.
+ */
+let pendingSubStepTimer: ReturnType<typeof setTimeout> | null = null;
+
+function clearPendingSubStepTimer(): void {
+  if (pendingSubStepTimer !== null) {
+    clearTimeout(pendingSubStepTimer);
+    pendingSubStepTimer = null;
+  }
+}
+
+/**
  * Module-level subscription. Runs once at module load. Idempotent —
  * subsequent imports of this file don't re-subscribe because the
  * module is cached. Guard against test mocks that stub
@@ -107,17 +136,44 @@ if (typeof useGameStore.subscribe === 'function') {
 
     const current = useCombatStageStore.getState();
 
-    // Only fire setState when something actually changed. Stack-push
-    // during combat (same phase, same step) is a no-op here — the
-    // vignette doesn't flicker because the store doesn't update.
     const stageChanged = current.stageActive !== stageActive;
     const subStepChanged = current.currentSubStep !== newSubStep;
-    if (stageChanged || subStepChanged) {
+
+    if (stageChanged) {
+      // Stage-active toggle — set both fields immediately. Combat
+      // entry/exit doesn't get a cross-fade gap; the vignette + frame
+      // mount/unmount are the entry/exit signals.
+      clearPendingSubStepTimer();
       useCombatStageStore.setState({
         stageActive,
         currentSubStep: newSubStep,
       });
+    } else if (subStepChanged) {
+      // Slice 2-C — sub-step transition while staying inside combat.
+      // Apply the 150ms perceived-gap mechanism ONLY when both the old
+      // and new sub-steps are non-null (i.e. we're transitioning
+      // between two real combat sub-steps). null→value or value→null
+      // gets applied directly (no gap to interpose).
+      if (current.currentSubStep !== null && newSubStep !== null) {
+        clearPendingSubStepTimer();
+        useCombatStageStore.setState({ currentSubStep: null });
+        pendingSubStepTimer = setTimeout(() => {
+          pendingSubStepTimer = null;
+          // Defense-in-depth: if stage exited combat while the timer
+          // was pending, don't write a non-null sub-step. The stage-
+          // exit branch already cleared the timer, but checking the
+          // live state here is cheap insurance against future refactors.
+          const live = useCombatStageStore.getState();
+          if (live.stageActive) {
+            useCombatStageStore.setState({ currentSubStep: newSubStep });
+          }
+        }, SUB_STEP_GAP_MS);
+      } else {
+        clearPendingSubStepTimer();
+        useCombatStageStore.setState({ currentSubStep: newSubStep });
+      }
     }
+
     if (isPhaseTransition) {
       useCombatStageStore.setState((s) => ({
         slatePulseCounter: s.slatePulseCounter + 1,
@@ -141,6 +197,7 @@ if (typeof useGameStore.subscribe === 'function') {
  * @internal
  */
 export function resetCombatStageStore(): void {
+  clearPendingSubStepTimer();
   useCombatStageStore.setState({
     stageActive: false,
     currentSubStep: null,
