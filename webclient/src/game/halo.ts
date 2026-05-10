@@ -175,8 +175,16 @@ export function computeTabletopZoneBackground(
  * by tabletop zone backgrounds. Unknown codes default to neutral so
  * a future engine upgrade with a sixth color doesn't render as
  * transparent.
+ *
+ * <p>Slice 1-D (Bundle 1 critic-pass) — `export`ed so the defender-
+ * beams overlay can use the same alpha-reduced palette as tabletop's
+ * zone backgrounds. Two greens stacking on a green pod (the active
+ * defender's commander color matching their tabletop zone tint) was
+ * a real saturation-collision concern; using the glow variant for
+ * the beam halves the effective per-beam alpha (0.18 × 1.0 → 0.18 ×
+ * 0.5 = 0.09) and lets the existing pod tint dominate.
  */
-function manaGlowTokenForCode(code: string): string {
+export function manaGlowTokenForCode(code: string): string {
   switch (code) {
     case 'W':
       return 'var(--color-mana-white-glow)';

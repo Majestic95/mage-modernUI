@@ -12,6 +12,7 @@ import type { DragState } from './useDragState';
 import { LAYOUT_BOUNDS, REDESIGN } from '../featureFlags';
 import { useLayoutVariant } from '../layoutVariants';
 import { AsymmetricTLayout } from './asymmetricT';
+import { DefenderBeams } from './DefenderBeams';
 
 // LEGACY-BRANCH-FORK — slice 70-X.13 (Wave 4) cleanup marker.
 // Battlefield forks on REDESIGN inline (slotPart split at ~289,
@@ -131,6 +132,13 @@ export function Battlefield({
     // user wants a static viewport — content beyond bounds is
     // clipped rather than scrolled.
     <div className="flex-1 flex flex-col relative overflow-hidden">
+      {/* Slice 1-D — defender-beams viewport overlay. Mounted once
+          here (outside the variant branch) so both tabletop and the
+          legacy asymmetric-T inherit the ambient pressure indicator
+          during combat. The component is `position: fixed` so its
+          source position in the tree is incidental; rendering null
+          outside combat is the self-gate. */}
+      <DefenderBeams />
       {/* 2026-05-03 asymmetric-T branch — when LAYOUT_BOUNDS=true the
           battlefield switches to the "asymmetric T" layout per the
           industry-research recommendation: top 55% holds 3 stacked
