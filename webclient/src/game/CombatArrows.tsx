@@ -183,20 +183,33 @@ export function CombatArrows({
           isFirstPaint && !reducedMotion
             ? clampedIndex * ARROW_REVEAL_STEP_MS
             : 0;
-        // Slice 6-A — attack-arrow ink draw-in. Only applied to
-        // attack arrows (attacker→player, where targetId starts
-        // with "player:") that haven't been drawn before this combat
-        // phase. Block arrows (attacker→blocker) are slice 6-B's
-        // territory — they pass through with drawIn=undefined here.
-        // Reduced-motion is gated inside TargetingArrow itself; we
-        // mark the arrow drawn either way so a future un-toggle of
-        // reduced-motion mid-combat doesn't suddenly replay a
-        // missed cinematic.
+        // Slice 6-A — attack-arrow ink draw-in (attacker→player,
+        // 400ms symmetric ease).
+        // Slice 6-B (2026-05-10) — block-arrow snap-in (attacker→
+        // blocker, 200ms with cubic-bezier(0.5,0,0.4,1.4) overshoot
+        // easing). The mechanism is shared via TargetingArrow's
+        // `drawIn` prop discriminated union; only the kind changes.
+        //
+        // Per-arrow tracking key:
+        //   attack arrows (target = player:<defenderId>) → attacker id
+        //   block arrows  (target = blocker permanent id) → blocker id
+        // The blocker-id key matters for reblocking after a destroyed
+        // blocker — a fresh blocker has a fresh permanent id, so the
+        // ink overlay redraws cleanly even though the attacker is the
+        // same.
+        //
+        // Reduced-motion is gated inside TargetingArrow; we mark the
+        // arrow drawn either way so a future un-toggle of reduced
+        // motion mid-combat doesn't suddenly replay a missed cinematic.
         const isAttackArrow = spec.targetId.startsWith('player:');
-        const drawIn =
-          isAttackArrow && !hasArrowDrawn(spec.attackerId)
+        const arrowKindTrackId = isAttackArrow
+          ? spec.attackerId
+          : spec.targetId; // block arrow → blocker permanent id
+        const drawIn = !hasArrowDrawn(arrowKindTrackId)
+          ? isAttackArrow
             ? ({ kind: 'attack' } as const)
-            : undefined;
+            : ({ kind: 'block' } as const)
+          : undefined;
         return (
           <ArrowRow
             key={spec.key}
@@ -204,7 +217,7 @@ export function CombatArrows({
             opacity={opacity}
             revealDelayMs={revealDelayMs}
             drawIn={drawIn}
-            markId={isAttackArrow ? spec.attackerId : null}
+            markId={arrowKindTrackId}
           />
         );
       })}
@@ -213,17 +226,18 @@ export function CombatArrows({
 }
 
 /**
- * Slice 6-A — per-arrow render row. Extracted so we can mount a
- * per-arrow useEffect that marks the arrow as "drawn" on first paint.
- * Inlining the useEffect inside the .map callback would violate
- * React's rules-of-hooks (hooks must run in stable order across
- * renders; .map's iteration count varies with combat shape).
+ * Slice 6-A / 6-B — per-arrow render row. Extracted so we can mount
+ * a per-arrow useEffect that marks the arrow as "drawn" on first
+ * paint. Inlining the useEffect inside the .map callback would
+ * violate React's rules-of-hooks (hooks must run in stable order
+ * across renders; .map's iteration count varies with combat shape).
  *
- * <p>The {@code markId} is the permanent id we want to record as
- * "drew its ink overlay this combat phase." For attack arrows that's
- * the attacker id; for block arrows (slice 6-B) it'll be the blocker
- * id. Slice 6-A only marks attack arrows so we accept null for
- * block-arrow rows — they pass through without lifecycle tracking.
+ * <p>The {@code markId} is the permanent id we record as "drew its
+ * ink overlay this combat phase." For attack arrows (6-A) that's the
+ * attacker id; for block arrows (6-B) it's the blocker permanent id.
+ * Both branches go through the same Set in arrowIsolationStore — id
+ * collisions can't happen because attacker and blocker permanent ids
+ * are pulled from the same engine-side UUID space (no overlap).
  */
 function ArrowRow({
   spec,
@@ -236,14 +250,14 @@ function ArrowRow({
   opacity: number;
   revealDelayMs: number;
   drawIn: { kind: 'attack' } | { kind: 'block' } | undefined;
-  markId: string | null;
+  markId: string;
 }) {
   // Mark the arrow as drawn on first paint so a re-render or stack-
   // push remount within the same combat phase doesn't replay the ink
   // animation. The phase watcher in arrowIsolationStore clears the
   // set on COMBAT exit so the next combat phase replays fresh.
   useEffect(() => {
-    if (drawIn !== undefined && markId !== null) {
+    if (drawIn !== undefined) {
       markArrowDrawn(markId);
     }
   }, [drawIn, markId]);

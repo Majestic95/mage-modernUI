@@ -21,6 +21,7 @@ import {
 } from '../api/schemas';
 import { CombatArrows } from './CombatArrows';
 import {
+  resetArrowsDrawn,
   resetCombatArrowsStaggered,
   useArrowIsolation,
 } from './arrowIsolationStore';
@@ -195,6 +196,10 @@ beforeEach(() => {
   // starts in "first-paint eligible" state. Production callers get
   // this for free via the phase watcher; tests need it explicit.
   resetCombatArrowsStaggered();
+  // Slice 6-A / 6-B — reset the per-arrow draw-tracking Set so each
+  // test starts with no arrows previously inked. Without this, an
+  // arrow id reused across tests would skip its drawIn prop.
+  resetArrowsDrawn();
 });
 
 afterEach(() => {
@@ -205,6 +210,7 @@ afterEach(() => {
   // failure that didn't unmount cleanly doesn't poison the next.
   useArrowIsolation.getState().clearPin();
   resetCombatArrowsStaggered();
+  resetArrowsDrawn();
 });
 
 // --- Endpoint convergence (no-fan, 2026-05-10) ----------------------
@@ -277,6 +283,61 @@ describe('CombatArrows — endpoint convergence', () => {
     // Sanity: all targets are exactly the same point.
     const distinct = new Set(targets.map((t) => JSON.stringify(t)));
     expect(distinct.size).toBe(1);
+  });
+});
+
+// --- Slice 6-A / 6-B — drawIn prop wiring ---------------------------
+
+describe('CombatArrows — drawIn prop wiring (slice 6-A + 6-B)', () => {
+  it('passes drawIn={kind:"attack"} to attack arrows (attacker→player)', () => {
+    const defenderId = '00000000-0000-0000-0000-00000000aaaa';
+    mountPermanentNode('att-1', { x: 100, y: 100, w: 80, h: 112 });
+    mountPortraitNode(defenderId, { x: 1000, y: 100, w: 60, h: 60 });
+
+    const attacker = makeCard({ id: 'att-1', cardId: 'att-1' });
+    const group = makeCombatGroup({
+      defenderId,
+      attackers: { 'att-1': makePerm(attacker) },
+    });
+    const { container } = render(<CombatArrows combat={[group]} />);
+
+    // Two paths render (base + ink) when drawIn is set on first paint.
+    const inkPath = container.querySelector('path[data-arrow-layer="ink"]');
+    expect(inkPath).not.toBeNull();
+    // Ink path is normalised pathLength=1 + dasharray='1 1' for both
+    // attack and block kinds; the kind only affects the duration +
+    // easing of the strokeDashoffset transition (verified in
+    // TargetingArrow.draw-in.test.tsx).
+    expect(inkPath?.getAttribute('pathLength')).toBe('1');
+  });
+
+  it('passes drawIn={kind:"block"} to block arrows (attacker→blocker)', () => {
+    // Geometry: attacker → blocker (no portrait target). The geometry
+    // layer produces an attacker→blocker arrow keyed off the blocker's
+    // permanent id.
+    const defenderId = '00000000-0000-0000-0000-00000000aaaa';
+    mountPermanentNode('att-1', { x: 100, y: 100, w: 80, h: 112 });
+    mountPermanentNode('blk-1', { x: 500, y: 100, w: 80, h: 112 });
+    // Portrait still mounted so the geometry layer's lookup succeeds
+    // for the defender even though the arrow targets the blocker.
+    mountPortraitNode(defenderId, { x: 1000, y: 100, w: 60, h: 60 });
+
+    const attacker = makeCard({ id: 'att-1', cardId: 'att-1' });
+    const blocker = makeCard({ id: 'blk-1', cardId: 'blk-1' });
+    const group = makeCombatGroup({
+      defenderId,
+      attackers: { 'att-1': makePerm(attacker) },
+      blockers: { 'blk-1': makePerm(blocker) },
+      blocked: true,
+    });
+    const { container } = render(<CombatArrows combat={[group]} players={[]} />);
+
+    // Block arrow renders an ink layer too (slice 6-B uses the same
+    // overlay-path mechanism, just with kind='block' for shorter
+    // travel + overshoot easing).
+    const inkPath = container.querySelector('path[data-arrow-layer="ink"]');
+    expect(inkPath).not.toBeNull();
+    expect(inkPath?.getAttribute('pathLength')).toBe('1');
   });
 });
 
