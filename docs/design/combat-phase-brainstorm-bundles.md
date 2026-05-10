@@ -4,8 +4,9 @@
 >
 > **Status snapshot (2026-05-09):**
 > - **Bundle 3 — Combat Dashboard:** SHIPPED on `feat/combat-bundle-3-dashboard` (merged into `main`). Per-bundle scope brief: [`docs/design/combat-bundle-3-dashboard.md`](combat-bundle-3-dashboard.md). Critic-pass post-mortem: [`docs/decisions/0014-self-authored-spec-failure-modes.md`](../decisions/0014-self-authored-spec-failure-modes.md).
-> - **Bundle 1 — Defender Lanes:** scope brief landed; slice work in progress on `feat/combat-bundle-1-defender-lanes`. Per-bundle scope brief: [`docs/design/combat-bundle-1-defender-lanes.md`](combat-bundle-1-defender-lanes.md).
-> - **Bundles 2, 4, 5, 6:** still in brainstorm state; no per-bundle scope brief written yet.
+> - **Bundle 1 — Defender Lanes:** SHIPPED on `feat/combat-bundle-1-defender-lanes` (merged into `main` 2026-05-09 as `2d6b6e40`). Per-bundle scope brief: [`docs/design/combat-bundle-1-defender-lanes.md`](combat-bundle-1-defender-lanes.md). Critic-pass log rows: 1-A through 1-X.3 + live-test tunings burst in [`docs/decisions/critic-pass-log.md`](../decisions/critic-pass-log.md).
+> - **Bundle 4 — Combat Role Markers:** scope brief landed 2026-05-09; ready to slice. Per-bundle scope brief: [`docs/design/combat-bundle-4-role-markers.md`](combat-bundle-4-role-markers.md).
+> - **Bundles 2, 5, 6:** still in brainstorm state; no per-bundle scope brief written yet. Bundles 5 + 6 are gated on the central-area-mutex decision (see "Important snag" below).
 >
 > **Open questions still to be answered (originally listed at the bottom of this brainstorm):**
 > - Which bundles to pursue and in what order beyond Bundle 3.
