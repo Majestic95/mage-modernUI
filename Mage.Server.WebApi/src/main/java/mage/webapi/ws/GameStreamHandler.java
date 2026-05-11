@@ -90,6 +90,29 @@ public final class GameStreamHandler implements Consumer<WsConfig> {
      */
     static final Duration IDLE_TIMEOUT = Duration.ofMinutes(5);
 
+    /**
+     * Webclient-side sentinel for "skip / done with no selection" on
+     * {@code playerResponse{kind:"uuid"}}. The engine's choose-from-cards
+     * loops (e.g. {@code HumanPlayer.chooseTarget} for scry/surveil
+     * partitions, {@code HumanPlayer.choose} for tutor-style picks)
+     * terminate only when {@code responseId == null}; upstream Swing
+     * emits this via {@code sendPlayerUUID(gameId, null)}. Our
+     * {@code playerResponse{kind:"uuid"}} wire type is JSON-validated
+     * to require a textual value, so the webclient encodes "skip" as
+     * the all-zeros UUID instead. We translate the sentinel back to a
+     * Java null inside {@link #handlePlayerResponse} so the engine's
+     * loop hits its done-or-cancel branches. Real game UUIDs come from
+     * {@code UUID.randomUUID()} (122 bits of entropy) — collision with
+     * the all-zeros sentinel is impossible, so this sentinel can't
+     * shadow a legitimate target. Same pattern as the
+     * {@code TRIGGER_AUTO_ORDER_*_LAST} nudge that synthesizes
+     * {@code sendPlayerUUID(null)} facade-side after the action
+     * dispatch (see the comment block in
+     * {@link #handlePlayerAction}).
+     */
+    static final String SKIP_SENTINEL_UUID_TEXT =
+            "00000000-0000-0000-0000-000000000000";
+
     private final AuthService authService;
     private final EmbeddedServer embedded;
 
@@ -670,9 +693,22 @@ public final class GameStreamHandler implements Consumer<WsConfig> {
                                 "playerResponse{kind:uuid} value must be a string.");
                         return;
                     }
+                    String uuidText = valueNode.asText();
+                    // Translate the webclient-side all-zeros "skip" sentinel
+                    // back to a real Java null so the engine's
+                    // chooseTarget / choose loops terminate (responseId ==
+                    // null + targets.size >= min → done; otherwise cancel).
+                    // Without this, the engine falls through both branches
+                    // of "responseId != null", iterates the loop, re-fires
+                    // fireSelectTargetEvent, and the client's modal pops
+                    // back ~1 RTT later — the scry/surveil Skip bug
+                    // surfaced 2026-05-11. See SKIP_SENTINEL_UUID_TEXT.
+                    UUID parsedUuid = SKIP_SENTINEL_UUID_TEXT.equals(uuidText)
+                            ? null
+                            : UUID.fromString(uuidText);
                     embedded.server().sendPlayerUUID(
                             gameId, session.upstreamSessionId(),
-                            UUID.fromString(valueNode.asText()));
+                            parsedUuid);
                 }
                 case "string" -> {
                     if (!valueNode.isTextual()) {

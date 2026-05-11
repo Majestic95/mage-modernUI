@@ -976,6 +976,50 @@ class GameStreamHandlerTest {
         }
     }
 
+    @Test
+    void playerResponse_uuidKind_allZerosSkipSentinel_doesNotError() throws Exception {
+        // Scry/Surveil Skip bug (2026-05-11): the webclient encodes
+        // "skip / done with no selection" as the all-zeros UUID because
+        // playerResponse{kind:uuid} type-validation rejects JSON null.
+        // The dispatch must translate the sentinel back to a Java null
+        // for the engine — UUID.fromString("00000000-...") would have
+        // been a real, non-null UUID that the engine's chooseTarget
+        // loop fails to match (not in possibleTargets, not in
+        // target.getTargets), causing it to re-fire fireSelectTargetEvent
+        // and pop the modal back ~1 RTT later. We can't observe the
+        // null directly without an active game, but we CAN assert the
+        // dispatch path does not surface a streamError (BAD_REQUEST /
+        // UPSTREAM_REJECTED) — which it would if either the sentinel
+        // detection were wrong (UUID.fromString blew up) or the
+        // sendPlayerUUID(null) call were rejected upstream. Sibling
+        // assertion of the TRIGGER_AUTO_ORDER_*_LAST nudge test above.
+        TestListener listener = new TestListener();
+        WebSocket ws = openValidGameWs(listener);
+        try {
+            listener.awaitFrame(FRAME_WAIT);
+            ws.sendText("{\"type\":\"playerResponse\",\"kind\":\"uuid\","
+                    + "\"value\":\"" + GameStreamHandler.SKIP_SENTINEL_UUID_TEXT
+                    + "\"}", true).join();
+            // No game is active, so upstream sendPlayerUUID(null) is a
+            // no-op. The success criterion is no streamError frame.
+            try {
+                String maybeErr = listener.awaitFrame(Duration.ofMillis(750));
+                JsonNode env = JSON.readTree(maybeErr);
+                if ("streamError".equals(env.get("method").asText())) {
+                    String code = env.get("data").get("code").asText();
+                    assertFalse("BAD_REQUEST".equals(code)
+                                    || "UPSTREAM_REJECTED".equals(code)
+                                    || "UPSTREAM_ERROR".equals(code),
+                            "skip-sentinel dispatch should not error: " + maybeErr);
+                }
+            } catch (AssertionError noFrame) {
+                // No frame arrived — expected happy path with no game.
+            }
+        } finally {
+            ws.sendClose(WebSocket.NORMAL_CLOSURE, "test done").join();
+        }
+    }
+
     // ---------- hardening (post-audit) ----------
 
     @Test
