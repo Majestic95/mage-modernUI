@@ -37,7 +37,7 @@ type PhaseConfig = {
 const TIMELINE_PHASES: PhaseConfig[] = [
   {
     label: 'Beginning',
-    fgClass: 'text-cyan-300',
+    fgClass: 'text-amber-50',
     bgClass: 'bg-cyan-400',
     trackClass: 'bg-cyan-500/70',
     glowRgb: '34, 211, 238',
@@ -50,7 +50,7 @@ const TIMELINE_PHASES: PhaseConfig[] = [
   },
   {
     label: 'Main Phase 1',
-    fgClass: 'text-sky-300',
+    fgClass: 'text-amber-50',
     bgClass: 'bg-sky-400',
     trackClass: 'bg-sky-500/70',
     glowRgb: '56, 189, 248',
@@ -59,7 +59,7 @@ const TIMELINE_PHASES: PhaseConfig[] = [
   },
   {
     label: 'Combat',
-    fgClass: 'text-red-300',
+    fgClass: 'text-amber-50',
     bgClass: 'bg-red-400',
     trackClass: 'bg-red-500/70',
     glowRgb: '248, 113, 113',
@@ -75,7 +75,7 @@ const TIMELINE_PHASES: PhaseConfig[] = [
   },
   {
     label: 'Main Phase 2',
-    fgClass: 'text-emerald-300',
+    fgClass: 'text-amber-50',
     bgClass: 'bg-emerald-400',
     trackClass: 'bg-emerald-500/70',
     glowRgb: '74, 222, 128',
@@ -84,7 +84,7 @@ const TIMELINE_PHASES: PhaseConfig[] = [
   },
   {
     label: 'End',
-    fgClass: 'text-purple-300',
+    fgClass: 'text-amber-50',
     bgClass: 'bg-purple-400',
     trackClass: 'bg-purple-500/70',
     glowRgb: '192, 132, 252',
@@ -180,12 +180,12 @@ export function PhaseTimeline({ gameView }: { gameView: WebGameView }) {
     >
       {!compact && (
         <div className="flex flex-col justify-center pr-3 border-r border-zinc-800 min-w-[5.5rem]">
-          <div className="text-[10px] uppercase tracking-wider text-zinc-500">
+          <div className="text-[10px] uppercase tracking-wider text-amber-50">
             Turn {gameView.turn}
           </div>
           <div
             data-testid="active-player-name"
-            className="text-sm font-medium text-zinc-200 truncate"
+            className="text-sm font-medium text-amber-50 truncate"
             title={gameView.activePlayerName}
           >
             {gameView.activePlayerName || '—'}
@@ -306,12 +306,12 @@ function PhaseSegment({
             const slotColorClass = isSlotZero
               ? isActivePhase
                 ? phase.fgClass + ' font-semibold'
-                : 'text-zinc-600'
+                : 'text-amber-50'
               : isActiveStep
                 ? phase.fgClass + ' font-semibold'
                 : isPastStep
-                  ? 'text-zinc-600'
-                  : 'text-zinc-500';
+                  ? 'text-amber-50'
+                  : 'text-amber-50';
             const showCheckMark = !isSlotZero && isPastStep;
             const labelText = isSlotZero ? phase.label : step.short;
             // The priority status suffix (PRIORITY / PASSING /
@@ -355,7 +355,7 @@ function PhaseSegment({
         <div
           className={
             'text-[10px] uppercase tracking-wider mb-1 whitespace-nowrap overflow-hidden text-ellipsis ' +
-            (isActivePhase ? phase.fgClass + ' font-semibold' : 'text-zinc-600')
+            (isActivePhase ? phase.fgClass + ' font-semibold' : 'text-amber-50')
           }
         >
           {phase.label}
@@ -442,8 +442,8 @@ function PhaseSegment({
                   (isActiveStep
                     ? phase.fgClass + ' font-semibold'
                     : isPastStep
-                      ? 'text-zinc-600'
-                      : 'text-zinc-500')
+                      ? 'text-amber-50'
+                      : 'text-amber-50')
                 }
                 style={{ left, top: 0 }}
               >
@@ -482,8 +482,8 @@ function PriorityStatusSuffix({ status }: { status: PriorityStatus }) {
   const label = PRIORITY_STATUS_LABEL[status.kind];
   const colorClass =
     status.kind === 'priority'
-      ? 'text-amber-300 font-semibold'
-      : 'text-zinc-400';
+      ? 'text-amber-50 font-semibold'
+      : 'text-amber-50';
   const ariaLabel =
     status.kind === 'priority'
       ? 'Priority status: you have priority'
@@ -507,7 +507,7 @@ function PriorityStatusSuffix({ status }: { status: PriorityStatus }) {
           <span
             data-testid="phase-priority-waiting-on"
             data-waiting-unknown={!status.waitingOn || undefined}
-            className="text-zinc-400"
+            className="text-amber-50"
             title={status.waitingOn || 'Unknown opponent'}
           >
             {status.waitingOn || '—'}

@@ -261,8 +261,13 @@ describe('PhaseTimeline — priority-status suffix in compact+combat', () => {
     const suffix = screen.getByTestId('phase-priority-suffix');
     expect(suffix.getAttribute('data-priority-kind')).toBe('priority');
     expect(suffix.textContent).toContain('PRIORITY');
-    // PRIORITY label gets amber styling — soft contract, but lock it in.
-    expect(suffix.innerHTML).toContain('text-amber-300');
+    // 2026-05-11 readability pass: all phase-ladder text is now a
+    // single cream white (`text-amber-50` = #fffbeb), the active /
+    // priority state differentiated by font-weight rather than color.
+    // PRIORITY still gets `font-semibold` so it stands out from the
+    // surrounding text; the lock-in shifted from color to weight.
+    expect(suffix.innerHTML).toContain('text-amber-50');
+    expect(suffix.innerHTML).toContain('font-semibold');
   });
 
   it('shows PASSING when local player has a skip macro armed', () => {
