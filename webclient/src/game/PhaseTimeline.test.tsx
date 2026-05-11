@@ -98,22 +98,55 @@ function renderTimeline(gameView: WebGameView, variant: LayoutVariant) {
 }
 
 describe('PhaseTimeline — P3 header-budget invariant (compact mode)', () => {
-  it('omits sub-step labels for every phase when active phase is NOT combat', () => {
+  // 2026-05-11 — user-requested change: combat sub-step labels are
+  // now PERMANENTLY visible above the combat dots in compact mode
+  // (slot 0 = "Combat" phase header in place of "Begin"; slots 1-5
+  // = sub-step short names). Other phases still suppress their
+  // sub-step labels in compact mode (the P3 invariant for the
+  // non-combat segments is preserved). The expectations below
+  // were updated to match.
+  it('combat-only — 6 sub-step labels are permanent in compact, non-combat phases stay suppressed', () => {
     renderTimeline(
       buildGameView({ step: 'PRECOMBAT_MAIN', phase: 'PRECOMBAT_MAIN' }),
       'tabletop',
     );
-    expect(screen.queryAllByTestId('phase-step-labels')).toEqual([]);
-    expect(screen.queryAllByTestId('phase-step-label')).toEqual([]);
+    // Combat segment always has its label container in compact.
+    const containers = screen.queryAllByTestId('phase-step-labels');
+    expect(containers).toHaveLength(1);
+    expect(containers[0]?.getAttribute('data-combat-runway')).toBe(
+      'permanent',
+    );
+    // 6 labels — slot 0 + 5 sub-steps.
+    const labels = screen.queryAllByTestId('phase-step-label');
+    expect(labels).toHaveLength(6);
+    // None of them are 'active' because we're not in combat.
+    expect(
+      labels.filter(
+        (l) => l.getAttribute('data-step-position') === 'active',
+      ),
+    ).toEqual([]);
+    // Slot 0 carries data-combat-header so consumers can distinguish
+    // the phase header from the sub-step stickers.
+    const slotZero = labels.find(
+      (l) => l.getAttribute('data-combat-header') === 'true',
+    );
+    expect(slotZero?.getAttribute('data-step')).toBe('BEGIN_COMBAT');
+    expect(slotZero?.textContent).toBe('Combat');
   });
 
-  it('omits sub-step labels in beginning, main, and end phases', () => {
+  it('beginning, main, and end phases still omit their sub-step labels in compact', () => {
     for (const step of ['UNTAP', 'UPKEEP', 'DRAW', 'END_TURN', 'CLEANUP']) {
       const { unmount } = renderTimeline(
         buildGameView({ step, phase: step.startsWith('END') ? 'END' : 'BEGIN' }),
         'tabletop',
       );
-      expect(screen.queryAllByTestId('phase-step-labels')).toEqual([]);
+      // Only the combat segment's permanent runway container exists;
+      // no other phase materializes a phase-step-labels row.
+      const containers = screen.queryAllByTestId('phase-step-labels');
+      expect(containers).toHaveLength(1);
+      expect(containers[0]?.getAttribute('data-combat-runway')).toBe(
+        'permanent',
+      );
       unmount();
     }
   });
@@ -145,7 +178,7 @@ describe('PhaseTimeline — combat-phase runway in compact mode', () => {
     ]);
   });
 
-  it('marks past sub-steps as past and renders a check-mark sigil', () => {
+  it('marks past sub-steps as past and renders a check-mark sigil (slot 0 is the phase header, never gets ✓)', () => {
     renderTimeline(
       buildGameView({ step: 'COMBAT_DAMAGE', phase: 'COMBAT' }),
       'tabletop',
@@ -158,6 +191,11 @@ describe('PhaseTimeline — combat-phase runway in compact mode', () => {
           l.getAttribute('data-step-position'),
         ]),
     );
+    // data-step-position still reflects sub-step lifecycle for
+    // every slot (semantic anchor); slot 0's VISUAL treatment
+    // suppresses the ✓ check-mark because the phase header isn't
+    // a sub-step that gets "ticked off" — but the data attribute
+    // stays past so consumers can still order slots by position.
     expect(positions).toEqual({
       BEGIN_COMBAT: 'past',
       DECLARE_ATTACKERS: 'past',
@@ -166,7 +204,10 @@ describe('PhaseTimeline — combat-phase runway in compact mode', () => {
       COMBAT_DAMAGE: 'active',
       END_COMBAT: 'future',
     });
-    expect(screen.getAllByTestId('phase-step-past-mark')).toHaveLength(4);
+    // 3 check marks: slots 1, 2, 3 (DECLARE_ATTACKERS / _BLOCKERS /
+    // FIRST_COMBAT_DAMAGE). Slot 0 (BEGIN_COMBAT) is the phase
+    // header and never carries ✓.
+    expect(screen.getAllByTestId('phase-step-past-mark')).toHaveLength(3);
   });
 
   it('only the active step is `active`; the rest are past or future', () => {
@@ -184,7 +225,7 @@ describe('PhaseTimeline — combat-phase runway in compact mode', () => {
     expect(screen.queryByTestId('phase-step-past-mark')).toBeNull();
   });
 
-  it('exposes data-combat-active on the combat segment + runway when active', () => {
+  it('exposes data-combat-active on the combat segment + data-combat-runway-active on the runway when active', () => {
     renderTimeline(
       buildGameView({ step: 'DECLARE_BLOCKERS', phase: 'COMBAT' }),
       'tabletop',
@@ -193,10 +234,16 @@ describe('PhaseTimeline — combat-phase runway in compact mode', () => {
       .getAllByTestId('phase-segment')
       .find((s) => s.getAttribute('data-phase') === 'Combat');
     expect(combatSegment?.getAttribute('data-combat-active')).toBe('true');
+    // The runway container is always 'permanent' for the combat
+    // segment in compact mode; the SEPARATE data-combat-runway-active
+    // attribute flips true only while combat is the active phase.
     const labels = screen
       .getAllByTestId('phase-step-labels')
-      .find((l) => l.getAttribute('data-combat-runway') === 'true');
+      .find(
+        (l) => l.getAttribute('data-combat-runway-active') === 'true',
+      );
     expect(labels).toBeDefined();
+    expect(labels?.getAttribute('data-combat-runway')).toBe('permanent');
   });
 });
 

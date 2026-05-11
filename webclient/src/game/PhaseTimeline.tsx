@@ -241,8 +241,30 @@ function PhaseSegment({
     phase.label === 'Combat' && activePhase === 'COMBAT';
   const isActivePhase = isActivePhaseByStep || isActivePhaseByPhase;
   const isCombatActive = compact && phase.label === 'Combat' && isActivePhase;
-  const showSubStepLabels =
-    (phase.showStepLabels && !compact) || isCombatActive;
+
+  // User-requested 2026-05-11: in compact (tabletop) mode, the
+  // combat sub-step labels become permanent runway slots ABOVE the
+  // dots — visible regardless of whether combat is the active
+  // phase. Mechanism: the segment's row 1 (formerly the centered
+  // "Combat" header text) is replaced by 6 absolute-positioned
+  // labels, one above each combat dot. Slot 0 carries the "Combat"
+  // phase header text instead of "Begin" (the BEGIN_COMBAT
+  // sub-step's first-strike-implicit dot reads as "we're at the
+  // start of combat" via orb position; no need for a redundant
+  // "Begin" word that would also overlap the phase header). Other
+  // 5 slots carry their sub-step short names. Below-dots row is
+  // suppressed for the combat segment in compact mode. Net height:
+  // EQUAL to today's combat-inactive header (~24px) — actually
+  // SHORTER when combat is active vs today (we removed the
+  // ~14px below-dots row).
+  const isCombatCompactRunway = compact && phase.label === 'Combat';
+
+  // Suppress the legacy below-dots labels row when we've moved the
+  // labels above. Non-compact variants + non-combat phases keep the
+  // legacy "showSubStepLabels" behavior verbatim.
+  const showBelowDotsSubStepLabels =
+    ((phase.showStepLabels && !compact) || isCombatActive) &&
+    !isCombatCompactRunway;
 
   return (
     <div
@@ -250,18 +272,96 @@ function PhaseSegment({
       data-phase={phase.label}
       data-active-phase={isActivePhase || undefined}
       data-combat-active={isCombatActive || undefined}
+      data-combat-runway-mode={isCombatCompactRunway || undefined}
       className="flex flex-col"
       style={{ flex: phase.steps.length / totalSteps }}
     >
-      <div
-        className={
-          'text-[10px] uppercase tracking-wider mb-1 whitespace-nowrap overflow-hidden text-ellipsis ' +
-          (isActivePhase ? phase.fgClass + ' font-semibold' : 'text-zinc-600')
-        }
-      >
-        {phase.label}
-        {isCombatActive && <PriorityStatusSuffix status={priorityStatus} />}
-      </div>
+      {isCombatCompactRunway ? (
+        <div
+          data-testid="phase-step-labels"
+          data-combat-runway="permanent"
+          data-combat-runway-active={isActivePhase || undefined}
+          // Heights match the legacy combat-inactive header geometry
+          // (text-[9px] sits inside h-3; mb-1 to keep the same gap
+          // above the dots-row as the centered-header path).
+          className="relative h-3 mb-1"
+        >
+          {phase.steps.map((step, idx) => {
+            const isActiveStep = step.name === activeStep;
+            const isPastStep =
+              isActivePhase && activeStepIdx >= 0 && idx < activeStepIdx;
+            const isSlotZero = idx === 0;
+            const left = `${((idx + 0.5) / phase.steps.length) * 100}%`;
+            const position = isActiveStep
+              ? 'active'
+              : isPastStep
+                ? 'past'
+                : 'future';
+            // Slot 0 visual treatment overrides the past/active/future
+            // styling because it's the phase header, not a sub-step
+            // sticker — it reads "active" (red+bold) whenever the
+            // combat PHASE is active, regardless of which sub-step
+            // the engine is on, and it never receives a ✓ check-mark
+            // (the phase isn't a sub-step that gets ticked off).
+            const slotColorClass = isSlotZero
+              ? isActivePhase
+                ? phase.fgClass + ' font-semibold'
+                : 'text-zinc-600'
+              : isActiveStep
+                ? phase.fgClass + ' font-semibold'
+                : isPastStep
+                  ? 'text-zinc-600'
+                  : 'text-zinc-500';
+            const showCheckMark = !isSlotZero && isPastStep;
+            const labelText = isSlotZero ? phase.label : step.short;
+            // The priority status suffix (PRIORITY / PASSING /
+            // WAITING · name) follows wherever the orb is — i.e.,
+            // the active sub-step's label. When the orb is on slot
+            // 0 (engine at BEGIN_COMBAT), it sits next to the
+            // "Combat" header text. When the orb advances, the
+            // suffix moves with it onto "Attackers", "Blockers",
+            // etc. Long player names may visually bleed into
+            // neighboring slot space; accepted tradeoff (same kind
+            // of visibility-over-aesthetics call as the tooltip-
+            // scale slider's documented behavior).
+            const showPrioritySuffix = isActiveStep && isActivePhase;
+            return (
+              <span
+                key={step.name}
+                data-testid="phase-step-label"
+                data-step={step.name}
+                data-step-position={position}
+                data-combat-header={isSlotZero || undefined}
+                className={
+                  'absolute -translate-x-1/2 text-[9px] uppercase tracking-wide whitespace-nowrap ' +
+                  slotColorClass
+                }
+                style={{ left, top: 0 }}
+              >
+                {showCheckMark && (
+                  <span data-testid="phase-step-past-mark" className="mr-0.5">
+                    ✓
+                  </span>
+                )}
+                {labelText}
+                {showPrioritySuffix && (
+                  <PriorityStatusSuffix status={priorityStatus} />
+                )}
+              </span>
+            );
+          })}
+        </div>
+      ) : (
+        <div
+          className={
+            'text-[10px] uppercase tracking-wider mb-1 whitespace-nowrap overflow-hidden text-ellipsis ' +
+            (isActivePhase ? phase.fgClass + ' font-semibold' : 'text-zinc-600')
+          }
+        >
+          {phase.label}
+          {isCombatActive && <PriorityStatusSuffix status={priorityStatus} />}
+        </div>
+      )}
       <div className="relative flex items-center h-5">
         {/* Track bar — saturated phase color, slightly thicker than v1 */}
         <div
@@ -309,13 +409,13 @@ function PhaseSegment({
           );
         })}
       </div>
-      {/* Per-step labels row — shown for all phases in non-compact
-          variant; ALSO shown for the combat phase in compact mode
-          when it's the active phase (bundle 3-A). Past combat
-          sub-steps in compact+combat mode get a ✓ prefix + muted
-          color so the runway "shape" of the combat round is legible
-          at a glance. */}
-      {showSubStepLabels && (
+      {/* Below-dots sub-step labels row — preserved for non-compact
+          variant + the original isCombatActive path that doesn't
+          intersect with isCombatCompactRunway. In compact mode for
+          the combat segment, the labels were moved ABOVE the dots
+          (see isCombatCompactRunway branch above); this row is
+          suppressed there to keep total height ≈ 24px. */}
+      {showBelowDotsSubStepLabels && (
         <div
           data-testid="phase-step-labels"
           data-combat-runway={isCombatActive || undefined}
