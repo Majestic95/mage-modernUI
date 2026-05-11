@@ -415,6 +415,111 @@ class WebApiServerTest {
     }
 
     @Test
+    void getGamesMine_userInLiveGame_returnsThatGame() throws Exception {
+        // REJOIN-B — positive-path companion to the three negative-path
+        // tests above. Stands up a real 1v1 game via the same
+        // host+AI+join+start flow the e2e test uses, then asserts
+        // GET /api/games/mine returns an entry for the host pointing
+        // at THAT game. The fail-mode this guards: REJOIN-A's wire
+        // wiring drifting (a userPlayerMap / isInGame() rename on
+        // upstream that compiles cleanly but returns empty — the
+        // existing negative-path tests cannot catch that since they
+        // already expect empty).
+        String hostToken = freshAnonBearer();
+        String hostName = JSON.readTree(
+                getWithToken(hostToken, "/api/session/me").body())
+                .get("username").asText();
+
+        String roomId = mainRoomId();
+        String tableId = createTableWith(hostToken, roomId,
+                "Two Player Duel", "Constructed - Vintage", 1,
+                List.of("HUMAN", "COMPUTER_MONTE_CARLO"));
+
+        HttpResponse<String> ai = postJsonWithToken(hostToken,
+                "/api/rooms/" + roomId + "/tables/" + tableId + "/ai",
+                "{\"playerType\":\"COMPUTER_MONTE_CARLO\"}");
+        assertEquals(204, ai.statusCode(), ai.body());
+
+        String deckJson = buildForestDeckJson(60);
+        String joinBody = String.format(
+                "{\"name\":\"%s\",\"skill\":1,\"deck\":%s}", hostName, deckJson);
+        HttpResponse<String> join = postJsonWithToken(hostToken,
+                "/api/rooms/" + roomId + "/tables/" + tableId + "/join", joinBody);
+        assertEquals(204, join.statusCode(), "join failed: " + join.body());
+
+        HttpResponse<String> start = postJsonWithToken(hostToken,
+                "/api/rooms/" + roomId + "/tables/" + tableId + "/start", "");
+        assertEquals(204, start.statusCode(), "start failed: " + start.body());
+
+        // Engine game-start is async — the GameController may not be
+        // in GameManager.getGameController() the instant /start returns
+        // 204. Poll /api/games/mine for up to 5s, exactly mirroring
+        // what the lobby banner does via useRejoinPoll. Filter by THIS
+        // test's tableId so any cross-test bleed (other e2e tests in
+        // this class leave games running in the shared GameManager)
+        // doesn't break the assertion.
+        JsonNode myEntry = null;
+        long deadline = System.currentTimeMillis() + 5_000L;
+        while (System.currentTimeMillis() < deadline) {
+            HttpResponse<String> mine = getWithToken(hostToken, "/api/games/mine");
+            assertEquals(200, mine.statusCode(), mine.body());
+            JsonNode body = JSON.readTree(mine.body());
+            assertEquals(SchemaVersion.CURRENT, body.get("schemaVersion").asText());
+            JsonNode games = body.get("games");
+            assertTrue(games.isArray(), "games must be a JSON array");
+            for (JsonNode g : games) {
+                if (tableId.equals(g.get("tableId").asText())) {
+                    myEntry = g;
+                    break;
+                }
+            }
+            if (myEntry != null) {
+                break;
+            }
+            Thread.sleep(100L);
+        }
+        assertNotNull(myEntry,
+                "host's game should appear in /api/games/mine within 5s of /start");
+
+        // Lock the 4-field wire shape (matches the WebTable
+        // size-assert convention at the earlier createTable test).
+        // A future additive field on WebMyGame is a wire-shape change
+        // that requires a schemaVersion bump per CLAUDE.md's schema
+        // rule; this assert fails-loud if one slips in without one.
+        assertEquals(4, myEntry.size(),
+                "WebMyGame JSON must have exactly 4 fields"
+                        + " (gameId, tableId, tableName, opponentNames); got: "
+                        + myEntry);
+
+        // gameId is the engine Game UUID — present on the wire, non-blank,
+        // and distinct from the table UUID (the lobby has both concepts).
+        assertNotNull(myEntry.get("gameId"), "gameId field must be present");
+        String gameId = myEntry.get("gameId").asText();
+        assertFalse(gameId.isBlank(), "gameId must be non-blank");
+        assertNotEquals(tableId, gameId,
+                "gameId is the engine Game UUID, not the table UUID");
+
+        // tableName backs the banner header. Service emits "" if the
+        // table lookup fails, so non-null is the contract — not
+        // non-blank. We don't hardcode the host's chosen table name
+        // (createTableWith doesn't take one; upstream default applies).
+        assertNotNull(myEntry.get("tableName"));
+
+        // opponentNames excludes the requesting user and lists the
+        // other seat (the AI). 1v1 ⇒ exactly one opponent. Don't
+        // hardcode the AI bot name — it varies by playerType /
+        // upstream build — just assert non-blank and not the host.
+        JsonNode opponents = myEntry.get("opponentNames");
+        assertTrue(opponents.isArray(), "opponentNames must be a JSON array");
+        assertEquals(1, opponents.size(),
+                "1v1 should report exactly one opponent (the AI seat)");
+        String aiName = opponents.get(0).asText();
+        assertFalse(aiName.isBlank(), "AI opponent name must be non-blank");
+        assertNotEquals(hostName, aiName,
+                "host must be excluded from their own opponentNames");
+    }
+
+    @Test
     void getCardsSearch_wildcardMixedWithLetters_strippedThenSearched() throws Exception {
         // q="For%est" — strip '%' → "Forest" → valid 2+ char query,
         // returns matches. Confirms wildcard stripping doesn't break
