@@ -403,7 +403,10 @@ export function App() {
       <main className="max-w-4xl mx-auto p-6 space-y-4">
         {tab === 'lobby' && (
           <>
-            <Lobby onEnterLobby={setActiveLobbyId} />
+            <Lobby
+              onEnterLobby={setActiveLobbyId}
+              onRejoinGame={setActiveGameId}
+            />
             <LobbyChat />
             <DevOpenGame onOpen={setActiveGameId} />
           </>

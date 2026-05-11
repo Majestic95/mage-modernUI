@@ -97,6 +97,28 @@ export const webHealthSchema = z.object({
 });
 export type WebHealth = z.infer<typeof webHealthSchema>;
 
+/* ---------- rejoin surface ----------
+ *
+ * Mirrors the server's WebMyGame / WebMyGamesResponse DTOs. Powers
+ * the lobby's "Rejoin Game" banner — a list of games this user is
+ * seated in (engine-side, hasLeft=false) and can resume by clicking.
+ * Empty list is the common case at lobby-time; the banner hides
+ * itself when there is nothing to rejoin.
+ */
+export const webMyGameSchema = z.object({
+  gameId: z.string(),
+  tableId: z.string().nullable(),
+  tableName: z.string(),
+  opponentNames: z.array(z.string()),
+});
+export type WebMyGame = z.infer<typeof webMyGameSchema>;
+
+export const webMyGamesResponseSchema = z.object({
+  schemaVersion: z.string(),
+  games: z.array(webMyGameSchema),
+});
+export type WebMyGamesResponse = z.infer<typeof webMyGamesResponseSchema>;
+
 /* ---------- session ---------- */
 
 export const webSessionSchema = z.object({

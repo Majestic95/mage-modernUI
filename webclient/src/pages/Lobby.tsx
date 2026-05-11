@@ -11,6 +11,8 @@ import {
 } from '../api/schemas';
 import { useAuthStore } from '../auth/store';
 import { PreLobbyModal } from '../lobby/PreLobbyModal';
+import { RejoinGameBanner } from '../lobby/RejoinGameBanner';
+import { useRejoinPoll } from '../lobby/useRejoinPoll';
 import { PasswordPromptModal } from './PasswordPromptModal';
 
 const POLL_INTERVAL_MS = 5_000;
@@ -31,6 +33,15 @@ interface Props {
    * so the lobby's first {@code PUT /seat/deck} can include it.
    */
   onEnterLobby?: (tableId: string, joinPassword?: string) => void;
+  /**
+   * Click handler for the "Rejoin Game" banner. Receives the gameId
+   * the user wants to resume. Caller routes into the Game window via
+   * the same setter used by the start-game auto-route in
+   * {@code App.tsx} (so reload-resume, fresh-start-resume, and
+   * rejoin-resume all converge on one code path). When unset, the
+   * banner is hidden (the rejoin surface is opt-in at the App level).
+   */
+  onRejoinGame?: (gameId: string) => void;
 }
 
 /**
@@ -38,7 +49,7 @@ interface Props {
  * for create-table dropdowns, polls the table list every 5 s. Hosts
  * the create-table modal when the user clicks "Create".
  */
-export function Lobby({ onEnterLobby }: Props = {}) {
+export function Lobby({ onEnterLobby, onRejoinGame }: Props = {}) {
   const session = useAuthStore((s) => s.session);
   const [room, setRoom] = useState<WebRoomRef | null>(null);
   const [serverState, setServerState] = useState<WebServerState | null>(null);
@@ -46,6 +57,16 @@ export function Lobby({ onEnterLobby }: Props = {}) {
   const [error, setError] = useState<string | null>(null);
   const [pollNonce, setPollNonce] = useState(0);
   const [createOpen, setCreateOpen] = useState(false);
+  // Rejoin surface — extracted into useRejoinPoll to keep this file
+  // under the 500 LOC hard cap. Empty list is the common case;
+  // RejoinGameBanner returns null on empty so there's no structural
+  // placeholder when there's nothing to rejoin.
+  const rejoinable = useRejoinPoll({
+    token: session?.token,
+    enabled: Boolean(onRejoinGame),
+    refreshKey: pollNonce,
+    intervalMs: POLL_INTERVAL_MS,
+  });
 
   const requestImmediateRefresh = useCallback(() => {
     setPollNonce((n) => n + 1);
@@ -207,6 +228,9 @@ export function Lobby({ onEnterLobby }: Props = {}) {
 
   return (
     <div className="space-y-4">
+      {onRejoinGame && (
+        <RejoinGameBanner games={rejoinable} onRejoin={onRejoinGame} />
+      )}
       <header className="flex items-baseline justify-between gap-4">
         <h2 className="text-xl font-semibold">Tables</h2>
         <div className="flex items-center gap-3">

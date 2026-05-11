@@ -32,6 +32,7 @@ import mage.webapi.embed.EmbeddedServer;
 import mage.webapi.format.PauperLegalityService;
 import mage.webapi.format.WebApiPauperValidator;
 import mage.webapi.lobby.DeckValidationService;
+import mage.webapi.lobby.GameMembershipService;
 import mage.webapi.lobby.LobbyService;
 import mage.webapi.mapper.CardInfoMapper;
 import mage.webapi.mapper.DeckMapper;
@@ -109,6 +110,7 @@ public final class WebApiServer {
     private final LobbyService lobbyService;
     private final DeckValidationService deckValidationService;
     private final TableStreamHandler tableStreamHandler;
+    private final GameMembershipService gameMembershipService;
     /**
      * Slice L8 review (security HIGH #3) — per-IP rate limiter for
      * session-mint. Anonymous tokens are otherwise unbounded.
@@ -173,6 +175,7 @@ public final class WebApiServer {
         // for revokePriorTokensForSameUsername on successful recover.
         this.recoveryService = new mage.webapi.auth.RecoveryService(authService);
         this.deckValidationService = new DeckValidationService();
+        this.gameMembershipService = new GameMembershipService(embedded);
         // Slice L7 — wire the per-table broadcaster. Constructed after
         // LobbyService so the handler can read the same SeatReadyTracker
         // when rebuilding WebTable snapshots; LobbyService gets a back-
@@ -594,6 +597,16 @@ public final class WebApiServer {
             boolean truncated = raw.size() >= rawCap || !processedAllRaw;
             ctx.json(CardInfoMapper.many(
                     new java.util.ArrayList<>(seen.values()), truncated));
+        });
+
+        // Protected — rejoin surface. Returns the games the authenticated
+        // user can rejoin (seated in engine + hasLeft=false). Powers the
+        // lobby's "Rejoin Game" banner so a player who closed the tab or
+        // dropped network without conceding can get back in. Empty list
+        // is the common case; the banner hides itself when empty.
+        app.get("/api/games/mine", ctx -> {
+            SessionEntry session = sessionFrom(ctx);
+            ctx.json(gameMembershipService.listGamesForSession(session));
         });
 
         // Protected — lobby + tables (slice 6, ADR 0006)

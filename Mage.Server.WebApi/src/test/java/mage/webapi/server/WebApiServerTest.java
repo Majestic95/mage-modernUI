@@ -368,6 +368,52 @@ class WebApiServerTest {
         assertEquals(400, resp.statusCode());
     }
 
+    // ---------- rejoin surface: GET /api/games/mine ----------
+
+    @Test
+    void getGamesMine_withBearer_returnsEmptyList_whenUserHasNoGames() throws Exception {
+        // Fresh anon bearer has never seated in a game; the list must
+        // be empty AND well-formed (schemaVersion present, games array
+        // present, not null). Empty is by far the common case at
+        // lobby-time, so the well-formed shape matters more than the
+        // size assertion.
+        HttpResponse<String> resp = getAuthed("/api/games/mine");
+        assertEquals(200, resp.statusCode());
+
+        JsonNode body = JSON.readTree(resp.body());
+        assertEquals(SchemaVersion.CURRENT, body.get("schemaVersion").asText());
+        assertNotNull(body.get("games"));
+        assertTrue(body.get("games").isArray(),
+                "games must be a JSON array, got: " + body.get("games"));
+        assertEquals(0, body.get("games").size(),
+                "fresh anon bearer has no rejoinable games");
+    }
+
+    @Test
+    void getGamesMine_withoutBearer_returns401() throws Exception {
+        // Rejoin discloses which games a user is in — auth-gated.
+        HttpResponse<String> resp = get("/api/games/mine");
+        assertEquals(401, resp.statusCode());
+
+        JsonNode body = JSON.readTree(resp.body());
+        assertEquals("MISSING_TOKEN", body.get("code").asText());
+    }
+
+    @Test
+    void getGamesMine_invalidToken_returns401() throws Exception {
+        HttpResponse<String> resp = HTTP.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create("http://localhost:" + server.port() + "/api/games/mine"))
+                        .header("Authorization", "Bearer not-a-real-token")
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(401, resp.statusCode());
+
+        JsonNode body = JSON.readTree(resp.body());
+        assertEquals("INVALID_TOKEN", body.get("code").asText());
+    }
+
     @Test
     void getCardsSearch_wildcardMixedWithLetters_strippedThenSearched() throws Exception {
         // q="For%est" — strip '%' → "Forest" → valid 2+ char query,
