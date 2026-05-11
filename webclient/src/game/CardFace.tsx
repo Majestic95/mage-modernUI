@@ -6,6 +6,7 @@ import { scryfallImageUrl, type ScryfallVersion } from './scryfall';
 import { computeHaloBackground } from './halo';
 import { effectiveToughness } from './effectiveToughness';
 import { useCommanderColorsForCard } from './useCommanderColors';
+import { usePtBadgeSettings } from './ptBadgeSettings';
 import { slow } from '../animation/debug';
 import {
   COUNTER_POP,
@@ -389,6 +390,12 @@ export function CardFace(props: CardFaceProps): JSX.Element {
   // and StackZone FocalCard use; cardId-name match against
   // commandList in useCommanderColorsForCard.
   const commanderColors = useCommanderColorsForCard(card);
+  // Per-user P/T badge scale (1× / 2× / 3×) for visually impaired
+  // players. Default 1 — existing players see no change. Applied
+  // below as `transform: scale(N)` with `transform-origin: bottom
+  // right` so growth pushes inward toward the card art rather than
+  // outside the card's bounding box.
+  const ptBadgeScale = usePtBadgeSettings((s) => s.scale);
   // 2026-05-04 — rotation moved from the inner card to the outer
   // wrapper (below) so the commander color halo (a sibling element
   // visually behind the card) rotates in sync when the card taps.
@@ -534,11 +541,29 @@ export function CardFace(props: CardFaceProps): JSX.Element {
           toughness is the derived effective state. */}
       {showPT && (
         <div
+          data-testid="card-pt-badge"
+          data-pt-scale={ptBadgeScale}
           className={
             'absolute ' +
             spec.ptBottom +
             ' bg-zinc-950/85 backdrop-blur-sm rounded px-1 py-0.5 font-mono ' +
             spec.ptText
+          }
+          style={
+            ptBadgeScale > 1
+              ? {
+                  // Anchor at bottom-right so the badge grows inward
+                  // toward the card art at 2× / 3× without spilling
+                  // past the card's outer edge. Layout is unaffected
+                  // (transforms don't change bounding box) — only the
+                  // visual size scales. Overlap with the name banner
+                  // at 3× is the deliberate a11y tradeoff (visibility
+                  // over aesthetics, mirroring the tooltip-scale
+                  // slider's "can block other elements" framing).
+                  transform: `scale(${ptBadgeScale})`,
+                  transformOrigin: 'bottom right',
+                }
+              : undefined
           }
         >
           {isPlaneswalker ? (

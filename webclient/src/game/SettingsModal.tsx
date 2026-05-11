@@ -11,6 +11,12 @@ import {
 } from './hoverPreviewSettings';
 import { ManaPaymentSettingsSection } from './ManaPaymentSettingsSection';
 import { usePriorityStopsSettings } from './priorityStopsSettings';
+import {
+  PT_BADGE_SCALE_LABELS,
+  PT_BADGE_SCALE_OPTIONS,
+  usePtBadgeSettings,
+  type PtBadgeScale,
+} from './ptBadgeSettings';
 import type { GameStream } from './stream';
 
 /**
@@ -112,6 +118,8 @@ export function SettingsModal({
         </header>
 
         <CardPreviewSettings />
+
+        <PtBadgeSettings />
 
         <CombatPrioritySettings />
 
@@ -245,6 +253,63 @@ function CardPreviewSettings() {
         <span className="text-[10px] text-text-secondary tabular-nums w-14 text-right">
           {Math.round(popoverScale * 100)}% · {previewWidth}px
         </span>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * Power/toughness badge size — discrete 1× / 2× / 3× picker for the
+ * in-card P/T overlay (and the planeswalker loyalty number sharing
+ * the same slot). Accessibility setting for visually impaired
+ * players. Scales the badge via {@code transform: scale()} anchored
+ * at bottom-right so growth pushes inward over the card art rather
+ * than past the card's outer edge (CardFace.tsx). Default 1×.
+ */
+function PtBadgeSettings() {
+  const scale = usePtBadgeSettings((s) => s.scale);
+  const setScale = usePtBadgeSettings((s) => s.setScale);
+  return (
+    <section
+      data-testid="settings-pt-badge-section"
+      className="space-y-2 border-t border-zinc-800 pt-4"
+    >
+      <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
+        Power/toughness size
+      </h3>
+      <p className="text-text-secondary text-[11px]">
+        Scales the in-card P/T (and planeswalker loyalty) badge.
+        Larger sizes help visually impaired players read the badge
+        across the table.
+      </p>
+      <div
+        role="radiogroup"
+        aria-label="Power/toughness badge size"
+        className="flex gap-2"
+      >
+        {PT_BADGE_SCALE_OPTIONS.map((option: PtBadgeScale) => {
+          const isActive = scale === option;
+          return (
+            <button
+              key={option}
+              type="button"
+              role="radio"
+              aria-checked={isActive}
+              data-testid={`settings-pt-badge-${option}x`}
+              data-active={isActive}
+              onClick={() => setScale(option)}
+              className={
+                'flex-1 px-3 py-1.5 rounded text-xs border ' +
+                (isActive
+                  ? 'bg-fuchsia-600/30 border-fuchsia-500 text-fuchsia-100'
+                  : 'bg-zinc-800 border-zinc-700 text-zinc-200 hover:bg-zinc-700')
+              }
+            >
+              {option}× <span className="text-text-secondary">·</span>{' '}
+              {PT_BADGE_SCALE_LABELS[option]}
+            </button>
+          );
+        })}
       </div>
     </section>
   );
