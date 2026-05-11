@@ -657,6 +657,44 @@ public final class GameStreamHandler implements Consumer<WsConfig> {
         }
     }
 
+    /**
+     * Translate the wire-level {@code playerResponse{kind:"uuid"}} text
+     * value into the {@link UUID} (or {@code null}) that must be
+     * forwarded to the engine.
+     *
+     * <p>The webclient encodes "skip / done with no selection" as the
+     * all-zeros UUID string ({@link #SKIP_SENTINEL_UUID_TEXT}) because
+     * {@code playerResponse{kind:"uuid"}}'s wire schema rejects JSON
+     * {@code null}. The engine's choose-from-cards loops (e.g.
+     * {@code HumanPlayer.chooseTarget} for scry/surveil partitions,
+     * {@code HumanPlayer.choose} for tutor-style picks) terminate only
+     * when {@code responseId == null}; upstream Swing emits this via
+     * {@code sendPlayerUUID(gameId, null)}. This helper bridges the
+     * encoding by mapping the sentinel back to a real Java {@code null}.
+     *
+     * <p>Contract:
+     * <ul>
+     *   <li>{@link #SKIP_SENTINEL_UUID_TEXT} → {@code null}.</li>
+     *   <li>Any other valid UUID text → parsed {@link UUID}.</li>
+     *   <li>Malformed text → throws {@link IllegalArgumentException}
+     *       (caller turns into BAD_REQUEST).</li>
+     * </ul>
+     *
+     * <p>Real engine UUIDs come from {@code UUID.randomUUID()} (122 bits
+     * of entropy); collision with the all-zeros sentinel is impossible,
+     * so this sentinel can't shadow a legitimate target.
+     *
+     * <p>Package-private + static so the focused unit test in
+     * {@code GameStreamHandlerDecodeTest} can verify the contract
+     * without standing up an embedded server.
+     */
+    static UUID parsePlayerResponseUuidOrSkip(String uuidText) {
+        if (SKIP_SENTINEL_UUID_TEXT.equals(uuidText)) {
+            return null;
+        }
+        return UUID.fromString(uuidText);
+    }
+
     // ---------- inbound — playerResponse (dialog answers) ----------
 
     private void handlePlayerResponse(WsMessageContext ctx, JsonNode body) {
@@ -693,22 +731,9 @@ public final class GameStreamHandler implements Consumer<WsConfig> {
                                 "playerResponse{kind:uuid} value must be a string.");
                         return;
                     }
-                    String uuidText = valueNode.asText();
-                    // Translate the webclient-side all-zeros "skip" sentinel
-                    // back to a real Java null so the engine's
-                    // chooseTarget / choose loops terminate (responseId ==
-                    // null + targets.size >= min → done; otherwise cancel).
-                    // Without this, the engine falls through both branches
-                    // of "responseId != null", iterates the loop, re-fires
-                    // fireSelectTargetEvent, and the client's modal pops
-                    // back ~1 RTT later — the scry/surveil Skip bug
-                    // surfaced 2026-05-11. See SKIP_SENTINEL_UUID_TEXT.
-                    UUID parsedUuid = SKIP_SENTINEL_UUID_TEXT.equals(uuidText)
-                            ? null
-                            : UUID.fromString(uuidText);
                     embedded.server().sendPlayerUUID(
                             gameId, session.upstreamSessionId(),
-                            parsedUuid);
+                            parsePlayerResponseUuidOrSkip(valueNode.asText()));
                 }
                 case "string" -> {
                     if (!valueNode.isTextual()) {

@@ -9,6 +9,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * Unit tests for {@code GameStreamHandler.decodeActionData} — the
@@ -95,5 +96,46 @@ class GameStreamHandlerDecodeTest {
         Object out = GameStreamHandler.decodeActionData(
                 PlayerAction.TRIGGER_AUTO_ORDER_ABILITY_FIRST, null);
         assertNull(out);
+    }
+
+    // -------------------------------------------------------------
+    // parsePlayerResponseUuidOrSkip — Scry/Surveil Skip contract.
+    // -------------------------------------------------------------
+    //
+    // The webclient encodes "skip / done with no selection" on
+    // playerResponse{kind:"uuid"} as the all-zeros UUID, because the
+    // wire schema rejects JSON null. The engine's chooseTarget /
+    // choose loops terminate only on responseId == null. This helper
+    // is the bridge — pin its contract so any future refactor that
+    // accidentally removes the sentinel-to-null translation fails
+    // loud here. Sister test on the webclient side
+    // (SelectDialog.test.tsx) locks the encoding contract.
+
+    @Test
+    void parsePlayerResponseUuidOrSkip_allZerosSentinel_returnsNull() {
+        UUID out = GameStreamHandler.parsePlayerResponseUuidOrSkip(
+                "00000000-0000-0000-0000-000000000000");
+        assertNull(out, "all-zeros sentinel must map to null so the "
+                + "engine's chooseTarget loop terminates the prompt "
+                + "(scry/surveil Skip flow)");
+    }
+
+    @Test
+    void parsePlayerResponseUuidOrSkip_realUuid_returnsParsedUuid() {
+        UUID expected = UUID.fromString("11111111-1111-1111-1111-111111111111");
+        UUID out = GameStreamHandler.parsePlayerResponseUuidOrSkip(
+                expected.toString());
+        assertEquals(expected, out);
+    }
+
+    @Test
+    void parsePlayerResponseUuidOrSkip_malformed_throwsIllegalArgument() {
+        // Caller turns IllegalArgumentException into BAD_REQUEST; the
+        // existing malformed-UUID test in GameStreamHandlerTest pins
+        // that outer contract. Here we just lock the helper's behavior.
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> GameStreamHandler.parsePlayerResponseUuidOrSkip(
+                        "definitely-not-a-uuid"));
     }
 }
