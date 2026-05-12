@@ -508,9 +508,13 @@ export const COMMANDER_RETURN_MS = 600;
 /**
  * Per-tile dust crumple duration. Creature → graveyard. Card body
  * fades + scales-down + filter-darkens; particle field drifts for
- * the same window.
+ * the same window. Tuning 2026-05-12 — 600→1000ms so the drift +
+ * brightness-flash + crumble have time to register on a crowded
+ * battlefield (the previous 600ms read as a quick blink past 4-5
+ * permanents). Pairs with the warmer amber palette + bigger
+ * particles introduced the same slice.
  */
-export const DUST_DURATION_MS = 600;
+export const DUST_DURATION_MS = 1000;
 
 /**
  * Per-tile bright dissolve duration. Permanent → exile. Brightness

@@ -74,10 +74,14 @@ export function ImpactOverlay({
         // Tinted background so the overlay actually shows even when
         // the underlying tile has already faded. Solid block of the
         // tile-art color isn't available client-side, so use a
-        // neutral dark tile shape that the keyframe transforms.
+        // dark tile shape that the keyframe transforms. Dust uses a
+        // deep amber-900 (tuning 2026-05-12) so the keyframe's 0-8%
+        // brightness-flash pulls actual warmth out of the block,
+        // reading as "burned + crumbled" instead of "faded gray."
+        // Exile keeps the bright white-violet for magical-removal feel.
         backgroundColor:
           kind === 'dust'
-            ? 'rgba(82, 82, 91, 0.85)'
+            ? 'rgba(120, 53, 15, 0.8)'
             : 'rgba(216, 180, 254, 0.85)',
         borderRadius: '0.5rem',
       }}
