@@ -94,6 +94,14 @@ export function PreLobbyModal({
   const [aiDifficulty, setAiDifficulty] =
     useState<AiDifficultyValue>(DEFAULT_AI_DIFFICULTY);
 
+  // Slice UIFIX-2 (2026-05-11) — expose freeMulligans at table-create
+  // time so it's set on MatchOptions BEFORE the match plugin's
+  // startGame() reads it, bypassing any PATCH-path race. Server-side
+  // gate: 0..5 (LobbyService.updateMatchOptions:870-872). Default 0
+  // preserves historical behavior (no free mulligans unless the host
+  // opts in); same default used by NewLobbyScreen.
+  const [freeMulligans, setFreeMulligans] = useState(0);
+
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -171,6 +179,7 @@ export function PreLobbyModal({
       deckType,
       winsNeeded: 1,
       seats,
+      freeMulligans: clamp(freeMulligans, 0, 5),
     };
 
     let createdTableId: string;
@@ -356,6 +365,20 @@ export function PreLobbyModal({
           aiDifficulty={aiDifficulty}
           setAiDifficulty={setAiDifficulty}
         />
+
+        <Field label="Free Mulligans (0–5)">
+          <input
+            type="number"
+            data-testid="pre-lobby-free-mulligans"
+            min={0}
+            max={5}
+            value={freeMulligans}
+            onChange={(e) =>
+              setFreeMulligans(clamp(parseInt(e.target.value, 10) || 0, 0, 5))
+            }
+            className={inputClass()}
+          />
+        </Field>
 
         {error && (
           <p

@@ -611,6 +611,38 @@ class WebApiServerTest {
     }
 
     @Test
+    void createTable_withFreeMulligans_persistsValueOnResponse() throws Exception {
+        // Slice UIFIX-2 (2026-05-11) — pin that freeMulligans set at
+        // table-create time survives to the running match's MatchOptions
+        // (which is what TwoPlayerMatch.startGame:18 reads when
+        // constructing the Mulligan instance). Bypasses the suspect
+        // PATCH path entirely — this is the "set at create" workaround
+        // for the user-reported bug where post-create PATCH appeared
+        // not to take effect at game start.
+        //
+        // The WebTable response's `freeMulligans` field is mapped by
+        // TableMapper:144 directly from `match.getOptions().getFreeMulligans()`
+        // — the exact field TwoPlayerMatch.startGame:18 reads. So a
+        // response value of 2 IS proof that the engine will see 2 at
+        // game-start time.
+        String roomId = mainRoomId();
+        HttpResponse<String> r = postJsonAuthed(
+                "/api/rooms/" + roomId + "/tables",
+                """
+                        {"gameType":"Two Player Duel",
+                         "deckType":"Constructed - Vintage",
+                         "winsNeeded":1,
+                         "freeMulligans":2}
+                        """);
+        assertEquals(200, r.statusCode(), r.body());
+        JsonNode table = JSON.readTree(r.body());
+        assertEquals(2, table.get("freeMulligans").asInt(),
+                "freeMulligans set in create body must round-trip on the WebTable response; "
+                        + "TableMapper reads from match.getOptions().getFreeMulligans() so a "
+                        + "passing value of 2 proves the engine will see 2 at startGame");
+    }
+
+    @Test
     void createTable_missingGameType_returns400() throws Exception {
         String roomId = mainRoomId();
         HttpResponse<String> r = postJsonAuthed("/api/rooms/" + roomId + "/tables", """
