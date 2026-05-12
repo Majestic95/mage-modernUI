@@ -16,6 +16,7 @@ import {
   resolveCommanderReturnTarget,
   resolveFocalZoneCenter,
   resolveTileBBox,
+  resolveTileImageUrl,
   stubCardFromCommandList,
 } from './sourceResolvers';
 import { isCommanderEntry, isCommanderNamed } from '../game/commanderPredicates';
@@ -31,6 +32,14 @@ interface ActiveImpact {
   kind: 'dust' | 'exile';
   bbox: { left: number; top: number; width: number; height: number };
   staggerMs: number;
+  /**
+   * Card-art URL captured at event time (only populated for 'dust'
+   * kind — ShatterOverlay paints each shard with the dying tile's
+   * actual <img> src so the shards look like pieces of the real
+   * card). Null when resolution failed (no <img> in the tile, or
+   * src empty) — ShatterOverlay falls back to a neutral dark fill.
+   */
+  imageUrl: string | null;
 }
 
 interface ActiveCinematic {
@@ -172,10 +181,17 @@ export function CardAnimationLayer(): React.JSX.Element {
       if (prefersReducedMotion()) return;
       const bbox = resolveTileBBox(evt.cardId);
       if (!bbox) return;
+      // Resolve the dying tile's <img> src at event time, BEFORE
+      // React's pending re-render prunes the tile from the DOM.
+      // Stashed in activeImpacts so ShatterOverlay (mounted via
+      // ImpactOverlay's dust branch on the next render) gets the
+      // already-painted card art, not whatever happens to be in
+      // the DOM at render-mount time.
+      const imageUrl = resolveTileImageUrl(evt.cardId);
       countAgainstBudget(() => {
         setActiveImpacts((prev) => {
           const next = new Map(prev);
-          next.set(evt.cardId, { kind: 'dust', bbox, staggerMs: 0 });
+          next.set(evt.cardId, { kind: 'dust', bbox, staggerMs: 0, imageUrl });
           return next;
         });
       });
@@ -187,7 +203,7 @@ export function CardAnimationLayer(): React.JSX.Element {
       countAgainstBudget(() => {
         setActiveImpacts((prev) => {
           const next = new Map(prev);
-          next.set(evt.cardId, { kind: 'exile', bbox, staggerMs: 0 });
+          next.set(evt.cardId, { kind: 'exile', bbox, staggerMs: 0, imageUrl: null });
           return next;
         });
       });
@@ -490,6 +506,7 @@ export function CardAnimationLayer(): React.JSX.Element {
           cardId={cardId}
           kind={entry.kind}
           bbox={entry.bbox}
+          imageUrl={entry.imageUrl}
           staggerMs={entry.staggerMs}
           onComplete={() => {
             setActiveImpacts((prev) => {

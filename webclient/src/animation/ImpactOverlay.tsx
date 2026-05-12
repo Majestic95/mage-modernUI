@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { ImpactParticles } from './ImpactParticles';
+import { ShatterOverlay } from './ShatterOverlay';
 import { DUST_DURATION_MS, EXILE_DURATION_MS } from './transitions';
 
 /**
@@ -31,12 +32,21 @@ export function ImpactOverlay({
   cardId,
   kind,
   bbox,
+  imageUrl = null,
   staggerMs = 0,
   onComplete,
 }: {
   cardId: string;
   kind: 'dust' | 'exile';
   bbox: { left: number; top: number; width: number; height: number };
+  /**
+   * Card-art image URL captured at event time (only used by the
+   * 'dust' kind, which delegates to ShatterOverlay so the shards
+   * paint the actual card art). Null for 'exile' or when the
+   * dying tile's `<img>` could not be resolved — ShatterOverlay
+   * falls back to a neutral dark fill in that case.
+   */
+  imageUrl?: string | null;
   /**
    * Animation-delay in ms for the board-wipe wave. Per-permanent
    * ImpactOverlays in a wipe stagger by BOARD_WIPE_STAGGER_MS *
@@ -46,20 +56,41 @@ export function ImpactOverlay({
   staggerMs?: number;
   onComplete: () => void;
 }): React.JSX.Element {
+  // Unconditional useEffect (rules-of-hooks). When kind='dust' we
+  // delegate to ShatterOverlay which owns its own completion timer,
+  // so the effect short-circuits. When kind='exile' the effect
+  // drives the dissolve+particle completion.
   const durationMs =
     kind === 'dust' ? DUST_DURATION_MS : EXILE_DURATION_MS;
 
   useEffect(() => {
+    if (kind === 'dust') return;
     const t = setTimeout(onComplete, durationMs + staggerMs + 50);
     return () => clearTimeout(t);
-  }, [onComplete, durationMs, staggerMs]);
+  }, [kind, onComplete, durationMs, staggerMs]);
 
-  const keyframeName =
-    kind === 'dust' ? 'card-dust-crumple' : 'card-bright-dissolve';
+  // Creature-death path delegates to ShatterOverlay (2026-05-12) —
+  // the dust-particle visual was too small to read on a crowded
+  // 1440p tabletop; shatter splits the card's actual art into 8
+  // polygonal shards flying outward. Exile path retains the
+  // bright-dissolve keyframe + radial particle field (still reads
+  // well because exile is rarer + the magical-removal palette pops
+  // against any background).
+  if (kind === 'dust') {
+    return (
+      <ShatterOverlay
+        cardId={cardId}
+        bbox={bbox}
+        imageUrl={imageUrl}
+        staggerMs={staggerMs}
+        onComplete={onComplete}
+      />
+    );
+  }
 
   return (
     <div
-      data-testid={kind === 'dust' ? 'tile-dust-overlay' : 'tile-exile-overlay'}
+      data-testid="tile-exile-overlay"
       data-card-id={cardId}
       data-essential-motion="true"
       aria-hidden="true"
@@ -69,25 +100,16 @@ export function ImpactOverlay({
         top: bbox.top,
         width: bbox.width,
         height: bbox.height,
-        animation: `${keyframeName} ${durationMs}ms ease-out forwards`,
+        animation: `card-bright-dissolve ${durationMs}ms ease-out forwards`,
         animationDelay: `${staggerMs}ms`,
-        // Tinted background so the overlay actually shows even when
-        // the underlying tile has already faded. Solid block of the
-        // tile-art color isn't available client-side, so use a
-        // dark tile shape that the keyframe transforms. Dust uses a
-        // deep amber-900 (tuning 2026-05-12) so the keyframe's 0-8%
-        // brightness-flash pulls actual warmth out of the block,
-        // reading as "burned + crumbled" instead of "faded gray."
-        // Exile keeps the bright white-violet for magical-removal feel.
-        backgroundColor:
-          kind === 'dust'
-            ? 'rgba(120, 53, 15, 0.8)'
-            : 'rgba(216, 180, 254, 0.85)',
+        // Bright white-violet — distinct from death's earthy/shatter
+        // palette. Reads as "magical removal" vs "physical destruction."
+        backgroundColor: 'rgba(216, 180, 254, 0.85)',
         borderRadius: '0.5rem',
       }}
     >
       <ImpactParticles
-        kind={kind}
+        kind="exile"
         cardId={cardId}
         staggerMs={staggerMs}
       />

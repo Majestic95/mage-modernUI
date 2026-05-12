@@ -484,6 +484,46 @@ input[type="checkbox"] {
   }
 }
 
+/*
+ * 2026-05-12 — card-shatter keyframe driving ShatterOverlay's 8
+ * polygonal shards. Each shard's per-instance CSS vars
+ * `--shard-dx`, `--shard-dy`, `--shard-rotate` (set inline by
+ * ShatterOverlay) parameterize the outward flight + spin so the
+ * single keyframe serves all 8 shards.
+ *
+ *  - 0-8%: brief 1.08x scale + brightness flash (the "impact"
+ *    moment — same intent as card-dust-crumple's 0-8% bump).
+ *  - 8-100%: shard translates outward, rotates by its random
+ *    angle, fades, and dims as if falling out of frame.
+ *
+ * Reduced motion: silenced by the project-wide global rule (see
+ * the @media block below).
+ */
+@keyframes card-shatter {
+  0% {
+    transform: translate(0, 0) rotate(0deg) scale(1);
+    opacity: 1;
+    filter: brightness(1);
+  }
+  12% {
+    /* Peak of the impact flash. 12% of 1000ms = 120ms — long enough
+     * that the eye registers the brightening as a beat (not aliasing
+     * noise) before the shards begin their outward flight. Peak
+     * brightness 2.2x matches the exile path's punch (card-bright-
+     * dissolve hits 2.2x at 40%) so the shatter reads as a comparable
+     * "real impact" event. */
+    transform: translate(0, 0) rotate(0deg) scale(1.08);
+    opacity: 1;
+    filter: brightness(2.2);
+  }
+  100% {
+    transform: translate(var(--shard-dx, 0), var(--shard-dy, 0))
+      rotate(var(--shard-rotate, 0deg)) scale(0.92);
+    opacity: 0;
+    filter: brightness(0.5);
+  }
+}
+
 @keyframes board-wipe-ripple {
   0% {
     transform: scale(0);

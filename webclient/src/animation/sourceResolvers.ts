@@ -89,6 +89,23 @@ export function resolveTileBBox(cardId: string): {
 }
 
 /**
+ * Resolve a battlefield tile's rendered card-art image URL by
+ * cardId. Used by ShatterOverlay (creature-death cinematic) so
+ * the shards can render the tile's ACTUAL art via background-image
+ * instead of guessing the Scryfall URL — guarantees consistency
+ * with whatever CardFace already painted (any version: 'normal' /
+ * 'small' / 'art_crop'), including cache state. Returns null if
+ * the tile or its `<img>` is gone, or if src is empty.
+ */
+export function resolveTileImageUrl(cardId: string): string | null {
+  if (typeof document === 'undefined') return null;
+  const img = document.querySelector(`[data-card-id="${cardId}"] img`);
+  if (!img) return null;
+  const src = (img as HTMLImageElement).src;
+  return src && src.length > 0 ? src : null;
+}
+
+/**
  * Resolve the destination portrait center for a commander_returned
  * event. Uses {@code data-portrait-target-player-id} (the same
  * selector StackZone's combat arrows use, slice 70-N).

@@ -301,7 +301,7 @@ describe('CardAnimationLayer — impact tier (slice 70-Z.4)', () => {
     return tile;
   }
 
-  it('mounts tile-dust-overlay when creature_died fires for a tile in the DOM', () => {
+  it('mounts tile-shatter-overlay when creature_died fires for a tile in the DOM', () => {
     const card = makeCard('card-died', 'Bear Cub', ['CREATURE']);
     act(() => {
       useGameStore.setState({ gameView: makeGameView(card) });
@@ -311,7 +311,7 @@ describe('CardAnimationLayer — impact tier (slice 70-Z.4)', () => {
     act(() => {
       emit({ kind: 'creature_died', cardId: card.cardId, ownerSeat: 0 });
     });
-    expect(screen.getByTestId('tile-dust-overlay')).toBeInTheDocument();
+    expect(screen.getByTestId('tile-shatter-overlay')).toBeInTheDocument();
     document.body.removeChild(tile);
   });
 
@@ -373,7 +373,7 @@ describe('CardAnimationLayer — impact tier (slice 70-Z.4)', () => {
     act(() => {
       emit({ kind: 'creature_died', cardId: card.cardId, ownerSeat: 0 });
     });
-    expect(screen.queryByTestId('tile-dust-overlay')).toBeNull();
+    expect(screen.queryByTestId('tile-shatter-overlay')).toBeNull();
     expect(screen.queryByTestId('board-wipe-ripple')).toBeNull();
     document.body.removeChild(tile);
   });
