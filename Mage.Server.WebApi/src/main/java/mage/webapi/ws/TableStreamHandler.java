@@ -157,23 +157,37 @@ public final class TableStreamHandler implements Consumer<WsConfig> {
         }
         SessionEntry session = resolved.get();
 
-        // Snapshot the current WebTable. If the table doesn't exist
-        // (mid-restart, race against removeTable, etc.) we close 4404
-        // rather than suspend a useless WebSocket.
-        WebTable initial = currentSnapshot(tableId);
-        if (initial == null) {
-            closeWith(ctx, 4404, "Table not found: " + tableId);
-            return;
+        // Slice UIFIX-1 (2026-05-11) — retry-with-grace-window for the
+        // seat-population race. When a player joins a seat and the
+        // client immediately opens a WebSocket subscribe, our snapshot
+        // can land between the upstream Table mutation and the
+        // user-visible seat write — yielding a spurious "caller is not
+        // seated" rejection. Retry up to 2 times at 150ms each before
+        // giving up. Genuine non-members still hit 4003 after the
+        // 300ms grace; the bound is tight enough not to feel like a
+        // hang on the failure path.
+        WebTable initial = null;
+        boolean publiclyVisible = false;
+        boolean seated = false;
+        for (int attempt = 0; attempt < 3; attempt++) {
+            initial = currentSnapshot(tableId);
+            if (initial == null) {
+                closeWith(ctx, 4404, "Table not found: " + tableId);
+                return;
+            }
+            publiclyVisible = !initial.passworded() && initial.spectatorsAllowed();
+            seated = isUserSeated(initial, session.username());
+            if (publiclyVisible || seated) break;
+            if (attempt < 2) {
+                try {
+                    Thread.sleep(150L);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    closeWith(ctx, 4003, "Subscribe denied: interrupted.");
+                    return;
+                }
+            }
         }
-
-        // Slice L7 review (security-HIGH #3) — visibility check.
-        // Public tables (passworded=false AND spectatorsAllowed=true)
-        // are visible to any authed user. Otherwise the caller must be
-        // seated at this table. Without this gate any authed user can
-        // subscribe to any table's stream and read commander / deck /
-        // ready info before joining.
-        boolean publiclyVisible = !initial.passworded() && initial.spectatorsAllowed();
-        boolean seated = isUserSeated(initial, session.username());
         if (!publiclyVisible && !seated) {
             closeWith(ctx, 4003, "Subscribe denied: caller is not seated.");
             return;
