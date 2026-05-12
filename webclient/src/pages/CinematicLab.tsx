@@ -71,6 +71,8 @@ import { GameTable } from '../game/GameTable';
 import { useGameStore } from '../game/store';
 import { useAuthStore } from '../auth/store';
 import { LayoutVariantProvider, getActiveVariant } from '../layoutVariants';
+import { DeltaPump } from '../animation/DeltaPump';
+import { CardAnimationLayer } from '../animation/CardAnimationLayer';
 
 interface LabState {
   /** Last announcement string shown in the panel (no aria-live). */
@@ -155,6 +157,17 @@ export function CinematicLab() {
                 onCycleSubSteps={triggers.triggerCycleSubSteps}
                 onReset={triggers.resetFixture}
               />
+              {/* Mirror Game.tsx:217-218 so the eventBus-driven
+                  cinematics (creature_died, resolve_to_board,
+                  permanent_exiled, cast, commander_returned,
+                  board_wipe) actually fire in the lab. Without these
+                  two the lab can trigger combat-damage parcels +
+                  LifeBadge motion (those go through useDamageEvents
+                  directly), but creature-death dust / ground crack /
+                  exile dissolve / cinematic cast pose never light up
+                  because eventBus is never fed. */}
+              <CardAnimationLayer />
+              <DeltaPump />
             </div>
           </MinimalChromeProvider>
         </LayoutGroup>
