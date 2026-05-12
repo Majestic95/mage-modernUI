@@ -106,6 +106,19 @@ public final class MatchOptionsBuilder {
         // rating + minimum age so neither blocks playtest accounts.
         options.setQuitRatio(100);
         options.setMinimumRating(0);
+        // Slice UIFIX-5 (2026-05-11) — enable native xmage's "Go back
+        // N turns" voting feature by default for new tables. The
+        // engine's GameOptions.rollbackTurnsAllowed defaults to true,
+        // but MatchOptions.rollbackTurnsAllowed defaults to false (Java
+        // boolean default), and TableController.startMatch copies from
+        // MatchOptions to GameOptions (Mage.Server/TableController.java:674).
+        // Result: every table created via WebApi had rollback silently
+        // disabled. Per user direction this slice (Always-on for now;
+        // host-toggle deferred to a future EditSettings slice). Voters
+        // (other human players) still individually decide via ADD/DENY
+        // permission once the vote-prompt dialog forwarding lands in a
+        // follow-up slice (USER_REQUEST_DIALOG is not yet plumbed).
+        options.setRollbackTurnsAllowed(true);
 
         // Per-seat playerType composition. Defaults to [HUMAN, HUMAN] —
         // a 1v1 table. Clients declaring AI opponents must list them

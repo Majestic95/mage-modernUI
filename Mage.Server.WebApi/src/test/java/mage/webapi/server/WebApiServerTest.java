@@ -40,11 +40,12 @@ class WebApiServerTest {
             .build();
 
     private WebApiServer server;
+    private EmbeddedServer embedded;
     private String bearer;
 
     @BeforeAll
     void start() throws Exception {
-        EmbeddedServer embedded = EmbeddedServer.boot(CONFIG_PATH);
+        embedded = EmbeddedServer.boot(CONFIG_PATH);
         server = new WebApiServer(embedded).start(0);
         // Slice L8 review (security HIGH #3) — production session-mint
         // is rate-limited per IP. Tests churn fresh anon bearers at
@@ -608,6 +609,43 @@ class WebApiServerTest {
         assertEquals("WAITING", table.get("tableState").asText());
         assertTrue(table.get("seats").isArray());
         assertEquals(2, table.get("seats").size(), "Two Player Duel must have 2 seats");
+    }
+
+    @Test
+    void createTable_enablesRollbackTurnsByDefault() throws Exception {
+        // Slice UIFIX-5 (2026-05-11) — every new table opts into native
+        // xmage's "Go back N turns" voting feature. MatchOptions's
+        // boolean defaults to false (Java default); the WebApi builder
+        // explicitly flips it to true so the engine permits rollback
+        // requests once the per-player vote dialog forwarding lands in
+        // a follow-up slice. Pin via WebTable round-trip: TableMapper
+        // doesn't surface rollbackTurnsAllowed on WebTable today (it's
+        // a per-game flag, not a per-table option), so verify via
+        // direct match.getOptions() peek through the embedded
+        // TableManager — same pattern as the freeMulligans test.
+        String roomId = mainRoomId();
+        HttpResponse<String> r = postJsonAuthed(
+                "/api/rooms/" + roomId + "/tables",
+                """
+                        {"gameType":"Two Player Duel",
+                         "deckType":"Constructed - Vintage",
+                         "winsNeeded":1}
+                        """);
+        assertEquals(200, r.statusCode(), r.body());
+        JsonNode table = JSON.readTree(r.body());
+        java.util.UUID tableId = java.util.UUID.fromString(
+                table.get("tableId").asText());
+        // MatchOptions.rollbackTurnsAllowed is what TableController
+        // copies into GameOptions at startMatch time; that field on the
+        // running Match must be true for the engine to honor
+        // PlayerAction.ROLLBACK_TURNS requests.
+        java.util.Optional<mage.server.TableController> tc =
+                embedded.managerFactory().tableManager().getController(tableId);
+        assertTrue(tc.isPresent(), "controller must exist for fresh table");
+        assertTrue(
+                tc.get().getMatch().getOptions().isRollbackTurnsAllowed(),
+                "MatchOptions.rollbackTurnsAllowed must be true so the "
+                        + "engine permits rollback voting on this table");
     }
 
     @Test
