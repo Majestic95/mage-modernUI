@@ -96,6 +96,12 @@ import java.util.Map;
  * @param displayCardSetCode set code for the chosen display-card printing.
  * @param displayCardNumber collector number for the chosen display-card
  *     printing.
+ * @param mulliganDecisionPending true when this player is currently
+ *     making a mulligan decision (Keep vs Mulligan) during the
+ *     pre-turn-1 mulligan phase. Drives the per-player MULLIGAN
+ *     banner overlay so the user can see at a glance who's still
+ *     deciding. Sourced from {@code Game.getState().getChoosingPlayerId()}
+ *     gated on {@code Game.getTurnNum() == 0}. Added in schema 1.36.
  * @param commanderDamageReceived per-commander combat damage this
  *     player has been dealt by each opposing commander, keyed by the
  *     dealing commander's UUID (as a string for JSON-friendly map
@@ -139,7 +145,8 @@ public record WebPlayerView(
         String displayCardName,
         String displayCardSetCode,
         String displayCardNumber,
-        Map<String, Integer> commanderDamageReceived
+        Map<String, Integer> commanderDamageReceived,
+        boolean mulliganDecisionPending
 ) {
 
     /** {@link #connectionState} — player has ≥1 active game-stream socket. */

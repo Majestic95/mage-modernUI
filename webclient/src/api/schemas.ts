@@ -813,6 +813,14 @@ export const webPlayerViewSchema = z.object({
     .record(z.string(), z.number().int().nonnegative())
     .catch({})
     .default({}),
+  // Schema 1.36 — slice UIFIX-3 (2026-05-11) — true while THIS player
+  // is making a Keep/Mulligan decision in the pre-turn-1 mulligan
+  // phase. `.default(false)` lets 1.35 servers still parse during a
+  // rolling deploy; `.catch(false)` defends against a malformed wire
+  // value (the MULLIGAN banner is enhancement, not load-bearing).
+  // Drives the per-player MULLIGAN banner overlay so the user can see
+  // who's still deciding during simultaneous-mulligan formats.
+  mulliganDecisionPending: z.boolean().catch(false).default(false),
 });
 export type WebPlayerView = z.infer<typeof webPlayerViewSchema>;
 export type SkipState = WebPlayerView['skipState'];

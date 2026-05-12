@@ -287,7 +287,13 @@ public final class GameViewMapper {
                 // when no commander has dealt combat damage to this
                 // player (most common case in non-Commander games and
                 // pre-combat Commander turns).
-                effective.commanderDamageReceivedFor(pv.getPlayerId())
+                effective.commanderDamageReceivedFor(pv.getPlayerId()),
+                // Schema 1.36 / slice UIFIX-3 (2026-05-11) — true
+                // when this player is currently making a Keep/Mulligan
+                // decision. Sourced via the frame context which reads
+                // game.state.choosingPlayerId gated on turnNum==0.
+                // Drives the per-player MULLIGAN banner overlay.
+                effective.mulliganDecisionPendingFor(pv.getPlayerId())
         );
     }
 

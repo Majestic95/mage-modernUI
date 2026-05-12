@@ -269,6 +269,38 @@ export function PlayerFrameRedesigned({
             </motion.div>
           )}
         </AnimatePresence>
+        {/* Slice UIFIX-3 (schema 1.36) — MULLIGAN banner. Renders
+            above the portrait when this player is currently making a
+            Keep/Mulligan decision. Distinguishes from PriorityTag
+            (which lives at -top-2 and only fires during normal-turn
+            priority) by sitting higher and using a clear "MULLIGAN"
+            label so users can see at a glance who is still deciding
+            in multi-player formats. */}
+        <AnimatePresence>
+          {player.mulliganDecisionPending && (
+            <motion.div
+              key="mulligan-banner"
+              data-testid={`mulligan-banner-${perspective}`}
+              data-essential-motion="true"
+              aria-live="polite"
+              className="pointer-events-none absolute -top-7 left-1/2 -translate-x-1/2"
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+            >
+              <span
+                className="rounded px-2 py-0.5 text-xs font-bold uppercase tracking-wider whitespace-nowrap shadow-lg"
+                style={{
+                  backgroundColor: 'var(--color-accent-primary, #d946ef)',
+                  color: 'var(--color-text-on-accent, #000)',
+                }}
+              >
+                Mulligan
+              </span>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Name + commander stack. Picture-catalog §2.0:

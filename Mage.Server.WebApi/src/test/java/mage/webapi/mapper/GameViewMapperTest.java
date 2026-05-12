@@ -98,12 +98,14 @@ class GameViewMapperTest {
     }
 
     @Test
-    void playerView_jsonShape_locksTwentyEightFields_schema133() throws Exception {
+    void playerView_jsonShape_locksThirtyFields_schema136() throws Exception {
         // Schema 1.20 (slice 69a, ADR 0010 v2 D3a) added teamId.
         // Schema 1.22 (slice 70-D, ADR 0011 D5) added colorIdentity.
         // Schema 1.23 (slice 70-H, ADR 0011 D3 / ADR 0010 v2 D11(e))
         //   added connectionState.
         // Schema 1.30 — added skipState (PASS_PRIORITY_UNTIL_* mode).
+        // Schema 1.35 — added commanderDamageReceived (slice 5-F).
+        // Schema 1.36 — added mulliganDecisionPending (slice UIFIX-3).
         // Lock the wire shape so any future field add/remove fails here
         // first instead of leaking into the webclient.
         mage.webapi.dto.stream.WebPlayerView dto =
@@ -121,10 +123,13 @@ class GameViewMapperTest {
                         // Schema 1.35 — slice 5-F (Bundle 5 / Damage Moment).
                         // commanderDamageReceived: empty for the
                         // non-Commander player fixture used in this test.
-                        Map.of());
+                        Map.of(),
+                        // Schema 1.36 — slice UIFIX-3 (Mulligan banner).
+                        // false outside mulligan phase.
+                        false);
         JsonNode node = JSON.valueToTree(dto);
-        assertEquals(29, node.size(),
-                "WebPlayerView must have exactly 29 fields; got: " + node);
+        assertEquals(30, node.size(),
+                "WebPlayerView must have exactly 30 fields; got: " + node);
         for (String field : List.of(
                 "playerId", "name", "life", "wins", "winsNeeded",
                 "libraryCount", "handCount", "graveyard", "exile",
@@ -134,7 +139,7 @@ class GameViewMapperTest {
                 "commandList", "teamId", "colorIdentity",
                 "connectionState", "skipState",
                 "displayCardName", "displayCardSetCode", "displayCardNumber",
-                "commanderDamageReceived")) {
+                "commanderDamageReceived", "mulliganDecisionPending")) {
             assertTrue(node.has(field), "missing field: " + field);
         }
         assertTrue(node.get("teamId").isNull(),

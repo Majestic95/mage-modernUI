@@ -56,6 +56,32 @@ emitted newest-first; only the client interpretation was wrong. No
 
 ---
 
+## 1.36 — 2026-05-11 — `mulliganDecisionPending` field on `WebPlayerView` (Slice UIFIX-3)
+
+Adds per-player mulligan-pending state to the wire. Each `WebPlayerView`
+now carries a `mulliganDecisionPending` boolean, true when this player
+is currently making a Keep/Mulligan decision in the pre-turn-1
+mulligan phase. Sourced from `Game.getState().getChoosingPlayerId()`
+gated on `Game.getTurnNum() == 0` (the engine field is reused for
+unrelated forced choices outside the mulligan phase; we gate on
+pre-turn-1 to avoid mislabeling regular gameplay prompts).
+
+Drives the per-player MULLIGAN banner overlay on `PlayerFrameRedesigned`
+so users in multiplayer formats can see at a glance who's still
+deciding. Pre-1.36 the wire had no opponent-mulligan visibility at all
+— a long-standing gap noted in `MulliganModal.tsx`'s code comment.
+
+Client compatibility: zod uses `.default(false).catch(false)` so a
+1.35 server's omitted field parses cleanly. The banner is purely
+visual enhancement (no engine reliance), so a malformed wire value
+gracefully degrades to "no banner this frame" rather than crashing
+the player view.
+
+Locked by `GameViewMapperTest#playerView_jsonShape_locksThirtyFields_schema136`
+(updated field-count assertion + per-field presence list).
+
+---
+
 ## 1.35 — 2026-05-10 — `commanderDamageReceived` field on `WebPlayerView` (Bundle 5 / Slice 5-F)
 
 Adds per-commander commander-damage tracking to the wire. Each

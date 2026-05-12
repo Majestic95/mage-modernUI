@@ -64,7 +64,8 @@ public final class MultiplayerFrameContext {
                     Map.of(),
                     WebSocketConnectionTracker.EVERY_PLAYER_CONNECTED,
                     Map.of(),
-                    Map.of());
+                    Map.of(),
+                    null);
 
     /**
      * Permanent UUID → set of player UUIDs that have goaded this
@@ -110,11 +111,24 @@ public final class MultiplayerFrameContext {
      */
     private final Map<UUID, Map<UUID, Integer>> commanderDamageByPlayer;
 
+    /**
+     * Slice UIFIX-3 / schema 1.36 (2026-05-11) — UUID of the player
+     * currently being asked for a mulligan decision (Keep vs Mulligan),
+     * or null when no player is mid-mulligan (most of the game).
+     * Sourced from {@code Game.getState().getChoosingPlayerId()} only
+     * when {@code Game.getTurnNum() == 0} — outside the mulligan phase
+     * the same engine field is reused for other forced choices, so we
+     * gate on pre-turn-1 to avoid mislabeling regular gameplay prompts
+     * as mulligan. Powers the per-player MULLIGAN banner.
+     */
+    private final UUID mulliganDeciderId;
+
     private MultiplayerFrameContext(
             Map<UUID, Set<UUID>> goadingByPermanent,
             WebSocketConnectionTracker connectionTracker,
             Map<UUID, DisplayCardRegistry.DisplayCard> displayCardsByPlayer,
-            Map<UUID, Map<UUID, Integer>> commanderDamageByPlayer) {
+            Map<UUID, Map<UUID, Integer>> commanderDamageByPlayer,
+            UUID mulliganDeciderId) {
         this.goadingByPermanent = goadingByPermanent;
         this.connectionTracker = connectionTracker == null
                 ? WebSocketConnectionTracker.EVERY_PLAYER_CONNECTED
@@ -125,6 +139,7 @@ public final class MultiplayerFrameContext {
         this.commanderDamageByPlayer = commanderDamageByPlayer == null
                 ? Map.of()
                 : commanderDamageByPlayer;
+        this.mulliganDeciderId = mulliganDeciderId;
     }
 
     /**
@@ -149,7 +164,8 @@ public final class MultiplayerFrameContext {
         }
         return new MultiplayerFrameContext(
                 this.goadingByPermanent, effective,
-                this.displayCardsByPlayer, this.commanderDamageByPlayer);
+                this.displayCardsByPlayer, this.commanderDamageByPlayer,
+                this.mulliganDeciderId);
     }
 
     public MultiplayerFrameContext withDisplayCards(
@@ -161,7 +177,19 @@ public final class MultiplayerFrameContext {
         }
         return new MultiplayerFrameContext(
                 this.goadingByPermanent, this.connectionTracker,
-                effective, this.commanderDamageByPlayer);
+                effective, this.commanderDamageByPlayer,
+                this.mulliganDeciderId);
+    }
+
+    /**
+     * Slice UIFIX-3 — true when {@code playerId} is currently making a
+     * mulligan decision (engine field {@code choosingPlayerId}, gated
+     * on pre-turn-1 so non-mulligan forced choices don't trigger).
+     * Powers WebPlayerView.mulliganDecisionPending (schema 1.36).
+     */
+    public boolean mulliganDecisionPendingFor(UUID playerId) {
+        if (playerId == null || mulliganDeciderId == null) return false;
+        return mulliganDeciderId.equals(playerId);
     }
 
     /**
@@ -229,7 +257,24 @@ public final class MultiplayerFrameContext {
                 goadingByPermanent == null ? Map.of() : goadingByPermanent,
                 WebSocketConnectionTracker.EVERY_PLAYER_CONNECTED,
                 Map.of(),
-                Map.of());
+                Map.of(),
+                null);
+    }
+
+    /**
+     * Slice UIFIX-3 — package-private factory for unit tests covering
+     * mulligan-decider wire population. Tests pass the UUID of the
+     * player whose frame should report {@code mulliganDecisionPending=true}.
+     * Pass {@code null} for "no mulligan in progress."
+     */
+    static MultiplayerFrameContext forTestingWithMulliganDecider(
+            UUID mulliganDeciderId) {
+        return new MultiplayerFrameContext(
+                Map.of(),
+                WebSocketConnectionTracker.EVERY_PLAYER_CONNECTED,
+                Map.of(),
+                Map.of(),
+                mulliganDeciderId);
     }
 
     /**
@@ -246,7 +291,8 @@ public final class MultiplayerFrameContext {
                 Map.of(),
                 commanderDamageByPlayer == null
                         ? Map.of()
-                        : commanderDamageByPlayer);
+                        : commanderDamageByPlayer,
+                null);
     }
 
     /**
@@ -264,19 +310,43 @@ public final class MultiplayerFrameContext {
             Map<UUID, Set<UUID>> goading = extractGoading(game);
             Map<UUID, Map<UUID, Integer>> cmdrDamage =
                     extractCommanderDamage(game);
+            UUID mulliganDecider = extractMulliganDecider(game);
             if ((goading == null || goading.isEmpty())
-                    && cmdrDamage.isEmpty()) {
+                    && cmdrDamage.isEmpty()
+                    && mulliganDecider == null) {
                 return EMPTY;
             }
             return new MultiplayerFrameContext(
                     goading == null ? Map.of() : goading,
                     WebSocketConnectionTracker.EVERY_PLAYER_CONNECTED,
                     Map.of(),
-                    cmdrDamage);
+                    cmdrDamage,
+                    mulliganDecider);
         } catch (RuntimeException ex) {
             LOG.debug("MultiplayerFrameContext.extract failed; returning empty: {}",
                     ex.toString());
             return EMPTY;
+        }
+    }
+
+    /**
+     * Slice UIFIX-3 / schema 1.36 — snapshot the engine's
+     * {@code choosingPlayerId} ONLY when we're still in the
+     * pre-turn-1 window (mulligan phase). Outside that window the
+     * field is reused by the engine for unrelated forced choices and
+     * doesn't carry mulligan semantics.
+     *
+     * <p>Defensive on every read — a hint failure here just costs the
+     * MULLIGAN banner for that frame, never the frame itself.
+     */
+    private static UUID extractMulliganDecider(Game game) {
+        try {
+            if (game.getTurnNum() != 0) return null;
+            return game.getState().getChoosingPlayerId();
+        } catch (RuntimeException ex) {
+            LOG.debug("MultiplayerFrameContext.extractMulliganDecider "
+                    + "failed; returning null: {}", ex.toString());
+            return null;
         }
     }
 
