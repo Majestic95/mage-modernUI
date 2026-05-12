@@ -27,6 +27,7 @@ import { useCallback, useMemo, useRef } from 'react';
 import { flushSync } from 'react-dom';
 import { buildDemoGameView } from '../game/devFixtures';
 import { useGameStore } from '../game/store';
+import { playCardAnimation } from '../animation/eventBus';
 import type {
   WebGameView,
   WebPermanentView,
@@ -56,6 +57,7 @@ export interface CinematicLabTriggers {
   triggerEnterCombat: () => void;
   triggerExitCombat: () => void;
   triggerCycleSubSteps: () => void;
+  triggerResolvePermanent: () => void;
   resetFixture: () => void;
 }
 
@@ -452,6 +454,54 @@ export function useCinematicLabTriggers(
     );
   }, [announce]);
 
+  const triggerResolvePermanent = useCallback(() => {
+    // Resolve-flight demo (2026-05-12) — pick any opponent permanent
+    // already on the battlefield and fire a resolve_to_board event
+    // for it via the eventBus's imperative escape hatch
+    // (playCardAnimation). The CardAnimationLayer handler captures
+    // the stack focal as source and the tile's layout bbox as
+    // target, hides the tile, and mounts ResolveFlightOverlay for
+    // the 700ms arc. The card visibly flies from stack focal to
+    // its current battlefield slot.
+    //
+    // Why bypass gameDelta: gameDelta's resolve_to_board emission
+    // requires a stack → battlefield transition (two-phase setState
+    // dance with a rAF gap). The direct emit avoids that ceremony
+    // since the lab is not testing the diff path — it's testing the
+    // overlay. Production resolves come through gameDelta naturally.
+    const current = useGameStore.getState().gameView;
+    if (!current) return;
+    const myId = current.myPlayerId;
+    let targetCardId: string | null = null;
+    let targetSeat = -1;
+    for (let i = 0; i < current.players.length; i++) {
+      const p = current.players[i]!;
+      if (p.playerId === myId) continue;
+      const perm = Object.values(p.battlefield).find((bp) =>
+        bp.card.types.includes('CREATURE'),
+      );
+      if (perm) {
+        targetCardId = perm.card.cardId || perm.card.id;
+        targetSeat = i;
+        break;
+      }
+    }
+    if (!targetCardId || targetSeat < 0) {
+      announce(
+        'No opponent creature found — Resolve-permanent cinematic unavailable.',
+      );
+      return;
+    }
+    playCardAnimation({
+      kind: 'resolve_to_board',
+      cardId: targetCardId,
+      ownerSeat: targetSeat,
+    });
+    announce(
+      'Permanent resolves — watch the card fly from stack focal along a bezier arc to its battlefield slot (scale 1.0 → 1.4 → 1.0 + brightness flash at apex).',
+    );
+  }, [announce]);
+
   const resetFixture = useCallback(() => {
     // Bump the epoch so any in-flight lethal raf or damage-step timer
     // is silently dropped.
@@ -478,6 +528,7 @@ export function useCinematicLabTriggers(
     triggerEnterCombat,
     triggerExitCombat,
     triggerCycleSubSteps,
+    triggerResolvePermanent,
     resetFixture,
   };
 }

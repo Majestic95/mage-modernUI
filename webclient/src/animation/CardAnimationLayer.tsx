@@ -17,6 +17,8 @@ import {
   resolveFocalZoneCenter,
   resolveTileBBox,
   resolveTileImageUrl,
+  resolveTileLayoutBBox,
+  setTileOpacity,
   stubCardFromCommandList,
 } from './sourceResolvers';
 import { isCommanderEntry, isCommanderNamed } from '../game/commanderPredicates';
@@ -24,7 +26,9 @@ import {
   BOARD_WIPE_STAGGER_MS,
   GROUND_CRACK_LANDING_DELAY_MS,
   MAX_CONCURRENT_DISINTEGRATES,
+  RESOLVE_FLIGHT_MS,
 } from './transitions';
+import { ResolveFlightOverlay } from './ResolveFlightOverlay';
 import { useGameStore } from '../game/store';
 import type { WebCardView } from '../api/schemas';
 
@@ -51,6 +55,14 @@ interface ActiveCinematic {
 interface ActiveReturn {
   card: WebCardView;
   targetCenter: { x: number; y: number };
+}
+
+interface ActiveFlight {
+  sourceCenter: { x: number; y: number };
+  targetCenter: { x: number; y: number };
+  tileWidth: number;
+  tileHeight: number;
+  imageUrl: string | null;
 }
 
 /**
@@ -108,6 +120,9 @@ export function CardAnimationLayer(): React.JSX.Element {
   >(() => new Map());
   const [activeCracks, setActiveCracks] = useState<
     Map<string, { bbox: { left: number; top: number; width: number; height: number } }>
+  >(() => new Map());
+  const [activeFlights, setActiveFlights] = useState<
+    Map<string, ActiveFlight>
   >(() => new Map());
 
   // Cast subscription — when a cinematic cast fires, capture the
@@ -334,6 +349,63 @@ export function CardAnimationLayer(): React.JSX.Element {
         if (dbg) console.log('[animDebug]   gated: token (typeLine=', card.typeLine, ')');
         return;
       }
+
+      // Resolve-flight overlay (2026-05-12) — every non-token
+      // permanent gets the arc-flight. Tier gate below (commander /
+      // PW / CMC≥7) is for the ADDITIONAL ground-crack on landing.
+      // Capture at 1 rAF so the destination tile is in the DOM
+      // (Framer mounts the new permanent on the next render).
+      // resolveTileLayoutBBox walks offsetLeft/offsetTop so it
+      // returns the FINAL slot position regardless of Framer's
+      // active layout transform (gBCR would return the mid-glide
+      // interpolated position).
+      const flightRaf = requestAnimationFrame(() => {
+        pendingRafs.delete(flightRaf);
+        if (cancelled) return;
+        const layoutBBox = resolveTileLayoutBBox(evt.cardId);
+        const sourceCenter = resolveFocalZoneCenter();
+        if (!layoutBBox || !sourceCenter || layoutBBox.width === 0) {
+          if (dbg)
+            console.log(
+              '[animDebug]   flight gated: missing layoutBBox / sourceCenter',
+              { layoutBBox, sourceCenter },
+            );
+          return;
+        }
+        const imageUrl = resolveTileImageUrl(evt.cardId);
+        const targetCenter = {
+          x: layoutBBox.left + layoutBBox.width / 2,
+          y: layoutBBox.top + layoutBBox.height / 2,
+        };
+        // Hide the Framer-glided tile during the flight so the user
+        // doesn't see two copies of the card moving along different
+        // paths. The overlay paints the arc on top; on completion
+        // we restore the tile's opacity via setTileOpacity(_, null).
+        setTileOpacity(evt.cardId, 0);
+        setActiveFlights((prev) => {
+          const next = new Map(prev);
+          next.set(evt.cardId, {
+            sourceCenter,
+            targetCenter,
+            tileWidth: layoutBBox.width,
+            tileHeight: layoutBBox.height,
+            imageUrl,
+          });
+          return next;
+        });
+        // Safety: even if the overlay's own onComplete doesn't fire
+        // (e.g., component unmounts mid-flight), schedule a tile
+        // opacity restore so the destination tile doesn't stay
+        // invisible. Fires at RESOLVE_FLIGHT_MS + 100ms.
+        const restoreT = setTimeout(() => {
+          pendingTimers.delete(restoreT);
+          if (cancelled) return;
+          setTileOpacity(evt.cardId, null);
+        }, RESOLVE_FLIGHT_MS + 100);
+        pendingTimers.add(restoreT);
+      });
+      pendingRafs.add(flightRaf);
+
       // Cinematic-tier gate: commander OR planeswalker OR CMC ≥ 7.
       //
       // Slice 70-Z bug fix — `commandList` only carries commanders
@@ -525,6 +597,30 @@ export function CardAnimationLayer(): React.JSX.Element {
           bbox={entry.bbox}
           onComplete={() => {
             setActiveCracks((prev) => {
+              if (!prev.has(cardId)) return prev;
+              const next = new Map(prev);
+              next.delete(cardId);
+              return next;
+            });
+          }}
+        />
+      ))}
+      {Array.from(activeFlights.entries()).map(([cardId, entry]) => (
+        <ResolveFlightOverlay
+          key={`flight-${cardId}`}
+          cardId={cardId}
+          sourceCenter={entry.sourceCenter}
+          targetCenter={entry.targetCenter}
+          tileWidth={entry.tileWidth}
+          tileHeight={entry.tileHeight}
+          imageUrl={entry.imageUrl}
+          onComplete={() => {
+            // Restore the destination tile's opacity so Framer's
+            // settled card becomes visible. (A safety setTimeout in
+            // the handler also fires this if the overlay never
+            // reaches its own onComplete.)
+            setTileOpacity(cardId, null);
+            setActiveFlights((prev) => {
               if (!prev.has(cardId)) return prev;
               const next = new Map(prev);
               next.delete(cardId);

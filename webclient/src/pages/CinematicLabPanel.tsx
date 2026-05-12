@@ -46,6 +46,7 @@ interface ControlPanelProps {
   onEnterCombat: () => void;
   onExitCombat: () => void;
   onCycleSubSteps: () => void;
+  onResolvePermanent: () => void;
   onReset: () => void;
 }
 
@@ -61,6 +62,7 @@ export function ControlPanel({
   onEnterCombat,
   onExitCombat,
   onCycleSubSteps,
+  onResolvePermanent,
   onReset,
 }: ControlPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -228,6 +230,13 @@ export function ControlPanel({
           label="Cycle combat sub-steps"
           description="Walks through BEGIN_COMBAT → DECLARE_ATTACKERS → … → END_COMBAT with 1500ms hold each (verification surface for 2-C)."
           onClick={onCycleSubSteps}
+        />
+        <LabButton
+          testid="trigger-resolve-permanent"
+          slices="resolve-flight"
+          label="Permanent resolves"
+          description="Card flies from stack focal along a bezier arc to its battlefield slot. Scale 1.0 → 1.4 → 1.0 + brightness flash at apex. 700ms total."
+          onClick={onResolvePermanent}
         />
         <LabButton
           testid="trigger-reset"

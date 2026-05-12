@@ -31,7 +31,7 @@ afterEach(() => {
 });
 
 describe('CinematicLab', () => {
-  it('mounts the lab page with all ten trigger buttons + status text', () => {
+  it('mounts the lab page with all eleven trigger buttons + status text', () => {
     render(<CinematicLab />);
     expect(screen.getByTestId('cinematic-lab')).toBeInTheDocument();
     expect(screen.getByTestId('cinematic-lab-panel')).toBeInTheDocument();
@@ -48,6 +48,7 @@ describe('CinematicLab', () => {
     expect(screen.getByTestId('trigger-enter-combat')).toBeInTheDocument();
     expect(screen.getByTestId('trigger-exit-combat')).toBeInTheDocument();
     expect(screen.getByTestId('trigger-cycle-substeps')).toBeInTheDocument();
+    expect(screen.getByTestId('trigger-resolve-permanent')).toBeInTheDocument();
     expect(screen.getByTestId('trigger-reset')).toBeInTheDocument();
     expect(screen.getByTestId('cinematic-lab-status')).toBeInTheDocument();
   });
@@ -72,6 +73,22 @@ describe('CinematicLab', () => {
     for (const p of view!.players) {
       expect(p.life).toBeGreaterThanOrEqual(35);
     }
+  });
+
+  it('resolve-permanent button wires the click handler without throwing', () => {
+    // Smoke: the handler runs `playCardAnimation(resolve_to_board,
+    // ...)` and schedules a rAF before bbox-capturing the target
+    // tile. jsdom's getBoundingClientRect / offsetParent chain
+    // returns zeros for un-styled elements, so the overlay's mount
+    // branch self-bails (we explicitly guard `layoutBBox.width === 0`
+    // in CardAnimationLayer's handler). Live UI verification happens
+    // via the cinematic lab. This smoke locks the click path: button
+    // mounted + click dispatches without throwing through the trigger
+    // hook + eventBus emit + handler resolveFocalZoneCenter path.
+    render(<CinematicLab />);
+    expect(() => {
+      fireEvent.click(screen.getByTestId('trigger-resolve-permanent'));
+    }).not.toThrow();
   });
 
   it('combat-damage button decrements an opponent life by 3', () => {

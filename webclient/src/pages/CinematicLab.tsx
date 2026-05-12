@@ -155,6 +155,7 @@ export function CinematicLab() {
                 onEnterCombat={triggers.triggerEnterCombat}
                 onExitCombat={triggers.triggerExitCombat}
                 onCycleSubSteps={triggers.triggerCycleSubSteps}
+                onResolvePermanent={triggers.triggerResolvePermanent}
                 onReset={triggers.resetFixture}
               />
               {/* Mirror Game.tsx:217-218 so the eventBus-driven

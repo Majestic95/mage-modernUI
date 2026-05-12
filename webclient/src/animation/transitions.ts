@@ -585,3 +585,23 @@ export const GROUND_CRACK_DURATION_MS = 1400;
  * stiffness / 26-damping spring's perceived stop.
  */
 export const GROUND_CRACK_LANDING_DELAY_MS = 400;
+
+/**
+ * Resolve-flight envelope (2026-05-12) — when a non-token permanent
+ * resolves stack → battlefield, ResolveFlightOverlay paints a copy
+ * of the card flying along a bezier arc from the stack focal to its
+ * battlefield slot. Scale 1.0 → 1.4 (apex) → 1.0; brightness flash
+ * at apex. 700ms is long enough for the eye to track the arc
+ * without dragging out the gameplay rhythm.
+ */
+export const RESOLVE_FLIGHT_MS = 700;
+
+/**
+ * Bezier-control vertical offset for the resolve-flight arc. The
+ * overlay computes a single quadratic bezier from source center to
+ * target center with the control point lifted this many px above
+ * the straight-line midpoint. Larger value = taller arc. 120px on
+ * a 1440p table reads as a clearly-airborne trajectory without
+ * shards-out-of-frame risk.
+ */
+export const RESOLVE_FLIGHT_ARC_PEAK_PX = 120;
