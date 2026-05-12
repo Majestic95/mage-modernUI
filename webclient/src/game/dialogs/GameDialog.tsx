@@ -1,8 +1,10 @@
+import { useEffect } from 'react';
 import type { GameStream } from '../stream';
 import type { WebGameClientMessage } from '../../api/schemas';
 import { deriveInteractionMode } from '../interactionMode';
 import { useDraggable } from '../../util/useDraggable';
 import { useGameStore, type PendingDialog } from '../store';
+import { useDialogSkipDispatcher } from './useDialogSkipDispatcher';
 import { YesNoDialog } from './AskDialog';
 import { TargetDialog } from './TargetDialog';
 import { OrderTriggersDialog } from './TriggerOrderDialog';
@@ -58,6 +60,30 @@ export function GameDialog({ stream }: Props) {
   // scry / surveil cardsView1 ids aren't in visible zones — the
   // hook returns inactive and the legacy modal still renders.
   const dialogTargets = useDialogTargets(stream);
+
+  // Slice UIFIX-4 — backdrop click on the centered branch + global Esc
+  // both dispatch the same Skip / Cancel response each dialog's × close
+  // button dispatches. See {@link useDialogSkipDispatcher} for the
+  // per-method map. Esc covers bottom-right gameSelect (scry/surveil),
+  // which has no scrim to click on.
+  const onSkip = useDialogSkipDispatcher(dialog, stream, clearDialog);
+  // Mulligan-aware: MulliganModal disables Esc intentionally (load-
+  // bearing decision per docs/design/variant-tabletop.md and
+  // MulliganModal.tsx); don't second-guess that here.
+  const escEnabled = !!onSkip && (!dialog || !isMulliganDialog(dialog));
+  useEffect(() => {
+    if (!escEnabled || !onSkip) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      // Bubble phase — let inner modals with their own capture-phase
+      // Esc handlers (LibrarySearchModal via useModalA11y) run first
+      // and stopImmediatePropagation if they want. If they don't, we
+      // get the event and dispatch the skip.
+      onSkip();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [escEnabled, onSkip]);
 
   if (!dialog) return null;
 
@@ -237,11 +263,29 @@ export function GameDialog({ stream }: Props) {
   // positioning; `flex items-center justify-center` would fight it).
   // Backdrop is aria-hidden / decorative — the role=dialog and
   // aria-modal markers stay on the actual dialog box.
+  //
+  // Slice UIFIX-4 (2026-05-11) — backdrop click dismisses the dialog
+  // when the engine prompt has a meaningful Skip / Cancel response.
+  // The wire shape is the SAME one each dialog's existing Skip / × close
+  // button dispatches, so user-perceived "click anywhere outside the
+  // box" maps cleanly to "cancel this prompt and don't lose the phase."
+  // Mandatory prompts (flag=true with no min=0 partition out, gameAsk's
+  // Yes/No, gameSelectAmount, gameChooseAbility) get no backdrop dismiss
+  // because there's no engine-accepted Skip response — closing locally
+  // without dispatching would leave the engine waiting forever.
   return (
     <>
       <div
         data-testid="game-dialog-backdrop"
         aria-hidden="true"
+        onClick={
+          onSkip
+            ? (e) => {
+                if (e.target !== e.currentTarget) return;
+                onSkip();
+              }
+            : undefined
+        }
         className="fixed inset-0 z-40 bg-black/70"
       />
       <div
@@ -259,6 +303,7 @@ export function GameDialog({ stream }: Props) {
     </>
   );
 }
+
 
 /* ---------- per-method renderers ---------- */
 

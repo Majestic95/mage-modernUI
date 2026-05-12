@@ -1204,4 +1204,103 @@ describe('GameDialog', () => {
     expect(screen.queryByTestId('ability-done')).toBeNull();
     expect(screen.queryByTestId('ability-cancel')).toBeNull();
   });
+
+  // Slice UIFIX-4 (2026-05-11) — backdrop click + global Esc dismiss
+  // dialogs when the engine accepts a Skip response. Mandatory prompts
+  // get no-op behavior to prevent engine softlock.
+  //
+  // Tests use gameChooseChoice (centered branch, accepts empty-string
+  // skip) and gameAsk (centered branch, no skip semantic) because
+  // gameTarget / gameSelect route through DialogBanner / bottom-right
+  // floating / LibrarySearchModal — those paths have their own
+  // backdrop or banner cancel affordance. The global Esc handler is
+  // the universal escape; backdrop click is the centered-branch path.
+  describe('backdrop / Esc dismiss', () => {
+    it('dispatches empty-string skip on backdrop click for optional gameChooseChoice', async () => {
+      const stream = fakeStream();
+      const user = userEvent.setup();
+      act(() => {
+        useGameStore.setState({
+          pendingDialog: {
+            method: 'gameChooseChoice',
+            messageId: 71,
+            data: emptyDialog({
+              message: 'Choose a mode (optional)',
+              flag: false,
+            }),
+          },
+        });
+      });
+      render(<GameDialog stream={stream} />);
+      await user.click(screen.getByTestId('game-dialog-backdrop'));
+      expect(stream.sendPlayerResponse).toHaveBeenCalledWith(71, 'string', '');
+      expect(useGameStore.getState().pendingDialog).toBeNull();
+    });
+
+    it('Esc dispatches skip via global handler for optional gameChooseChoice', async () => {
+      // Esc is the universal escape — covers bottom-right gameSelect
+      // (scry/surveil), centered gameChooseChoice, and informational
+      // dialogs alike via the shared dispatcher. Tested here through
+      // gameChooseChoice (centered) since that path doesn't need a
+      // full WebCardView fixture; the dispatcher logic is the same
+      // for the bottom-right gameSelect case the user cares about.
+      const stream = fakeStream();
+      const user = userEvent.setup();
+      act(() => {
+        useGameStore.setState({
+          pendingDialog: {
+            method: 'gameChooseChoice',
+            messageId: 72,
+            data: emptyDialog({
+              message: 'Choose a mode (optional)',
+              flag: false,
+            }),
+          },
+        });
+      });
+      render(<GameDialog stream={stream} />);
+      await user.keyboard('{Escape}');
+      expect(stream.sendPlayerResponse).toHaveBeenCalledWith(72, 'string', '');
+      expect(useGameStore.getState().pendingDialog).toBeNull();
+    });
+
+    it('Esc is a no-op for mandatory gameChooseChoice (flag=true)', async () => {
+      const stream = fakeStream();
+      const user = userEvent.setup();
+      act(() => {
+        useGameStore.setState({
+          pendingDialog: {
+            method: 'gameChooseChoice',
+            messageId: 73,
+            data: emptyDialog({
+              message: 'You must choose a mode',
+              flag: true,
+            }),
+          },
+        });
+      });
+      render(<GameDialog stream={stream} />);
+      await user.keyboard('{Escape}');
+      expect(stream.sendPlayerResponse).not.toHaveBeenCalled();
+      expect(useGameStore.getState().pendingDialog).not.toBeNull();
+    });
+
+    it('backdrop click is a no-op for gameAsk (no Skip semantic)', async () => {
+      const stream = fakeStream();
+      const user = userEvent.setup();
+      act(() => {
+        useGameStore.setState({
+          pendingDialog: {
+            method: 'gameAsk',
+            messageId: 74,
+            data: emptyDialog({ message: 'Pay 2 life?' }),
+          },
+        });
+      });
+      render(<GameDialog stream={stream} />);
+      await user.click(screen.getByTestId('game-dialog-backdrop'));
+      expect(stream.sendPlayerResponse).not.toHaveBeenCalled();
+      expect(useGameStore.getState().pendingDialog).not.toBeNull();
+    });
+  });
 });
