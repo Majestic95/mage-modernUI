@@ -50,6 +50,10 @@ const SHADOW_REST = 'drop-shadow(0 3px 4px rgba(0,0,0,0.35))';
 const SHADOW_LIFT = 'drop-shadow(0 10px 9px rgba(0,0,0,0.55))';
 const LIFT_DURATION_S = 0.24;
 const LIFT_EASE: readonly [number, number, number, number] = [0.2, 0, 0, 1];
+// Visibility-test bloat (2026-05-12): scale badge to 1.8x while
+// damage is in flight so the user can verify the per-tick motion
+// at a glance. Releases to 1.0x when pendingTicks drains.
+const DAMAGE_SCALE = 1.8;
 
 export function LifeBadge({ displayedLife, pendingTicks, perspective }: Props) {
   const prevRef = useRef(displayedLife);
@@ -65,13 +69,17 @@ export function LifeBadge({ displayedLife, pendingTicks, perspective }: Props) {
   }, [displayedLife]);
 
   const takingDamage = pendingTicks > 0;
-  // Picture-catalog §2.0 — self large (40px), opponent medium (32px).
-  // -bottom-{N} places the badge's center on the portrait's bottom
-  // edge (badge half-height = N).
+  // Picture-catalog §2.0 — self large (48px), opponent medium (40px).
+  // Tuning 2026-05-12 — bumped one Tailwind step from 40/32 → 48/40
+  // for legibility (per user direction). -bottom-{N} places the
+  // badge's center on the portrait's bottom edge (badge half-height
+  // = N): h-12 (48px) → -bottom-6 (-24px); h-10 (40px) → -bottom-5
+  // (-20px). PlayerFrameRedesigned bumps the name-stack mt-* by one
+  // step too so the name doesn't overlap the larger badge.
   const sizeClass =
     perspective === 'self'
-      ? 'h-10 w-10 -bottom-5 text-base'
-      : 'h-8 w-8 -bottom-4 text-sm';
+      ? 'h-12 w-12 -bottom-6 text-lg'
+      : 'h-10 w-10 -bottom-5 text-base';
 
   return (
     <motion.div
@@ -81,6 +89,7 @@ export function LifeBadge({ displayedLife, pendingTicks, perspective }: Props) {
       aria-hidden="true"
       animate={{
         y: takingDamage ? -LIFT_PX : 0,
+        scale: takingDamage ? DAMAGE_SCALE : 1,
         filter: takingDamage ? SHADOW_LIFT : SHADOW_REST,
       }}
       transition={

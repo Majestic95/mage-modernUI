@@ -302,7 +302,10 @@ export function PlayerFrameRedesigned({
       <div
         className={
           'flex flex-col items-center gap-0.5 max-w-full px-1 ' +
-          (perspective === 'self' ? 'mt-6' : 'mt-5')
+          // Tuning 2026-05-12 — bumped mt-6/mt-5 → mt-7/mt-6 to keep
+          // the ~4-6px gap below the badge after LifeBadge grew one
+          // Tailwind step (40→48px self, 32→40px opponent).
+          (perspective === 'self' ? 'mt-7' : 'mt-6')
         }
         data-testid="player-name-stack"
       >
