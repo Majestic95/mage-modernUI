@@ -411,11 +411,17 @@ export const PORTRAIT_BLOOM_MS = 600;
 // short enough to not interrupt gameplay rhythm).
 export const DAMAGE_FREEZE_FRAME_MS = 400;
 
-// Bundle 5 / Slice 5-D — death handoff desaturate beat. Brief
-// 150ms grayscale filter on a dying creature, painting in
-// parallel with the existing fly-to-graveyard animation so the
-// card visibly desaturates AS it leaves the battlefield.
-export const CREATURE_DEATH_DESATURATE_MS = 150;
+// Bundle 5 / Slice 5-D — death handoff desaturate beat. Grayscale
+// filter on a dying creature, painting in parallel with the
+// fly-to-graveyard animation so the card visibly desaturates AS
+// it leaves the battlefield. Bumped 150→1000ms 2026-05-12 to
+// match the warmer-dust slice's DUST_DURATION_MS (also 1000ms)
+// so the two visuals compose as one 1000ms death beat. The class
+// is harmlessly applied past the tile's AnimatePresence exit
+// (~300ms) — querySelectorAll snapshots the dying nodes at
+// event time; the setTimeout-driven class removal is a no-op
+// against detached nodes.
+export const CREATURE_DEATH_DESATURATE_MS = 1000;
 
 // Bundle 5 / Slice 5-E — lethal-21 commander damage authority
 // sequence. Brief 80ms "everything pauses" beat, then a banner
