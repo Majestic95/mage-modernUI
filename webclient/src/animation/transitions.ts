@@ -512,15 +512,28 @@ export const CINEMATIC_HOLD_MS = 250;
 export const COMMANDER_RETURN_MS = 600;
 
 /**
- * Per-tile dust crumple duration. Creature → graveyard. Card body
- * fades + scales-down + filter-darkens; particle field drifts for
- * the same window. Tuning 2026-05-12 — 600→1000ms so the drift +
- * brightness-flash + crumble have time to register on a crowded
- * battlefield (the previous 600ms read as a quick blink past 4-5
- * permanents). Pairs with the warmer amber palette + bigger
- * particles introduced the same slice.
+ * Per-tile destroy-animation duration. Creature → graveyard.
+ *
+ * <p>Currently drives the ShatterOverlay envelope (creature-death
+ * cinematic shipped 2026-05-12) — the dust-particle visual that
+ * gave this constant its name was replaced with card-art shatter
+ * shards in the same window. ImpactParticles still imports this
+ * constant for its dormant `dust` preset entry; the live consumer
+ * is ShatterOverlay's keyframe + onComplete timer.
+ *
+ * <p>Tuning history:
+ * <ul>
+ *   <li>600ms — original slice 70-Z.4 dust crumple.</li>
+ *   <li>1000ms (2026-05-12) — too quick to read on a crowded
+ *       battlefield once dust was bumped to bigger + warmer.</li>
+ *   <li>1500ms (2026-05-12 evening) — once shatter replaced dust,
+ *       the user asked for a slightly more lingering destruction
+ *       beat. Flash still locked to 12% of the timeline so it
+ *       reads at 180ms (was 120ms at the 1000ms envelope) — still
+ *       comfortably above the ~80ms "aliasing noise" threshold.</li>
+ * </ul>
  */
-export const DUST_DURATION_MS = 1000;
+export const DUST_DURATION_MS = 1500;
 
 /**
  * Per-tile bright dissolve duration. Permanent → exile. Brightness
