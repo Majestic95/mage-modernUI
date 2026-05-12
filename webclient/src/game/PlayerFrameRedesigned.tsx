@@ -12,6 +12,7 @@ import { ELIMINATION_SLASH } from '../animation/transitions';
 import { formatColorIdentity } from './PlayerFrame.helpers';
 import { useGameStore } from './store';
 import { usePendingLifeTicks } from '../animation/lifeDisplayStore';
+import { LifeBadge } from './LifeBadge';
 
 /**
  * Slice 70-Z (P2 audit) — extracted from PlayerFrame.tsx so the
@@ -195,37 +196,17 @@ export function PlayerFrameRedesigned({
             podPosition={position}
           />
         )}
-        {/* Hearthstone-style floating life badge: a circular black
-            disc sits at the bottom-center of the portrait, half-
-            overlapping the portrait's lower edge. Self-contained
-            read regardless of portrait art tonality.
-            - bg-zinc-900: solid dark disc.
-            - ring-2 ring-white: high-contrast white outline so the
-              disc reads against any background, including dark
-              commander art. (User feedback 2026-05-09 item 5 —
-              reverses Polish P10 which had dropped the chrome
-              under tabletop in favor of bare text + shadow.)
-            - shadow-lg: floating affordance.
-            - left-1/2 -translate-x-1/2: horizontal center.
-            - -bottom-{N}: center of the badge sits at the
-              portrait's bottom edge (badge half-height = bottom
-              offset). h-10 = 40px → -bottom-5 (=-20px); h-8 = 32px
-              → -bottom-4 (=-16px).
-            - Color is fixed (white text on dark disc) — does NOT
-              shift based on life total per direct user direction. */}
-        <div
-          data-testid={`life-numeral-${perspective}`}
-          aria-hidden="true"
-          className={
-            'absolute left-1/2 -translate-x-1/2 z-10 flex items-center justify-center rounded-full font-bold text-white tabular-nums leading-none ' +
-            'bg-zinc-900 ring-2 ring-white shadow-lg ' +
-            (perspective === 'self'
-              ? 'h-10 w-10 -bottom-5 text-base'
-              : 'h-8 w-8 -bottom-4 text-sm')
-          }
-        >
-          {displayedLife}
-        </div>
+        {/* Hearthstone-style floating life badge — extracted to
+            LifeBadge.tsx (Bundle 5 polish 2026-05-12) so each
+            parcel-landing tick has visible punctuation aligned with
+            the SVG parcel impact. The badge lifts + holds red while
+            pendingTicks > 0; each value-change fires a scale +
+            brightness pulse on the digit. */}
+        <LifeBadge
+          displayedLife={displayedLife}
+          pendingTicks={pendingLifeTicks}
+          perspective={perspective}
+        />
         {/* Priority tag floats above the portrait so it doesn't
             obscure the commander art or compete with the life
             numeral. Same component as legacy; only the position
