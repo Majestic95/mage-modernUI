@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { WebCardView } from '../../api/schemas';
 import { CardFace } from '../CardFace';
+import { HoverCardDetail } from '../HoverCardDetail';
 import { PrimaryButton, SecondaryButton } from './dialogPrimitives';
 
 /**
@@ -125,32 +126,34 @@ export function CardChooserList({
           const isPicked = pickedIndex >= 0;
           return (
             <li key={card.id} className="relative">
-              <button
-                type="button"
-                disabled={!eligible}
-                onClick={() => handleClick(card.id)}
-                data-testid={`card-chooser-tile-${card.id}`}
-                data-eligible={eligible || undefined}
-                data-picked={isPicked || undefined}
-                aria-label={card.name + (isPicked ? ' (selected)' : '')}
-                className={
-                  'block w-full rounded transition focus:outline-none focus:ring-2 focus:ring-fuchsia-400 ' +
-                  (eligible
-                    ? 'cursor-pointer hover:brightness-110 '
-                    : 'cursor-not-allowed opacity-40 ') +
-                  (isPicked ? 'ring-2 ring-fuchsia-400 brightness-110' : '')
-                }
-              >
-                <CardFace card={card} size="hand" />
-                {ordered && isPicked && (
-                  <span
-                    className="absolute top-1 right-1 bg-fuchsia-500 text-zinc-950 rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold pointer-events-none"
-                    aria-hidden="true"
-                  >
-                    {pickedIndex + 1}
-                  </span>
-                )}
-              </button>
+              <HoverCardDetail card={card}>
+                <button
+                  type="button"
+                  disabled={!eligible}
+                  onClick={() => handleClick(card.id)}
+                  data-testid={`card-chooser-tile-${card.id}`}
+                  data-eligible={eligible || undefined}
+                  data-picked={isPicked || undefined}
+                  aria-label={card.name + (isPicked ? ' (selected)' : '')}
+                  className={
+                    'block w-full rounded transition focus:outline-none focus:ring-2 focus:ring-fuchsia-400 ' +
+                    (eligible
+                      ? 'cursor-pointer hover:brightness-110 '
+                      : 'cursor-not-allowed opacity-40 ') +
+                    (isPicked ? 'ring-2 ring-fuchsia-400 brightness-110' : '')
+                  }
+                >
+                  <CardFace card={card} size="hand" />
+                  {ordered && isPicked && (
+                    <span
+                      className="absolute top-1 right-1 bg-fuchsia-500 text-zinc-950 rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold pointer-events-none"
+                      aria-hidden="true"
+                    >
+                      {pickedIndex + 1}
+                    </span>
+                  )}
+                </button>
+              </HoverCardDetail>
             </li>
           );
         })}
