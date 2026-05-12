@@ -14,11 +14,30 @@
  * <p>The trigger callbacks themselves stay in CinematicLab.tsx — they
  * own the store mutations + `epochRef` + `flushSync` race discipline
  * that's specific to the lab's two-step transition mechanics.
+ *
+ * <p>Drag (2026-05-12): pointer events on the header wrap let the user
+ * relocate the panel out of the way of any specific pod / chrome
+ * being verified. Initial position is the Tailwind default (top-20
+ * right-4); after first drag the panel switches to inline left/top
+ * coordinates clamped so the header stays in-viewport.
  */
+import { useRef, useState } from 'react';
+
+interface DragPos {
+  x: number;
+  y: number;
+}
+
+interface DragState {
+  pointerId: number;
+  offsetX: number;
+  offsetY: number;
+}
 
 interface ControlPanelProps {
   lastAction: string;
   onCombatDamage: () => void;
+  onHeavyCombatDamage: () => void;
   onCreatureDies: () => void;
   onLethal: () => void;
   onDeclareAttackers: () => void;
@@ -33,6 +52,7 @@ interface ControlPanelProps {
 export function ControlPanel({
   lastAction,
   onCombatDamage,
+  onHeavyCombatDamage,
   onCreatureDies,
   onLethal,
   onDeclareAttackers,
@@ -43,28 +63,115 @@ export function ControlPanel({
   onCycleSubSteps,
   onReset,
 }: ControlPanelProps) {
-  // Position top-right so it doesn't overlap the action panel
-  // (bottom-right per tabletop T2). z-50 sits above all other game
-  // chrome including the action panel and dialog overlays.
+  const panelRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<DragState | null>(null);
+  const [pos, setPos] = useState<DragPos | null>(null);
+
+  function onHeaderPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    const panel = panelRef.current;
+    if (!panel) return;
+    // Ignore non-primary buttons (right-click / middle-click).
+    if (e.button !== 0) return;
+    const rect = panel.getBoundingClientRect();
+    dragRef.current = {
+      pointerId: e.pointerId,
+      offsetX: e.clientX - rect.left,
+      offsetY: e.clientY - rect.top,
+    };
+    // Seed pos with current rect so the next pointermove computes
+    // deltas against a known origin. First seed also flips the panel
+    // from Tailwind top-20 right-4 to inline left/top with no visual
+    // jump.
+    setPos({ x: rect.left, y: rect.top });
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }
+
+  function onHeaderPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    const panel = panelRef.current;
+    const w = panel?.offsetWidth ?? 320;
+    // Clamp so at least 80px of the header stays in viewport each
+    // axis (otherwise users could drag the panel off-screen with no
+    // way to recover except a page reload).
+    const minX = -w + 80;
+    const maxX = window.innerWidth - 80;
+    const maxY = window.innerHeight - 40;
+    const x = Math.max(minX, Math.min(e.clientX - drag.offsetX, maxX));
+    const y = Math.max(0, Math.min(e.clientY - drag.offsetY, maxY));
+    setPos({ x, y });
+  }
+
+  function onHeaderPointerUp(e: React.PointerEvent<HTMLDivElement>) {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    dragRef.current = null;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      // pointerCancel arrives without an active capture sometimes
+      // (browser quirk); ignore.
+    }
+  }
+
+  // Position top-right by default so the panel doesn't overlap the
+  // action panel (bottom-right per tabletop T2). z-50 sits above all
+  // other game chrome. After drag, switch to inline coords.
+  const baseClasses =
+    'w-80 max-h-[calc(100vh-6rem)] flex flex-col bg-zinc-900/95 ' +
+    'border border-zinc-700 rounded-lg shadow-xl p-4 z-50 text-sm';
+  const positionClasses = pos == null ? 'fixed top-20 right-4' : 'fixed';
+  const positionStyle =
+    pos != null ? { left: `${pos.x}px`, top: `${pos.y}px` } : undefined;
+
   return (
     <div
-      className="fixed top-20 right-4 w-80 bg-zinc-900/95 border border-zinc-700 rounded-lg shadow-xl p-4 z-50 text-sm"
+      ref={panelRef}
+      // Bundle 5 polish (2026-05-12) — panel can grow past viewport
+      // height once 10+ trigger buttons exist. max-h + flex-col cap
+      // the panel; the inner button list scrolls (overflow-y-auto).
+      // Header + intro stay pinned at top, status footer at bottom.
+      className={`${positionClasses} ${baseClasses}`}
+      style={positionStyle}
       data-testid="cinematic-lab-panel"
     >
-      <h2 className="text-base font-bold text-zinc-100 mb-2">
-        Cinematic lab
-      </h2>
-      <p className="text-xs text-zinc-400 mb-3">
-        Click a button to trigger a Bundle 5 / Bundle 6 effect.
-        Reset between runs to re-fire.
-      </p>
-      <div className="flex flex-col gap-2">
+      {/* Drag handle. Wraps the heading + intro copy; buttons below
+          are NOT in the drag region so pointer-down on a button goes
+          straight to onClick. cursor-move + a subtle bottom border
+          signals draggability. */}
+      <div
+        data-testid="cinematic-lab-drag-handle"
+        onPointerDown={onHeaderPointerDown}
+        onPointerMove={onHeaderPointerMove}
+        onPointerUp={onHeaderPointerUp}
+        onPointerCancel={onHeaderPointerUp}
+        className="cursor-move select-none -mx-4 -mt-4 px-4 pt-3 pb-2 mb-3 border-b border-zinc-700/40"
+      >
+        <h2 className="text-base font-bold text-zinc-100 mb-1">
+          Cinematic lab
+          <span className="ml-2 text-[10px] font-normal text-zinc-500 align-middle">
+            (drag to move)
+          </span>
+        </h2>
+        <p className="text-xs text-zinc-400">
+          Click a button to trigger a Bundle 5 / Bundle 6 effect.
+          Reset between runs to re-fire.
+        </p>
+      </div>
+      <div className="flex flex-col gap-2 overflow-y-auto min-h-0 flex-1 pr-1">
         <LabButton
           testid="trigger-combat-damage"
           slices="5-A · 5-B · 5-C"
           label="Combat damage hit"
           description="Parcels traverse arrow + portrait bloom + viewport freeze-frame."
           onClick={onCombatDamage}
+        />
+        <LabButton
+          testid="trigger-heavy-combat-damage"
+          slices="5-A heavy"
+          label="Combat damage (20)"
+          description="20-parcel HEAVY stream — life ticks 40 → 20 with the per-tick scale-pop + sustained red on the LifeBadge."
+          onClick={onHeavyCombatDamage}
         />
         <LabButton
           testid="trigger-creature-dies"

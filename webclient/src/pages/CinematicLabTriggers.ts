@@ -47,6 +47,7 @@ interface OriginalBlocker {
 export interface CinematicLabTriggers {
   baselineGameView: WebGameView;
   triggerCombatDamage: () => void;
+  triggerHeavyCombatDamage: () => void;
   triggerCreatureDies: () => void;
   triggerLethalCommanderDamage: () => void;
   triggerDeclareAttackers: () => void;
@@ -121,6 +122,62 @@ export function useCinematicLabTriggers(
     useGameStore.setState({ gameView: next });
     announce(
       `Combat damage hit — ${firstGroup.defenderName} life -3. Watch parcels (5-A), portrait bloom (5-B), viewport freeze-frame (5-C).`,
+    );
+  }, [announce]);
+
+  const triggerHeavyCombatDamage = useCallback(() => {
+    // 2026-05-12 — 20-damage feel-check for the LifeBadge per-tick
+    // motion. Mutates the first combat group to a single attacker
+    // with power "20" so useDamageEvents synthesizes ONE event with
+    // amount=20 (parcelSchedule packs 20 parcels into the 3s HEAVY
+    // window with the 150ms inter-landing floor; total event ≈
+    // 3.85s). Other attackers in the group are stripped so total
+    // parcels === life delta and the displayed-life lag store
+    // converges cleanly. Other groups (different defenders)
+    // untouched.
+    const current = useGameStore.getState().gameView;
+    if (!current) return;
+    const firstGroup = current.combat[0];
+    if (!firstGroup) {
+      announce(
+        'No combat groups in fixture — Heavy combat damage cinematic unavailable.',
+      );
+      return;
+    }
+    const attackerIds = Object.keys(firstGroup.attackers);
+    const firstAttackerId = attackerIds[0];
+    if (!firstAttackerId) {
+      announce(
+        'No attacker in the first combat group — Heavy combat damage unavailable.',
+      );
+      return;
+    }
+    const firstAttacker = firstGroup.attackers[firstAttackerId]!;
+    const defenderId = firstGroup.defenderId;
+    const next: WebGameView = {
+      ...current,
+      combat: current.combat.map((g, i) =>
+        i === 0
+          ? {
+              ...g,
+              attackers: {
+                [firstAttackerId]: {
+                  ...firstAttacker,
+                  card: { ...firstAttacker.card, power: '20' },
+                },
+              },
+            }
+          : g,
+      ),
+      players: current.players.map((p) =>
+        p.playerId === defenderId
+          ? { ...p, life: Math.max(p.life - 20, 0) }
+          : p,
+      ),
+    };
+    useGameStore.setState({ gameView: next });
+    announce(
+      `Heavy combat damage — ${firstGroup.defenderName} life -20. 20 parcels stream across the HEAVY tier (~150ms per tick, ~3.85s total); life ticks 1-by-1 from 40 → 20.`,
     );
   }, [announce]);
 
@@ -412,6 +469,7 @@ export function useCinematicLabTriggers(
   return {
     baselineGameView,
     triggerCombatDamage,
+    triggerHeavyCombatDamage,
     triggerCreatureDies,
     triggerLethalCommanderDamage,
     triggerDeclareAttackers,

@@ -144,6 +144,7 @@ export function CinematicLab() {
               <ControlPanel
                 lastAction={labState.lastAction}
                 onCombatDamage={triggers.triggerCombatDamage}
+                onHeavyCombatDamage={triggers.triggerHeavyCombatDamage}
                 onCreatureDies={triggers.triggerCreatureDies}
                 onLethal={triggers.triggerLethalCommanderDamage}
                 onDeclareAttackers={triggers.triggerDeclareAttackers}
