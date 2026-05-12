@@ -38,17 +38,19 @@ describe('parcelSchedule', () => {
     expect(s.travelMs).toBeGreaterThanOrEqual(MIN_PARCEL_TRAVEL_MS);
   });
 
-  it('amount=5 → 5 parcels in HEAVY 3000ms budget (each 600ms travel + 600ms stagger)', () => {
+  it('amount=5 → 5 parcels in HEAVY 1750ms budget (each 350ms travel + 350ms stagger)', () => {
     const s = parcelSchedule(5);
     expect(s.count).toBe(5);
     expect(s.totalMs).toBe(DAMAGE_PARCEL_TRAVEL_MS_HEAVY);
-    expect(s.travelMs).toBe(600);
-    expect(s.staggerMs).toBe(600);
-    // Last parcel lands at exactly 3000ms.
-    expect((s.count - 1) * s.staggerMs + s.travelMs).toBe(3000);
+    expect(s.travelMs).toBe(350);
+    expect(s.staggerMs).toBe(350);
+    // Last parcel lands at exactly 1750ms (HEAVY budget).
+    expect((s.count - 1) * s.staggerMs + s.travelMs).toBe(
+      DAMAGE_PARCEL_TRAVEL_MS_HEAVY,
+    );
   });
 
-  it('amount=20 → 20 parcels still inside HEAVY 3000ms cap', () => {
+  it('amount=20 → 20 parcels still inside HEAVY 1750ms cap', () => {
     const s = parcelSchedule(20);
     expect(s.count).toBe(20);
     expect(s.totalMs).toBe(DAMAGE_PARCEL_TRAVEL_MS_HEAVY);
@@ -57,7 +59,7 @@ describe('parcelSchedule', () => {
     expect(lastLand).toBeLessThanOrEqual(DAMAGE_PARCEL_TRAVEL_MS_HEAVY);
   });
 
-  it('amount=100 → 100 parcels still inside HEAVY 3000ms cap with floored travel', () => {
+  it('amount=100 → 100 parcels still inside HEAVY 1750ms cap with floored travel', () => {
     // Pathological "super-trample" case. The schedule still respects
     // the budget; per-parcel travel is floored at MIN to keep parcels
     // visible.

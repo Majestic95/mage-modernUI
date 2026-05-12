@@ -335,7 +335,13 @@ export const PARTICLE_DRIFT_PERIOD_MS = 60_000;
 // distinct attackers, not one muddled flash.
 export const DAMAGE_PARCEL_TRAVEL_MS_LIGHT = 1000;
 export const DAMAGE_PARCEL_TRAVEL_MS_MEDIUM = 2000;
-export const DAMAGE_PARCEL_TRAVEL_MS_HEAVY = 3000;
+// 2026-05-12 — HEAVY 3000→1750ms per user direction (combat damage
+// at 5+ dmg felt too lingering at 3 seconds; 1.75s is the new
+// total-stream budget). NOTE: this is now SHORTER than MEDIUM
+// (2000ms), so a 4-damage attacker takes longer than a 5-damage
+// attacker — counterintuitive tier ordering, flagged for follow-up
+// if MEDIUM should also be tuned.
+export const DAMAGE_PARCEL_TRAVEL_MS_HEAVY = 1750;
 export const DAMAGE_PARCEL_STAGGER_MS = 50;
 
 /**
