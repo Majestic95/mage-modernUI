@@ -17,6 +17,13 @@ interface Props {
   onDeckSelect?: (deckId: string) => void;
   /** Disabled state for the deck rows (e.g. while a PUT is in flight). */
   disabled?: boolean;
+  /**
+   * Slice DB-1a — fired when the user clicks the bottom-of-rail
+   * "New Deck" button. The deck-builder workbench wires this to
+   * open the import modal; the lobby leaves it unwired so the
+   * button remains a no-op there (existing behavior).
+   */
+  onNewDeck?: () => void;
 }
 
 export function MyDecksPanel({
@@ -24,6 +31,7 @@ export function MyDecksPanel({
   selectedDeckId,
   onDeckSelect,
   disabled = false,
+  onNewDeck,
 }: Props) {
   return (
     <aside
@@ -66,13 +74,21 @@ export function MyDecksPanel({
         ))}
       </ul>
 
-      <button
-        type="button"
-        data-testid="my-decks-new-deck-button"
-        className="rounded-md border border-card-frame-default/80 px-3 py-1.5 text-sm font-medium text-text-secondary transition-colors hover:border-accent-primary/60 hover:text-text-primary"
-      >
-        New Deck
-      </button>
+      {/* UI/UX critic N3 — render the New Deck affordance only when the
+          caller wired a handler. The lobby leaves it un-wired (decks
+          are picked, not created mid-lobby); rendering a disabled button
+          there read as "feature broken." Workbench wires onNewDeck, so
+          the button appears as expected. */}
+      {onNewDeck && (
+        <button
+          type="button"
+          data-testid="my-decks-new-deck-button"
+          onClick={onNewDeck}
+          className="rounded-md border border-card-frame-default/80 px-3 py-1.5 text-sm font-medium text-text-secondary transition-colors hover:border-accent-primary/60 hover:text-text-primary"
+        >
+          New Deck
+        </button>
+      )}
     </aside>
   );
 }

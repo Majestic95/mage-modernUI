@@ -1,0 +1,201 @@
+/**
+ * "New Deck" modal launched from the deck-builder workbench's
+ * MyDecksPanel rail. Lifts the legacy {@code Decks.tsx} ImportForm
+ * into a modal so the import flow becomes a single, discoverable
+ * affordance instead of a permanent page section.
+ *
+ * <p>Flow: type a name + paste decklist text → click Import →
+ * {@link parseDeckText} parses the lines → {@link resolveDeckLists}
+ * resolves every name against /api/cards → {@link useDecksStore.add}
+ * persists locally → {@code onCreated(deckId)} fires so the workbench
+ * can switch the active deck to the freshly-created one.
+ *
+ * <p>Error surfaces preserved verbatim from the legacy flow:
+ * parser errors ("Line 1: ..."), missing-card resolution failures,
+ * and resolveDeckLists exceptions all land in the same alert region.
+ */
+import { useEffect, useState, type FormEvent } from 'react';
+import { parseDeckText } from '../decks/parse';
+import { resolveDeckLists } from '../decks/resolve';
+import { useDecksStore } from '../decks/store';
+import { useAuthStore } from '../auth/store';
+
+interface Props {
+  onClose: () => void;
+  onCreated: (deckId: string) => void;
+}
+
+export function NewDeckModal({ onClose, onCreated }: Props) {
+  const session = useAuthStore((s) => s.session);
+  const addDeck = useDecksStore((s) => s.add);
+
+  const [name, setName] = useState('');
+  const [text, setText] = useState('');
+  const [importing, setImporting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // UI/UX critic N1 — Escape-to-close (suppressed while a resolve is
+  // in flight to avoid orphaning the request).
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !importing) onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [importing, onClose]);
+
+  const onImport = async (e: FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    if (!session) {
+      setError('Not signed in.');
+      return;
+    }
+    const parsed = parseDeckText(text);
+    if (parsed.errors.length > 0) {
+      setError(parsed.errors.join('\n'));
+      return;
+    }
+    if (parsed.cards.length === 0 && parsed.sideboard.length === 0) {
+      setError('No cards parsed. Use one "<count> <card name>" line per entry.');
+      return;
+    }
+    setImporting(true);
+    let createdDeckId: string | null = null;
+    try {
+      const result = await resolveDeckLists(
+        parsed.cards,
+        parsed.sideboard,
+        session.token,
+      );
+      if (result.missing.length > 0) {
+        setError(
+          'Could not find these cards in the server DB '
+          + '(check exact spelling, including capitalization):\n  '
+          + result.missing.join('\n  '),
+        );
+        return;
+      }
+      const deck = addDeck(name, result.cards, result.sideboard);
+      createdDeckId = deck.id;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Import failed.');
+    } finally {
+      setImporting(false);
+    }
+    // Tech critic B1 — flip the parent's modal-open flag AFTER setImporting
+    // settles so the success path doesn't fire setState on an unmounted
+    // component. onCreated → parent setNewDeckOpen(false) → unmount.
+    if (createdDeckId !== null) onCreated(createdDeckId);
+  };
+
+  return (
+    <div
+      data-testid="new-deck-modal-backdrop"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: 'var(--color-bg-overlay)' }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !importing) onClose();
+      }}
+      role="presentation"
+    >
+      <form
+        data-testid="new-deck-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Create a new deck"
+        onSubmit={onImport}
+        className="flex w-full max-w-2xl flex-col gap-4 rounded-xl border p-6"
+        style={{
+          background: 'var(--color-bg-elevated)',
+          borderColor: 'var(--color-card-frame-default)',
+          boxShadow: 'var(--shadow-high)',
+        }}
+      >
+        <header className="flex items-center justify-between">
+          <h2
+            className="text-base font-semibold uppercase text-text-primary"
+            style={{ letterSpacing: '0.12em' }}
+          >
+            New Deck
+          </h2>
+          <button
+            type="button"
+            data-testid="new-deck-modal-close"
+            aria-label="Close"
+            onClick={onClose}
+            disabled={importing}
+            className="rounded-md px-2 py-1 text-sm text-text-secondary transition-colors hover:bg-surface-card-hover hover:text-text-primary disabled:opacity-60"
+          >
+            ×
+          </button>
+        </header>
+
+        <input
+          type="text"
+          data-testid="new-deck-name-input"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Deck name"
+          autoFocus
+          className="rounded-md border bg-bg-base px-3 py-2 text-sm text-text-primary placeholder-text-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+          style={{ borderColor: 'var(--color-card-frame-default)' }}
+        />
+
+        <textarea
+          data-testid="new-deck-text-input"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          rows={14}
+          spellCheck={false}
+          placeholder={
+            '4 Lightning Bolt\n'
+            + '4 Counterspell\n'
+            + '20 Island\n'
+            + '\n'
+            + 'Sideboard\n'
+            + '2 Negate'
+          }
+          className="rounded-md border bg-bg-base px-3 py-2 font-mono text-sm text-text-primary placeholder-text-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+          style={{ borderColor: 'var(--color-card-frame-default)' }}
+        />
+        <p className="text-xs text-text-secondary">
+          Accepts MTGA / MTGO / Moxfield / Archidekt exports. Sideboard
+          starts after a blank line or a <code>Sideboard</code> header.
+          Trailing <code>(SET) NUM</code> annotations are stripped.
+        </p>
+
+        {error && (
+          <pre
+            role="alert"
+            data-testid="new-deck-error"
+            className="whitespace-pre-wrap font-sans text-sm text-status-danger"
+          >
+            {error}
+          </pre>
+        )}
+
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            data-testid="new-deck-cancel"
+            onClick={onClose}
+            disabled={importing}
+            className="rounded-md border px-4 py-2 text-sm text-text-secondary transition-colors hover:bg-surface-card-hover hover:text-text-primary disabled:opacity-60"
+            style={{ borderColor: 'var(--color-card-frame-default)' }}
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            data-testid="new-deck-submit"
+            disabled={importing}
+            className="rounded-md bg-accent-primary px-4 py-2 text-sm font-medium text-text-on-accent transition-opacity hover:opacity-90 disabled:bg-surface-card disabled:text-text-muted"
+          >
+            {importing ? 'Resolving…' : 'Import deck'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}

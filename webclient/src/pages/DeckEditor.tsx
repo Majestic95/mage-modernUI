@@ -35,9 +35,17 @@ import { LobbyPortraitSummary } from './LobbyPortraitSummary';
 interface Props {
   deckId: string;
   onClose: () => void;
+  /**
+   * Slice DB-1a — when true, suppress the inline back/rename/count
+   * header at the top. The deck-builder workbench provides its own
+   * header (see {@link DeckBuilderHeader}); standalone callers
+   * (e.g. legacy Decks page paths) leave this unset so the inline
+   * header still renders.
+   */
+  embedded?: boolean;
 }
 
-export function DeckEditor({ deckId, onClose }: Props) {
+export function DeckEditor({ deckId, onClose, embedded = false }: Props) {
   const deck = useDecksStore((s) =>
     s.decks.find((d) => d.id === deckId) ?? null,
   );
@@ -189,53 +197,55 @@ export function DeckEditor({ deckId, onClose }: Props) {
 
   return (
     <div className="space-y-4">
-      <header className="flex items-baseline justify-between gap-3">
-        <div className="flex items-baseline gap-3 min-w-0">
-          <button
-            type="button"
-            onClick={onClose}
-            data-testid="deck-editor-back"
-            className="text-sm text-zinc-400 hover:text-zinc-100 flex-shrink-0"
-          >
-            ← Back
-          </button>
-          {renameDraft === null ? (
+      {!embedded && (
+        <header className="flex items-baseline justify-between gap-3">
+          <div className="flex items-baseline gap-3 min-w-0">
             <button
               type="button"
-              data-testid="deck-editor-rename"
-              onClick={() => setRenameDraft(deck.name)}
-              className="text-xl font-semibold truncate hover:bg-zinc-800 rounded px-2 py-0.5"
-              title="Rename deck"
+              onClick={onClose}
+              data-testid="deck-editor-back"
+              className="text-sm text-zinc-400 hover:text-zinc-100 flex-shrink-0"
             >
-              {deck.name}
+              ← Back
             </button>
-          ) : (
-            <input
-              type="text"
-              autoFocus
-              data-testid="deck-editor-rename-input"
-              value={renameDraft}
-              maxLength={64}
-              onChange={(e) => setRenameDraft(e.target.value)}
-              onBlur={commitName}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  commitName();
-                } else if (e.key === 'Escape') {
-                  e.preventDefault();
-                  setRenameDraft(null);
-                }
-              }}
-              className="bg-zinc-800 border border-zinc-700 rounded px-2 py-0.5 text-xl font-semibold text-zinc-100 max-w-md"
-            />
-          )}
-        </div>
-        <p className="text-xs text-zinc-500 flex-shrink-0">
-          {totalAmount(deck.cards)} mainboard · {totalAmount(deck.sideboard)}{' '}
-          sideboard
-        </p>
-      </header>
+            {renameDraft === null ? (
+              <button
+                type="button"
+                data-testid="deck-editor-rename"
+                onClick={() => setRenameDraft(deck.name)}
+                className="text-xl font-semibold truncate hover:bg-zinc-800 rounded px-2 py-0.5"
+                title="Rename deck"
+              >
+                {deck.name}
+              </button>
+            ) : (
+              <input
+                type="text"
+                autoFocus
+                data-testid="deck-editor-rename-input"
+                value={renameDraft}
+                maxLength={64}
+                onChange={(e) => setRenameDraft(e.target.value)}
+                onBlur={commitName}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    commitName();
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    setRenameDraft(null);
+                  }
+                }}
+                className="bg-zinc-800 border border-zinc-700 rounded px-2 py-0.5 text-xl font-semibold text-zinc-100 max-w-md"
+              />
+            )}
+          </div>
+          <p className="text-xs text-zinc-500 flex-shrink-0">
+            {totalAmount(deck.cards)} mainboard · {totalAmount(deck.sideboard)}{' '}
+            sideboard
+          </p>
+        </header>
+      )}
 
       <LobbyPortraitSummary displayCard={deck.displayCard} />
 
