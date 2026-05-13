@@ -1,10 +1,12 @@
 /**
  * Slice DB-1a — deck-builder workbench. Replaces the legacy Decks
  * page (paste-import form + list-of-saved-decks-with-Edit-button)
- * with a full-page workbench mirroring the lobby's "Ready Up" chrome:
+ * with a full-page workbench mirroring the lobby's chrome — same
+ * nebula gradient backdrop, design tokens, elevated panels, but the
+ * App-level nav header replaces the lobby's own LobbyTopBar (slice
+ * DB-1a-fix-1 dropped the duplicate). Layout:
  *
  * <ul>
- *   <li>LobbyTopBar at the top (back / username / sign-out).</li>
  *   <li>{@link DeckBuilderHeader} — deck name (editable) + format
  *       picker + live legality pill + counts + delete affordance.</li>
  *   <li>3-column grid:
@@ -31,7 +33,6 @@
 import { useEffect, useState } from 'react';
 import { CommanderPreviewPanel } from '../lobby/CommanderPreviewPanel';
 import { DeckPreviewPanel } from '../lobby/DeckPreviewPanel';
-import { LobbyTopBar } from '../lobby/LobbyTopBar';
 import { MyDecksPanel } from '../lobby/MyDecksPanel';
 import { useLiveDecks } from '../lobby/useLiveDecks';
 import { useDecksStore } from '../decks/store';
@@ -72,17 +73,15 @@ export function DecksWorkbench() {
   return (
     <div
       data-testid="decks-workbench"
-      className="relative flex h-screen flex-col overflow-hidden bg-bg-base text-text-primary"
+      className="relative flex h-full min-h-0 w-full flex-col overflow-hidden bg-bg-base text-text-primary"
       style={{
         // Matches NewLobbyScreen's nebula gradient for visual continuity.
         backgroundImage:
           'radial-gradient(ellipse 90% 60% at 50% 35%, rgba(139, 92, 246, 0.18) 0%, rgba(76, 29, 149, 0.08) 35%, transparent 70%), radial-gradient(ellipse 60% 40% at 80% 80%, rgba(91, 192, 240, 0.10) 0%, transparent 60%), radial-gradient(ellipse 50% 30% at 15% 90%, rgba(168, 85, 247, 0.10) 0%, transparent 60%)',
       }}
     >
-      <LobbyTopBar />
-
       <main
-        className="grid min-h-0 flex-1 gap-3 px-5 pb-4"
+        className="grid min-h-0 flex-1 gap-3 px-5 py-4"
         style={{ gridTemplateRows: 'auto minmax(0, 1fr)' }}
       >
         {activeSavedDeck ? (
@@ -191,7 +190,8 @@ function EmptyHeader({ onNewDeck }: { onNewDeck: () => void }) {
           type="button"
           data-testid="decks-workbench-empty-header-new-deck"
           onClick={onNewDeck}
-          className="rounded-md bg-accent-primary px-4 py-1.5 text-sm font-medium text-text-on-accent transition-opacity hover:opacity-90"
+          // fix-2 B15 — focus-visible ring for keyboard parity.
+          className="rounded-md bg-accent-primary px-4 py-1.5 text-sm font-medium text-text-on-accent transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
         >
           New Deck
         </button>
@@ -204,35 +204,71 @@ function EmptyPreviewPlaceholder() {
   return (
     <div
       data-testid="decks-workbench-preview-empty"
-      className="flex h-full min-h-0 items-center justify-center rounded-xl border p-3 text-sm text-text-secondary"
+      // fix-2 B10 — richer placeholder so the empty right column
+      // reads as "intentional gap" not "blank/loading box."
+      className="flex h-full min-h-0 flex-col items-center justify-center gap-3 rounded-xl border p-6 text-center"
       style={{
         background: 'rgba(21, 34, 41, 0.85)',
         borderColor: 'var(--color-card-frame-default)',
         boxShadow: 'var(--shadow-low)',
       }}
     >
-      Pick or build a deck to preview it here.
+      <DeckPlaceholderGlyph />
+      <p className="text-sm text-text-secondary">
+        Pick a deck on the left, or start a new one.
+      </p>
+      <p
+        className="text-[10px] uppercase text-text-muted"
+        style={{ letterSpacing: '0.12em' }}
+      >
+        Preview · curve · color identity
+      </p>
     </div>
   );
 }
 
+function DeckPlaceholderGlyph() {
+  return (
+    <svg
+      width="48"
+      height="48"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className="text-text-muted opacity-60"
+    >
+      <rect x="6" y="4" width="11" height="16" rx="1.5" />
+      <rect x="9" y="2" width="11" height="16" rx="1.5" />
+      <rect x="3" y="6" width="11" height="16" rx="1.5" fill="currentColor" fillOpacity="0.18" />
+    </svg>
+  );
+}
+
 function EditorEmptyState({ onNewDeck }: { onNewDeck: () => void }) {
+  // fix-2 B9 — empty-state now has TWO CTAs total (rail bottom +
+  // EmptyHeader right slot). The center column shows just the
+  // contextual hint and a quieter inline "Start one now" affordance
+  // so it doesn't compete for primary-CTA gravity.
   return (
     <div
       data-testid="decks-workbench-editor-empty"
       className="flex h-full flex-col items-center justify-center gap-4 text-center text-text-secondary"
     >
       <p className="text-sm">
-        No deck selected. Pick one from the rail, or start a new one.
+        No deck selected. Pick one from the rail, or{' '}
+        <button
+          type="button"
+          data-testid="decks-workbench-empty-new-deck"
+          onClick={onNewDeck}
+          className="font-medium text-accent-primary underline underline-offset-2 transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring rounded-sm"
+        >
+          start a new one
+        </button>
+        .
       </p>
-      <button
-        type="button"
-        data-testid="decks-workbench-empty-new-deck"
-        onClick={onNewDeck}
-        className="rounded-md bg-accent-primary px-4 py-2 text-sm font-medium text-text-on-accent transition-opacity hover:opacity-90"
-      >
-        New Deck
-      </button>
     </div>
   );
 }

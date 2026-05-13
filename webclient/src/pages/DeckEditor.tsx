@@ -32,6 +32,8 @@ import { DeckLane } from './DeckLane';
 import { totalAmount, type Lane } from './deckEditorHelpers';
 import { LobbyPortraitSummary } from './LobbyPortraitSummary';
 
+const COLOR_LETTERS = ['W', 'U', 'B', 'R', 'G'] as const;
+
 interface Props {
   deckId: string;
   onClose: () => void;
@@ -68,6 +70,17 @@ export function DeckEditor({ deckId, onClose, embedded = false }: Props) {
       }
     | null
   >(null);
+  // fix-2 A3 — pre-emptive color-identity-violation message. Set when
+  // the user clicks "+ Add" on a search result whose color is outside
+  // the commander's color identity; auto-clears after 3s so the search
+  // panel stays usable. Server-side legality validation still catches
+  // anything we miss (e.g. rules-text mana symbols we don't parse).
+  const [addBlockReason, setAddBlockReason] = useState<string | null>(null);
+  useEffect(() => {
+    if (!addBlockReason) return;
+    const t = window.setTimeout(() => setAddBlockReason(null), 3000);
+    return () => window.clearTimeout(t);
+  }, [addBlockReason]);
 
   // Audit fix — cross-tab delete: if the deck disappears while we're
   // editing it, route back to the list automatically. Without this the
@@ -80,14 +93,16 @@ export function DeckEditor({ deckId, onClose, embedded = false }: Props) {
   if (!deck) {
     return (
       <div className="space-y-3">
+        {/* fix-2 B4 — themed fallback so the "deck not found" state
+            no longer reads as zinc-era when wrapped by the workbench. */}
         <button
           type="button"
           onClick={onClose}
-          className="text-sm text-zinc-400 hover:text-zinc-100"
+          className="text-sm text-text-secondary transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring rounded-sm"
         >
           ← Back to decks
         </button>
-        <p className="text-zinc-500 italic">Deck not found.</p>
+        <p className="text-text-muted italic">Deck not found.</p>
       </div>
     );
   }
@@ -167,9 +182,40 @@ export function DeckEditor({ deckId, onClose, embedded = false }: Props) {
   // otherwise inserts a new entry with amount=1. Reads fresh state
   // via getState so a cross-tab mutation between search-render and
   // add-click doesn't get clobbered.
+  //
+  // fix-2 A3 — pre-emptive color-identity gate for Commander decks.
+  // We block the add when the candidate has a color outside the
+  // commander's `colors`. Falls open when either side is unknown
+  // (commander metadata still loading, or candidate has no colors
+  // field on the wire). Conservative: doesn't parse rules-text mana
+  // symbols, so a rare off-color hybrid will slip through and be
+  // caught by the server-side validate pass on legality check.
   const addFromSearch = (card: WebCardInfo) => {
     const fresh = useDecksStore.getState().decks.find((d) => d.id === deck.id);
     if (!fresh) return;
+
+    const commanderEntry = fresh.sideboard[0] ?? null;
+    if (commanderEntry) {
+      const commanderInfo = byName.get(commanderEntry.cardName) ?? null;
+      if (commanderInfo) {
+        const commanderColors = new Set(
+          (commanderInfo.colors ?? []).map((c) => c.toUpperCase()),
+        );
+        const candidateColors = (card.colors ?? []).map((c) => c.toUpperCase());
+        const offColor = candidateColors.find(
+          (c) =>
+            (COLOR_LETTERS as readonly string[]).includes(c)
+            && !commanderColors.has(c),
+        );
+        if (offColor) {
+          setAddBlockReason(
+            `${card.name} (${offColor}) is outside ${commanderEntry.cardName}'s color identity.`,
+          );
+          return;
+        }
+      }
+    }
+
     const existingIdx = fresh.cards.findIndex(
       (c) =>
         c.cardName === card.name
@@ -249,12 +295,40 @@ export function DeckEditor({ deckId, onClose, embedded = false }: Props) {
 
       <LobbyPortraitSummary displayCard={deck.displayCard} />
 
-      <CardSearchPanel onAdd={addFromSearch} />
+      {/* fix-2 B11 — sticky search bar inside the workbench's editor
+          column. position:sticky pins to the top of the scroll
+          container; the embedded editor sits inside a `overflow-y-auto`
+          wrapper (DecksWorkbench editor column) so the search input
+          stays reachable no matter how deep the user scrolls into the
+          mainboard. Standalone callers (non-embedded) get the same
+          sticky behavior — harmless since the parent has no scroll. */}
+      <div
+        data-testid="deck-editor-search-sticky"
+        className="sticky top-0 z-10 -mx-1 px-1 py-1"
+        style={{
+          background: embedded
+            ? 'rgba(21, 34, 41, 0.95)'
+            : 'transparent',
+        }}
+      >
+        <CardSearchPanel onAdd={addFromSearch} />
+      </div>
+
+      {addBlockReason && (
+        <p
+          role="alert"
+          data-testid="deck-editor-add-blocked"
+          className="text-xs text-status-warning"
+        >
+          {addBlockReason}
+        </p>
+      )}
 
       {loading && (
         <p
           data-testid="deck-editor-loading"
-          className="text-xs text-zinc-500 italic"
+          // fix-2 B4 — themed loading copy.
+          className="text-xs text-text-secondary italic"
         >
           Loading card data…
         </p>

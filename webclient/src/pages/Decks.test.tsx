@@ -126,7 +126,6 @@ describe('Decks workbench (slice DB-1a)', () => {
     );
     render(<Decks />);
     expect(screen.getByTestId('decks-workbench')).toBeInTheDocument();
-    expect(screen.getByTestId('lobby-top-bar')).toBeInTheDocument();
     expect(screen.getByTestId('my-decks-panel')).toBeInTheDocument();
     expect(screen.getByTestId('my-decks-empty')).toBeInTheDocument();
     expect(screen.getByTestId('decks-workbench-editor-empty')).toBeInTheDocument();
@@ -381,5 +380,156 @@ describe('Decks workbench (slice DB-1a)', () => {
     await user.click(screen.getByTestId('new-deck-cancel'));
     expect(screen.queryByTestId('new-deck-modal')).not.toBeInTheDocument();
     expect(useDecksStore.getState().decks).toHaveLength(0);
+  });
+
+  // fix-2 A1 — switching rail rows during an in-flight rename must
+  // commit the typed name to the ORIGINAL deck, not silently lose it
+  // or write it to the newly-selected deck.
+  it('rail-switch mid-rename commits the typed name to the original deck', async () => {
+    const user = userEvent.setup();
+    useDecksStore.getState().add('Burn', [
+      { cardName: 'Lightning Bolt', setCode: 'LEA', cardNumber: '161', amount: 4 },
+    ]);
+    useDecksStore.getState().add('Mono Green', [
+      { cardName: 'Forest', setCode: 'M21', cardNumber: '281', amount: 24 },
+    ]);
+    vi.stubGlobal(
+      'fetch',
+      makeRouter({
+        '/api/server/state': () => jsonResponse(200, SERVER_STATE_BODY),
+      }),
+    );
+
+    render(<Decks />);
+    // useDecksStore.add unshifts → "Mono Green" is active first.
+    expect(screen.getByTestId('deck-builder-rename')).toHaveTextContent(
+      'Mono Green',
+    );
+
+    // Open the rename input, type a new name, but DON'T press Enter
+    // or blur. Then click the other deck in the rail.
+    await user.click(screen.getByTestId('deck-builder-rename'));
+    const input = screen.getByTestId('deck-builder-rename-input');
+    await user.clear(input);
+    await user.type(input, 'Forest Stomp');
+
+    const rows = screen.getAllByTestId('my-decks-row');
+    const burnRow = rows.find((r) => within(r).queryByText('Burn'));
+    await user.click(burnRow!);
+
+    // The rename should have committed to the ORIGINAL deck ("Mono
+    // Green" → "Forest Stomp"), not corrupted "Burn".
+    await waitFor(() => {
+      const decks = useDecksStore.getState().decks;
+      const monoGreen = decks.find((d) =>
+        d.cards.some((c) => c.cardName === 'Forest'),
+      );
+      const burn = decks.find((d) =>
+        d.cards.some((c) => c.cardName === 'Lightning Bolt'),
+      );
+      expect(monoGreen?.name).toBe('Forest Stomp');
+      expect(burn?.name).toBe('Burn');
+    });
+  });
+
+  // fix-2 B1 — Cmd/Ctrl+Enter inside NewDeckModal submits the form.
+  it('Cmd+Enter inside NewDeckModal submits the import', async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      'fetch',
+      makeRouter({
+        '/api/server/state': () => jsonResponse(200, SERVER_STATE_BODY),
+        '/api/cards?name=Forest': () => cardListing('Forest'),
+      }),
+    );
+    render(<Decks />);
+    await user.click(screen.getByTestId('my-decks-new-deck-button'));
+    await user.type(screen.getByTestId('new-deck-name-input'), 'Hotkey Deck');
+    await user.click(screen.getByTestId('new-deck-text-input'));
+    await user.type(screen.getByTestId('new-deck-text-input'), '4 Forest');
+    // Cmd+Enter (mac) — userEvent's keyboard supports modifier syntax.
+    await user.keyboard('{Control>}{Enter}{/Control}');
+
+    await waitFor(() => {
+      expect(useDecksStore.getState().decks).toHaveLength(1);
+    });
+    expect(useDecksStore.getState().decks[0]?.name).toBe('Hotkey Deck');
+  });
+
+  // fix-2 A3 — color-identity gate blocks adds outside the
+  // commander's color identity in a Commander deck (sideboard[0]
+  // present). Surfaces an alert and does NOT mutate the mainboard.
+  it('color-identity gate blocks off-color adds when a commander is present', async () => {
+    const user = userEvent.setup();
+    // Seed a mono-green commander deck: commander in sideboard slot 0,
+    // an existing mainboard card so the editor renders, and we'll try
+    // to add a red card via search.
+    useDecksStore.getState().add(
+      'Mono-Green EDH',
+      [{ cardName: 'Forest', setCode: 'M21', cardNumber: '281', amount: 1 }],
+      [{ cardName: 'Yeva, Nature\'s Herald', setCode: 'M13', cardNumber: '203', amount: 1 }],
+    );
+
+    // Router: server state, byName lookups for the seeded cards,
+    // search returns a single red card (Lightning Bolt).
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>().mockImplementation((input) => {
+        const url = typeof input === 'string' ? input : input.toString();
+        if (url.includes('/api/server/state')) {
+          return Promise.resolve(jsonResponse(200, SERVER_STATE_BODY));
+        }
+        if (url.includes("name=Yeva")) {
+          return Promise.resolve(
+            jsonResponse(200, {
+              schemaVersion: '1.28',
+              cards: [{
+                name: "Yeva, Nature's Herald",
+                setCode: 'M13', cardNumber: '203',
+                manaValue: 3, manaCosts: ['{2}{G}'], rarity: 'RARE',
+                types: ['CREATURE'], subtypes: ['Elf', 'Druid'], supertypes: ['LEGENDARY'],
+                colors: ['G'], power: '2', toughness: '4', startingLoyalty: '', rules: [],
+              }],
+              truncated: false,
+            }),
+          );
+        }
+        if (url.includes('name=Forest')) {
+          return Promise.resolve(cardListing('Forest'));
+        }
+        if (url.includes('/api/cards/search')) {
+          return Promise.resolve(jsonResponse(200, {
+            schemaVersion: '1.28',
+            cards: [{
+              name: 'Lightning Bolt',
+              setCode: 'M21', cardNumber: '162',
+              manaValue: 1, manaCosts: ['{R}'], rarity: 'COMMON',
+              types: ['INSTANT'], subtypes: [], supertypes: [],
+              colors: ['R'], power: '', toughness: '', startingLoyalty: '', rules: [],
+            }],
+            truncated: false,
+          }));
+        }
+        return Promise.resolve(jsonResponse(404, { code: 'NOT_FOUND' }));
+      }),
+    );
+
+    render(<Decks />);
+    // Wait for the commander metadata to land so the gate has the
+    // colors lookup populated.
+    await screen.findByTestId('deck-builder-rename');
+    await waitFor(() => {
+      // search for the red card
+      // - Type into card-search input
+      // - The result should appear with "+ Add"
+    });
+    await user.type(screen.getByTestId('card-search-input'), 'Lightning');
+    await screen.findByTestId('card-search-result');
+    await user.click(screen.getByTestId('card-search-add'));
+
+    // Add was blocked: mainboard still just has Forest.
+    await screen.findByTestId('deck-editor-add-blocked');
+    const after = useDecksStore.getState().decks[0]?.cards ?? [];
+    expect(after.map((c) => c.cardName)).toEqual(['Forest']);
   });
 });

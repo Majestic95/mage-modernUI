@@ -60,7 +60,12 @@ export function MyDecksPanel({
             data-testid="my-decks-empty"
             className="px-2 py-3 text-xs text-text-secondary"
           >
-            No saved decks yet. Build one from the Decks tab.
+            {/* fix-2 B8 — context-neutral copy. The lobby leaves
+                onNewDeck unset (so the button is hidden); the
+                workbench wires it and surfaces the button below.
+                Either way, "build one from the Decks tab" is stale
+                copy from the legacy lobby-only context. */}
+            No saved decks yet.
           </li>
         )}
         {decks.map((deck) => (

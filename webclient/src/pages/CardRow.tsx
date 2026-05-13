@@ -44,7 +44,11 @@ export function CardRow({
         type="button"
         data-testid="deck-editor-swap-art"
         onClick={onSwapArt}
-        className="h-12 w-12 flex-shrink-0 overflow-hidden rounded bg-zinc-800 hover:ring-2 hover:ring-fuchsia-400 transition-shadow"
+        // fix-2 B18 — explicit aria-label so SRs have something to
+        // announce (the inner <img> uses alt="" for the visual-only
+        // fallback case).
+        aria-label={`Swap art for ${entry.cardName} — currently ${entry.setCode} #${entry.cardNumber}`}
+        className="h-12 w-12 flex-shrink-0 overflow-hidden rounded bg-zinc-800 hover:ring-2 hover:ring-fuchsia-400 transition-shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-400"
         title={`Swap art (currently ${entry.setCode} #${entry.cardNumber})`}
       >
         {artUrl && !imgFailed ? (

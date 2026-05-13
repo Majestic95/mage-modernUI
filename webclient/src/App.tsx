@@ -361,9 +361,18 @@ export function App() {
     );
   }
 
+  // Slice DB-1a-fix-1 — when on the Decks tab the workbench fills the
+  // remaining viewport (full-bleed). The constrained max-w-4xl `<main>`
+  // is reserved for the legacy tab content; Decks uses a flex-1 wrapper
+  // so the workbench's 3-column grid + nebula chrome get the full width
+  // and height under the app header.
+  const rootClass =
+    tab === 'decks'
+      ? 'h-screen flex flex-col overflow-hidden bg-zinc-950 text-zinc-100'
+      : 'min-h-screen bg-zinc-950 text-zinc-100';
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100">
-      <header className="flex items-center justify-between border-b border-zinc-800 px-6 py-3">
+    <div className={rootClass}>
+      <header className="flex flex-shrink-0 items-center justify-between border-b border-zinc-800 px-6 py-3">
         <h1 className="text-lg font-semibold tracking-tight">
           Mage <span className="text-fuchsia-400">Modern UI</span>
         </h1>
@@ -400,22 +409,28 @@ export function App() {
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto p-6 space-y-4">
-        {tab === 'lobby' && (
-          <>
-            <Lobby
-              onEnterLobby={setActiveLobbyId}
-              onRejoinGame={setActiveGameId}
-            />
-            <LobbyChat />
-            <DevOpenGame onOpen={setActiveGameId} />
-          </>
-        )}
-        {tab === 'decks' && <Decks />}
-        {tab === 'cards' && <CardSearch />}
-      </main>
-
-      <Footer />
+      {tab === 'decks' ? (
+        <div className="flex min-h-0 flex-1">
+          <Decks />
+        </div>
+      ) : (
+        <>
+          <main className="max-w-4xl mx-auto p-6 space-y-4">
+            {tab === 'lobby' && (
+              <>
+                <Lobby
+                  onEnterLobby={setActiveLobbyId}
+                  onRejoinGame={setActiveGameId}
+                />
+                <LobbyChat />
+                <DevOpenGame onOpen={setActiveGameId} />
+              </>
+            )}
+            {tab === 'cards' && <CardSearch />}
+          </main>
+          <Footer />
+        </>
+      )}
       <SideboardModal />
     </div>
   );
