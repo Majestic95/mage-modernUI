@@ -83,6 +83,72 @@
             <version>5.10.2</version>
             <scope>test</scope>
         </dependency>
+
+        <!--
+            CARDS-1 (2026-05-13): pull the upstream Mage.Tests harness onto
+            our test compile classpath via build-helper add-test-source
+            (see <build> below). That harness uses JUnit 4 (@org.junit.Test +
+            org.junit.Assert), so we need:
+              * junit-vintage-engine: bridge that lets Surefire 5+ run
+                JUnit 4 tests. Transitively pulls junit:junit:4.13.x.
+              * mage-game-twoplayerduel, mage-player-ai, mage-game-freeforall:
+                runtime-scope under mage-server; we need them at TEST scope
+                here so CardTestPlayerBase / TestComputerPlayer compile.
+              * jsoup, jaxb-api, jaxb-impl, truevfs: a handful of files in
+                Mage.Tests/src/test/java (CardHintsTest, ZipFilesReadWriteTest,
+                LoadCallbackClient) reference these; the added source tree
+                must compile in full so these deps are required even though
+                no GoShintai assertion needs them.
+            All test-scope; runtime WebApi jar is unaffected.
+        -->
+        <dependency>
+            <groupId>org.junit.vintage</groupId>
+            <artifactId>junit-vintage-engine</artifactId>
+            <version>5.10.2</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mage</groupId>
+            <artifactId>mage-game-twoplayerduel</artifactId>
+            <version>${upstream.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mage</groupId>
+            <artifactId>mage-player-ai</artifactId>
+            <version>${upstream.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mage</groupId>
+            <artifactId>mage-game-freeforall</artifactId>
+            <version>${upstream.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.jsoup</groupId>
+            <artifactId>jsoup</artifactId>
+            <version>1.21.2</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>javax.xml.bind</groupId>
+            <artifactId>jaxb-api</artifactId>
+            <version>2.3.1</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.sun.xml.bind</groupId>
+            <artifactId>jaxb-impl</artifactId>
+            <version>2.3.1</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>net.java.truevfs</groupId>
+            <artifactId>truevfs-profile-base</artifactId>
+            <version>0.14.0</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -92,6 +158,56 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.13.0</version>
             </plugin>
+
+            <!--
+                CARDS-1 (2026-05-13): bring the upstream Mage.Tests harness
+                (CardTestPlayerBase + CardTestPlayerAPIImpl + TestPlayer +
+                the rest of the @Test tree) onto OUR test compile path
+                WITHOUT modifying upstream Mage.Tests/pom.xml. That pom
+                deliberately skips install/jar (so a normal test-jar
+                dependency cannot be published), and CLAUDE.md rule 2
+                forbids edits there. Adding the source tree directly is
+                the only path that keeps upstream untouched.
+
+                We do NOT want to RUN upstream tests from inside our
+                module — only compile the harness so OUR tests can extend
+                CardTestPlayerBase. Surefire (below) is configured to
+                exclude org/mage/** from execution.
+            -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>build-helper-maven-plugin</artifactId>
+                <version>3.6.0</version>
+                <executions>
+                    <execution>
+                        <id>add-mage-tests-harness-source</id>
+                        <phase>generate-test-sources</phase>
+                        <goals>
+                            <goal>add-test-source</goal>
+                        </goals>
+                        <configuration>
+                            <sources>
+                                <source>${project.basedir}/../Mage.Tests/src/test/java</source>
+                            </sources>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>add-mage-tests-harness-resources</id>
+                        <phase>generate-test-resources</phase>
+                        <goals>
+                            <goal>add-test-resource</goal>
+                        </goals>
+                        <configuration>
+                            <resources>
+                                <resource>
+                                    <directory>${project.basedir}/../Mage.Tests/src/test/resources</directory>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
@@ -114,7 +230,44 @@
                         --add-opens java.base/java.net=ALL-UNNAMED
                         --add-opens java.base/sun.security.action=ALL-UNNAMED
                     </argLine>
+                    <!--
+                        Surefire default run scope:
+                          * Exclude org/mage/** so upstream tests added via
+                            build-helper don't execute here (compile only).
+                          * Exclude mage/webapi/cards/** so card-engine tests
+                            run in the dedicated execution below with the
+                            cwd=Mage.Tests override the harness requires
+                            (config/config.xml + saved/ resolved relative
+                            to cwd; see MageTestPlayerBase.init()).
+                    -->
+                    <excludes>
+                        <exclude>org/mage/**</exclude>
+                        <exclude>mage/webapi/cards/**</exclude>
+                    </excludes>
                 </configuration>
+                <executions>
+                    <execution>
+                        <id>cards-tests</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>test</goal>
+                        </goals>
+                        <configuration>
+                            <!--
+                                Cards tests extend CardTestPlayerBase, which
+                                needs cwd = Mage.Tests so the upstream harness
+                                can resolve config/config.xml + "RB Aggro.dck" +
+                                saved/ relative to that directory (see
+                                MageTestPlayerBase.init()).
+                            -->
+                            <workingDirectory>${project.basedir}/../Mage.Tests</workingDirectory>
+                            <includes>
+                                <include>mage/webapi/cards/**/*.java</include>
+                            </includes>
+                            <excludes combine.self="override"/>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>
