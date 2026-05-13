@@ -5,6 +5,7 @@
 import { useState } from 'react';
 import type { WebCardInfo, WebDeckCardInfo } from '../api/schemas';
 import { scryfallArtCropUrl } from './deckEditorHelpers';
+import { useDeckCardHoverPreview } from './DeckHoverCardImage';
 
 export function CardRow({
   entry,
@@ -32,13 +33,26 @@ export function CardRow({
   // sets / non-standard collector numbers. Track per-row image-fail
   // state so we can render a placeholder instead of a broken icon.
   const [imgFailed, setImgFailed] = useState(false);
+  // fix-7 — hover the art thumbnail to pop a floating full-size
+  // card image (deck-builder-specific, no text overlay).
+  const hover = useDeckCardHoverPreview({
+    setCode: entry.setCode,
+    cardNumber: entry.cardNumber,
+    cardName: entry.cardName,
+  });
   return (
+    <>
     <div
       data-testid="deck-editor-card-row"
       data-card={entry.cardName}
       data-set={entry.setCode}
       data-number={entry.cardNumber}
-      className="flex items-center gap-2 rounded-md border border-zinc-800 bg-zinc-900 p-1.5"
+      // fix-3 — `w-full` belt-and-suspenders so the dark fill extends
+      // edge-to-edge of the parent <li> regardless of grid cell width.
+      // fix-5 — `h-24` locks every row to 96px so cards are uniform
+      // grid tiles (same width AND height) regardless of name length,
+      // line-clamp wrap state, or display-card pill presence.
+      className="flex h-24 w-full items-center gap-2 rounded-md border border-zinc-800 bg-zinc-900 p-1.5"
     >
       <button
         type="button"
@@ -48,6 +62,10 @@ export function CardRow({
         // announce (the inner <img> uses alt="" for the visual-only
         // fallback case).
         aria-label={`Swap art for ${entry.cardName} — currently ${entry.setCode} #${entry.cardNumber}`}
+        // fix-7 — hover / focus the art tile to pop a floating
+        // full-size Scryfall image (no text overlay). Click still
+        // opens the art-swap modal.
+        {...hover.handlers}
         className="h-12 w-12 flex-shrink-0 overflow-hidden rounded bg-zinc-800 hover:ring-2 hover:ring-fuchsia-400 transition-shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-400"
         title={`Swap art (currently ${entry.setCode} #${entry.cardNumber})`}
       >
@@ -72,13 +90,24 @@ export function CardRow({
         )}
       </button>
       <div className="flex-1 min-w-0">
+        {/* fix-4 — name uses line-clamp-2 + break-words instead of
+            truncate so long card names ("Krenko, Mob Boss",
+            "Atraxa, Praetors' Voice") wrap to a second line instead
+            of clipping with an ellipsis. The title attribute remains
+            for the rare 3+ line cases. */}
         <p
-          className="text-sm font-medium text-zinc-100 truncate"
+          className="text-sm font-medium text-zinc-100 line-clamp-2 break-words"
           title={entry.cardName}
         >
           {entry.cardName}
         </p>
-        <p className="text-[11px] text-zinc-500 font-mono truncate">
+        {/* fix-11 — `truncate` dropped per user spec: this line
+            must always show in full. Cell-min bump to 400px gives
+            the name area enough width that the setCode + cardNumber
+            + CMC text fits without wrapping under any common
+            condition. break-words guards against pathological set
+            codes / card numbers without re-introducing ellipses. */}
+        <p className="text-[11px] text-zinc-500 font-mono break-words">
           {entry.setCode} #{entry.cardNumber}
           {card ? ` · CMC ${card.manaValue}` : ''}
         </p>
@@ -152,5 +181,7 @@ export function CardRow({
         </button>
       </div>
     </div>
+    {hover.preview}
+    </>
   );
 }

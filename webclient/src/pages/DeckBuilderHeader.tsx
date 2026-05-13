@@ -17,19 +17,28 @@
  */
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { toRequestBody, useDecksStore, type SavedDeck } from '../decks/store';
-import {
-  useDeckLegality,
-  type LegalityStatus,
-} from '../decks/useDeckLegality';
-import { useDeckTypes, type DeckTypeGroup } from '../decks/useDeckTypes';
+import { useDeckLegality } from '../decks/useDeckLegality';
+import { useDeckTypes } from '../decks/useDeckTypes';
 import { useAuthStore } from '../auth/store';
+import { DeckBuilderDeleteConfirmModal } from './DeckBuilderDeleteConfirmModal';
+import { DeckBuilderFormatLegality } from './DeckBuilderFormatLegality';
+import { DeckBuilderSettingsButton } from './DeckBuilderSettingsButton';
+import { DeckLegalityIssuesModal } from './DeckLegalityIssuesModal';
+import { ExportDeckModal } from './ExportDeckModal';
+import { ImportIntoDeckModal } from './ImportIntoDeckModal';
 
 interface Props {
   deck: SavedDeck;
   onDeleted: () => void;
+  /**
+   * fix-5 — fired when the Import modal's "trash and start over"
+   * mode swaps the active deck. Workbench updates activeDeckId to
+   * the freshly-created deck's id.
+   */
+  onDeckReplaced: (newDeckId: string) => void;
 }
 
-export function DeckBuilderHeader({ deck, onDeleted }: Props) {
+export function DeckBuilderHeader({ deck, onDeleted, onDeckReplaced }: Props) {
   const token = useAuthStore((s) => s.session?.token);
   const updateDeck = useDecksStore((s) => s.update);
   const removeDeck = useDecksStore((s) => s.remove);
@@ -37,6 +46,13 @@ export function DeckBuilderHeader({ deck, onDeleted }: Props) {
   const [renameDraft, setRenameDraft] = useState<string | null>(null);
   const [deckType, setDeckType] = useState('');
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  // fix-6 — when the legality pill verdict has errors, the user can
+  // click the pill to open a draggable floating panel listing each
+  // issue. State lives at the header level so the panel mounts as a
+  // sibling (not inside the pill's <button>).
+  const [legalityIssuesOpen, setLegalityIssuesOpen] = useState(false);
 
   const deckTypes = useDeckTypes(token);
   const deckBody = useMemo(() => toRequestBody(deck, ''), [deck]);
@@ -147,7 +163,7 @@ export function DeckBuilderHeader({ deck, onDeleted }: Props) {
           </p>
         </div>
 
-        <FormatAndLegalityCluster
+        <DeckBuilderFormatLegality
           deckTypes={deckTypes.grouped}
           deckTypesLoading={deckTypes.loading}
           token={token}
@@ -155,9 +171,33 @@ export function DeckBuilderHeader({ deck, onDeleted }: Props) {
           deckType={deckType}
           onDeckTypeChange={setDeckType}
           status={status}
+          onPillClick={() => setLegalityIssuesOpen(true)}
         />
 
-        <div className="flex items-center justify-end gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {/* fix-5 — Import + Export + (fix-8) Settings affordances
+              cluster in the right header slot next to Delete.
+              Settings comes first (leftmost) as the lightest-weight
+              action; Delete stays rightmost as the most destructive. */}
+          <DeckBuilderSettingsButton />
+          <button
+            type="button"
+            data-testid="deck-builder-import"
+            onClick={() => setImportOpen(true)}
+            className="rounded-md border px-3 py-1.5 text-sm text-text-secondary transition-colors hover:border-accent-primary/60 hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+            style={{ borderColor: 'var(--color-card-frame-default)' }}
+          >
+            Import
+          </button>
+          <button
+            type="button"
+            data-testid="deck-builder-export"
+            onClick={() => setExportOpen(true)}
+            className="rounded-md border px-3 py-1.5 text-sm text-text-secondary transition-colors hover:border-accent-primary/60 hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+            style={{ borderColor: 'var(--color-card-frame-default)' }}
+          >
+            Export
+          </button>
           <button
             type="button"
             data-testid="deck-builder-delete"
@@ -172,10 +212,35 @@ export function DeckBuilderHeader({ deck, onDeleted }: Props) {
       </header>
 
       {deleteConfirmOpen && (
-        <DeleteConfirmModal
+        <DeckBuilderDeleteConfirmModal
           deckName={deck.name}
           onConfirm={onDelete}
           onCancel={() => setDeleteConfirmOpen(false)}
+        />
+      )}
+      {exportOpen && (
+        <ExportDeckModal
+          deck={deck}
+          onClose={() => setExportOpen(false)}
+        />
+      )}
+      {importOpen && (
+        <ImportIntoDeckModal
+          deck={deck}
+          onClose={() => setImportOpen(false)}
+          onDeckReplaced={(newId) => {
+            setImportOpen(false);
+            onDeckReplaced(newId);
+          }}
+        />
+      )}
+      {legalityIssuesOpen && status.kind === 'verdict' && status.errors.length > 0 && (
+        <DeckLegalityIssuesModal
+          deckName={deck.name}
+          format={deckType}
+          partlyLegal={status.partlyLegal}
+          errors={status.errors}
+          onClose={() => setLegalityIssuesOpen(false)}
         />
       )}
     </Fragment>
@@ -207,262 +272,3 @@ function PencilGlyph() {
   );
 }
 
-function FormatAndLegalityCluster({
-  deckTypes,
-  deckTypesLoading,
-  token,
-  deckName,
-  deckType,
-  onDeckTypeChange,
-  status,
-}: {
-  deckTypes: DeckTypeGroup[];
-  deckTypesLoading: boolean;
-  token: string | undefined;
-  deckName: string;
-  deckType: string;
-  onDeckTypeChange: (v: string) => void;
-  status: LegalityStatus;
-}) {
-  return (
-    <div
-      // fix-2 B13 — backdrop-blur-sm parity with lobby StatusPill so
-      // the elevated cluster softens the nebula gradient underneath.
-      className="flex flex-col items-center gap-1 rounded-xl border px-5 py-2 backdrop-blur-sm"
-      style={{
-        background: 'rgba(26, 38, 48, 0.7)',
-        borderColor: 'var(--color-card-frame-default)',
-        boxShadow: 'var(--shadow-low)',
-      }}
-    >
-      <select
-        data-testid="deck-builder-format-picker"
-        value={deckType}
-        onChange={(e) => onDeckTypeChange(e.target.value)}
-        disabled={deckTypesLoading || !token}
-        aria-label={`Format for ${deckName}`}
-        // fix-2 B16 — disabled cursor + opacity dimming so the
-        // disabled state reads consistently across browsers (default
-        // <select> cursor on disabled varies by OS).
-        className="rounded-md border bg-bg-base px-2 py-1 text-xs text-text-primary disabled:opacity-50 disabled:cursor-not-allowed"
-        style={{ borderColor: 'var(--color-card-frame-default)' }}
-      >
-        <option value="">— pick a format —</option>
-        {deckTypes.map((group, i) => (
-          <Fragment key={group.label || `flat-${i}`}>
-            {group.label ? (
-              <optgroup label={group.label}>
-                {group.options.map((opt) => (
-                  <option key={opt} value={opt}>
-                    {opt.startsWith(`${group.label} - `)
-                      ? opt.slice(group.label.length + 3)
-                      : opt}
-                  </option>
-                ))}
-              </optgroup>
-            ) : (
-              <optgroup label="Other">
-                {group.options.map((opt) => (
-                  <option key={opt} value={opt}>
-                    {opt}
-                  </option>
-                ))}
-              </optgroup>
-            )}
-          </Fragment>
-        ))}
-      </select>
-      <LegalityPill status={status} />
-    </div>
-  );
-}
-
-function LegalityPill({ status }: { status: LegalityStatus }) {
-  if (status.kind === 'idle') {
-    // fix-2 B7 — idle pill now carries the same dot+text shape as
-    // the verdict pill so a glanced-at format dropdown is visibly
-    // "waiting for input" rather than blending into the chrome.
-    return (
-      <span
-        data-testid="legality-pill-idle"
-        className="inline-flex items-center gap-1 text-[11px] font-medium uppercase text-text-muted"
-        style={{ letterSpacing: '0.08em' }}
-      >
-        <span
-          aria-hidden="true"
-          className="h-2 w-2 rounded-full border border-text-muted"
-        />
-        Pick a format
-      </span>
-    );
-  }
-  const { dotClass, textClass, label } = pillAppearance(status);
-  return (
-    <span
-      data-testid="legality-pill"
-      aria-live="polite"
-      className={`inline-flex items-center gap-1 text-[11px] font-medium uppercase ${textClass}`}
-      style={{ letterSpacing: '0.08em' }}
-    >
-      <span aria-hidden="true" className={`h-2 w-2 rounded-full ${dotClass}`} />
-      {label}
-    </span>
-  );
-}
-
-function pillAppearance(
-  status: Exclude<LegalityStatus, { kind: 'idle' }>,
-): { dotClass: string; textClass: string; label: string } {
-  if (status.kind === 'loading') {
-    return {
-      dotClass: 'bg-text-muted',
-      textClass: 'text-text-muted italic',
-      label: 'Checking…',
-    };
-  }
-  if (status.kind === 'error') {
-    return {
-      dotClass: 'bg-status-warning',
-      textClass: 'text-status-warning',
-      label: 'Could not check',
-    };
-  }
-  if (status.valid) {
-    return {
-      dotClass: 'bg-status-success',
-      textClass: 'text-status-success',
-      label: 'Legal',
-    };
-  }
-  const realCount = status.errors.filter((e) => !e.synthetic).length;
-  const issueWord = realCount === 1 ? 'issue' : 'issues';
-  if (status.partlyLegal) {
-    return {
-      dotClass: 'bg-status-warning',
-      textClass: 'text-status-warning',
-      label: `Legal once finished · ${realCount} ${issueWord}`,
-    };
-  }
-  return {
-    dotClass: 'bg-status-danger',
-    textClass: 'text-status-danger',
-    label: `Not legal · ${realCount} ${issueWord}`,
-  };
-}
-
-function DeleteConfirmModal({
-  deckName,
-  onConfirm,
-  onCancel,
-}: {
-  deckName: string;
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  // fix-2 B2 — stash the previously focused element and restore on
-  // unmount so keyboard users don't lose their place when the modal
-  // closes (Esc / Cancel / Confirm / backdrop).
-  const prevFocusRef = useRef<HTMLElement | null>(null);
-  const dialogRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    prevFocusRef.current =
-      (document.activeElement instanceof HTMLElement)
-        ? document.activeElement
-        : null;
-    return () => {
-      prevFocusRef.current?.focus();
-    };
-  }, []);
-
-  // fix-2 B3 — focus trap. Tab/Shift+Tab cycle inside the dialog;
-  // any other key passes through. Pairs with aria-modal="true" so the
-  // contract isn't a lie.
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onCancel();
-        return;
-      }
-      if (e.key !== 'Tab' || !dialogRef.current) return;
-      const focusables = dialogRef.current.querySelectorAll<HTMLElement>(
-        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-      );
-      if (focusables.length === 0) return;
-      const first = focusables[0]!;
-      const last = focusables[focusables.length - 1]!;
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onCancel]);
-
-  return (
-    <div
-      data-testid="delete-confirm-backdrop"
-      // fix-2 B13 — backdrop-blur softens the workbench underneath so
-      // the destructive-action focus is unambiguous.
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
-      style={{ background: 'var(--color-bg-overlay)' }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onCancel();
-      }}
-      role="presentation"
-    >
-      <div
-        ref={dialogRef}
-        data-testid="delete-confirm-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="delete-confirm-title"
-        aria-describedby="delete-confirm-body"
-        className="flex w-full max-w-md flex-col gap-4 rounded-xl border p-6"
-        style={{
-          background: 'var(--color-bg-elevated)',
-          borderColor: 'var(--color-card-frame-default)',
-          boxShadow: 'var(--shadow-high)',
-        }}
-      >
-        <h2
-          id="delete-confirm-title"
-          className="text-base font-semibold uppercase text-text-primary"
-          style={{ letterSpacing: '0.12em' }}
-        >
-          Delete this deck?
-        </h2>
-        <p
-          id="delete-confirm-body"
-          className="text-sm text-text-secondary"
-        >
-          Permanently delete <span className="text-text-primary">{deckName}</span>?
-          This cannot be undone — the deck is removed from local storage.
-        </p>
-        <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            data-testid="delete-confirm-cancel"
-            autoFocus
-            onClick={onCancel}
-            className="rounded-md border px-4 py-2 text-sm text-text-secondary transition-colors hover:bg-surface-card-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-            style={{ borderColor: 'var(--color-card-frame-default)' }}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            data-testid="delete-confirm-confirm"
-            onClick={onConfirm}
-            className="rounded-md bg-status-danger px-4 py-2 text-sm font-medium text-text-on-accent transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-          >
-            Delete
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}

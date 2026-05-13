@@ -17,6 +17,7 @@ import { useEffect, useState } from 'react';
 import { ApiError, request } from '../api/client';
 import { webCardListingSchema, type WebCardInfo } from '../api/schemas';
 import { useAuthStore } from '../auth/store';
+import { useDeckCardHoverPreview } from '../pages/DeckHoverCardImage';
 
 interface Props {
   /**
@@ -213,15 +214,25 @@ function SearchResultRow({
   const [imgFailed, setImgFailed] = useState(false);
   const artUrl = scryfallArtCropUrl(card.setCode, card.cardNumber);
   const typeLine = formatTypeLine(card);
+  // fix-8 follow-up — extend the deck-builder hover-to-zoom to the
+  // search result art thumbnails so users can see what they're
+  // about to add at full size before clicking + Add.
+  const hover = useDeckCardHoverPreview({
+    setCode: card.setCode,
+    cardNumber: card.cardNumber,
+    cardName: card.name,
+  });
   return (
+    <>
     <div
       data-testid="card-search-result"
       data-card={card.name}
       className="flex items-center gap-2 rounded-md border border-zinc-800 bg-zinc-900 p-1.5"
     >
       <div
-        className="h-12 w-12 flex-shrink-0 overflow-hidden rounded bg-zinc-800"
+        className="h-12 w-12 flex-shrink-0 overflow-hidden rounded bg-zinc-800 cursor-zoom-in"
         title={`${card.setCode} #${card.cardNumber}`}
+        {...hover.handlers}
       >
         {artUrl && !imgFailed ? (
           <img
@@ -265,6 +276,8 @@ function SearchResultRow({
         + Add
       </button>
     </div>
+    {hover.preview}
+    </>
   );
 }
 

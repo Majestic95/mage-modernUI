@@ -31,12 +31,14 @@
  * wire-side card cache.
  */
 import { useEffect, useState } from 'react';
-import { CommanderPreviewPanel } from '../lobby/CommanderPreviewPanel';
 import { DeckPreviewPanel } from '../lobby/DeckPreviewPanel';
 import { MyDecksPanel } from '../lobby/MyDecksPanel';
 import { useLiveDecks } from '../lobby/useLiveDecks';
 import { useDecksStore } from '../decks/store';
 import { DeckBuilderHeader } from './DeckBuilderHeader';
+import { DeckCommanderArtPanel } from './DeckCommanderArtPanel';
+import { DeckCommanderDetailsPanel } from './DeckCommanderDetailsPanel';
+import { DeckCompositionPanel } from './DeckCompositionPanel';
 import { DeckEditor } from './DeckEditor';
 import { NewDeckModal } from './NewDeckModal';
 
@@ -82,12 +84,19 @@ export function DecksWorkbench() {
     >
       <main
         className="grid min-h-0 flex-1 gap-3 px-5 py-4"
-        style={{ gridTemplateRows: 'auto minmax(0, 1fr)' }}
+        // fix-5 → fix-9 → fix-10 — 3-row grid: header, main
+        // 3-column body, full-width bottom panel. fix-10 settled
+        // the bottom row at 400px and split it into two columns:
+        // deck stats / mana curve (left, wider) + composition
+        // (right, avg CMC + lands/spells split + type breakdown +
+        // rarity table).
+        style={{ gridTemplateRows: 'auto minmax(0, 1fr) 400px' }}
       >
         {activeSavedDeck ? (
           <DeckBuilderHeader
             deck={activeSavedDeck}
             onDeleted={onDeckDeleted}
+            onDeckReplaced={setActiveDeckId}
           />
         ) : (
           <EmptyHeader onNewDeck={() => setNewDeckOpen(true)} />
@@ -97,8 +106,15 @@ export function DecksWorkbench() {
           data-testid="decks-workbench-grid"
           className="grid h-full min-h-0 gap-3"
           style={{
+            // fix-4 — right column widened 300/360 → 380/460. The
+            // CommanderPreviewPanel + DeckPreviewPanel both wrap
+            // full-card art that's height-driven via aspect-ratio
+            // 5/7; the original lobby-tuned narrow column squeezed
+            // the natural width below the column edge and clipped
+            // the art. The editor column (1fr) absorbs the budget
+            // shift from its rightward neighbor.
             gridTemplateColumns:
-              'minmax(220px, 260px) minmax(0, 1fr) minmax(300px, 360px)',
+              'minmax(220px, 260px) minmax(0, 1fr) minmax(380px, 460px)',
           }}
         >
           <MyDecksPanel
@@ -138,19 +154,42 @@ export function DecksWorkbench() {
           {activeSavedDeck ? (
             <div className="flex h-full min-h-0 flex-col gap-3">
               <div className="min-h-0 flex-[1.3]">
-                <CommanderPreviewPanel deck={lobbySelectedDeck} />
+                <DeckCommanderArtPanel deck={lobbySelectedDeck} />
               </div>
               <div className="min-h-0 flex-1">
-                <DeckPreviewPanel
-                  deck={lobbySelectedDeck}
-                  statsLoading={selectedStatsLoading}
-                />
+                {/* fix-9 — right column now hosts commander details
+                    here (was the bottom-row tenant). Deck stats /
+                    mana curve moved out to the bottom row where it
+                    has full-width breathing room. */}
+                <DeckCommanderDetailsPanel deck={lobbySelectedDeck} />
               </div>
             </div>
           ) : (
             <EmptyPreviewPlaceholder />
           )}
         </section>
+
+        {/* fix-9 → fix-10 — bottom row is a 2-column grid: deck
+            stats / mana curve on the left (wider, has commander art
+            + curve histogram), composition on the right (avg CMC,
+            land/spell split, type breakdown, rarity distribution).
+            Right column draws stats from the cross-game gap audit
+            memo (Archidekt / Moxfield / Manabox conventions). */}
+        {activeSavedDeck && (
+          <div
+            data-testid="decks-workbench-bottom-row"
+            className="grid h-full min-h-0 gap-3"
+            style={{
+              gridTemplateColumns: 'minmax(0, 2fr) minmax(280px, 1fr)',
+            }}
+          >
+            <DeckPreviewPanel
+              deck={lobbySelectedDeck}
+              statsLoading={selectedStatsLoading}
+            />
+            <DeckCompositionPanel deck={activeSavedDeck} />
+          </div>
+        )}
       </main>
 
       {newDeckOpen && (
