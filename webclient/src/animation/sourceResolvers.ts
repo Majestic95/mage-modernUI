@@ -156,65 +156,16 @@ export function resolveTileLayoutBBox(cardId: string): {
   };
 }
 
-const TILE_OPACITY_RESTORE_FADE_MS = 200;
-const TILE_OPACITY_CLEAR_AFTER_FADE_MS = 250;
-
-/**
- * Set an inline opacity on a battlefield tile by cardId. Used by
- * the resolve-flight handler to hide Framer's LAYOUT_GLIDE
- * interpolation while ResolveFlightOverlay paints the arc on top —
- * otherwise the user sees two copies of the card (Framer's spring-
- * glided original + the overlay's arcing copy).
- *
- * <p><b>API:</b>
- * <ul>
- *   <li>{@code setTileOpacity(cardId, 0)} — applies inline
- *       {@code opacity: 0} + a 200ms ease-out transition rule. Tile
- *       becomes invisible.</li>
- *   <li>{@code setTileOpacity(cardId, null)} — restores by setting
- *       inline {@code opacity: 1} (explicitly, NOT clearing to
- *       empty string), so the 200ms transition runs visibly from
- *       0 → 1. After the fade settles (250ms safety window), a
- *       follow-up timer clears the inline rules to ''. React's
- *       natural render value (also 1) takes over after the clear,
- *       so no visual pop.</li>
- * </ul>
- *
- * <p><b>Why explicit '1' on restore (CSS-critic fix 2026-05-12):</b>
- * clearing inline {@code style.opacity} to {@code ''} immediately
- * lets React's next render assign whatever its prop says — usually
- * 1, but the timing race could pop the tile to visible before the
- * 200ms transition runs. Setting an explicit '1' lets the CSS
- * transition interpolate from 0 → 1 first, THEN the deferred clear
- * removes the inline rule once the visual end-state already
- * matches React's natural value.
- */
-export function setTileOpacity(cardId: string, value: number | null): void {
-  if (typeof document === 'undefined') return;
-  const el = document.querySelector(
-    `[data-card-id="${cardId}"]`,
-  ) as HTMLElement | null;
-  if (!el) return;
-  if (value === null) {
-    // Restore — explicit '1' so the 200ms transition is visible.
-    // Then clear the inline rule once the fade has settled so React
-    // reclaims control of the property naturally.
-    el.style.opacity = '1';
-    el.style.transition = `opacity ${TILE_OPACITY_RESTORE_FADE_MS}ms ease-out`;
-    setTimeout(() => {
-      // Re-query in case the tile was re-keyed; bail if gone.
-      const stillEl = document.querySelector(
-        `[data-card-id="${cardId}"]`,
-      ) as HTMLElement | null;
-      if (!stillEl) return;
-      stillEl.style.opacity = '';
-      stillEl.style.transition = '';
-    }, TILE_OPACITY_CLEAR_AFTER_FADE_MS);
-    return;
-  }
-  el.style.opacity = String(value);
-  el.style.transition = `opacity ${TILE_OPACITY_RESTORE_FADE_MS}ms ease-out`;
-}
+// Deleted 2026-05-13: the legacy `setTileOpacity` function (which
+// hid the destination tile via inline style writes from inside a
+// requestAnimationFrame) lost the rAF race with React's first
+// paint, leaving a one-frame flash of the destination tile at full
+// opacity before being hidden. Replaced by the
+// {@link startFlightHide} / {@link useFlyingTileHide} pair in
+// animationState.ts — synchronous-before-React-render write of a
+// per-cardId set that the tile's motion.div reads during its first
+// render to clamp animate.opacity to 0. See item 4 of the 2026-05-13
+// playtester-feedback batch.
 
 /**
  * Resolve the destination portrait center for a commander_returned

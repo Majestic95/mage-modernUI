@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { on } from './eventBus';
 import {
-  startCinematicCast,
-  subscribeToAnimationState,
+  endFlightHide,
   isCinematicCastActive,
+  startCinematicCast,
+  startFlightHide,
+  subscribeToAnimationState,
 } from './animationState';
 import { CastingPoseOverlay } from './CastingPoseOverlay';
 import { RibbonTrail } from './RibbonTrail';
@@ -18,7 +20,6 @@ import {
   resolveTileBBox,
   resolveTileImageUrl,
   resolveTileLayoutBBox,
-  setTileOpacity,
   stubCardFromCommandList,
 } from './sourceResolvers';
 import { isCommanderEntry, isCommanderNamed } from '../game/commanderPredicates';
@@ -353,6 +354,20 @@ export function CardAnimationLayer(): React.JSX.Element {
       // Resolve-flight overlay (2026-05-12) — every non-token
       // permanent gets the arc-flight. Tier gate below (commander /
       // PW / CMC≥7) is for the ADDITIONAL ground-crack on landing.
+      //
+      // Playtester-feedback fix (2026-05-13, item 4) — mark the
+      // cardId as "flying" SYNCHRONOUSLY here, BEFORE React renders
+      // the new battlefield tile. The destination motion.div reads
+      // {@link useFlyingTileHide} during its first render and
+      // clamps animate.opacity to 0. Without this synchronous mark,
+      // the old rAF-deferred {@code setTileOpacity} path let the
+      // tile paint at opacity 1 for one frame at its final slot
+      // before being hidden — a visible duplicate the playtester
+      // noticed. The endFlightHide pair fires in three places:
+      // the rAF early-return (no bbox), the overlay's onComplete,
+      // and the safety setTimeout (overlay unmounted mid-flight).
+      startFlightHide(evt.cardId);
+
       // Capture at 1 rAF so the destination tile is in the DOM
       // (Framer mounts the new permanent on the next render).
       // resolveTileLayoutBBox walks offsetLeft/offsetTop so it
@@ -361,7 +376,12 @@ export function CardAnimationLayer(): React.JSX.Element {
       // interpolated position).
       const flightRaf = requestAnimationFrame(() => {
         pendingRafs.delete(flightRaf);
-        if (cancelled) return;
+        if (cancelled) {
+          // Layer unmounting while we held the mark — clear it so
+          // the next session doesn't inherit a stuck-hidden tile.
+          endFlightHide(evt.cardId);
+          return;
+        }
         const layoutBBox = resolveTileLayoutBBox(evt.cardId);
         const sourceCenter = resolveFocalZoneCenter();
         if (!layoutBBox || !sourceCenter || layoutBBox.width === 0) {
@@ -370,6 +390,12 @@ export function CardAnimationLayer(): React.JSX.Element {
               '[animDebug]   flight gated: missing layoutBBox / sourceCenter',
               { layoutBBox, sourceCenter },
             );
+          // No overlay will mount → no onComplete will ever fire →
+          // the synchronous mark above would strand the tile invisible.
+          // Release it now so the Framer LAYOUT_GLIDE remains the
+          // only visible motion (correct fallback when bbox capture
+          // races React).
+          endFlightHide(evt.cardId);
           return;
         }
         const imageUrl = resolveTileImageUrl(evt.cardId);
@@ -377,11 +403,6 @@ export function CardAnimationLayer(): React.JSX.Element {
           x: layoutBBox.left + layoutBBox.width / 2,
           y: layoutBBox.top + layoutBBox.height / 2,
         };
-        // Hide the Framer-glided tile during the flight so the user
-        // doesn't see two copies of the card moving along different
-        // paths. The overlay paints the arc on top; on completion
-        // we restore the tile's opacity via setTileOpacity(_, null).
-        setTileOpacity(evt.cardId, 0);
         setActiveFlights((prev) => {
           const next = new Map(prev);
           next.set(evt.cardId, {
@@ -394,13 +415,13 @@ export function CardAnimationLayer(): React.JSX.Element {
           return next;
         });
         // Safety: even if the overlay's own onComplete doesn't fire
-        // (e.g., component unmounts mid-flight), schedule a tile
-        // opacity restore so the destination tile doesn't stay
-        // invisible. Fires at RESOLVE_FLIGHT_MS + 100ms.
+        // (e.g., component unmounts mid-flight), schedule a hide
+        // release so the destination tile doesn't stay invisible.
+        // Fires at RESOLVE_FLIGHT_MS + 100ms.
         const restoreT = setTimeout(() => {
           pendingTimers.delete(restoreT);
           if (cancelled) return;
-          setTileOpacity(evt.cardId, null);
+          endFlightHide(evt.cardId);
         }, RESOLVE_FLIGHT_MS + 100);
         pendingTimers.add(restoreT);
       });
@@ -615,11 +636,12 @@ export function CardAnimationLayer(): React.JSX.Element {
           tileHeight={entry.tileHeight}
           imageUrl={entry.imageUrl}
           onComplete={() => {
-            // Restore the destination tile's opacity so Framer's
-            // settled card becomes visible. (A safety setTimeout in
-            // the handler also fires this if the overlay never
-            // reaches its own onComplete.)
-            setTileOpacity(cardId, null);
+            // Release the flying-tile hide so the destination tile's
+            // motion.div animate.opacity flips 0 → 1. Framer's spring
+            // handles the fade-in. (A safety setTimeout in the
+            // handler also fires this if the overlay never reaches
+            // its own onComplete.)
+            endFlightHide(cardId);
             setActiveFlights((prev) => {
               if (!prev.has(cardId)) return prev;
               const next = new Map(prev);

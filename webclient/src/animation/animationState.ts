@@ -22,6 +22,18 @@ import { castKindByCardId, exitKindByCardId } from './eventBus';
  */
 
 const activeCinematicCasts = new Set<string>();
+/**
+ * Slice 2026-05-13 (playtester feedback item 4) — cardIds whose
+ * destination battlefield tile must render at opacity 0 while a
+ * {@link ResolveFlightOverlay} arc is in flight. The synchronous-
+ * before-React-render write closes the rAF race the old
+ * {@code setTileOpacity}-from-rAF path had — without this, the
+ * destination tile painted at full opacity on the same frame the
+ * Framer LAYOUT_GLIDE settled it into its slot, before the rAF
+ * callback could hide it. Result: a second visible copy of the
+ * card at the landing slot.
+ */
+const activeFlyingTiles = new Set<string>();
 const listeners = new Set<() => void>();
 
 /**
@@ -53,6 +65,54 @@ export function isCinematicCastActive(cardId: string): boolean {
 }
 
 /**
+ * Mark a cardId as currently being flown to by ResolveFlightOverlay.
+ * Called SYNCHRONOUSLY inside the {@code resolve_to_board} eventBus
+ * handler (which itself fires synchronously inside Zustand's
+ * subscribe) so the mark is set BEFORE React re-renders the new
+ * battlefield tile. {@link useFlyingTileHide} reads the set during
+ * the same render commit, and the destination tile renders at
+ * opacity 0 from its first paint — no rAF race, no flicker frame.
+ */
+export function startFlightHide(cardId: string): void {
+  activeFlyingTiles.add(cardId);
+  fireListeners();
+}
+
+/**
+ * Clear a cardId from the flying-tiles set. Called when the
+ * ResolveFlightOverlay's onComplete fires (or the safety
+ * setTimeout, or an early-return inside the rAF when bbox capture
+ * fails — in all three cases the destination tile must become
+ * visible again).
+ */
+export function endFlightHide(cardId: string): void {
+  if (!activeFlyingTiles.delete(cardId)) return;
+  fireListeners();
+}
+
+/**
+ * Is the given cardId currently mid-resolve-flight? Read by the
+ * battlefield tile motion.div's animate.opacity to clamp to 0
+ * until the flight completes.
+ */
+export function isFlyingTo(cardId: string): boolean {
+  return activeFlyingTiles.has(cardId);
+}
+
+/**
+ * Snapshot the flying-tiles set as a frozen copy. Used by
+ * {@code useFlyingTilesSnapshot} so a parent component that needs
+ * to test membership for many cardIds in one render can do so
+ * against a stable per-render Set rather than calling
+ * {@link isFlyingTo} N times. Returns a fresh Set each call —
+ * pair with React's useState + setState-on-subscription so
+ * reference equality only changes when the set itself changes.
+ */
+export function snapshotFlyingTiles(): ReadonlySet<string> {
+  return new Set(activeFlyingTiles);
+}
+
+/**
  * Subscribe to state changes. Returns an unsubscribe fn — pair
  * with the React effect cleanup.
  */
@@ -81,7 +141,11 @@ export function subscribeToAnimationState(fn: () => void): () => void {
 export function resetAnimationState(): void {
   castKindByCardId.clear();
   exitKindByCardId.clear();
-  if (activeCinematicCasts.size === 0 && listeners.size === 0) return;
+  const hadFlying = activeFlyingTiles.size > 0;
+  activeFlyingTiles.clear();
+  if (activeCinematicCasts.size === 0 && !hadFlying && listeners.size === 0) {
+    return;
+  }
   activeCinematicCasts.clear();
   fireListeners();
 }
@@ -103,6 +167,7 @@ function fireListeners(): void {
  */
 export function __resetForTests(): void {
   activeCinematicCasts.clear();
+  activeFlyingTiles.clear();
   listeners.clear();
   castKindByCardId.clear();
   exitKindByCardId.clear();

@@ -5,6 +5,7 @@ import {
   BATTLEFIELD_ENTER_EXIT,
   UNTAP_STAGGER_DELAY_MS,
 } from '../animation/transitions';
+import { useFlyingTileHide } from '../animation/useFlyingTileHide';
 import { BattlefieldTile } from './BattlefieldTile';
 import {
   groupWithAttachmentsAndStacks,
@@ -237,20 +238,43 @@ function AttachmentGroupSlot({
   // Stack count badge — only visible when 2+ identical perms (i.e.
   // duplicates >= 1, total >= 2). "×N" reads the full stack depth.
   const stackCount = stackedDuplicates.length + 1;
+  // Playtester-feedback fix (2026-05-13, item 4) — when a card is
+  // mid-resolve-flight (ResolveFlightOverlay arcing from stack to
+  // this slot), clamp animate.opacity to 0 so the destination tile
+  // is invisible during transit. The synchronous mark in
+  // CardAnimationLayer's resolve_to_board handler runs BEFORE this
+  // render commit, so useState's lazy initializer in the hook reads
+  // the mark and returns true on the very first render — no flash
+  // frame at opacity 1. Hook flips to false on the overlay's
+  // onComplete, and Framer's spring fades opacity 0 → 1.
+  const isFlying = useFlyingTileHide(host.card.cardId || undefined);
   return (
     <motion.div
       key={host.card.id}
       layout
       data-layout-id={layoutId}
       data-card-id={host.card.cardId || undefined}
+      data-flying={isFlying || undefined}
       data-attachment-host={hasAttachments || undefined}
       {...(layoutId ? { layoutId } : {})}
       data-attachment-count={hasAttachments ? attachments.length : undefined}
       data-stack-count={hasDuplicates ? stackCount : undefined}
       initial={{ opacity: 0, y: 24, scale: 0.85 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
+      animate={{ opacity: isFlying ? 0 : 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: -16, scale: 0.85 }}
-      transition={slow(BATTLEFIELD_ENTER_EXIT)}
+      transition={{
+        ...slow(BATTLEFIELD_ENTER_EXIT),
+        // UI/UX critic 2026-05-13 — per-prop override so the
+        // opacity restore on flight-end (isFlying flipping false)
+        // uses the same 200ms ease-out as the old setTileOpacity
+        // restore (sourceResolvers.ts pre-fix) and matches the
+        // tabletop surface's transition. Without this, opacity
+        // followed the enter spring (stiffness 360, damping 32)
+        // and the fade-in felt disconnected from the arc's
+        // landing moment. y/scale stay on the spring (structural
+        // geometry — preserves the layoutId glide character).
+        opacity: { duration: 0.2, ease: 'easeOut' },
+      }}
       className="relative flex-shrink-0"
       style={{ width: containerWidth, height: tileSize }}
     >

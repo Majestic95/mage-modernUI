@@ -31,12 +31,17 @@ import {
  *   <li>Duration: {@link RESOLVE_FLIGHT_MS} (700ms).</li>
  * </ul>
  *
- * <p><b>Tile hiding:</b> the caller (CardAnimationLayer) sets
- * inline {@code opacity: 0} on the destination tile during the
- * flight window via {@code setTileOpacity}, so Framer's
- * LAYOUT_GLIDE-driven copy of the same card is invisible while
- * this overlay arcs above. On {@code onComplete} the tile fades
- * back in over 200ms.
+ * <p><b>Tile hiding:</b> the caller (CardAnimationLayer) marks
+ * the destination cardId via {@code startFlightHide} in
+ * animationState BEFORE React renders the new battlefield tile.
+ * The tile's motion.div reads {@link useFlyingTileHide} (or the
+ * bucket-level snapshot variant) during its first render and
+ * clamps {@code animate.opacity} to 0, so Framer's LAYOUT_GLIDE-
+ * driven copy of the same card is invisible while this overlay
+ * arcs above. On {@code onComplete} the layer calls
+ * {@code endFlightHide(cardId)}; the tile's animate.opacity flips
+ * back to 1 and Framer fades it in (~200ms via the per-prop
+ * transition override on each tile's motion.div).
  *
  * <p><b>Reduced motion:</b> the overlay does not mount — the
  * CardAnimationLayer handler short-circuits before scheduling the

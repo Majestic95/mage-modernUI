@@ -46,6 +46,7 @@ import { ZoneBrowser } from './ZoneBrowser';
 import { groupWithAttachmentsAndStacks } from './battlefieldRows';
 import { computePodCardSizeVars } from './podShrink';
 import { useMinimalChrome } from './MinimalChromeContext';
+import { useFlyingTilesSnapshot } from '../animation/useFlyingTileHide';
 import {
   BucketCardsRow,
   DuplicateStackContainer,
@@ -251,6 +252,13 @@ function BucketBox({
   // BattlefieldBackground artwork is visible inside each pod. Pod-
   // level colored zone fill stays as the player-identity cue.
   const minimalChrome = useMinimalChrome();
+  // Playtester-feedback fix (2026-05-13, item 4) — read the
+  // flying-tiles snapshot so the inline-rendered host motion.divs
+  // below can clamp animate.opacity to 0 while their card is mid-
+  // ResolveFlightOverlay arc. Without this clamp, the destination
+  // tile painted at opacity 1 the instant the layout-glide reached
+  // its slot — visible as a duplicate alongside the arc.
+  const flyingTiles = useFlyingTilesSnapshot();
   return (
     <div
       data-testid={`tabletop-bucket-${kind}`}
@@ -344,6 +352,9 @@ function BucketBox({
                   eligibleCombatIds={eligibleCombatIds}
                   combatRoles={combatRoles}
                   colorIdentityByPlayerName={colorIdentityByPlayerName}
+                  isFlying={
+                    p.card.cardId ? flyingTiles.has(p.card.cardId) : false
+                  }
                 />
               );
             }
@@ -369,17 +380,23 @@ function BucketBox({
               canAct &&
               !!onObjectClick &&
               (!inCombatMode || isEligibleCombat);
+            const isFlying = p.card.cardId
+              ? flyingTiles.has(p.card.cardId)
+              : false;
             return (
               <motion.div
                 key={p.card.id}
                 layout
                 data-layout-id={layoutId}
                 data-card-id={p.card.cardId || undefined}
+                data-flying={isFlying || undefined}
                 data-attachment-host={hasAttachments || undefined}
                 {...(layoutId ? { layoutId } : {})}
                 data-attachment-count={
                   hasAttachments ? group.attachments.length : undefined
                 }
+                animate={{ opacity: isFlying ? 0 : 1 }}
+                transition={{ duration: 0.2, ease: 'easeOut' }}
                 className="relative"
                 style={{
                   width: containerWidth,

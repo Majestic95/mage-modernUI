@@ -198,6 +198,16 @@ interface DuplicateStackProps {
    * their own halo.
    */
   colorIdentityByPlayerName?: ReadonlyMap<string, readonly string[]> | undefined;
+  /**
+   * Playtester-feedback fix (2026-05-13, item 4) — when true, the
+   * host motion.div renders at opacity 0 because a
+   * {@link ResolveFlightOverlay} arc is currently flying the card
+   * from stack to this slot. Caller reads from
+   * {@code useFlyingTilesSnapshot} and passes the per-host flag so
+   * this component can stay pure (no hook subscription of its own).
+   * Defaults to false in tests / non-flight callers.
+   */
+  isFlying?: boolean;
 }
 
 /**
@@ -224,6 +234,7 @@ export function DuplicateStackContainer({
   eligibleCombatIds,
   combatRoles,
   colorIdentityByPlayerName,
+  isFlying = false,
 }: DuplicateStackProps) {
   const baseW = 'var(--card-size-medium, 80px)';
   const heightCalc = 'calc(var(--card-size-medium, 80px) * 7 / 5)';
@@ -251,8 +262,11 @@ export function DuplicateStackContainer({
       layout
       data-layout-id={hostLayoutId}
       data-card-id={host.card.cardId || undefined}
+      data-flying={isFlying || undefined}
       data-stack-count={stackCount}
       {...(hostLayoutId ? { layoutId: hostLayoutId } : {})}
+      animate={{ opacity: isFlying ? 0 : 1 }}
+      transition={{ duration: 0.2, ease: 'easeOut' }}
       className="relative"
       style={{
         width: containerWidth,
