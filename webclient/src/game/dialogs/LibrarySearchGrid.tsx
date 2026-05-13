@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import type { WebCardView } from '../../api/schemas';
 import { CardFace } from '../CardFace';
+import { HoverCardDetail } from '../HoverCardDetail';
 
 /**
  * CMC-grouped card grid for {@link LibrarySearchModal}. Pure
@@ -116,34 +117,44 @@ export function LibrarySearchGrid({
               const isPicked = idx !== undefined;
               return (
                 <li key={card.id} className="relative">
-                  <button
-                    type="button"
-                    disabled={!eligible}
-                    onClick={() => onCardClick(card.id)}
-                    data-testid={`library-search-tile-${card.id}`}
-                    data-eligible={eligible || undefined}
-                    data-picked={isPicked || undefined}
-                    aria-label={card.name + (isPicked ? ' (selected)' : '')}
-                    className={
-                      'block w-full rounded transition focus:outline-none focus:ring-2 focus:ring-fuchsia-400 ' +
-                      (eligible
-                        ? 'cursor-pointer hover:brightness-110 '
-                        : 'cursor-not-allowed opacity-40 ') +
-                      (isPicked ? 'ring-2 ring-fuchsia-400 brightness-110' : '')
-                    }
-                  >
-                    <CardFace card={card} size="hand" />
-                    {ordered && isPicked && (
-                      <span
-                        // Top-left so the badge doesn't collide with
-                        // CardFace's mana-cost overlay (top-right).
-                        className="absolute top-1 left-1 bg-fuchsia-500 text-zinc-950 rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold pointer-events-none"
-                        aria-hidden="true"
-                      >
-                        {(idx ?? 0) + 1}
-                      </span>
-                    )}
-                  </button>
+                  {/* Playtester-feedback fix (2026-05-13, item 2) —
+                      wrap each tile in HoverCardDetail so the full
+                      Scryfall art + rules popover surfaces on hover.
+                      Mirrors CardChooserList (scry/surveil/discard
+                      surface) — the library-search grid was the only
+                      card-grid dialog in the app without hover
+                      preview, which is the most card-dense surface
+                      (tutor / cascade reveal). */}
+                  <HoverCardDetail card={card}>
+                    <button
+                      type="button"
+                      disabled={!eligible}
+                      onClick={() => onCardClick(card.id)}
+                      data-testid={`library-search-tile-${card.id}`}
+                      data-eligible={eligible || undefined}
+                      data-picked={isPicked || undefined}
+                      aria-label={card.name + (isPicked ? ' (selected)' : '')}
+                      className={
+                        'block w-full rounded transition focus:outline-none focus:ring-2 focus:ring-fuchsia-400 ' +
+                        (eligible
+                          ? 'cursor-pointer hover:brightness-110 '
+                          : 'cursor-not-allowed opacity-40 ') +
+                        (isPicked ? 'ring-2 ring-fuchsia-400 brightness-110' : '')
+                      }
+                    >
+                      <CardFace card={card} size="hand" />
+                      {ordered && isPicked && (
+                        <span
+                          // Top-left so the badge doesn't collide with
+                          // CardFace's mana-cost overlay (top-right).
+                          className="absolute top-1 left-1 bg-fuchsia-500 text-zinc-950 rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold pointer-events-none"
+                          aria-hidden="true"
+                        >
+                          {(idx ?? 0) + 1}
+                        </span>
+                      )}
+                    </button>
+                  </HoverCardDetail>
                 </li>
               );
             })}
