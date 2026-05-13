@@ -59,9 +59,16 @@ export function DeckCommanderArtPanel({ deck }: Props) {
       ) : (
         <div className="flex min-h-0 flex-1 items-start justify-center">
           <div
-            className="relative h-full max-w-full overflow-hidden rounded-lg"
+            className="relative h-full max-h-full max-w-full overflow-hidden rounded-lg"
             style={{
               aspectRatio: '5 / 7',
+              // fix-audit F7 — Safari < 16 can fail to resolve the
+              // aspect-ratio + h-full + max-w-full cycle and collapse
+              // the box to 0 height. Explicit maxHeight: 100% gives
+              // the browser a clear secondary constraint to clamp
+              // against. No-op on engines that already handle the
+              // cycle correctly (Chrome 110+, Firefox 122+).
+              maxHeight: '100%',
               background: 'var(--color-surface-card)',
               boxShadow: 'var(--shadow-medium)',
               border: '1px solid var(--color-card-frame-default)',

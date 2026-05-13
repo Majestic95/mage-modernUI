@@ -106,6 +106,13 @@ export function ImportIntoDeckModal({ deck, onClose, onDeckReplaced }: Props) {
     }
     setImporting(true);
     let newDeckId: string | null = null;
+    // fix-audit F1 — track success via a local flag (not the
+    // closure-captured `error` state) so the close-on-success path
+    // doesn't fire when `setError` queues a re-render with the
+    // failure message. The previous `else if (!error)` read the
+    // pre-catch value of `error` (null) and closed the modal on
+    // genuine failures, hiding the message the user needed to see.
+    let importSucceeded = false;
     try {
       const result = await resolveDeckLists(
         parsed.cards,
@@ -138,13 +145,14 @@ export function ImportIntoDeckModal({ deck, onClose, onDeckReplaced }: Props) {
         removeDeck(deck.id);
         newDeckId = created.id;
       }
+      importSucceeded = true;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Import failed.');
     } finally {
       setImporting(false);
     }
     if (newDeckId !== null) onDeckReplaced(newDeckId);
-    else if (!error) onClose();
+    else if (importSucceeded) onClose();
   };
 
   return (
@@ -185,7 +193,7 @@ export function ImportIntoDeckModal({ deck, onClose, onDeckReplaced }: Props) {
             aria-label="Close"
             onClick={onClose}
             disabled={importing}
-            className="rounded-md px-2 py-1 text-sm text-text-secondary transition-colors hover:bg-surface-card-hover hover:text-text-primary disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+            className="rounded-md px-2 py-1 text-sm text-text-secondary transition-colors hover:bg-surface-card-hover hover:text-text-primary disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
           >
             ×
           </button>
@@ -279,7 +287,7 @@ export function ImportIntoDeckModal({ deck, onClose, onDeckReplaced }: Props) {
             data-testid="import-into-deck-cancel"
             onClick={onClose}
             disabled={importing}
-            className="rounded-md border px-4 py-2 text-sm text-text-secondary transition-colors hover:bg-surface-card-hover hover:text-text-primary disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+            className="rounded-md border px-4 py-2 text-sm text-text-secondary transition-colors hover:bg-surface-card-hover hover:text-text-primary disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
             style={{ borderColor: 'var(--color-card-frame-default)' }}
           >
             Cancel
@@ -288,7 +296,7 @@ export function ImportIntoDeckModal({ deck, onClose, onDeckReplaced }: Props) {
             type="submit"
             data-testid="import-into-deck-submit"
             disabled={importing}
-            className="rounded-md bg-accent-primary px-4 py-2 text-sm font-medium text-text-on-accent transition-opacity hover:opacity-90 disabled:bg-surface-card disabled:text-text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+            className="rounded-md bg-accent-primary px-4 py-2 text-sm font-medium text-text-on-accent transition-opacity hover:opacity-90 disabled:bg-surface-card disabled:text-text-muted disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
           >
             {importing ? 'Resolving…' : mode === 'overwrite' ? 'Overwrite' : 'Trash + new'}
           </button>

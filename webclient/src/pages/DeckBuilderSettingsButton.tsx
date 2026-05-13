@@ -20,11 +20,37 @@ import {
 
 export function DeckBuilderSettingsButton() {
   const [open, setOpen] = useState(false);
+  // fix-audit F2 — menu uses fixed-positioning anchored to the
+  // button's bounding rect so it never gets clipped by an ancestor's
+  // overflow-hidden (the workbench root has overflow-hidden, which
+  // clipped the popover at narrow viewports with right-0 + absolute).
+  // Coords computed at toggle-time; recomputed if the user scrolls
+  // mid-open via a resize listener is overkill — the menu auto-closes
+  // on pointerdown-outside which covers most cases.
+  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
   const previewSize = useDeckBuilderSettings((s) => s.previewSize);
   const setPreviewSize = useDeckBuilderSettings((s) => s.setPreviewSize);
   const resetPreviewSize = useDeckBuilderSettings((s) => s.resetPreviewSize);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
+
+  const onToggle = () => {
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    if (buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      setMenuPos({
+        top: rect.bottom + 8,
+        // `right` is distance from viewport's right edge to the menu's
+        // right edge — keeps the menu's right side flush with the
+        // button's right side regardless of viewport width.
+        right: Math.max(8, window.innerWidth - rect.right),
+      });
+    }
+    setOpen(true);
+  };
 
   // Click outside the button + menu → close. Pointerdown (not click)
   // so the closer fires before any other handlers; the open-state
@@ -62,7 +88,7 @@ export function DeckBuilderSettingsButton() {
   };
 
   return (
-    <div className="relative">
+    <>
       <button
         ref={buttonRef}
         type="button"
@@ -70,21 +96,23 @@ export function DeckBuilderSettingsButton() {
         aria-label="Deck-builder settings"
         aria-expanded={open}
         aria-haspopup="dialog"
-        onClick={() => setOpen((v) => !v)}
+        onClick={onToggle}
         className="flex items-center rounded-md border px-2 py-1.5 text-text-secondary transition-colors hover:border-accent-primary/60 hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
         style={{ borderColor: 'var(--color-card-frame-default)' }}
       >
         <GearGlyph />
       </button>
 
-      {open && (
+      {open && menuPos && (
         <div
           ref={menuRef}
           data-testid="deck-builder-settings-menu"
           role="dialog"
           aria-label="Deck-builder settings"
-          className="absolute right-0 top-full z-40 mt-2 w-72 rounded-lg border p-4"
+          className="fixed z-40 w-72 rounded-lg border p-4"
           style={{
+            top: menuPos.top,
+            right: menuPos.right,
             background: 'var(--color-bg-elevated)',
             borderColor: 'var(--color-card-frame-default)',
             boxShadow: 'var(--shadow-high)',
@@ -140,7 +168,7 @@ export function DeckBuilderSettingsButton() {
           </button>
         </div>
       )}
-    </div>
+    </>
   );
 }
 

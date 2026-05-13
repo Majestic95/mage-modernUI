@@ -169,7 +169,7 @@ export function NewDeckModal({ onClose, onCreated }: Props) {
             onClick={onClose}
             disabled={importing}
             // fix-2 B15 — focus-visible ring for keyboard parity.
-            className="rounded-md px-2 py-1 text-sm text-text-secondary transition-colors hover:bg-surface-card-hover hover:text-text-primary disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+            className="rounded-md px-2 py-1 text-sm text-text-secondary transition-colors hover:bg-surface-card-hover hover:text-text-primary disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
           >
             ×
           </button>
@@ -233,7 +233,7 @@ export function NewDeckModal({ onClose, onCreated }: Props) {
             data-testid="new-deck-cancel"
             onClick={onClose}
             disabled={importing}
-            className="rounded-md border px-4 py-2 text-sm text-text-secondary transition-colors hover:bg-surface-card-hover hover:text-text-primary disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+            className="rounded-md border px-4 py-2 text-sm text-text-secondary transition-colors hover:bg-surface-card-hover hover:text-text-primary disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
             style={{ borderColor: 'var(--color-card-frame-default)' }}
           >
             Cancel
@@ -242,7 +242,7 @@ export function NewDeckModal({ onClose, onCreated }: Props) {
             type="submit"
             data-testid="new-deck-submit"
             disabled={importing}
-            className="rounded-md bg-accent-primary px-4 py-2 text-sm font-medium text-text-on-accent transition-opacity hover:opacity-90 disabled:bg-surface-card disabled:text-text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+            className="rounded-md bg-accent-primary px-4 py-2 text-sm font-medium text-text-on-accent transition-opacity hover:opacity-90 disabled:bg-surface-card disabled:text-text-muted disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
           >
             {importing ? 'Resolving…' : 'Import deck'}
           </button>

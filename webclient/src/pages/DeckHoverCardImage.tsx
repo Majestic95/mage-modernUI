@@ -22,11 +22,12 @@
  * trigger by default; flips to the left if there isn't room on the
  * right. Vertically clamped to stay inside the viewport.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDeckBuilderSettings } from './deckBuilderSettings';
 
 const HOVER_DELAY_MS = 250;
 const ASPECT = 7 / 5; // 5:7 Magic card aspect (height / width)
+const VIEWPORT_MARGIN = 16; // px buffer on each side for the preview
 
 interface Args {
   setCode: string;
@@ -56,8 +57,25 @@ export function useDeckCardHoverPreview({
   // fix-8 — preview size is user-configurable via the settings menu.
   // We read from the store at render-time so a slider drag reflows
   // any visible preview live without waiting for the next hover.
-  const previewWidth = useDeckBuilderSettings((s) => s.previewSize);
-  const previewHeight = previewWidth * ASPECT;
+  // fix-audit F4 — cap the effective dimensions to the viewport
+  // (minus a small margin) so an oversized slider setting on a small
+  // screen doesn't render a preview taller/wider than the page. We
+  // shrink ONLY when the natural size doesn't fit; the slider value
+  // is the user's preference, not a hard floor.
+  const rawWidth = useDeckBuilderSettings((s) => s.previewSize);
+  const { previewWidth, previewHeight } = useMemo(() => {
+    const fitWidth =
+      typeof window !== 'undefined'
+        ? Math.min(rawWidth, window.innerWidth - VIEWPORT_MARGIN)
+        : rawWidth;
+    const heightFromWidth = fitWidth * ASPECT;
+    const fitHeight =
+      typeof window !== 'undefined'
+        ? Math.min(heightFromWidth, window.innerHeight - VIEWPORT_MARGIN)
+        : heightFromWidth;
+    const finalWidth = fitHeight / ASPECT;
+    return { previewWidth: finalWidth, previewHeight: fitHeight };
+  }, [rawWidth]);
 
   const imageUrl =
     setCode && cardNumber
@@ -104,18 +122,46 @@ export function useDeckCardHoverPreview({
 
   useEffect(() => endHover, [endHover]);
 
-  const handlers: HoverHandlers = {
-    onMouseEnter: (e) => startHover(e.currentTarget.getBoundingClientRect()),
-    onMouseLeave: endHover,
-    onFocus: (e) => startHover(e.currentTarget.getBoundingClientRect()),
-    onBlur: endHover,
-  };
+  // fix-audit F6 — memoize handlers so the four-key object doesn't
+  // get a new identity every render (negates useCallback's value on
+  // startHover/endHover for any future memoized child consumers).
+  const handlers = useMemo<HoverHandlers>(
+    () => ({
+      onMouseEnter: (e) => startHover(e.currentTarget.getBoundingClientRect()),
+      onMouseLeave: endHover,
+      onFocus: (e) => startHover(e.currentTarget.getBoundingClientRect()),
+      onBlur: endHover,
+    }),
+    [startHover, endHover],
+  );
+
+  // fix-audit F5 — when previewWidth/Height change while a preview is
+  // showing (e.g. user drags the settings slider), re-clamp the
+  // existing position so the enlarged image doesn't overflow.
+  useEffect(() => {
+    if (pos === null) return;
+    const left = Math.max(
+      8,
+      Math.min(window.innerWidth - previewWidth - 8, pos.left),
+    );
+    const top = Math.max(
+      8,
+      Math.min(window.innerHeight - previewHeight - 8, pos.top),
+    );
+    if (left !== pos.left || top !== pos.top) {
+      setPos({ left, top });
+    }
+  }, [previewWidth, previewHeight, pos]);
 
   const preview =
     pos !== null && imageUrl !== null ? (
       <div
         data-testid="deck-hover-card-image"
-        className="pointer-events-none fixed z-50 overflow-hidden rounded-lg"
+        // fix-audit F3 — z-[60] so the transient hover preview always
+        // wins over modals (z-50) and other floating panels. Justified
+        // because hover is short-lived and the user expects to see
+        // the card they're hovering even if a modal happens to be open.
+        className="pointer-events-none fixed z-[60] overflow-hidden rounded-lg"
         style={{
           left: pos.left,
           top: pos.top,
