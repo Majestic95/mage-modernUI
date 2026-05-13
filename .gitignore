@@ -48,6 +48,13 @@ Utils/*implemented.txt
 # Eclipse
 .metadata
 .project
+# Claude Code harness state — tracked files in .claude/ stay tracked
+# (inject-reminder.js, settings.json, xmage-reminder.txt); only the
+# harness-generated machine-local state (per-run lock + agent worktree
+# dirs) is ignored so mage-ship.ps1's clean-working-tree gate doesn't
+# false-positive on them.
+.claude/scheduled_tasks.lock
+.claude/worktrees/
 .settings
 .factorypath
 **/bin
